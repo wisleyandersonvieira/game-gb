@@ -2,4 +2,23 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: oklch(0.18 0.02 260);
+  --color-foreground: oklch(0.97 0.01 260);
+  --color-card: oklch(0.23 0.025 260);
+  --color-card-foreground: oklch(0.97 0.01 260);
+  --color-muted: oklch(0.3 0.02 260);
+  --color-muted-foreground: oklch(0.72 0.02 260);
+  --color-border: oklch(0.32 0.02 260);
+  --color-primary: oklch(0.72 0.17 145);
+  --color-primary-foreground: oklch(0.18 0.02 260);
+  --color-accent: oklch(0.78 0.16 85);
+  --color-accent-foreground: oklch(0.18 0.02 260);
+  --color-destructive: oklch(0.63 0.2 25);
+  --color-destructive-foreground: oklch(0.97 0.01 260);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
 }

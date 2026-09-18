@@ -14,7 +14,193 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      entregas: {
+        Row: {
+          atribuicao_id: string
+          created_at: string
+          data_envio: string
+          foto_url: string | null
+          funcionario_id: string
+          id: string
+          motivo_recusa: string | null
+          observacao: string | null
+          pontos_ganhos: number
+          status_validacao: string
+          tarefa_id: string
+          updated_at: string
+        }
+        Insert: {
+          atribuicao_id: string
+          created_at?: string
+          data_envio?: string
+          foto_url?: string | null
+          funcionario_id: string
+          id?: string
+          motivo_recusa?: string | null
+          observacao?: string | null
+          pontos_ganhos?: number
+          status_validacao?: string
+          tarefa_id: string
+          updated_at?: string
+        }
+        Update: {
+          atribuicao_id?: string
+          created_at?: string
+          data_envio?: string
+          foto_url?: string | null
+          funcionario_id?: string
+          id?: string
+          motivo_recusa?: string | null
+          observacao?: string | null
+          pontos_ganhos?: number
+          status_validacao?: string
+          tarefa_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entregas_atribuicao_id_fkey"
+            columns: ["atribuicao_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas_atribuidas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entregas_funcionario_id_fkey"
+            columns: ["funcionario_id"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entregas_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      funcionarios: {
+        Row: {
+          ativo: boolean
+          cargo: string | null
+          chat_id_telegram: string | null
+          created_at: string
+          id: string
+          nome: string
+          setor: string | null
+          telefone: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          cargo?: string | null
+          chat_id_telegram?: string | null
+          created_at?: string
+          id?: string
+          nome: string
+          setor?: string | null
+          telefone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          cargo?: string | null
+          chat_id_telegram?: string | null
+          created_at?: string
+          id?: string
+          nome?: string
+          setor?: string | null
+          telefone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tarefas: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          id: string
+          pontos: number
+          setor: string | null
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          pontos?: number
+          setor?: string | null
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          pontos?: number
+          setor?: string | null
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tarefas_atribuidas: {
+        Row: {
+          created_at: string
+          data_agendamento: string | null
+          data_fim_vigencia: string | null
+          descricao_override: string | null
+          funcionario_id: string
+          id: string
+          tarefa_id: string
+          tipo_frequencia: string
+          updated_at: string
+          valor_frequencia: number | null
+        }
+        Insert: {
+          created_at?: string
+          data_agendamento?: string | null
+          data_fim_vigencia?: string | null
+          descricao_override?: string | null
+          funcionario_id: string
+          id?: string
+          tarefa_id: string
+          tipo_frequencia?: string
+          updated_at?: string
+          valor_frequencia?: number | null
+        }
+        Update: {
+          created_at?: string
+          data_agendamento?: string | null
+          data_fim_vigencia?: string | null
+          descricao_override?: string | null
+          funcionario_id?: string
+          id?: string
+          tarefa_id?: string
+          tipo_frequencia?: string
+          updated_at?: string
+          valor_frequencia?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_atribuidas_funcionario_id_fkey"
+            columns: ["funcionario_id"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_atribuidas_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
