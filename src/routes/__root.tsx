@@ -1,7 +1,7 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { Outlet, createRootRoute } from "@tanstack/react-router";
 import "@/styles.css";
 
-export const Route = createFileRoute("__root")({
+export const Route = createRootRoute({
   component: RootLayout,
 });
 
