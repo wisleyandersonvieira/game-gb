@@ -71,18 +71,8 @@ function Painel() {
 
   return (
     <main className="min-h-screen p-6 space-y-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Quadro de Tarefas</h1>
-        <button
-          onClick={async () => {
-            await supabase.auth.signOut();
-            navigate({ to: "/auth" });
-          }}
-          className="rounded-lg border border-border px-4 py-2 text-sm"
-        >
-          Sair
-        </button>
-      </header>
+      <Nav />
+      <h1 className="text-3xl font-bold">Quadro de Tarefas</h1>
 
       {entregas.isLoading && <p className="text-muted-foreground">Carregando...</p>}
       {entregas.error && (
