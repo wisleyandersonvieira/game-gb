@@ -24,7 +24,6 @@ const COLUNAS = [
 ];
 
 function Painel() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const entregas = useQuery({
