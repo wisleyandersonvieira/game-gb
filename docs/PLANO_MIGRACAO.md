@@ -2,7 +2,7 @@
 
 > **Documento-guia do projeto.** Toda sessão de trabalho deve começar lendo este plano e terminar atualizando o **Status** e o **Registro de decisões**.
 > Repositório: https://github.com/wisleyandersonvieira/game-gb
-> Última atualização: 18/09/2026 (Fase 1 em andamento — banco limpo; ferramenta: Claude Code)
+> Última atualização: 19/09/2026 (Fase 1 concluída — banco limpo aplicado no Supabase; ferramenta: Claude Code)
 
 ---
 
@@ -17,8 +17,8 @@ Recolocar em funcionamento todas as funcionalidades do sistema original (painel 
 
 | Fase | Tema | Status |
 |---|---|---|
-| 1 | Banco de dados (estrutura limpa, sem dados) | 🟨 Em andamento — migração pronta em `supabase/migrations/`; falta aplicar no Supabase |
-| 2 | Refazer as telas iniciais (Quadro, Equipe, Tarefas) | ⬜ Não iniciada |
+| 1 | Banco de dados (estrutura limpa, sem dados) | ✅ Concluída — 42 tabelas + `configuracoes` aplicadas no Supabase, vazias. Pendente do Wisley: recadastrar as tarefas/pessoas especiais e preencher os IDs em `configuracoes`. |
+| 2 | Refazer as telas iniciais (Quadro, Equipe, Tarefas) | 🟨 Próxima — as 3 telas atuais quebraram (29 erros de TypeScript), como previsto |
 | 3 | Painel Operacional + Validação | ⬜ Não iniciada |
 | 4 | Gestão de pessoas e gamificação | ⬜ Não iniciada |
 | 5 | Metas e Financeiro | ⬜ Não iniciada |
@@ -41,16 +41,16 @@ Base para todas as fases seguintes. Referência completa: `docs/DICIONARIO_BANCO
 - [x] Decisão de IDs: chaves primárias **inteiras com numeração automática** (como no original, não UUID), começando do 1.
 - [x] Decisão de nomes: nomes originais **em minúsculas, sem aspas** (`FuncionarioID` → `funcionarioid`, `TarefasAtribuidas` → `tarefasatribuidas`). Mantém o SQL do Python compatível para a Fase 11.
 - [x] **Decisão: banco limpo — nenhum dado do sistema antigo será importado.** Arquivo único `estrutura_banco.sql` (pacote `fase1_estrutura_banco.zip`), testado em Postgres 16 vazio: 42 tabelas, 40 FKs.
-- [ ] Preparar o repositório para o VS Code: `.gitignore` (node_modules, .output, .env, logs, __pycache__), mover o Python antigo para `legado/`, `bun install` e `bun run dev` funcionando.
-- [ ] Definir acesso ao Supabase (projeto atual foi criado pelo Lovable Cloud — sem acesso direto, criar projeto próprio em supabase.com e atualizar `.env`).
-- [ ] Aplicar `supabase/migrations/20260919000000_estrutura_banco.sql` (Supabase CLI `db push` ou SQL editor) → conferir 42 tabelas.
-- [ ] Regenerar `src/integrations/supabase/types.ts` (`supabase gen types typescript`).
-- [ ] Criar tabela `configuracoes` (chave/valor) para os parâmetros do `config.py` (taxa ponto→real 0.03, bônus, horários das rotinas).
-- [ ] Como o banco é limpo, os IDs fixos do `config.py` **não existem mais**. Recadastrar as tarefas/pessoas especiais e guardar os novos IDs em `configuracoes`: TAREFA_ID_FEEDBACK_DIARIO (era 5), TAREFA_ID_LEITURA (38), TAREFA_MODELO_AGENDAMENTO_ID (92), TAREFA_ID_PONTOS_META (121), TAREFA_ID_NOTA_FISCAL (156), TAREFA_ID_GUARDAR_MERCADORIA_MODELO (157), ID_GESTOR_PADRAO (2), RESPONSAVEL_AGENDAMENTOS_ID (3).
-- [ ] Criar buckets no Storage: `entregas` (fotos), `notas-fiscais`, `documentos-rh`, `layout-loja`.
+- [x] Preparar o repositório para o VS Code: `.gitignore` (node_modules, .output, .env, logs, __pycache__), mover o Python antigo para `legado/`, `bun install` e `bun run dev` funcionando.
+- [x] Definir acesso ao Supabase. **Não foi preciso criar projeto novo:** o Wisley tem acesso ao projeto `asgdynxdcdnjglgyyaek` (GameGB) pela própria conta. `.env` atualizado com a chave publishable nova e Supabase CLI adicionado ao projeto.
+- [x] Aplicar `supabase/migrations/20260919000000_estrutura_banco.sql` (`supabase db push`) → conferidas 42 tabelas, 40 FKs, todas vazias e com RLS.
+- [x] Regenerar `src/integrations/supabase/types.ts` (`supabase gen types typescript`).
+- [x] Criar tabela `configuracoes` (chave/valor) para os parâmetros do `config.py` (taxa ponto→real 0.03, bônus, horários das rotinas). 18 chaves criadas.
+- [ ] Como o banco é limpo, os IDs fixos do `config.py` **não existem mais**. Recadastrar as tarefas/pessoas especiais e guardar os novos IDs em `configuracoes`: TAREFA_ID_FEEDBACK_DIARIO (era 5), TAREFA_ID_LEITURA (38), TAREFA_MODELO_AGENDAMENTO_ID (92), TAREFA_ID_PONTOS_META (121), TAREFA_ID_NOTA_FISCAL (156), TAREFA_ID_GUARDAR_MERCADORIA_MODELO (157), ID_GESTOR_PADRAO (2), RESPONSAVEL_AGENDAMENTOS_ID (3). *As 8 chaves já existem em `configuracoes` com valor vazio; falta o Wisley recadastrar e preencher.*
+- [x] Criar buckets no Storage: `entregas` (fotos), `notas-fiscais`, `documentos-rh`, `layout-loja`. Criados privados; URLs assinadas revistas na Fase 12.
 - [x] RLS provisória (usuário logado); endurecimento por papel na Fase 12.
 
-**Pronto quando:** as 42 tabelas existem no Supabase (vazias).
+**Pronto quando:** as 42 tabelas existem no Supabase (vazias). ✅ Atingido em 19/09/2026.
 
 **Achados do banco real:**
 - Não existe tabela `Transacoes`: o saldo fica em `funcionarios.saldopontos` (e `pontostotal`).
@@ -67,6 +67,13 @@ Base para todas as fases seguintes. Referência completa: `docs/DICIONARIO_BANCO
 - [ ] Ranking: diário e mensal (não "de todos os tempos").
 - [ ] Tarefas recorrentes: tela de atribuição com frequência (Única / Diária / Semanal / Mensal), data de agendamento e fim de vigência.
 - [ ] Editar/desativar funcionários e tarefas.
+
+**Estado em 19/09/2026 (fim da Fase 1):** `bun run build` falha com **29 erros de TypeScript**, todos nestas três telas, porque elas ainda usam as tabelas de teste do Lovable:
+- `src/routes/_authenticated/tarefas.tsx` — 17 erros (usa a tabela `tarefas_atribuidas`, que agora se chama `tarefasatribuidas`, e as colunas `tarefa_id`/`funcionario_id`/`atribuicao_id`)
+- `src/routes/_authenticated/funcionarios.tsx` — 10 erros (usa `id`, `nome` e `ativo`; agora são `funcionarioid`, `nomecompleto` e não existe `ativo`)
+- `src/routes/_authenticated/painel.tsx` — 2 erros (usa `id` e `status_validacao`; agora são `entregaid` e `statusvalidacao`)
+
+Nenhum outro arquivo do projeto quebrou.
 
 ## Fase 3 — Painel Operacional + Validação (substitui `painel.html` aba Operacional e aba "Validar Entregas")
 - [ ] Barra de progresso do dia + "última atualização" (auto-refresh / Realtime).
@@ -174,6 +181,9 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 18/09/2026 | Banco limpo: só estrutura e relacionamentos; nenhum dado antigo importado. IDs fixos do `config.py` passam para a tabela `configuracoes`. |
 | 18/09/2026 | Desenvolvimento sai do Lovable e passa para Claude Code no VS Code. Python antigo movido para `legado/` como referência. |
 | 18/09/2026 | Segurança movida para a última fase (Fase 12), por decisão do Wisley, com os riscos registrados em "Regras de ordem". |
+| 19/09/2026 | O projeto Supabase do Lovable (`asgdynxdcdnjglgyyaek`) é acessível pela conta do Wisley. Decidido mantê-lo em vez de criar um novo, e apagar as 4 tabelas de teste do Lovable, cujos nomes conflitavam com os reais. |
+| 19/09/2026 | `.env` deixou de ser versionado (estava rastreado pelo Git apesar do `.gitignore`). |
+| 19/09/2026 | A tabela `configuracoes` usa a coluna `atualizado_em` (com underscore), conforme especificado pelo Wisley — exceção à regra de nomes, que vale para as tabelas herdadas do SQL Server. |
 
 ## Referência rápida — mapa arquivo original → fase
 | Arquivo original | Fase |
