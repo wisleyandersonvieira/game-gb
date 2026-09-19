@@ -68,7 +68,7 @@ Base para todas as fases seguintes. Referência completa: `docs/DICIONARIO_BANCO
 - [ ] Tarefas recorrentes: tela de atribuição com frequência (Única / Diária / Semanal / Mensal), data de agendamento e fim de vigência.
 - [ ] Editar/desativar funcionários e tarefas.
 
-**Estado em 19/09/2026 (fim da Fase 1):** `bun run build` falha com **29 erros de TypeScript**, todos nestas três telas, porque elas ainda usam as tabelas de teste do Lovable:
+**Estado em 19/09/2026 (fim da Fase 1):** `bun run build` **passa** (o Vite não checa tipos), mas `bunx tsc --noEmit` acusa **29 erros de TypeScript**, todos nestas três telas, porque elas ainda usam as tabelas de teste do Lovable. Na prática as telas quebram ao abrir no navegador, não ao compilar:
 - `src/routes/_authenticated/tarefas.tsx` — 17 erros (usa a tabela `tarefas_atribuidas`, que agora se chama `tarefasatribuidas`, e as colunas `tarefa_id`/`funcionario_id`/`atribuicao_id`)
 - `src/routes/_authenticated/funcionarios.tsx` — 10 erros (usa `id`, `nome` e `ativo`; agora são `funcionarioid`, `nomecompleto` e não existe `ativo`)
 - `src/routes/_authenticated/painel.tsx` — 2 erros (usa `id` e `status_validacao`; agora são `entregaid` e `statusvalidacao`)
