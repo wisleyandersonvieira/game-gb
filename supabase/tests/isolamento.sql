@@ -624,7 +624,6 @@ BEGIN
   PERFORM set_config('teste.entrega_a', (SELECT entregaid::text FROM public.entregas WHERE atribuicaoid = 5000), false);
   PERFORM set_config('teste.entrega_b', (SELECT entregaid::text FROM public.entregas WHERE atribuicaoid = 6000), false);
 END $$;
-UPDATE public.funcionarios SET saldopontos = 0, pontostotal = 0 WHERE funcionarioid IN (100, 200);
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
@@ -774,15 +773,15 @@ BEGIN
                         'o ranking de A nao mostra ninguem de B');
 END $$;
 
--- Saldo pode ficar negativo no estorno (a pessoa ja gastou os pontos).
-DO $$ BEGIN PERFORM public.aprovar_entrega(current_setting('teste.entrega_c')::integer); END $$;
-RESET ROLE;
-UPDATE public.funcionarios SET saldopontos = 2 WHERE funcionarioid = 100;
-SET ROLE authenticated;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+-- Saldo pode ficar negativo no estorno (a pessoa ja gastou os pontos num premio).
 DO $$
-DECLARE saldo integer;
+DECLARE saldo integer; premio integer;
 BEGIN
+  PERFORM public.aprovar_entrega(current_setting('teste.entrega_c')::integer);
+  INSERT INTO public.produtosloja (nome, custoempontos) VALUES ('Brinde de teste', 3) RETURNING produtoid INTO premio;
+  PERFORM public.registrar_resgate(100, premio, 10, true);
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 2,
+                        'resgate de 3 pontos deixa o saldo em 2');
   saldo := public.estornar_entrega(current_setting('teste.entrega_c')::integer, 'Ja tinha trocado por premio');
   PERFORM public.exigir(saldo = -3, 'o estorno pode deixar o saldo negativo (2 - 5 = -3)');
 END $$;
@@ -983,6 +982,225 @@ SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- ===========================================================================
+-- 20. Loja de premios, resgates, abate na comanda e extrato
+-- ===========================================================================
+
+RESET ROLE;
+DO $$ BEGIN
+  PERFORM public.cria_produtos_do_sistema(1);
+  PERFORM public.cria_produtos_do_sistema(2);
+END $$;
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+DO $$
+DECLARE
+  deu_erro boolean; bombom integer; camiseta integer; caneca integer; r integer; t integer; atr integer;
+  saldo integer;
+BEGIN
+  RAISE NOTICE '20. loja de premios e resgates';
+
+  INSERT INTO public.produtosloja (nome, custoempontos, estoquedisponivel) VALUES ('Bombom', 10, 1)   RETURNING produtoid INTO bombom;
+  INSERT INTO public.produtosloja (nome, custoempontos)                    VALUES ('Camiseta', 1000)  RETURNING produtoid INTO camiseta;
+  INSERT INTO public.produtosloja (nome, custoempontos, estoquedisponivel) VALUES ('Caneca', 1, 0)    RETURNING produtoid INTO caneca;
+  PERFORM set_config('teste.bombom', bombom::text, false);
+
+  BEGIN PERFORM public.registrar_resgate(100, bombom); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'com saldo negativo (-3) nao se resgata nada');
+
+  INSERT INTO public.tarefas (titulo, pontos) VALUES ('Tarefa grande', 30) RETURNING tarefaid INTO t;
+  INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (t, 10);
+  INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+       VALUES (t, 100, 10, 'Diaria') RETURNING atribuicaoid INTO atr;
+  PERFORM public.registrar_entrega(atr, NULL, NULL, true);
+  SELECT saldopontos INTO saldo FROM public.funcionarios WHERE funcionarioid = 100;
+  PERFORM public.exigir(saldo = 27, 'aprovar 30 pontos leva o saldo de -3 a 27');
+
+  BEGIN PERFORM public.registrar_resgate(100, caneca); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'premio com estoque 0 (esgotado) nao se resgata');
+
+  BEGIN PERFORM public.registrar_resgate(100, camiseta); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'resgatar sem saldo suficiente e recusado');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
+                        'tentativas recusadas nao mexem no saldo');
+
+  r := public.registrar_resgate(100, bombom, 10, true);
+  PERFORM set_config('teste.resgate_a', r::text, false);
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17
+                    AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 0
+                    AND (SELECT status FROM public.resgates WHERE resgateid = r) = 'Entregue',
+                        'resgatar desconta saldo e estoque de uma vez (e ja entrega)');
+
+  BEGIN PERFORM public.registrar_resgate(100, bombom); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o estoque acabou: o segundo bombom e recusado');
+
+  BEGIN PERFORM public.cancelar_resgate(r, 'desistiu'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'resgate ja entregue nao se cancela (se estorna)');
+
+  BEGIN PERFORM public.estornar_resgate(r, '  '); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'estornar resgate sem motivo e recusado');
+
+  PERFORM public.estornar_resgate(r, 'Veio estragado');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27
+                    AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 1
+                    AND (SELECT status FROM public.resgates WHERE resgateid = r) = 'Estornado',
+                        'estornar devolve os pontos e o estoque');
+
+  BEGIN PERFORM public.estornar_resgate(r, 'de novo'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
+                        'estornar duas vezes NAO devolve em dobro');
+
+  r := public.registrar_resgate(100, bombom, NULL, false);
+  PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = r) = 'Pendente'
+                    AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17
+                    AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 0,
+                        '"entregar depois": pontos e estoque ja ficam reservados');
+  PERFORM public.cancelar_resgate(r, 'Desistiu');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27
+                    AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 1,
+                        'cancelar devolve os pontos e o estoque');
+  BEGIN PERFORM public.cancelar_resgate(r, 'de novo'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
+                        'cancelar duas vezes NAO devolve em dobro');
+
+  r := public.registrar_resgate(100, bombom, NULL, false);
+  PERFORM public.entregar_resgate(r);
+  PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = r) = 'Entregue'
+                    AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17,
+                        'entregar um pendente nao cobra de novo');
+  BEGIN PERFORM public.entregar_resgate(r); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'entregar duas vezes e recusado');
+
+  BEGIN UPDATE public.resgates SET status = 'Cancelado' WHERE resgateid = r; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'resgate so muda pelas funcoes');
+END $$;
+
+DO $$
+DECLARE deu_erro boolean; r integer; r2 integer; linha record;
+BEGIN
+  RAISE NOTICE '20b. abate na comanda';
+  UPDATE public.configuracoes SET valor = '0.03' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL';
+
+  r := public.registrar_abate_comanda(100, 0.31, 10);
+  SELECT pontosgastos, valorreais, taxaconversao INTO linha FROM public.resgates WHERE resgateid = r;
+  PERFORM public.exigir(linha.pontosgastos = 11 AND linha.valorreais = 0.31 AND linha.taxaconversao = 0.03,
+                        'R$ 0,31 a 0,03 custa 11 pontos (10,33 arredondado para cima)');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 6,
+                        'a comanda desconta os pontos');
+
+  BEGIN PERFORM public.registrar_abate_comanda(100, 15.50); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'comanda acima do saldo e recusada pelo banco');
+
+  BEGIN PERFORM public.registrar_abate_comanda(100, 0); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'comanda de valor zero e recusada');
+
+  UPDATE public.configuracoes SET valor = '0.05' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL';
+  r2 := public.registrar_abate_comanda(100, 0.30);
+  PERFORM public.exigir((SELECT pontosgastos FROM public.resgates WHERE resgateid = r2) = 6,
+                        'taxa nova (0,05) vale para a comanda nova: R$ 0,30 = 6 pontos');
+  SELECT pontosgastos, valorreais, taxaconversao INTO linha FROM public.resgates WHERE resgateid = r;
+  PERFORM public.exigir(linha.pontosgastos = 11 AND linha.valorreais = 0.31 AND linha.taxaconversao = 0.03,
+                        'a comanda antiga mantem o valor, os pontos e a taxa que registrou');
+
+  BEGIN PERFORM public.registrar_resgate(100, (SELECT produtoid FROM public.produtosloja WHERE sistema = 'abate_comanda'));
+        deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o premio do sistema nao sai pelo catalogo');
+
+  BEGIN DELETE FROM public.produtosloja WHERE sistema = 'abate_comanda'; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o premio do sistema nao pode ser apagado');
+
+  BEGIN UPDATE public.produtosloja SET sistema = 'abate_comanda' WHERE nome = 'Camiseta'; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem marca um premio comum como do sistema');
+
+  PERFORM public.estornar_resgate(r, 'Lancado errado');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 11,
+                        'estornar a comanda devolve os 11 pontos');
+
+  UPDATE public.configuracoes SET valor = '0.03' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL';
+END $$;
+
+DO $$
+DECLARE x jsonb; deu_erro boolean; hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  RAISE NOTICE '20c. extrato de pontos';
+  x := public.extrato_pontos(100, DATE '2000-01-01', DATE '2100-01-01');
+  PERFORM public.exigir((x->>'confere')::boolean, 'o saldo bate com a soma do extrato');
+  PERFORM public.exigir((x->>'saldofinal')::integer = (x->>'saldoatual')::integer,
+                        'saldo final do periodo inteiro = saldo atual');
+  PERFORM public.exigir(((x->'movimentos'->-1)->>'saldoapos')::integer = (x->>'saldoatual')::integer,
+                        'o ultimo "saldo apos" e o saldo atual');
+  PERFORM public.exigir(x::text LIKE '%Tarefa aprovada%' AND x::text LIKE '%Estorno:%'
+                    AND x::text LIKE '%Resgate: Bombom%' AND x::text LIKE '%Resgate cancelado%'
+                    AND x::text LIKE '%Resgate estornado%' AND x::text LIKE '%Abate na comanda: R$ 0,31%',
+                        'o extrato mostra aprovacoes, estornos, resgates, cancelamentos e comandas');
+  PERFORM public.exigir((x->>'taxa')::numeric = 0.03, 'o extrato traz a taxa atual, para mostrar em R$');
+
+  x := public.extrato_pontos(100, hoje + 1, hoje + 1);
+  PERFORM public.exigir((x->>'saldoinicial')::integer = (x->>'saldoatual')::integer
+                    AND jsonb_array_length(x->'movimentos') = 0,
+                        'periodo futuro: saldo inicial = saldo atual, sem movimentos');
+
+  BEGIN PERFORM public.extrato_pontos(200, DATE '2000-01-01', DATE '2100-01-01'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao ve o extrato de ninguem de B');
+
+  BEGIN INSERT INTO public.movimentospontos (funcionarioid, tipo, pontos, descricao) VALUES (100, 'bonus', 1000, 'presente');
+        deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o navegador nao grava movimento de pontos');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean; pb integer;
+BEGIN
+  RAISE NOTICE '20d. premios e resgates de outro cliente';
+  INSERT INTO public.produtosloja (nome, custoempontos) VALUES ('Premio de B', 5) RETURNING produtoid INTO pb;
+  PERFORM set_config('teste.premio_b', pb::text, false);
+
+  PERFORM public.exigir((SELECT count(*) FROM public.produtosloja WHERE nome IN ('Bombom', 'Camiseta')) = 0,
+                        'B nao ve os premios de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.resgates) = 0, 'B nao ve os resgates de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos) = 0, 'B nao ve os movimentos de A');
+
+  BEGIN PERFORM public.registrar_resgate(100, pb); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao resgata para um funcionario de A');
+
+  BEGIN PERFORM public.estornar_resgate(current_setting('teste.resgate_a')::integer, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao estorna resgate de A');
+
+  BEGIN PERFORM public.registrar_abate_comanda(100, 1); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao faz comanda para funcionario de A');
+END $$;
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.registrar_resgate(100, current_setting('teste.premio_b')::integer); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao resgata um premio de B');
+END $$;
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -1045,7 +1263,8 @@ BEGIN
     AND p.proname NOT IN (
       'minha_conta', 'minha_conta_editavel', 'eh_admin_geral',
       'registrar_entrega', 'aprovar_entrega', 'recusar_entrega', 'estornar_entrega',
-      'painel_da_loja', 'resumo_das_lojas', 'criar_link_tv', 'revogar_link_tv', 'painel_da_tv'
+      'painel_da_loja', 'resumo_das_lojas', 'criar_link_tv', 'revogar_link_tv', 'painel_da_tv',
+      'registrar_resgate', 'registrar_abate_comanda', 'entregar_resgate', 'cancelar_resgate', 'estornar_resgate'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -1069,5 +1288,66 @@ BEGIN
       OR has_table_privilege('anon', c.oid, 'UPDATE') OR has_table_privilege('anon', c.oid, 'DELETE'));
   PERFORM public.exigir(liberadas IS NULL, 'visitante sem login nao tem acesso a nenhuma tabela' || coalesce(' (sobrou: ' || liberadas || ')', ''));
 END $$;
+
+-- ===========================================================================
+-- 21. O saldo so muda pelo livro de movimentos, por qualquer caminho
+-- ===========================================================================
+
+RESET ROLE;
+CREATE FUNCTION public.teste_burla_saldo() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  UPDATE public.funcionarios SET saldopontos = saldopontos + 100 WHERE funcionarioid = 100;
+END $$;
+
+DO $$
+DECLARE deu_erro boolean; sobra text;
+BEGIN
+  RAISE NOTICE '21. o saldo so muda pelo livro de movimentos';
+
+  BEGIN UPDATE public.funcionarios SET saldopontos = saldopontos + 1 WHERE funcionarioid = 100; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco muda o saldo sem gravar movimento');
+
+  BEGIN UPDATE public.funcionarios SET pontostotal = 999 WHERE funcionarioid = 100; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o total de pontos');
+
+  BEGIN PERFORM public.teste_burla_saldo(); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem uma funcao com poder total escrita para burlar');
+
+  BEGIN
+    PERFORM set_config('gamegb.aplicando_movimento', 'sim', true);
+    UPDATE public.funcionarios SET saldopontos = saldopontos + 1 WHERE funcionarioid = 100;
+    deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem imitando o aviso do gatilho do livro');
+
+  BEGIN INSERT INTO public.funcionarios (contaid, nomecompleto, saldopontos) VALUES (1, 'Ja rico', 500); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem cadastrando alguem ja com saldo');
+
+  BEGIN UPDATE public.movimentospontos SET pontos = 1000 WHERE funcionarioid = 100; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'movimento de pontos nao se altera');
+
+  BEGIN DELETE FROM public.movimentospontos WHERE funcionarioid = 100; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'movimento de pontos nao se apaga');
+
+  -- A conta de verdade: em todas as contas, saldo e total batem com o livro.
+  SELECT string_agg(f.nomecompleto || ' (saldo ' || f.saldopontos || ', livro ' || coalesce(m.soma, 0) || ')', ', ')
+    INTO sobra
+    FROM public.funcionarios f
+    LEFT JOIN (SELECT funcionarioid, sum(pontos) AS soma,
+                      sum(pontos) FILTER (WHERE tipo IN ('aprovacao', 'estorno_entrega', 'bonus')) AS ganhos
+                 FROM public.movimentospontos GROUP BY funcionarioid) m USING (funcionarioid)
+   WHERE f.saldopontos <> coalesce(m.soma, 0) OR coalesce(f.pontostotal, 0) <> coalesce(m.ganhos, 0);
+  PERFORM public.exigir(sobra IS NULL,
+    'em todas as contas, saldo e total batem com o livro de movimentos' || coalesce(' (diferente: ' || sobra || ')', ''));
+END $$;
+
+DROP FUNCTION public.teste_burla_saldo();
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

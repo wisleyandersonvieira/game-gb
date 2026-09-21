@@ -42,7 +42,7 @@ Administrador geral (Wisley)
 | 4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
 | 5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
 | 6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
-| 7 | Gestão de pessoas e gamificação | ⬜ Próxima |
+| 7 | Gestão de pessoas e gamificação | 🟨 Em andamento — parte 1 (prêmios, resgates, comanda e extrato) pronta |
 | 8 | Metas e financeiro | ⬜ |
 | 9 | Agenda (agendamentos) | ⬜ |
 | 10 | Escala, mapa e pausas | ⬜ |
@@ -188,12 +188,24 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 ## Fase 7 — Gestão de pessoas e gamificação (abas do `main.py`)
 - [ ] Grupos (por loja).
 - [ ] Pendências e justificativas ("Não aplicável").
-- [ ] Loja de recompensas e resgates.
+- [x] Loja de recompensas e resgates. *(parte 1, 21/09/2026)*
+- [x] Abate na comanda (pontos usados como dinheiro). *(parte 1)*
 - [ ] Conquistas. O gancho já existe: `apos_aprovar_entrega()` é chamada em toda aprovação e hoje não faz nada. Critérios do sistema antigo: total de tarefas aprovadas, tarefas aprovadas no período, sequência de dias com tarefa, sequência de feedback diário, total de comunicados lidos.
 - [ ] Feedbacks, canal confidencial e solicitações internas (visão do gestor).
 - [ ] Relatórios e histórico por funcionário.
 - [ ] **Nota híbrida do ranking mensal**, como no sistema antigo: 50% confiabilidade (pontos ganhos em tarefas normais ÷ pontos possíveis no mês, travado em 100%, sem os bônus) + 50% esforço (pontos totais ÷ os de quem mais fez, em cima de 100). Exige calcular os "pontos possíveis" varrendo o mês dia a dia. Até lá, o ranking mensal é a soma simples.
-- [ ] Extrato de pontos (substitui `pontos_analyzer.py`).
+- [x] Extrato de pontos (substitui `pontos_analyzer.py`). *(parte 1)*
+
+**Feito em 21/09/2026 (parte 1).**
+
+- **Livro de movimentos** (`movimentospontos`): toda entrada e saída de pontos vira uma linha que nunca se altera nem se apaga. O saldo é atualizado **só** por um gatilho desse livro; qualquer outro caminho que tente mudar `saldopontos` ou `pontostotal` é recusado pelo banco — navegador, função com poder total, servidor e até o dono do banco. A migração criou o livro a partir das entregas já existentes; em produção o saldo bateu sem nenhum ajuste.
+- **Prêmios** (item novo no menu): catálogo (estoque em branco = ilimitado, 0 = esgotado), registrar resgate e lista de resgates com Entregar, Cancelar e Estornar. O gestor registra já como "Entregue", ou marca "entregar depois" (Pendente).
+- **Resgate atômico** (`registrar_resgate`): trava a pessoa e o prêmio, confere saldo e estoque e desconta os dois de uma vez. Resgate nunca deixa o saldo negativo. Provado com duas conexões simultâneas de verdade: uma espera a outra e é recusada.
+- **Situações**: Pendente → Entregue; Pendente → Cancelado; Entregue → Estornado. Cancelar e estornar exigem motivo, devolvem pontos e estoque, e só funcionam uma vez.
+- **Abate na comanda** (`registrar_abate_comanda`): prêmio do sistema escondido do catálogo. O banco lê a taxa da conta, arredonda para cima e confere o saldo na hora. O resgate guarda R$, pontos e a taxa usada: mudar a taxa só vale para comandas novas.
+- **Extrato** (item novo no menu): pessoa e período, saldo inicial, saldo final, saldo atual (em pontos e em R$ pela taxa atual), e cada movimento com data, loja, pontos e saldo após. Mostra se o saldo bate com a soma dos movimentos.
+
+**Problemas do sistema antigo corrigidos:** o estoque nunca era conferido nem descontado; recusar um resgate duas vezes devolvia os pontos em dobro; a comanda não conferia o saldo no banco (podia deixá-lo negativo) e arredondava a favor do funcionário; o extrato não batia com o saldo (resgates pendentes e ajustes manuais ficavam de fora).
 
 ## Fase 8 — Metas e financeiro (por loja)
 - [ ] Meta de faturamento mensal.
@@ -331,6 +343,11 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | **Modo TV por link de loja**, revogável, sem login e só leitura. O código aparece uma vez; o banco guarda só a impressão digital. Tudo passa por `painel_da_tv`, a única função que um visitante sem login pode chamar. A TV só recebe "Nome I.", título da tarefa, pontos e horários. |
 | 21/09/2026 | Rodízio de telas na TV só quando existirem as outras telas (meta, agenda, mapa). |
 | 21/09/2026 | **Funções SQL negadas por padrão**: toda função nova precisa de `GRANT` explícito. Função `security definer` que recebe `contaid`/`lojaid` nunca é liberada. |
+| 21/09/2026 | **Livro de movimentos de pontos** (`movimentospontos`), mudando a regra antiga "não existe tabela de transações". Todo ponto passa por ele, na mesma operação que altera o saldo; o saldo é sempre a soma do livro. Regra permanente no `CLAUDE.md`. |
+| 21/09/2026 | Resgate registrado pelo gestor, já "Entregue" por padrão, com opção "entregar depois". O pedido pelo próprio funcionário volta com o bot (Fase 15). Situações: Pendente, Entregue, Cancelado, Estornado. |
+| 21/09/2026 | Estoque em branco = ilimitado; 0 = esgotado. |
+| 21/09/2026 | Abate na comanda: prêmio do sistema escondido, pontos = valor ÷ taxa **arredondado para cima**; o resgate guarda R$, pontos e a taxa usada, então mudar a taxa só vale para comandas novas. |
+| 21/09/2026 | A trava "precisa ter mandado o feedback de ontem" antes da comanda fica para a Fase 15, junto com o bot. |
 
 ## Referência — arquivo do sistema antigo → fase
 | Arquivo em `legado/` | Fase |

@@ -257,10 +257,10 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | nomecompleto | varchar(255) | obrigatório |
 | chatidtelegram | varchar(100) |  |
 | cargo | varchar(100) |  |
-| pontostotal | integer | padrão 0. Tudo o que a pessoa já ganhou; só desce por estorno. Só muda pelas funções de entrega |
+| pontostotal | integer | padrão 0. Tudo o que a pessoa já ganhou (aprovações, bônus, estornos de entrega; resgates não contam). Só o gatilho do livro altera |
 | horarionotificacao | time | padrão '08:00' |
 | diadefolga | integer | obrigatório; padrão 0 |
-| saldopontos | integer | obrigatório; padrão 0. O que a pessoa tem para gastar. Pode ficar negativo por estorno. Só muda pelas funções de entrega |
+| saldopontos | integer | obrigatório; padrão 0. O que a pessoa tem para gastar. **Sempre a soma de `movimentospontos`**; só o gatilho do livro altera. Pode ficar negativo por estorno de entrega, nunca por resgate |
 | verificadorcpf | varchar(3) |  |
 | senhahash | varchar(256) |  |
 | isgestor | boolean | padrão false |
@@ -622,6 +622,14 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `criar_link_tv(loja, nome)` | Cria um link de TV e devolve o código **uma única vez** |
 | `revogar_link_tv(link)` | Desliga um link de TV |
 | `painel_da_tv(codigo)` | **A única função que um visitante sem login pode chamar.** Devolve o painel da loja do link com nomes curtos, ou `{"disponivel": false}` |
+| `reais(valor)` | "R$ 15,50" |
+| `minha_taxa()` | A taxa ponto → real da conta de quem está logado |
+| `registrar_resgate(pessoa, premio, loja, entregar)` | Resgate atômico: trava pessoa e prêmio, confere saldo e estoque, desconta os dois e grava o movimento |
+| `registrar_abate_comanda(pessoa, valor, loja, entregar)` | Comanda: pontos = valor ÷ taxa, arredondado para cima; guarda R$, pontos e taxa |
+| `entregar_resgate(resgate)` | Pendente → Entregue |
+| `cancelar_resgate(resgate, motivo)` | Pendente → Cancelado; devolve pontos e estoque |
+| `estornar_resgate(resgate, motivo)` | Entregue → Estornado; devolve pontos e estoque |
+| `extrato_pontos(pessoa, de, ate)` | Saldo inicial, final, atual, taxa e os movimentos do período com saldo após cada um |
 
 Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos` e `atribuicoes_para_entregar` rodam com a RLS de quem chamou.
 
@@ -641,3 +649,28 @@ Links de TV de cada loja (**nível loja**). O código em si nunca é guardado.
 | ultimouso | timestamptz | última vez que a TV buscou o painel (gravada no máximo uma vez por minuto) |
 
 O navegador só lê esta tabela; criar e revogar passam pelas funções.
+
+## movimentospontos
+O livro de pontos (**nível conta**; a loja é opcional). Cada entrada e saída de pontos é uma linha. **Nunca se altera nem se apaga** — corrige-se com outro movimento. Gravar aqui é o único jeito de mudar o saldo.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| movimentoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| funcionarioid | integer | obrigatório; → funcionarios (junto com contaid) |
+| lojaid | integer | opcional; → lojas (junto com contaid) |
+| datamovimento | timestamptz | obrigatório; padrão now() |
+| tipo | varchar(30) | `aprovacao`, `estorno_entrega`, `bonus`, `resgate`, `cancelamento_resgate`, `estorno_resgate`, `ajuste_abertura` |
+| pontos | integer | obrigatório; diferente de zero. Positivo entra, negativo sai |
+| descricao | text | obrigatório. O que aparece no extrato |
+| entregaid | integer | → entregas (junto com contaid), quando veio de uma entrega |
+| resgateid | integer | → resgates (junto com contaid), quando veio de um resgate |
+| criadopor | uuid | → auth.users |
+
+O navegador só lê. Os tipos `aprovacao`, `estorno_entrega` e `bonus` também somam em `pontostotal`.
+
+## Mudanças da Fase 7 em tabelas existentes
+
+**produtosloja** ganhou `sistema` (`abate_comanda`, o prêmio do sistema escondido do catálogo; único por conta, não pode ser apagado). Estoque em branco = ilimitado, 0 = esgotado; custo > 0 nos prêmios comuns. O navegador cadastra e edita só nome, descrição, custo, estoque e ativo.
+
+**resgates**: `status` é `Pendente`, `Entregue`, `Cancelado` ou `Estornado`. Novas colunas: `valorreais` e `taxaconversao` (comanda), `registradopor`, `dataentrega`/`entreguepor`, `datacancelamento`/`canceladopor`/`motivocancelamento`, `dataestorno`/`estornadopor`/`motivoestorno`. Cancelado e Estornado exigem motivo. O navegador só lê; tudo muda pelas funções. As colunas antigas `gestorid_aprovacao` e `dataaprovacao` ficaram sem uso.

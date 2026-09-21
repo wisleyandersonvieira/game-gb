@@ -40,18 +40,48 @@ rodar "$RAIZ/supabase/tests/_ambiente_local.sql" >/dev/null
 echo "==> aplicando as migracoes"
 for m in "$RAIZ"/supabase/migrations/*.sql; do
   printf '    %-52s ' "$(basename "$m")"
-  rodar "$m" >/dev/null && echo "ok"
+  if saida_m="$(rodar "$m" 2>&1 >/dev/null)"; then
+    echo "ok"
+  else
+    echo "FALHOU"
+    echo "$saida_m" | grep -E "ERROR" | head -5
+    echo
+    echo "TESTE DE ISOLAMENTO: FALHOU (migracao nao aplicou)"
+    exit 1
+  fi
 done
 
 echo "==> teste de isolamento entre contas"
 saida="$(rodar "$RAIZ/supabase/tests/isolamento.sql" 2>&1)" && ok=1 || ok=0
 echo "$saida" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET|INSERT|CREATE|RESET)' || true
 
-echo
-if [ "$ok" = "1" ]; then
-  echo "TESTE DE ISOLAMENTO: PASSOU"
-else
+if [ "$ok" != "1" ]; then
+  echo
   echo "TESTE DE ISOLAMENTO: FALHOU"
   echo "$saida" | grep -E 'ERROR|FALHOU' || true
+  exit 1
+fi
+
+echo "==> dois resgates ao mesmo tempo (duas conexoes em paralelo)"
+rodar "$RAIZ/supabase/tests/concorrencia_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_sessao.sql" "$CONTAINER:/sessao.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -f /sessao.sql >/tmp/gamegb-sessao1.txt 2>&1 &
+p1=$!
+docker exec "$CONTAINER" psql -U postgres -q -f /sessao.sql >/tmp/gamegb-sessao2.txt 2>&1 &
+p2=$!
+wait "$p1" "$p2" || true
+recusas=$(cat /tmp/gamegb-sessao1.txt /tmp/gamegb-sessao2.txt | grep -c "Saldo insuficiente" || true)
+echo "    conexao recusada por saldo insuficiente: $recusas de 2"
+rm -f /tmp/gamegb-sessao1.txt /tmp/gamegb-sessao2.txt
+
+saida_c="$(rodar "$RAIZ/supabase/tests/concorrencia_confere.sql" 2>&1)" && ok_c=1 || ok_c=0
+echo "$saida_c" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+
+echo
+if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
+  echo "TESTE DE ISOLAMENTO: PASSOU"
+else
+  echo "TESTE DE ISOLAMENTO: FALHOU (concorrencia)"
+  echo "$saida_c" | grep -E 'ERROR|FALHOU' || true
   exit 1
 fi

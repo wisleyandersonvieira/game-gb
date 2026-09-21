@@ -170,6 +170,16 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
       );
     }
 
+    // E com o prêmio do sistema "Abate na comanda", escondido do catálogo.
+    const { error: erroPremios } = await supabaseAdmin.rpc("cria_produtos_do_sistema", {
+      p_contaid: conta.contaid,
+    });
+    if (erroPremios) {
+      throw new Error(
+        `O cliente foi criado e o convite enviado, mas o prêmio do sistema falhou: ${erroPremios.message}`,
+      );
+    }
+
     return { contaid: conta.contaid as number, email, reaproveitouLogin: Boolean(jaExiste) };
   });
 

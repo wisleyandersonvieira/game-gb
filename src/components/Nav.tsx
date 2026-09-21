@@ -9,6 +9,8 @@ const itens = [
   { to: "/funcionarios", label: "Equipe" },
   { to: "/tarefas", label: "Tarefas" },
   { to: "/ranking", label: "Ranking" },
+  { to: "/premios", label: "Prêmios" },
+  { to: "/extrato", label: "Extrato" },
 ] as const;
 
 export function Nav() {
