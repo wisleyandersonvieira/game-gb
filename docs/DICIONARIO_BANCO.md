@@ -480,6 +480,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | Coluna | Tipo | Obs |
 |---|---|---|
 | tarefaid | integer | ID automático; obrigatório |
+| sistema | varchar(40) | Vazio nas tarefas comuns. Nas 6 do sistema diz qual é: `feedback_diario`, `leitura`, `pontos_meta`, `nota_fiscal`, `modelo_agendamento`, `guardar_mercadoria`. Única por conta. Tarefa do sistema **não pode ser apagada**, e as 4 primeiras **não podem ser atribuídas** a ninguém. |
 | titulo | varchar(255) | obrigatório |
 | descricao | text |  |
 | pontos | integer | obrigatório |
@@ -591,6 +592,8 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `minha_conta()` | A conta do usuário logado. Usada como padrão de `contaid` e em toda policy de leitura |
 | `minha_conta_editavel()` | O mesmo, mas só se a conta estiver `ativa`. Usada nas policies de escrita |
 | `eh_admin_geral()` | Verdadeiro só para `wisley_anderson@hotmail.com` com e-mail confirmado |
-| `cria_configuracoes_padrao(contaid)` | Semeia as 18 configurações padrão numa conta nova (chamada na Fase 4) |
+| `cria_configuracoes_padrao(contaid)` | Semeia as 18 configurações padrão numa conta nova |
+| `cria_tarefas_do_sistema(contaid)` | Cria as 6 tarefas do sistema, grava os IDs em `configuracoes` e as liga a todas as lojas |
+| `tarefa_cai_no_dia(tipo, valor, dataagendamento, dia)` | Quando uma tarefa recorrente aparece. Única acumula; Mensal com dia inexistente cai no último dia do mês |
 
 Todas são `security definer` com `search_path` fixo.

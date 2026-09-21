@@ -2219,6 +2219,7 @@ export type Database = {
           descricao: string | null
           pontos: number
           setor: string | null
+          sistema: string | null
           tarefaid: number
           titulo: string
         }
@@ -2229,6 +2230,7 @@ export type Database = {
           descricao?: string | null
           pontos: number
           setor?: string | null
+          sistema?: string | null
           tarefaid?: number
           titulo: string
         }
@@ -2239,6 +2241,7 @@ export type Database = {
           descricao?: string | null
           pontos?: number
           setor?: string | null
+          sistema?: string | null
           tarefaid?: number
           titulo?: string
         }
@@ -2437,9 +2440,22 @@ export type Database = {
         Args: { p_contaid: number }
         Returns: undefined
       }
+      cria_tarefas_do_sistema: {
+        Args: { p_contaid: number }
+        Returns: undefined
+      }
       eh_admin_geral: { Args: never; Returns: boolean }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
+      tarefa_cai_no_dia: {
+        Args: {
+          p_dataagendamento: string
+          p_dia: string
+          p_tipofrequencia: string
+          p_valorfrequencia: number
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

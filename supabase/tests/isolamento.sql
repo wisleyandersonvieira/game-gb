@@ -481,6 +481,134 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- 15. Tarefas do sistema
+-- ===========================================================================
+
+RESET ROLE;
+SELECT public.cria_configuracoes_padrao(1);
+SELECT public.cria_tarefas_do_sistema(1);
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+DO $$
+DECLARE deu_erro boolean; vazias integer;
+BEGIN
+  RAISE NOTICE '15. tarefas do sistema';
+
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefas WHERE sistema IS NOT NULL) = 6,
+                        'as 6 tarefas do sistema foram criadas');
+
+  SELECT count(*) INTO vazias FROM public.configuracoes
+  WHERE chave IN ('TAREFA_ID_FEEDBACK_DIARIO','TAREFA_ID_LEITURA','TAREFA_ID_PONTOS_META',
+                  'TAREFA_ID_NOTA_FISCAL','TAREFA_MODELO_AGENDAMENTO_ID',
+                  'TAREFA_ID_GUARDAR_MERCADORIA_MODELO')
+    AND coalesce(valor, '') = '';
+  PERFORM public.exigir(vazias = 0, 'os 6 IDs foram gravados em configuracoes');
+
+  PERFORM public.exigir(
+    (SELECT count(*) FROM public.tarefaslojas tl
+      JOIN public.tarefas t ON t.tarefaid = tl.tarefaid
+     WHERE t.sistema IS NOT NULL AND tl.lojaid = 10) = 6,
+    'as tarefas do sistema valem nas lojas que ja existiam');
+
+  -- Nao se apaga.
+  BEGIN
+    DELETE FROM public.tarefas WHERE sistema = 'feedback_diario';
+    deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'tarefa do sistema nao pode ser apagada');
+
+  -- Mas pode ser editada.
+  UPDATE public.tarefas SET titulo = 'Feedback do dia' WHERE sistema = 'feedback_diario';
+  PERFORM public.exigir(
+    (SELECT titulo FROM public.tarefas WHERE sistema = 'feedback_diario') = 'Feedback do dia',
+    'tarefa do sistema pode ter o titulo editado');
+
+  -- As 4 de bonus nunca viram atribuicao.
+  BEGIN
+    INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid)
+    SELECT tarefaid, 100, 10 FROM public.tarefas WHERE sistema = 'feedback_diario';
+    deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'tarefa de bonus nao se atribui a ninguem');
+
+  -- As 2 de modelo continuam podendo virar atribuicao (pelos fluxos delas).
+  INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+  SELECT tarefaid, 100, 10, 'Unica' FROM public.tarefas WHERE sistema = 'guardar_mercadoria';
+  PERFORM public.exigir(true, 'tarefa de modelo pode virar atribuicao');
+END $$;
+
+-- Loja nova ja nasce com as tarefas do sistema ligadas.
+DO $$
+DECLARE nova integer;
+BEGIN
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+  INSERT INTO public.lojas (nome) VALUES ('Loja A4') RETURNING lojaid INTO nova;
+  PERFORM public.exigir(
+    (SELECT count(*) FROM public.tarefaslojas tl
+      JOIN public.tarefas t ON t.tarefaid = tl.tarefaid
+     WHERE t.sistema IS NOT NULL AND tl.lojaid = nova) = 6,
+    'loja nova ja nasce com as 6 tarefas do sistema');
+  DELETE FROM public.tarefaslojas WHERE lojaid = nova;
+  DELETE FROM public.lojas WHERE lojaid = nova;
+  UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+END $$;
+
+-- Tarefas de outro cliente nao existem para mim.
+DO $$
+DECLARE afetadas integer;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefas WHERE tarefaid = 2000) = 0,
+                        'A nao ve a tarefa de B');
+  UPDATE public.tarefas SET titulo = 'INVADIDA' WHERE tarefaid = 2000;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'A nao altera a tarefa de B');
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefaslojas WHERE tarefaid = 2000) = 0,
+                        'A nao ve em quais lojas a tarefa de B vale');
+END $$;
+
+-- ===========================================================================
+-- 16. Quando a tarefa recorrente cai
+-- ===========================================================================
+
+DO $$
+BEGIN
+  RAISE NOTICE '16. regra de quando a tarefa cai no dia';
+
+  -- Mensal: dia que nao existe no mes cai no ultimo dia.
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Mensal', 31, NULL, DATE '2026-04-30'),
+                        'Mensal dia 31 cai em 30 de abril');
+  PERFORM public.exigir(NOT public.tarefa_cai_no_dia('Mensal', 31, NULL, DATE '2026-04-29'),
+                        'Mensal dia 31 nao cai em 29 de abril');
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Mensal', 30, NULL, DATE '2026-02-28'),
+                        'Mensal dia 30 cai em 28 de fevereiro');
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Mensal', 15, NULL, DATE '2026-04-15'),
+                        'Mensal dia 15 cai no dia 15');
+  PERFORM public.exigir(NOT public.tarefa_cai_no_dia('Mensal', 15, NULL, DATE '2026-04-30'),
+                        'Mensal dia 15 nao cai no fim do mes');
+
+  -- Semanal: 1 = domingo ... 7 = sabado.
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Semanal', 1, NULL, DATE '2026-04-05'),
+                        'Semanal 1 cai no domingo');
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Semanal', 2, NULL, DATE '2026-04-06'),
+                        'Semanal 2 cai na segunda');
+  PERFORM public.exigir(NOT public.tarefa_cai_no_dia('Semanal', 2, NULL, DATE '2026-04-07'),
+                        'Semanal 2 nao cai na terca');
+
+  -- Diaria e Unica.
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Diaria', NULL, NULL, DATE '2026-04-07'),
+                        'Diaria cai todo dia');
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Unica', NULL, TIMESTAMPTZ '2026-04-01 10:00-03', DATE '2026-04-10'),
+                        'Unica atrasada continua aparecendo (acumula)');
+  PERFORM public.exigir(NOT public.tarefa_cai_no_dia('Unica', NULL, TIMESTAMPTZ '2026-04-10 10:00-03', DATE '2026-04-01'),
+                        'Unica nao aparece antes da data marcada');
+END $$;
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 

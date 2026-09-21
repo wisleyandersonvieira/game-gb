@@ -40,7 +40,7 @@ Administrador geral (Wisley)
 | 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ✅ Concluída |
 | 3 | **Painel do administrador geral** | ✅ Concluída |
 | 4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
-| 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Próxima — Equipe pronta (com lojas). Faltam Tarefas e Quadro: 18 erros de TypeScript, ainda nas tabelas de teste do Lovable |
+| 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Em andamento — Equipe e Tarefas/Atribuição prontas. Falta o **Quadro** (validação e ranking): 2 erros de TypeScript |
 | 6 | Painel operacional por loja + validação (dashboard da loja) | ⬜ |
 | 7 | Gestão de pessoas e gamificação | ⬜ |
 | 8 | Metas e financeiro | ⬜ |
@@ -131,14 +131,22 @@ As regras de limite já valiam no banco desde a Fase 2 e foram **provadas por te
 ## Fase 5 — Telas iniciais: Equipe, Tarefas, Quadro
 - [x] Equipe: listar, cadastrar, editar, ativar/desativar, dia de folga, filtro de inativos. *(Feita antes da Fase 2)*
 - [x] Equipe: campo **lojas** (seleção múltipla; o funcionário pode estar em várias) e filtro por loja.
-- [ ] Tarefas: cadastrar, editar, desativar, com **seleção das lojas onde a tarefa vale**.
-- [ ] Atribuição: só permite atribuir a funcionários que trabalham numa loja onde a tarefa vale. Registra a loja.
-- [ ] Atribuir tarefa **não** cria entrega. A entrega nasce quando o funcionário envia (por enquanto, botão "Registrar entrega" com foto; depois, pelo bot).
-- [ ] Recorrência: mostrar ao Wisley os tipos de frequência do sistema antigo (`legado/`) e como funcionavam, **antes** de implementar.
+- [x] Tarefas: cadastrar, editar, desativar, com **seleção das lojas onde a tarefa vale**.
+- [x] Atribuição: só permite atribuir a funcionários que trabalham numa loja onde a tarefa vale. Registra a loja.
+- [x] Atribuir tarefa **não** cria entrega. A entrega nasce quando o funcionário envia (por enquanto, botão "Registrar entrega" com foto; depois, pelo bot).
+- [x] Recorrência: mostrar ao Wisley os tipos de frequência do sistema antigo (`legado/`) e como funcionavam, **antes** de implementar.
 - [ ] Quadro (validação): aprovar, com crédito atômico de pontos pela função SQL `aprovar_entrega`; recusar, com motivo obrigatório; foto da entrega.
 - [ ] Ranking diário e mensal, por loja e geral da conta.
 - [ ] Remover `ID_GESTOR_PADRAO` e `RESPONSAVEL_AGENDAMENTOS_ID` como IDs soltos: viram campos escolhidos na tela (por loja).
-- [ ] Recadastrar as tarefas especiais do sistema (feedback diário, leitura, nota fiscal, pontos da meta, guardar mercadoria, modelo de agendamento) como **tarefas do sistema criadas automaticamente em cada conta nova**, com os IDs registrados em `configuracoes`.
+- [x] Recadastrar as tarefas especiais do sistema (feedback diário, leitura, nota fiscal, pontos da meta, guardar mercadoria, modelo de agendamento) como **tarefas do sistema criadas automaticamente em cada conta nova**, com os IDs registrados em `configuracoes`.
+
+**Feito em 21/09/2026 (parte 1: Tarefas e atribuição).** A tela Tarefas tem duas abas: o **Catálogo** (cadastrar, editar, desativar, escolhendo em quais lojas a tarefa vale) e as **Atribuições da loja** (dentro da loja escolhida no seletor do topo).
+
+As frequências oferecidas são as quatro individuais do sistema antigo: **Única, Diária, Semanal e Mensal**. Na Semanal dá para marcar vários dias; o banco guarda uma linha por dia, mas a tela mostra uma linha só ("Toda Seg, Qua, Sex") e o botão Encerrar encerra todos os dias juntos. Encerrar preenche a data de fim de vigência — nunca apaga.
+
+**O que o banco garante, e não só a tela:** a tarefa tem que valer naquela loja, a pessoa tem que trabalhar naquela loja (chaves compostas da Fase 2), as 4 tarefas de bônus não podem ser atribuídas a ninguém, e tarefa do sistema não pode ser apagada. A função `tarefa_cai_no_dia()` centraliza a regra de quando uma tarefa recorrente aparece, para a tela e as rotinas automáticas nunca discordarem.
+
+**Falta da Fase 5:** o Quadro (validação de entregas com `aprovar_entrega`, foto e recusa com motivo), o ranking, e trocar `ID_GESTOR_PADRAO` / `RESPONSAVEL_AGENDAMENTOS_ID` por campos escolhidos na tela.
 
 ## Fase 6 — Painel operacional por loja + validação (dashboard da loja)
 Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja** da gestão.
@@ -275,6 +283,12 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | As 18 linhas de `configuracoes` da Fase 1 não pertenciam a conta nenhuma: viraram a função `cria_configuracoes_padrao(contaid)`, chamada ao criar cada conta. |
 | 21/09/2026 | Cadastro público desligado na tela e no Supabase Auth. Só entra quem foi convidado. |
 | 21/09/2026 | O e-mail embutido do Supabase serve só para teste. SMTP próprio virou item da Fase 14, antes de vender. |
+| 21/09/2026 | Frequências: ficam as quatro individuais (Única, Diária, Semanal, Mensal). **GrupoCompetitiva não será reconstruída** — nada no sistema antigo a criava há tempo; era sobra de uma versão anterior do "quem pegar primeiro", comportamento que hoje vem das frequências de grupo mais o clique de aceitar. |
+| 21/09/2026 | As frequências **de grupo** (GrupoDiaria/GrupoSemanal/GrupoMensal) e a **delegação de folga** dependem de publicar num grupo do Telegram: ficam para as Fases 13/15. |
+| 21/09/2026 | Tarefa **Única acumula**: se não for entregue no dia marcado, continua aparecendo até ser entregue. É o comportamento real do código antigo — o comentário dele dizia o contrário e estava desatualizado. |
+| 21/09/2026 | Frequência **Mensal** com dia que não existe no mês (31 em abril, 30 em fevereiro) cai no **último dia do mês**. Regra na função `tarefa_cai_no_dia()`. |
+| 21/09/2026 | As 6 tarefas do sistema são criadas automaticamente em cada cliente novo (`cria_tarefas_do_sistema`), marcadas pela coluna `tarefas.sistema`, ligadas a toda loja nova por gatilho, e **não podem ser apagadas**. As 4 de bônus (feedback, leitura, meta, nota fiscal) **não podem ser atribuídas a ninguém**: só recebem entregas automáticas. As 2 de modelo só viram tarefa pelos fluxos de agendamento e de nota fiscal. Nenhuma das 6 aparece na lista de atribuição manual. |
+| 21/09/2026 | **Nota fiscal fica fora do cálculo de desempenho**, junto com leitura, feedback e meta. O sistema antigo excluía só os outros três — descuido dele. |
 
 ## Referência — arquivo do sistema antigo → fase
 | Arquivo em `legado/` | Fase |

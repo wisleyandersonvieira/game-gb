@@ -148,13 +148,25 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
       throw new Error(`Cliente não criado: falha ao ligar o login à conta. ${erroVinculo.message}`);
     }
 
-    // Cada cliente novo comeca com as configuracoes padrao.
+    // Cada cliente novo comeca com as configuracoes padrao e com as 6 tarefas
+    // do sistema (feedback, leitura, meta, nota fiscal e os 2 modelos), cujos
+    // IDs vao para configuracoes. A ordem importa: as tarefas preenchem
+    // chaves criadas pelo passo anterior.
     const { error: erroConfig } = await supabaseAdmin.rpc("cria_configuracoes_padrao", {
       p_contaid: conta.contaid,
     });
     if (erroConfig) {
       throw new Error(
         `O cliente foi criado e o convite enviado, mas as configurações padrão falharam: ${erroConfig.message}`,
+      );
+    }
+
+    const { error: erroTarefas } = await supabaseAdmin.rpc("cria_tarefas_do_sistema", {
+      p_contaid: conta.contaid,
+    });
+    if (erroTarefas) {
+      throw new Error(
+        `O cliente foi criado e o convite enviado, mas as tarefas do sistema falharam: ${erroTarefas.message}`,
       );
     }
 
