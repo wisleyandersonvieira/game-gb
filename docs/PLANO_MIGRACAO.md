@@ -4,6 +4,18 @@
 > Repositório: https://github.com/wisleyandersonvieira/game-gb · Supabase: `asgdynxdcdnjglgyyaek`
 > Versão 2, de 21/09/2026: o projeto deixou de ser o sistema de uma loja e virou um **produto vendável (SaaS)**.
 
+
+> **Numeração nova (21/09/2026).** O projeto tem **FASE 1 — Lançamento** e **FASE 2 — Expansão (adiada)**, e o que antes se chamava "fase" agora é **etapa**. O **registro de decisões e os commits anteriores usam a numeração antiga**:
+>
+> | Antiga | Nova | | Antiga | Nova |
+> |---|---|---|---|---|
+> | Fases 1 a 7 | Etapas 1.1 a 1.7 | | Fase 11 (RH) | Etapa 1.10 |
+> | Fase 8 (Metas e financeiro) | Etapa 1.8 (só faturamento) + Etapa 2.3 (lucro) | | Fase 12 (Estoque) | **Etapa 2.2** |
+> | Fase 9 (Agenda) | Etapa 1.9 | | Fase 13 (Rotinas) | Etapa 1.11 |
+> | Fase 10 (Escala, mapa e pausas) | **Etapa 2.1** | | Fase 14 (Publicação + Stripe) | Etapa 1.12 |
+> | | | | Fase 15 (Telegram e WhatsApp) | Etapa 1.13 |
+> | | | | Fase 16 (Segurança final) | Etapa 1.14 |
+
 ---
 
 ## Objetivo
@@ -27,37 +39,43 @@ Administrador geral (Wisley)
 ```
 
 ## Regras de ordem
-1. **Fundação multi-empresa primeiro (Fase 2).** Toda tela construída depois já nasce separando os dados por conta e por loja. Refazer depois custaria muito mais.
-2. **O isolamento entre contas é construído agora, não no fim.** Num produto vendido, a separação dos dados de cada cliente faz parte da função principal. A Fase 16 (Segurança) continua no fim, mas só com o *endurecimento*: tokens antigos, revisão geral, papéis extras.
-3. **Stripe e Telegram ficam para o fim** (Fases 14 e 15), nesta ordem, porque a cobrança do Telegram depende do Stripe.
+1. **Fundação multi-empresa primeiro (Etapa 1.2).** Toda tela construída depois já nasce separando os dados por conta e por loja. Refazer depois custaria muito mais.
+2. **O isolamento entre contas é construído agora, não no fim.** Num produto vendido, a separação dos dados de cada cliente faz parte da função principal. A Etapa 1.14 (Segurança) continua no fim, mas só com o *endurecimento*: tokens antigos, revisão geral, papéis extras.
+3. **Stripe e Telegram ficam para o fim da Fase 1** (Etapas 1.12 e 1.13), nesta ordem, porque a cobrança do Telegram depende do Stripe.
 4. Banco limpo: nenhum dado do sistema antigo é importado.
+5. **A Fase 2 (Expansão) é adiada.** Nada dela é construído sem pedido explícito do Wisley. As tabelas existem no banco, mas ficam sem tela.
 
 ## Status geral
 
-| Fase | Tema | Status |
+| Etapa | Tema | Status |
 |---|---|---|
-| 1 | Banco de dados (estrutura do sistema antigo) | ✅ Concluída |
-| 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ✅ Concluída |
-| 3 | **Painel do administrador geral** | ✅ Concluída |
-| 4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
-| 5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
-| 6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
-| 7 | Gestão de pessoas e gamificação | 🟨 Em andamento — parte 1 (prêmios, resgates, comanda e extrato) pronta |
-| 8 | Metas e financeiro | ⬜ |
-| 9 | Agenda (agendamentos) | ⬜ |
-| 10 | Escala, mapa e pausas | ⬜ |
-| 11 | RH (onboarding, comunicados, documentos) | ⬜ |
-| 12 | Estoque (+ telas de celular) | ⬜ |
-| 13 | Rotinas automáticas sem Telegram | ⬜ |
-| 14 | **Comercialização:** publicação online + Stripe | ⬜ |
-| 15 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
-| 16 | Segurança final (endurecimento) | ⬜ |
+| **FASE 1** | **Lançamento** | |
+| 1.1 | Banco de dados (estrutura do sistema antigo) | ✅ Concluída |
+| 1.2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ✅ Concluída |
+| 1.3 | **Painel do administrador geral** | ✅ Concluída |
+| 1.4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
+| 1.5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
+| 1.6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
+| 1.7 | Gestão de pessoas e gamificação | 🟨 Em andamento — parte 1 (prêmios, resgates, comanda e extrato) pronta |
+| 1.8 | Metas de faturamento | ⬜ |
+| 1.9 | Agenda (agendamentos) | ⬜ |
+| 1.10 | RH (onboarding, comunicados, documentos) | ⬜ |
+| 1.11 | Rotinas automáticas sem Telegram | ⬜ |
+| 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
+| 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
+| 1.14 | Segurança final (endurecimento) | ⬜ |
+| **FASE 2** | **Expansão — adiada** | Nada daqui é construído sem pedido explícito do Wisley |
+| 2.1 | Escala, mapa e pausas | ⏸️ Adiada |
+| 2.2 | Estoque (+ telas de celular) | ⏸️ Adiada |
+| 2.3 | Financeiro (meta de lucro, histórico de lucro, relatórios) | ⏸️ Adiada |
 
-Legenda: ⬜ não iniciada · 🟨 em andamento · ✅ concluída · ⏸️ pausada
+Legenda: ⬜ não iniciada · 🟨 em andamento · ✅ concluída · ⏸️ adiada
 
 ---
 
-## Fase 1 — Banco de dados (estrutura do sistema antigo) ✅
+## FASE 1 — Lançamento
+
+### Etapa 1.1 — Banco de dados (estrutura do sistema antigo) ✅
 - [x] Estrutura extraída do backup `banco_teste.bak` e convertida para Postgres: 42 tabelas, 40 FKs, índices.
 - [x] Nomes originais em minúsculas (`FuncionarioID` → `funcionarioid`); chaves inteiras automáticas.
 - [x] Banco limpo, sem dados antigos.
@@ -65,9 +83,9 @@ Legenda: ⬜ não iniciada · 🟨 em andamento · ✅ concluída · ⏸️ paus
 - [x] Aplicado no Supabase; `types.ts` gerado.
 - [x] Tabela `configuracoes` (18 chaves) e buckets `entregas`, `notas-fiscais`, `documentos-rh`, `layout-loja`.
 - [x] Chaves primárias naturais nas 5 tabelas sem PK; `funcionarios.ativo`; `configuracoes.atualizadoem`.
-- ⚠️ Vários itens desta fase **mudam na Fase 2**: chaves e unicidades passam a ser por conta/loja, e `configuracoes` passa a ser por conta.
+- ⚠️ Vários itens desta fase **mudam na Etapa 1.2**: chaves e unicidades passam a ser por conta/loja, e `configuracoes` passa a ser por conta.
 
-## Fase 2 — Fundação multi-empresa
+### Etapa 1.2 — Fundação multi-empresa
 O banco ainda está vazio, então as mudanças são baratas agora. Tudo aqui é migração nova em `supabase/migrations/`, testada num Postgres descartável antes de ir para o Supabase.
 
 **2.1 Tabelas novas**
@@ -99,13 +117,13 @@ O banco ainda está vazio, então as mudanças são baratas agora. Tudo aqui é 
 - [x] `client.ts` lendo URL e chave do `.env`. A chave `service_role` fica **só** em variável de servidor, nunca `VITE_`.
 - [x] Atualizar `CLAUDE.md` e `docs/DICIONARIO_BANCO.md` com o modelo novo.
 
-**Feito em 21/09/2026 (2.1 a 2.3):** 47 tabelas, nenhuma sem RLS, 201 policies, nenhuma liberada, banco vazio. O teste de isolamento (`supabase/tests/rodar.sh`) roda 30 checagens com duas contas e passa. Ele já pegou um bug antes de ir para o Supabase: as policies de Storage da Fase 1 não eram removidas e, como policies se somam, vazavam arquivos entre contas.
+**Feito em 21/09/2026 (2.1 a 2.3):** 47 tabelas, nenhuma sem RLS, 201 policies, nenhuma liberada, banco vazio. O teste de isolamento (`supabase/tests/rodar.sh`) roda 30 checagens com duas contas e passa. Ele já pegou um bug antes de ir para o Supabase: as policies de Storage da Etapa 1.1 não eram removidas e, como policies se somam, vazavam arquivos entre contas.
 
 **Feito em 21/09/2026 (2.4):** cadastro público desligado na tela e no Supabase Auth (`disable_signup`). URL do site e lista de redirecionamentos apontando para `http://localhost:8080`. A porta de entrada (`/`) encaminha conforme o banco responde: admin geral → `/admin`, master → `/gestao`, login sem conta → `/sem-acesso`. Rota `/definir-senha` criada para o link do convite.
 
 **Pronto quando:** o teste de isolamento passa e cada tipo de usuário cai na sua área.
 
-## Fase 3 — Painel do administrador geral (só o Wisley)
+### Etapa 1.3 — Painel do administrador geral (só o Wisley)
 - [x] Rota `/admin`, visível e acessível somente se `eh_admin_geral()`. A proteção vale na tela e no banco.
 - [x] Cadastro de usuários master (contas): nome, e-mail, telefone, cidade, **quantidade de lojas liberadas**, status, observações.
 - [x] Criar o master envia um **convite por e-mail** para ele definir a senha (função de servidor com `service_role`).
@@ -117,19 +135,19 @@ O banco ainda está vazio, então as mudanças são baratas agora. Tudo aqui é 
 
 ⚠️ Para o convite funcionar, `SUPABASE_SERVICE_ROLE_KEY` precisa estar preenchida no `.env` (modelo em `.env.example`). Sem ela a tela abre e lista, mas o cadastro dá erro.
 
-## Fase 4 — Gestão do usuário master
+### Etapa 1.4 — Gestão do usuário master
 - [x] Rota `/gestao`: dados da conta e contador "X de Y lojas usadas".
 - [x] Cadastro de lojas (criar, editar, desativar). O botão "Nova loja" fica bloqueado quando atinge o limite, com a mensagem "fale com o suporte para ampliar".
 - [x] **Seletor de loja** no topo do app (loja ativa lembrada no navegador). Telas de nível loja mostram só a loja selecionada; telas de nível conta mostram tudo, com filtro por loja.
 - [x] Criar uma conta nova preenche automaticamente as `configuracoes` padrão (taxa 0,03, bônus, horários).
-- [x] Espaço reservado para o **dashboard por loja** (preenchido na Fase 6).
+- [x] Espaço reservado para o **dashboard por loja** (preenchido na Etapa 1.6).
 
 **Feito em 21/09/2026.** O seletor de loja fica no menu do topo (`src/lojas/loja-ativa.tsx`), lembra a escolha no navegador e, se a loja lembrada for desativada, cai para a primeira em vez de deixar a tela sem loja. Com uma loja só, ela aparece como texto, sem seletor. Sem loja nenhuma, as telas do app mostram "Cadastre sua primeira loja" com link para a gestão.
 
-As regras de limite já valiam no banco desde a Fase 2 e foram **provadas por teste**, não só pela tela: loja desativada não ocupa vaga, desativar é sempre permitido (mesmo no limite), reativar acima do limite é recusado, e desativar não apaga nada — as atribuições e entregas daquela loja continuam inteiras. A tela apenas reflete isso: o botão "Nova loja" some no limite e o "Reativar" fica bloqueado quando não há vaga.
+As regras de limite já valiam no banco desde a Etapa 1.2 e foram **provadas por teste**, não só pela tela: loja desativada não ocupa vaga, desativar é sempre permitido (mesmo no limite), reativar acima do limite é recusado, e desativar não apaga nada — as atribuições e entregas daquela loja continuam inteiras. A tela apenas reflete isso: o botão "Nova loja" some no limite e o "Reativar" fica bloqueado quando não há vaga.
 
-## Fase 5 — Telas iniciais: Equipe, Tarefas, Quadro
-- [x] Equipe: listar, cadastrar, editar, ativar/desativar, dia de folga, filtro de inativos. *(Feita antes da Fase 2)*
+### Etapa 1.5 — Telas iniciais: Equipe, Tarefas, Quadro
+- [x] Equipe: listar, cadastrar, editar, ativar/desativar, dia de folga, filtro de inativos. *(Feita antes da Etapa 1.2)*
 - [x] Equipe: campo **lojas** (seleção múltipla; o funcionário pode estar em várias) e filtro por loja.
 - [x] Tarefas: cadastrar, editar, desativar, com **seleção das lojas onde a tarefa vale**.
 - [x] Atribuição: só permite atribuir a funcionários que trabalham numa loja onde a tarefa vale. Registra a loja.
@@ -144,7 +162,7 @@ As regras de limite já valiam no banco desde a Fase 2 e foram **provadas por te
 
 As frequências oferecidas são as quatro individuais do sistema antigo: **Única, Diária, Semanal e Mensal**. Na Semanal dá para marcar vários dias; o banco guarda uma linha por dia, mas a tela mostra uma linha só ("Toda Seg, Qua, Sex") e o botão Encerrar encerra todos os dias juntos. Encerrar preenche a data de fim de vigência — nunca apaga.
 
-**O que o banco garante, e não só a tela:** a tarefa tem que valer naquela loja, a pessoa tem que trabalhar naquela loja (chaves compostas da Fase 2), as 4 tarefas de bônus não podem ser atribuídas a ninguém, e tarefa do sistema não pode ser apagada. A função `tarefa_cai_no_dia()` centraliza a regra de quando uma tarefa recorrente aparece, para a tela e as rotinas automáticas nunca discordarem.
+**O que o banco garante, e não só a tela:** a tarefa tem que valer naquela loja, a pessoa tem que trabalhar naquela loja (chaves compostas da Etapa 1.2), as 4 tarefas de bônus não podem ser atribuídas a ninguém, e tarefa do sistema não pode ser apagada. A função `tarefa_cai_no_dia()` centraliza a regra de quando uma tarefa recorrente aparece, para a tela e as rotinas automáticas nunca discordarem.
 
 **Feito em 21/09/2026 (parte 2: entregas, validação e ranking).**
 
@@ -157,22 +175,22 @@ As frequências oferecidas são as quatro individuais do sistema antigo: **Únic
 - **Gestor e responsável pelos agendamentos** viraram campos de cada loja (`lojas.gestorid`, `lojas.responsavelagendamentosid`), escolhidos na Gestão entre quem trabalha ali. O banco garante isso pela chave composta pessoa + loja. As duas chaves soltas saíram de `configuracoes`.
 - Na aba Atribuições, filtro "mostrar também as encerradas".
 
-⚠️ **Correção de segurança feita nesta fase.** As funções `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` (Fase 5, parte 1) rodavam com poder total, não conferiam quem chamou e ficaram executáveis por qualquer um — o Supabase dá permissão automática a `anon` e `authenticated` em toda função nova, e o `REVOKE ... FROM public` não tirava isso. Um cliente, ou até um visitante sem login, conseguiria chamá-las com o número de outra conta. Corrigido: só o servidor executa. O ambiente de teste passou a imitar essas permissões automáticas do Supabase, e o teste de isolamento ganhou uma checagem que reprova qualquer função com poder total executável por quem não confere o chamador.
+⚠️ **Correção de segurança feita nesta fase.** As funções `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` (Etapa 1.5, parte 1) rodavam com poder total, não conferiam quem chamou e ficaram executáveis por qualquer um — o Supabase dá permissão automática a `anon` e `authenticated` em toda função nova, e o `REVOKE ... FROM public` não tirava isso. Um cliente, ou até um visitante sem login, conseguiria chamá-las com o número de outra conta. Corrigido: só o servidor executa. O ambiente de teste passou a imitar essas permissões automáticas do Supabase, e o teste de isolamento ganhou uma checagem que reprova qualquer função com poder total executável por quem não confere o chamador.
 
-## Fase 6 — Painel operacional por loja + validação (dashboard da loja)
+### Etapa 1.6 — Painel operacional por loja + validação (dashboard da loja)
 Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja** da gestão.
 - [x] Barra de progresso do dia e hora da última atualização (Realtime).
 - [x] Pódio diário.
 - [x] Kanban: Para Fazer (hoje) · Em Validação · Atividade Recente.
-- [x] Resgates recentes — espaço reservado; preenchido na Fase 7.
-- [x] Próximos agendamentos — espaço reservado; preenchido na Fase 9.
-- [x] Fogos ao completar 100% das tarefas do dia. A meta de faturamento entra junto na Fase 8.
+- [x] Resgates recentes — espaço reservado; preenchido na Etapa 1.7.
+- [x] Próximos agendamentos — espaço reservado; preenchido na Etapa 1.9.
+- [x] Fogos ao completar 100% das tarefas do dia. A meta de faturamento entra junto na Etapa 1.8.
 - [x] Na `/gestao`: resumo de todas as lojas lado a lado.
 - [x] **Modo TV** com link por loja.
 
 **Feito em 21/09/2026.**
 
-- **Painel** (item novo no menu, `/operacional`): barra do dia em duas cores (verde = aprovado; faixa clara = entregue esperando validação), pódio do dia, e as colunas Para fazer hoje, Em validação e Atividade recente. Espaços reservados para Meta do dia (Fase 8), Resgates recentes (Fase 7) e Próximos agendamentos (Fase 9).
+- **Painel** (item novo no menu, `/operacional`): barra do dia em duas cores (verde = aprovado; faixa clara = entregue esperando validação), pódio do dia, e as colunas Para fazer hoje, Em validação e Atividade recente. Espaços reservados para Meta do dia (Etapa 1.8), Resgates recentes (Etapa 1.7) e Próximos agendamentos (Etapa 1.9).
 - **Tempo real**: o painel logado se atualiza na hora em que alguém registra, aprova ou recusa (Realtime do Supabase em `entregas` e `tarefasatribuidas`, sempre respeitando a RLS), com uma conferência a cada 60 segundos.
 - **Barra do dia corrigida** em relação ao sistema antigo: só as tarefas de hoje (a antiga somava pendências de semanas atrás), sem bônus (a antiga contava feedback e nota fiscal como tarefa), e recusada/estornada volta para "a fazer". Só conta quem está ativo e continua naquela loja.
 - **Uma só fonte de dados**: a função interna `montar_painel` alimenta o painel logado, a TV e o resumo da Gestão. Ela nunca devolve id, foto, observação, telefone ou CPF.
@@ -180,18 +198,20 @@ Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja*
 - **Modo TV** (`/tv/<código>`): criado na Gestão, mostrado uma única vez (o banco guarda só a impressão digital sha256). Sem login, só lê, letras grandes, tela cheia ao tocar, tenta manter a tela acesa, atualiza a cada 30 segundos, nomes como "Ana S.". Mostra "Painel indisponível" se o link for revogado, a loja desativada ou a conta suspensa/cancelada — sempre a mesma resposta, sem dizer o motivo. Registra o último uso, e a Gestão mostra "no ar agora" / "usado há X min".
 
 ⚠️ **Duas correções de segurança nesta fase, pegas pelo teste antes de ir para produção:**
-1. `montar_painel` recebe o `contaid` como parâmetro e tinha ficado executável por qualquer cliente logado — um cliente conseguiria ler o painel de outro passando o número dele. Mesma causa do furo da Fase 5: o Supabase dá permissão automática em toda função nova.
+1. `montar_painel` recebe o `contaid` como parâmetro e tinha ficado executável por qualquer cliente logado — um cliente conseguiria ler o painel de outro passando o número dele. Mesma causa do furo da Etapa 1.5: o Supabase dá permissão automática em toda função nova.
 2. Para não depender mais de lembrar: **funções agora nascem negadas para todo mundo**, e cada migração libera explicitamente o que precisa. Regra registrada no `CLAUDE.md`. Detalhe técnico que custou uma rodada: a permissão padrão de `PUBLIC` em funções só pode ser retirada de forma global — com `IN SCHEMA` o Postgres aceita o comando e não faz nada.
 
 O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acesso a nenhuma tabela**. Antes a RLS já impedia a leitura, mas o acesso existia. Conferido de fora, pela internet, em produção.
 
-## Fase 7 — Gestão de pessoas e gamificação (abas do `main.py`)
-- [ ] Grupos (por loja).
-- [ ] Pendências e justificativas ("Não aplicável").
+- [ ] **Rodízio de telas no Modo TV**: painel da loja, meta do dia (Etapa 1.8) e agenda (Etapa 1.9), quando existirem. O mapa entra só na Etapa 2.1.
+
+### Etapa 1.7 — Gestão de pessoas e gamificação (abas do `main.py`)
+> Dividida em partes: **parte 1** prêmios, resgates, comanda e extrato · **parte 2** conquistas, nota do ranking mensal, relatórios e configurações · **parte 3** feedbacks, canal confidencial, solicitações e justificativas. Os **grupos** foram para a Etapa 1.13, junto com o Telegram.
+- [ ] Pendências e justificativas ("Não aplicável"). *(parte 3)*
 - [x] Loja de recompensas e resgates. *(parte 1, 21/09/2026)*
 - [x] Abate na comanda (pontos usados como dinheiro). *(parte 1)*
 - [ ] Conquistas. O gancho já existe: `apos_aprovar_entrega()` é chamada em toda aprovação e hoje não faz nada. Critérios do sistema antigo: total de tarefas aprovadas, tarefas aprovadas no período, sequência de dias com tarefa, sequência de feedback diário, total de comunicados lidos.
-- [ ] Feedbacks, canal confidencial e solicitações internas (visão do gestor).
+- [ ] Feedbacks, canal confidencial e solicitações internas (visão do gestor). *(parte 3)*
 - [ ] Relatórios e histórico por funcionário.
 - [ ] **Nota híbrida do ranking mensal**, como no sistema antigo: 50% confiabilidade (pontos ganhos em tarefas normais ÷ pontos possíveis no mês, travado em 100%, sem os bônus) + 50% esforço (pontos totais ÷ os de quem mais fez, em cima de 100). Exige calcular os "pontos possíveis" varrendo o mês dia a dia. Até lá, o ranking mensal é a soma simples.
 - [x] Extrato de pontos (substitui `pontos_analyzer.py`). *(parte 1)*
@@ -207,48 +227,33 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 
 **Problemas do sistema antigo corrigidos:** o estoque nunca era conferido nem descontado; recusar um resgate duas vezes devolvia os pontos em dobro; a comanda não conferia o saldo no banco (podia deixá-lo negativo) e arredondava a favor do funcionário; o extrato não batia com o saldo (resgates pendentes e ajustes manuais ficavam de fora).
 
-## Fase 8 — Metas e financeiro (por loja)
+### Etapa 1.8 — Metas de faturamento (por loja)
+Só o faturamento. Meta de lucro, histórico de lucro e relatórios financeiros foram para a Etapa 2.3.
 - [ ] Meta de faturamento mensal.
-- [ ] Modelos de meta diária por dia da semana.
-- [ ] Apuração diária (lançar vendas).
+- [ ] Metas diárias (modelos de meta diária por dia da semana).
+- [ ] Lançamento do valor vendido no dia (apuração diária; substitui o `/lancar` do bot).
 - [ ] Mostrar/ocultar valores do dia.
-- [ ] Meta de lucro com histórico.
-- [ ] Pontos automáticos para a equipe da loja ao bater a meta diária.
+- [ ] Pontos automáticos para a equipe da loja ao bater a meta diária (pelo livro de movimentos).
+- [ ] Meta do dia no painel da loja e na TV (o espaço já está reservado na Etapa 1.6), com os fogos ao bater a meta, como no sistema antigo.
 
-## Fase 9 — Agenda (por loja)
+### Etapa 1.9 — Agenda (por loja)
 - [ ] Calendário (mês/semana).
 - [ ] Cadastro de agendamento: funcionário, cliente, telefone, CPF, data, hora, tipo, pagamento, observações.
 - [ ] Marcar pagamento; documentos anexos.
 
-## Fase 10 — Escala, mapa e pausas (por loja)
-- [ ] Mapa da loja: cada loja envia a própria planta; marcadores de posição.
-- [ ] Posições e setores.
-- [ ] Escala diária: montar, copiar, freelancers.
-- [ ] Picos e gráfico de fluxo por setor.
-- [ ] Escala de hoje e pausas com relógio.
-
-## Fase 11 — RH
+### Etapa 1.10 — RH
 - [ ] Onboarding / admissional.
 - [ ] Comunicados com destinatários e confirmação de leitura.
 - [ ] Documentos pessoais com ciência/assinatura.
 - [ ] PDFs de recibo e comunicado.
 
-## Fase 12 — Estoque
-- [ ] Catálogo e categorias (da conta); estoque e contagens (por loja).
-- [ ] Fornecedores e vínculo DE/PARA.
-- [ ] **Avaliar mover o EAN para o catálogo.** Hoje o código de barras fica em `produtosfornecedor`, porque era assim no sistema antigo e `produtosestoque` não tem coluna de EAN. Conceitualmente o EAN é do produto, não do fornecedor. Avaliar a mudança aqui, junto com as telas de estoque.
-- [ ] Importação de XML de NF-e.
-- [ ] Contagem física (computador e **celular**, com leitura de código de barras).
-- [ ] Auditoria de EAN pelo celular.
-- [ ] Desmembrar caixa; sugestão de compra; solicitações dos líderes; consulta de NFs.
-
-## Fase 13 — Rotinas automáticas sem Telegram
+### Etapa 1.11 — Rotinas automáticas sem Telegram
 Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**, cada uma com seus horários em `configuracoes`:
 - [ ] Geração diária das tarefas recorrentes.
 - [ ] Fechamento mensal e histórico do ranking.
 - [ ] Delegação de tarefas de folga.
 
-## Fase 14 — Comercialização: publicação online + Stripe
+### Etapa 1.12 — Comercialização: publicação online + Stripe
 - [ ] **Configurar SMTP próprio (ex.: Resend) antes de vender.** O e-mail embutido do Supabase só serve para teste: tem limite baixo de envios e não usa o nosso domínio. Sem isso, convite e recuperação de senha não são confiáveis para clientes de verdade.
 - [ ] Publicar o app (hospedagem + domínio próprio), com ambientes de teste e produção separados.
 - [ ] Nome e identidade do produto (hoje "Game GB", ligado à Gela Boca).
@@ -258,7 +263,9 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - [ ] Inadimplência → conta `suspensa` (só leitura) → `cancelada` depois de X dias.
 - [ ] O painel do admin mostra a situação da assinatura de cada cliente.
 
-## Fase 15 — Telegram e WhatsApp da plataforma + cobrança por uso
+### Etapa 1.13 — Telegram e WhatsApp da plataforma + cobrança por uso
+- [ ] **Grupos por loja** (criar, membros, ligar ao grupo do Telegram). Vieram da Etapa 1.7.
+
 **Estratégia (a detalhar quando chegar a hora):**
 - **Um único bot da plataforma** (token do Wisley), atendendo todas as contas, em vez de um bot por cliente. O cliente não precisa criar nada no Telegram.
 - **Vínculo por código:** cada funcionário recebe um link `t.me/<bot>?start=<código>`. Ao abrir, o `chat_id` fica ligado àquele funcionário, e com isso à conta e às lojas dele.
@@ -267,10 +274,10 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - **Fila de envio central** (tabela + processamento), respeitando os limites do Telegram (≈30 msg/s no total, ≈20/min por grupo), para uma conta não atrasar as outras.
 - **Medição de uso:** todo envio (Telegram/WhatsApp) é registrado em `usomensagens` (conta, loja, canal, tipo, data). O total do mês vai para o Stripe como **cobrança por uso** ou como franquia incluída no plano, com excedente.
 - **WhatsApp (Z-API):** decidir entre um número da plataforma para todos ou um número por cliente (custo por instância repassado).
-- Funções a portar: comandos (/start, /tarefas, /ranking, /meuhistorico, /meusaldo, /loja, /documentos, /conquistas, /ajuda, /pendencias, /status_meta, /lancar), recebimento de foto com validação EXIF, canal confidencial, solicitações, abate de comanda, notificações de jornada, lembretes, recusa com motivo, meta batida, confirmação e pós-venda por WhatsApp.
+- Funções a portar: comandos (/start, /tarefas, /ranking, /meuhistorico, /meusaldo, /loja, /documentos, /conquistas, /ajuda, /pendencias, /status_meta, /lancar), recebimento da foto da entrega com validação EXIF (a foto de nota fiscal fica na Etapa 2.2), canal confidencial, solicitações, abate de comanda, notificações de jornada, lembretes, recusa com motivo, meta batida, confirmação e pós-venda por WhatsApp.
 - Desligar os serviços antigos (`systemctl`) e o SQL Server.
 
-## Fase 16 — Segurança final (endurecimento)
+### Etapa 1.14 — Segurança final (endurecimento)
 - [ ] **Já, sem esperar esta fase:** deixar o repositório GitHub privado (se ainda não foi) e revogar o token `sbp_` colado no chat.
 - [ ] Revogar o token antigo do bot (@BotFather), os tokens da Z-API e as senhas antigas do `legado/config.py`; remover o `legado/config.py` do histórico.
 - [ ] Papéis extras dentro da conta (gerente de loja com acesso só às suas lojas).
@@ -280,18 +287,46 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 
 ---
 
+## FASE 2 — Expansão (adiada)
+> Não construir nada desta fase sem pedido explícito do Wisley. As tabelas já existem no banco (estrutura da Etapa 1.1), mas ficam sem tela.
+
+### Etapa 2.1 — Escala, mapa e pausas (por loja)
+- [ ] Mapa da loja: cada loja envia a própria planta; marcadores de posição.
+- [ ] Posições e setores.
+- [ ] Escala diária: montar, copiar, freelancers.
+- [ ] Picos e gráfico de fluxo por setor.
+- [ ] Escala de hoje e pausas com relógio.
+
+### Etapa 2.2 — Estoque
+- [ ] Catálogo e categorias (da conta); estoque e contagens (por loja).
+- [ ] Fornecedores e vínculo DE/PARA.
+- [ ] **Avaliar mover o EAN para o catálogo.** Hoje o código de barras fica em `produtosfornecedor`, porque era assim no sistema antigo e `produtosestoque` não tem coluna de EAN. Conceitualmente o EAN é do produto, não do fornecedor. Avaliar a mudança aqui, junto com as telas de estoque.
+- [ ] Importação de XML de NF-e.
+- [ ] Contagem física (computador e **celular**, com leitura de código de barras).
+- [ ] Auditoria de EAN pelo celular.
+- [ ] Desmembrar caixa; sugestão de compra; solicitações dos líderes; consulta de NFs.
+- [ ] **Envio de nota fiscal pelo bot**: foto com validação EXIF e bônus `PONTOS_BONUS_NOTA_FISCAL` pelo livro de pontos. Veio da Etapa 1.13.
+- [ ] **Tarefa "guardar mercadoria"** gerada para cada nota fiscal aprovada (tarefa do sistema `guardar_mercadoria`).
+
+### Etapa 2.3 — Financeiro (por loja)
+- [ ] Meta de lucro (veio da antiga Etapa 1.8).
+- [ ] Histórico de lucro mensal (`lucromensalhistorico`), com gráfico em barras.
+- [ ] Relatórios financeiros.
+
+---
+
 ## Decisões em aberto (perguntar ao Wisley quando a fase chegar)
 | # | Pergunta | Sugestão padrão |
 |---|---|---|
 | 1 | Saldo de pontos e loja de recompensas: um saldo por funcionário na conta toda, ou separado por loja? | Um saldo por funcionário na conta toda |
-| 2 | O master vai ter outros usuários (gerente de loja, líder) entrando no painel? | Sim, na Fase 16; por enquanto só o master |
+| 2 | O master vai ter outros usuários (gerente de loja, líder) entrando no painel? | Sim, na Etapa 1.14; por enquanto só o master |
 | 3 | Uma mesma pessoa (e-mail) pode ser master de duas contas? | Não: um login, uma conta |
 | 4 | O admin geral precisa ver os dados dos clientes para suporte? | Não; se precisar, "ver como cliente" com registro |
 | 5 | Preço: por loja, por plano fechado, ou por loja + uso de mensagens? | Por loja + franquia de mensagens |
 
-## Como trabalhar cada fase
+## Como trabalhar cada etapa
 Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanentes em `CLAUDE.md`. Este plano fica em `docs/PLANO_MIGRACAO.md`, com cópia no projeto Claude "Game GB".
-1. Começar a sessão com: "Leia o CLAUDE.md e o docs/PLANO_MIGRACAO.md e continue a próxima fase pendente."
+1. Começar a sessão com: "Leia o CLAUDE.md e o docs/PLANO_MIGRACAO.md e continue a próxima etapa pendente da Fase 1."
 2. O Claude Code implementa um item por vez, usando `legado/` como referência de regra de negócio.
 3. Toda migração: testar num Postgres descartável → rodar o **teste de isolamento** → aplicar no Supabase → regenerar `types.ts`.
 4. O Wisley testa em `bun run dev` (http://localhost:8080) e aprova.
@@ -348,18 +383,23 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | Estoque em branco = ilimitado; 0 = esgotado. |
 | 21/09/2026 | Abate na comanda: prêmio do sistema escondido, pontos = valor ÷ taxa **arredondado para cima**; o resgate guarda R$, pontos e a taxa usada, então mudar a taxa só vale para comandas novas. |
 | 21/09/2026 | A trava "precisa ter mandado o feedback de ontem" antes da comanda fica para a Fase 15, junto com o bot. |
+| 21/09/2026 | **Plano dividido em FASE 1 (Lançamento) e FASE 2 (Expansão, adiada).** As antigas fases viraram etapas (1.1 a 1.14 e 2.1 a 2.3). Escala/mapa/pausas, estoque e financeiro (lucro) foram para a Fase 2 e não se constroem sem pedido explícito. Este registro mantém a numeração antiga; a tabela no topo traduz. |
+| 21/09/2026 | Etapa 1.8 fica só com o faturamento; meta de lucro e histórico foram para a 2.3. |
+| 21/09/2026 | A foto de nota fiscal pelo bot e a tarefa "guardar mercadoria" foram da Etapa 1.13 para a 2.2 (Estoque). |
+| 21/09/2026 | Rodízio de telas no Modo TV: painel, meta (1.8) e agenda (1.9). O mapa entra só na 2.1. (Substitui a decisão anterior que incluía o mapa.) |
+| 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
 
-## Referência — arquivo do sistema antigo → fase
-| Arquivo em `legado/` | Fase |
+## Referência — arquivo do sistema antigo → etapa
+| Arquivo em `legado/` | Etapa |
 |---|---|
-| `api_server.py`, `templates/painel.html`, `static/js/painel.js` | 6, 8, 9, 10 |
-| `main.py` (14 abas) | 5, 7, 8 |
-| `pontos_analyzer.py` | 7 |
-| `agendamentos_main.py` | 9 |
-| `escala_loja_main.py` | 10 |
-| `gestao_pessoas_main.py`, `recibo_generator.py`, `comunicado_generator.py` | 11 |
-| `gestao_estoque_main.py`, `templates/mobile_*.html` | 12 |
-| `agendador.py`, `agendador_lembretes.py` | 13, 15 |
-| `telegram_bot.py`, `notificador_telegram.py`, `notificador_whatsapp.py` | 15 |
-| `database.py` | referência de regras em todas as fases |
-| `config.py` (tem segredos) | 16 |
+| `api_server.py`, `templates/painel.html`, `static/js/painel.js` | 1.6, 1.8, 1.9, 2.1 |
+| `main.py` (14 abas) | 1.5, 1.7, 1.8 |
+| `pontos_analyzer.py` | 1.7 |
+| `agendamentos_main.py` | 1.9 |
+| `escala_loja_main.py` | 2.1 |
+| `gestao_pessoas_main.py`, `recibo_generator.py`, `comunicado_generator.py` | 1.10 |
+| `gestao_estoque_main.py`, `templates/mobile_*.html` | 2.2 |
+| `agendador.py`, `agendador_lembretes.py` | 1.11, 1.13 |
+| `telegram_bot.py`, `notificador_telegram.py`, `notificador_whatsapp.py` | 1.13 (nota fiscal: 2.2) |
+| `database.py` | referência de regras em todas as etapas |
+| `config.py` (tem segredos) | 1.14 |
