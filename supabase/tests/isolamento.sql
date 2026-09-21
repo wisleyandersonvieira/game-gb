@@ -52,7 +52,7 @@ INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VA
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 10);
 INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (1000, 10);
 INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (5000, 1000, 100, 10);
-INSERT INTO public.entregas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 10);
+DO $$ BEGIN PERFORM public.registrar_entrega(5000); END $$;
 INSERT INTO public.grupos (grupoid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (200, 'Cozinha', 10);
 INSERT INTO public.configuracoes (chave, valor) VALUES ('TAXA_CONVERSAO_PONTO_REAL', '0.03');
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '1/10/foto-a.jpg');
@@ -64,7 +64,7 @@ INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VA
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (200, 20);
 INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (2000, 20);
 INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (6000, 2000, 200, 20);
-INSERT INTO public.entregas (tarefaid, funcionarioid, lojaid) VALUES (2000, 200, 20);
+DO $$ BEGIN PERFORM public.registrar_entrega(6000); END $$;
 INSERT INTO public.grupos (grupoid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (300, 'Cozinha', 20);
 INSERT INTO public.configuracoes (chave, valor) VALUES ('TAXA_CONVERSAO_PONTO_REAL', '0.05');
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '2/20/foto-b.jpg');
@@ -133,8 +133,12 @@ BEGIN
   GET DIAGNOSTICS afetadas = ROW_COUNT;
   PERFORM public.exigir(afetadas = 0, 'A nao apaga funcionario de B');
 
-  DELETE FROM public.entregas WHERE lojaid = 20;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  BEGIN
+    DELETE FROM public.entregas WHERE lojaid = 20;
+    GET DIAGNOSTICS afetadas = ROW_COUNT;
+  EXCEPTION WHEN insufficient_privilege THEN
+    afetadas := 0;
+  END;
   PERFORM public.exigir(afetadas = 0, 'A nao apaga entrega de B');
 
   DELETE FROM public.configuracoes WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL' AND valor = '0.05';
@@ -609,6 +613,224 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- 17. Entregas: registrar, aprovar, recusar e estornar
+-- ===========================================================================
+
+RESET ROLE;
+DO $$
+BEGIN
+  PERFORM set_config('teste.entrega_a', (SELECT entregaid::text FROM public.entregas WHERE atribuicaoid = 5000), false);
+  PERFORM set_config('teste.entrega_b', (SELECT entregaid::text FROM public.entregas WHERE atribuicaoid = 6000), false);
+END $$;
+UPDATE public.funcionarios SET saldopontos = 0, pontostotal = 0 WHERE funcionarioid IN (100, 200);
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+DO $$
+DECLARE
+  ea integer := current_setting('teste.entrega_a')::integer;
+  deu_erro boolean;
+  creditou integer;
+  saldo integer;
+BEGIN
+  RAISE NOTICE '17. aprovar, recusar e estornar';
+
+  -- Pontos e status so mudam pelas funcoes.
+  BEGIN
+    UPDATE public.entregas SET statusvalidacao = 'Aprovada' WHERE entregaid = ea;
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem aprova direto na tabela, so pela funcao');
+
+  BEGIN
+    UPDATE public.funcionarios SET saldopontos = 999 WHERE funcionarioid = 100;
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem mexe no saldo direto na tabela');
+
+  BEGIN
+    INSERT INTO public.funcionarios (nomecompleto, saldopontos) VALUES ('Rico', 1000);
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem cadastra funcionario ja com saldo');
+
+  -- Recusar sem motivo.
+  BEGIN
+    PERFORM public.recusar_entrega(ea, '   ');
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'recusar sem motivo e recusado pelo banco');
+
+  -- Aprovar uma vez, e tentar de novo.
+  creditou := public.aprovar_entrega(ea);
+  PERFORM public.exigir(creditou = 5, 'aprovar credita os pontos da tarefa (5)');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 5
+                    AND (SELECT pontostotal FROM public.funcionarios WHERE funcionarioid = 100) = 5,
+                        'saldo e total sobem juntos');
+  PERFORM public.exigir((SELECT dataaprovacao IS NOT NULL AND dataenvio IS NOT NULL
+                         FROM public.entregas WHERE entregaid = ea),
+                        'a aprovacao tem data propria e a data de envio continua la');
+
+  BEGIN
+    PERFORM public.aprovar_entrega(ea);
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'aprovar de novo e recusado');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 5,
+                        'aprovar duas vezes NAO credita em dobro');
+
+  -- Estornar.
+  BEGIN
+    PERFORM public.estornar_entrega(ea, '');
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'estornar sem motivo e recusado');
+
+  saldo := public.estornar_entrega(ea, 'Foto de outro dia');
+  PERFORM public.exigir(saldo = 0, 'estornar desconta os pontos do saldo');
+  PERFORM public.exigir((SELECT pontostotal FROM public.funcionarios WHERE funcionarioid = 100) = 0,
+                        'estornar desconta do total tambem');
+  PERFORM public.exigir((SELECT estornadopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid
+                                AND dataestorno IS NOT NULL AND motivoestorno = 'Foto de outro dia'
+                         FROM public.entregas WHERE entregaid = ea),
+                        'o estorno registra quem, quando e por que');
+
+  BEGIN
+    PERFORM public.estornar_entrega(ea, 'de novo');
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'estornar de novo e recusado');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 0,
+                        'estornar duas vezes NAO desconta em dobro');
+
+  -- Foto fora da pasta da propria loja.
+  BEGIN
+    PERFORM public.registrar_entrega(5000, NULL, '2/20/foto.jpg');
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'foto fora da pasta da propria loja e recusada');
+END $$;
+
+DO $$
+DECLARE deu_erro boolean; atr integer; e1 integer; e2 integer;
+BEGIN
+  RAISE NOTICE '17b. sem entrega duplicada no mesmo dia';
+
+  INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+  VALUES (1000, 100, 10, 'Diaria') RETURNING atribuicaoid INTO atr;
+
+  e1 := public.registrar_entrega(atr, 'Feito', NULL, false);
+  BEGIN
+    PERFORM public.registrar_entrega(atr);
+    deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'segunda entrega da mesma atribuicao no mesmo dia e recusada');
+
+  PERFORM public.recusar_entrega(e1, 'Sem foto');
+  e2 := public.registrar_entrega(atr, NULL, NULL, true);
+  PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas WHERE entregaid = e2) = 'Aprovada',
+                        'depois de uma recusa, nova entrega no mesmo dia e aceita');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 5,
+                        '"registrar ja aprovada" credita na hora');
+
+  PERFORM public.estornar_entrega(e2, 'Teste');
+  PERFORM set_config('teste.entrega_c', public.registrar_entrega(atr)::text, false);
+  PERFORM public.exigir(true, 'depois de um estorno, nova entrega no mesmo dia e aceita');
+
+  PERFORM public.exigir(
+    (SELECT count(*) FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = atr) = 0,
+    'atribuicao ja entregue hoje some da lista de "registrar"');
+END $$;
+
+DO $$
+DECLARE eb integer := current_setting('teste.entrega_b')::integer; deu_erro boolean;
+BEGIN
+  RAISE NOTICE '17c. entregas de outro cliente';
+
+  BEGIN PERFORM public.aprovar_entrega(eb); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao aprova entrega de B');
+
+  BEGIN PERFORM public.recusar_entrega(eb, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao recusa entrega de B');
+
+  BEGIN PERFORM public.estornar_entrega(eb, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao estorna entrega de B');
+
+  BEGIN PERFORM public.registrar_entrega(6000); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao registra entrega em atribuicao de B');
+
+  PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE name LIKE '2/%') = 0,
+                        'A nao ve nenhuma foto de B');
+  PERFORM public.exigir((SELECT count(*) FROM public.atribuicoes_para_entregar(20)) = 0,
+                        'A nao ve o que B tem para entregar');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_pontos('2000-01-01', '2100-01-01')
+                                    WHERE funcionarioid = 200),
+                        'o ranking de A nao mostra ninguem de B');
+END $$;
+
+-- Saldo pode ficar negativo no estorno (a pessoa ja gastou os pontos).
+DO $$ BEGIN PERFORM public.aprovar_entrega(current_setting('teste.entrega_c')::integer); END $$;
+RESET ROLE;
+UPDATE public.funcionarios SET saldopontos = 2 WHERE funcionarioid = 100;
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE saldo integer;
+BEGIN
+  saldo := public.estornar_entrega(current_setting('teste.entrega_c')::integer, 'Ja tinha trocado por premio');
+  PERFORM public.exigir(saldo = -3, 'o estorno pode deixar o saldo negativo (2 - 5 = -3)');
+END $$;
+
+-- Nada de B foi tocado.
+RESET ROLE;
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas
+                         WHERE entregaid = current_setting('teste.entrega_b')::integer) = 'Pendente',
+                        'a entrega de B continua pendente');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 200) = 0,
+                        'o saldo de B continua intacto');
+END $$;
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ===========================================================================
+-- 18. Gestor e responsavel pelos agendamentos da loja
+-- ===========================================================================
+
+INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (101, 'Sem loja');
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  RAISE NOTICE '18. gestor e responsavel pelos agendamentos';
+
+  UPDATE public.lojas SET gestorid = 100, responsavelagendamentosid = 100 WHERE lojaid = 10;
+  PERFORM public.exigir((SELECT gestorid FROM public.lojas WHERE lojaid = 10) = 100,
+                        'quem trabalha na loja pode ser o gestor dela');
+
+  BEGIN
+    UPDATE public.lojas SET gestorid = 101 WHERE lojaid = 10;
+    deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem nao trabalha na loja nao pode ser o gestor');
+
+  BEGIN
+    UPDATE public.lojas SET responsavelagendamentosid = 200 WHERE lojaid = 10;
+    deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'funcionario de outro cliente nao pode ser o responsavel');
+
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoes
+                                    WHERE chave IN ('ID_GESTOR_PADRAO', 'RESPONSAVEL_AGENDAMENTOS_ID')),
+                        'as duas chaves soltas sairam das configuracoes');
+END $$;
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -656,6 +878,24 @@ BEGIN
    AND f.confrelid = 'public.lojas'::regclass AND array_length(f.conkey, 1) = 2
   WHERE c.table_schema = 'public' AND c.column_name = 'lojaid' AND f.oid IS NULL;
   PERFORM public.exigir(liberadas IS NULL, 'todo lojaid aponta para lojas junto com o contaid');
+
+  -- Funcao security definer ignora a RLS. Se qualquer um puder executa-la,
+  -- ela precisa conferir por conta propria quem chamou. So as listadas aqui
+  -- fazem isso; qualquer outra executavel por anon/authenticated e um furo.
+  SELECT string_agg(p.proname, ', ') INTO liberadas
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.prosecdef
+    AND p.prorettype <> 'trigger'::regtype
+    AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+         OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+    AND p.proname NOT IN (
+      'minha_conta', 'minha_conta_editavel', 'eh_admin_geral',
+      'registrar_entrega', 'aprovar_entrega', 'recusar_entrega', 'estornar_entrega'
+    );
+  PERFORM public.exigir(liberadas IS NULL,
+    'nenhuma funcao com poder total fica executavel por quem nao confere o chamador');
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

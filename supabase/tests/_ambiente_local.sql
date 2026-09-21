@@ -6,6 +6,13 @@ CREATE ROLE anon;
 CREATE ROLE authenticated;
 CREATE ROLE service_role;
 
+-- O Supabase da, por padrao, permissao em TUDO que for criado no schema public
+-- para anon e authenticated. Imitamos isso aqui: sem esta linha, o teste nao
+-- enxergaria uma funcao que ficou executavel por qualquer um.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+
 CREATE SCHEMA auth;
 CREATE TABLE auth.users (
   id uuid PRIMARY KEY,

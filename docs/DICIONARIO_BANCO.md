@@ -189,6 +189,16 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | atribuicaoid | integer |  |
 | fileidtelegram | varchar(255) |  |
 | notificacaogestorenviada | boolean | padrão false |
+| observacao | text | Observação de quem registrou a entrega |
+| dataaprovacao | timestamptz | Quando foi aprovada. **O ranking usa esta data.** `dataenvio` guarda sempre o envio real |
+| aprovadopor | uuid | → auth.users. Quem aprovou |
+| datarecusa | timestamptz |  |
+| recusadopor | uuid | → auth.users |
+| dataestorno | timestamptz |  |
+| estornadopor | uuid | → auth.users |
+| motivoestorno | text | Obrigatório quando o status é Estornada |
+
+**Regras de `entregas`:** `statusvalidacao` é `Pendente`, `Aprovada`, `Recusada` ou `Estornada`. Recusada exige `motivorecusa` e Estornada exige `motivoestorno` (o banco recusa sem). No máximo uma entrega Pendente ou Aprovada por atribuição por dia, no fuso de São Paulo. A entrega aponta para a sua atribuição e tem de concordar com ela em tarefa, pessoa e loja. **O navegador não grava nesta tabela:** tudo passa por `registrar_entrega`, `aprovar_entrega`, `recusar_entrega` e `estornar_entrega`.
 
 ## escaladiaria
 | Coluna | Tipo | Obs |
@@ -247,10 +257,10 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | nomecompleto | varchar(255) | obrigatório |
 | chatidtelegram | varchar(100) |  |
 | cargo | varchar(100) |  |
-| pontostotal | integer | padrão 0 |
+| pontostotal | integer | padrão 0. Tudo o que a pessoa já ganhou; só desce por estorno. Só muda pelas funções de entrega |
 | horarionotificacao | time | padrão '08:00' |
 | diadefolga | integer | obrigatório; padrão 0 |
-| saldopontos | integer | obrigatório; padrão 0 |
+| saldopontos | integer | obrigatório; padrão 0. O que a pessoa tem para gastar. Pode ficar negativo por estorno. Só muda pelas funções de entrega |
 | verificadorcpf | varchar(3) |  |
 | senhahash | varchar(256) |  |
 | isgestor | boolean | padrão false |
@@ -561,6 +571,8 @@ Liga um login do Supabase Auth a uma conta. **Um login pertence a uma única con
 | endereco | varchar(255) |  |
 | ativa | boolean | obrigatório; padrão true. Lojas ativas ≤ `contas.limitelojas` |
 | criadoem | timestamptz | obrigatório; padrão now() |
+| gestorid | integer | Gestor da loja. → funcionarioslojas (junto com lojaid): tem de trabalhar nela |
+| responsavelagendamentosid | integer | Quem recebe as tarefas de agendamento da loja. → funcionarioslojas (junto com lojaid) |
 
 ## funcionarioslojas
 Em quais lojas cada funcionário trabalha. Tirar alguém de uma loja = `ativo = false`; **nunca apagar**, para não perder o histórico.
@@ -595,5 +607,13 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `cria_configuracoes_padrao(contaid)` | Semeia as 18 configurações padrão numa conta nova |
 | `cria_tarefas_do_sistema(contaid)` | Cria as 6 tarefas do sistema, grava os IDs em `configuracoes` e as liga a todas as lojas |
 | `tarefa_cai_no_dia(tipo, valor, dataagendamento, dia)` | Quando uma tarefa recorrente aparece. Única acumula; Mensal com dia inexistente cai no último dia do mês |
+| `dia_em_sao_paulo(instante)` | O dia de um instante no fuso da loja |
+| `registrar_entrega(atribuicao, observacao, foto, aprovar)` | Registra uma entrega de atribuição que cai hoje ou está atrasada; se `aprovar`, já aprova na mesma transação |
+| `aprovar_entrega(entrega)` | Só aprova Pendente. Credita os pontos da tarefa em `saldopontos` e `pontostotal`. Devolve os pontos |
+| `recusar_entrega(entrega, motivo)` | Só recusa Pendente. Motivo obrigatório. A tarefa volta a aparecer |
+| `estornar_entrega(entrega, motivo)` | Só estorna Aprovada. Motivo obrigatório. Desconta os pontos; o saldo pode ficar negativo. Devolve o saldo novo |
+| `atribuicoes_para_entregar(loja)` | O que pode ser entregue hoje naquela loja |
+| `ranking_pontos(de, ate, loja)` | Soma dos pontos aprovados no período, pela data da aprovação. Sem loja = geral da conta |
+| `apos_aprovar_entrega(entrega)` | Gancho das conquistas (Fase 7). Hoje não faz nada |
 
-Todas são `security definer` com `search_path` fixo.
+Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos` e `atribuicoes_para_entregar` rodam com a RLS de quem chamou.

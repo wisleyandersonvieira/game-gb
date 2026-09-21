@@ -18,6 +18,7 @@ import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
+import { Route as AuthenticatedRankingRouteImport } from './routes/_authenticated/ranking'
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 
@@ -66,6 +67,11 @@ const AuthenticatedPainelRoute = AuthenticatedPainelRouteImport.update({
   path: '/painel',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRankingRoute = AuthenticatedRankingRouteImport.update({
+  id: '/ranking',
+  path: '/ranking',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedTarefasRoute = AuthenticatedTarefasRouteImport.update({
   id: '/tarefas',
   path: '/tarefas',
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/painel': typeof AuthenticatedPainelRoute
+  '/ranking': typeof AuthenticatedRankingRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/painel': typeof AuthenticatedPainelRoute
+  '/ranking': typeof AuthenticatedRankingRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
+  '/_authenticated/ranking': typeof AuthenticatedRankingRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/funcionarios'
     | '/gestao'
     | '/painel'
+    | '/ranking'
     | '/tarefas'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/funcionarios'
     | '/gestao'
     | '/painel'
+    | '/ranking'
     | '/tarefas'
     | '/admin'
   id:
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
     | '/_authenticated/painel'
+    | '/_authenticated/ranking'
     | '/_authenticated/tarefas'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -227,6 +239,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPainelRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/ranking': {
+      id: '/_authenticated/ranking'
+      path: '/ranking'
+      fullPath: '/ranking'
+      preLoaderRoute: typeof AuthenticatedRankingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/tarefas': {
       id: '/_authenticated/tarefas'
       path: '/tarefas'
@@ -248,6 +267,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
+  AuthenticatedRankingRoute: typeof AuthenticatedRankingRoute
   AuthenticatedTarefasRoute: typeof AuthenticatedTarefasRoute
 }
 
@@ -255,6 +275,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
+  AuthenticatedRankingRoute: AuthenticatedRankingRoute,
   AuthenticatedTarefasRoute: AuthenticatedTarefasRoute,
 }
 

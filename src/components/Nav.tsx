@@ -7,6 +7,7 @@ const itens = [
   { to: "/painel", label: "Quadro" },
   { to: "/funcionarios", label: "Equipe" },
   { to: "/tarefas", label: "Tarefas" },
+  { to: "/ranking", label: "Ranking" },
 ] as const;
 
 export function Nav() {

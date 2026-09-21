@@ -649,51 +649,87 @@ export type Database = {
       }
       entregas: {
         Row: {
+          aprovadopor: string | null
           atribuicaoid: number | null
           contaid: number
-          dataenvio: string | null
+          dataaprovacao: string | null
+          dataenvio: string
+          dataestorno: string | null
+          datarecusa: string | null
           entregaid: number
+          estornadopor: string | null
           fileidtelegram: string | null
           funcionarioid: number
           lojaid: number
+          motivoestorno: string | null
           motivorecusa: string | null
           notificacaogestorenviada: boolean | null
+          observacao: string | null
           pathfotoevidencia: string | null
           pontosganhos: number | null
-          statusvalidacao: string | null
+          recusadopor: string | null
+          statusvalidacao: string
           tarefaid: number
         }
         Insert: {
+          aprovadopor?: string | null
           atribuicaoid?: number | null
           contaid?: number
-          dataenvio?: string | null
+          dataaprovacao?: string | null
+          dataenvio?: string
+          dataestorno?: string | null
+          datarecusa?: string | null
           entregaid?: number
+          estornadopor?: string | null
           fileidtelegram?: string | null
           funcionarioid: number
           lojaid: number
+          motivoestorno?: string | null
           motivorecusa?: string | null
           notificacaogestorenviada?: boolean | null
+          observacao?: string | null
           pathfotoevidencia?: string | null
           pontosganhos?: number | null
-          statusvalidacao?: string | null
+          recusadopor?: string | null
+          statusvalidacao?: string
           tarefaid: number
         }
         Update: {
+          aprovadopor?: string | null
           atribuicaoid?: number | null
           contaid?: number
-          dataenvio?: string | null
+          dataaprovacao?: string | null
+          dataenvio?: string
+          dataestorno?: string | null
+          datarecusa?: string | null
           entregaid?: number
+          estornadopor?: string | null
           fileidtelegram?: string | null
           funcionarioid?: number
           lojaid?: number
+          motivoestorno?: string | null
           motivorecusa?: string | null
           notificacaogestorenviada?: boolean | null
+          observacao?: string | null
           pathfotoevidencia?: string | null
           pontosganhos?: number | null
-          statusvalidacao?: string | null
+          recusadopor?: string | null
+          statusvalidacao?: string
           tarefaid?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "entregas_atribuicao_fk"
+            columns: ["atribuicaoid", "tarefaid", "funcionarioid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "tarefasatribuidas"
+            referencedColumns: [
+              "atribuicaoid",
+              "tarefaid",
+              "funcionarioid",
+              "lojaid",
+            ]
+          },
           {
             foreignKeyName: "entregas_contaid_fkey"
             columns: ["contaid"]
@@ -1387,8 +1423,10 @@ export type Database = {
           contaid: number
           criadoem: string
           endereco: string | null
+          gestorid: number | null
           lojaid: number
           nome: string
+          responsavelagendamentosid: number | null
         }
         Insert: {
           ativa?: boolean
@@ -1396,8 +1434,10 @@ export type Database = {
           contaid?: number
           criadoem?: string
           endereco?: string | null
+          gestorid?: number | null
           lojaid?: number
           nome: string
+          responsavelagendamentosid?: number | null
         }
         Update: {
           ativa?: boolean
@@ -1405,10 +1445,27 @@ export type Database = {
           contaid?: number
           criadoem?: string
           endereco?: string | null
+          gestorid?: number | null
           lojaid?: number
           nome?: string
+          responsavelagendamentosid?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "lojas_gestor_trabalha_na_loja"
+            columns: ["gestorid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "funcionarioslojas"
+            referencedColumns: ["funcionarioid", "lojaid"]
+          },
+          {
+            foreignKeyName: "lojas_responsavel_trabalha_na_loja"
+            columns: ["responsavelagendamentosid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "funcionarioslojas"
+            referencedColumns: ["funcionarioid", "lojaid"]
+          },
+        ]
       }
       lucromensalhistorico: {
         Row: {
@@ -2436,6 +2493,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apos_aprovar_entrega: {
+        Args: { p_entregaid: number }
+        Returns: undefined
+      }
+      aprovar_entrega: { Args: { p_entregaid: number }; Returns: number }
+      atribuicoes_para_entregar: {
+        Args: { p_lojaid: number }
+        Returns: {
+          atrasada: boolean
+          atribuicaoid: number
+          funcionarioid: number
+          nomecompleto: string
+          pontos: number
+          tipofrequencia: string
+          titulo: string
+        }[]
+      }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
@@ -2444,9 +2518,36 @@ export type Database = {
         Args: { p_contaid: number }
         Returns: undefined
       }
+      dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
       eh_admin_geral: { Args: never; Returns: boolean }
+      estornar_entrega: {
+        Args: { p_entregaid: number; p_motivo: string }
+        Returns: number
+      }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
+      ranking_pontos: {
+        Args: { p_ate: string; p_de: string; p_lojaid?: number }
+        Returns: {
+          entregas: number
+          funcionarioid: number
+          nomecompleto: string
+          pontos: number
+        }[]
+      }
+      recusar_entrega: {
+        Args: { p_entregaid: number; p_motivo: string }
+        Returns: undefined
+      }
+      registrar_entrega: {
+        Args: {
+          p_aprovar?: boolean
+          p_atribuicaoid: number
+          p_observacao?: string
+          p_pathfoto?: string
+        }
+        Returns: number
+      }
       tarefa_cai_no_dia: {
         Args: {
           p_dataagendamento: string

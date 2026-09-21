@@ -40,8 +40,8 @@ Administrador geral (Wisley)
 | 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ✅ Concluída |
 | 3 | **Painel do administrador geral** | ✅ Concluída |
 | 4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
-| 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Em andamento — Equipe e Tarefas/Atribuição prontas. Falta o **Quadro** (validação e ranking): 2 erros de TypeScript |
-| 6 | Painel operacional por loja + validação (dashboard da loja) | ⬜ |
+| 5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
+| 6 | Painel operacional por loja + validação (dashboard da loja) | ⬜ Próxima |
 | 7 | Gestão de pessoas e gamificação | ⬜ |
 | 8 | Metas e financeiro | ⬜ |
 | 9 | Agenda (agendamentos) | ⬜ |
@@ -135,9 +135,9 @@ As regras de limite já valiam no banco desde a Fase 2 e foram **provadas por te
 - [x] Atribuição: só permite atribuir a funcionários que trabalham numa loja onde a tarefa vale. Registra a loja.
 - [x] Atribuir tarefa **não** cria entrega. A entrega nasce quando o funcionário envia (por enquanto, botão "Registrar entrega" com foto; depois, pelo bot).
 - [x] Recorrência: mostrar ao Wisley os tipos de frequência do sistema antigo (`legado/`) e como funcionavam, **antes** de implementar.
-- [ ] Quadro (validação): aprovar, com crédito atômico de pontos pela função SQL `aprovar_entrega`; recusar, com motivo obrigatório; foto da entrega.
-- [ ] Ranking diário e mensal, por loja e geral da conta.
-- [ ] Remover `ID_GESTOR_PADRAO` e `RESPONSAVEL_AGENDAMENTOS_ID` como IDs soltos: viram campos escolhidos na tela (por loja).
+- [x] Quadro (validação): aprovar, com crédito atômico de pontos pela função SQL `aprovar_entrega`; recusar, com motivo obrigatório; foto da entrega.
+- [x] Ranking diário e mensal, por loja e geral da conta.
+- [x] Remover `ID_GESTOR_PADRAO` e `RESPONSAVEL_AGENDAMENTOS_ID` como IDs soltos: viram campos escolhidos na tela (por loja).
 - [x] Recadastrar as tarefas especiais do sistema (feedback diário, leitura, nota fiscal, pontos da meta, guardar mercadoria, modelo de agendamento) como **tarefas do sistema criadas automaticamente em cada conta nova**, com os IDs registrados em `configuracoes`.
 
 **Feito em 21/09/2026 (parte 1: Tarefas e atribuição).** A tela Tarefas tem duas abas: o **Catálogo** (cadastrar, editar, desativar, escolhendo em quais lojas a tarefa vale) e as **Atribuições da loja** (dentro da loja escolhida no seletor do topo).
@@ -146,7 +146,18 @@ As frequências oferecidas são as quatro individuais do sistema antigo: **Únic
 
 **O que o banco garante, e não só a tela:** a tarefa tem que valer naquela loja, a pessoa tem que trabalhar naquela loja (chaves compostas da Fase 2), as 4 tarefas de bônus não podem ser atribuídas a ninguém, e tarefa do sistema não pode ser apagada. A função `tarefa_cai_no_dia()` centraliza a regra de quando uma tarefa recorrente aparece, para a tela e as rotinas automáticas nunca discordarem.
 
-**Falta da Fase 5:** o Quadro (validação de entregas com `aprovar_entrega`, foto e recusa com motivo), o ranking, e trocar `ID_GESTOR_PADRAO` / `RESPONSAVEL_AGENDAMENTOS_ID` por campos escolhidos na tela.
+**Feito em 21/09/2026 (parte 2: entregas, validação e ranking).**
+
+- **Registrar entrega** (enquanto o bot não existe): no Quadro, escolhe-se uma atribuição que cai hoje ou está atrasada, com foto e observação opcionais, e a opção "registrar já aprovada". A foto vai para `entregas/<contaid>/<lojaid>/...`, e o banco recusa foto fora da pasta da própria loja.
+- **Quadro** da loja ativa em três colunas: Pendentes, Aprovadas e Recusadas/estornadas (histórico de 7 dias). A foto aparece por link temporário de 1 hora; o bucket é privado.
+- **Aprovar / Recusar / Estornar** só pelas funções `aprovar_entrega`, `recusar_entrega` e `estornar_entrega`. Cada uma trava a linha da entrega, confere o status e faz tudo numa transação: aprovar duas vezes não credita em dobro, estornar duas vezes não desconta em dobro. Recusa e estorno exigem motivo, e o banco recusa sem ele. O estorno registra quem, quando e por quê, e pode deixar o saldo negativo (a tela avisa em destaque).
+- **Sem entrega duplicada:** no máximo uma pendente ou aprovada por atribuição por dia (fuso de São Paulo). Recusada ou estornada libera outra.
+- **Ninguém mexe em pontos por fora.** O navegador não grava mais direto em `entregas`, nem em `saldopontos`/`pontostotal`. Só as funções mexem.
+- **Ranking** diário e mensal, da loja ativa ou de todas, pela soma dos pontos aprovados na data da aprovação.
+- **Gestor e responsável pelos agendamentos** viraram campos de cada loja (`lojas.gestorid`, `lojas.responsavelagendamentosid`), escolhidos na Gestão entre quem trabalha ali. O banco garante isso pela chave composta pessoa + loja. As duas chaves soltas saíram de `configuracoes`.
+- Na aba Atribuições, filtro "mostrar também as encerradas".
+
+⚠️ **Correção de segurança feita nesta fase.** As funções `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` (Fase 5, parte 1) rodavam com poder total, não conferiam quem chamou e ficaram executáveis por qualquer um — o Supabase dá permissão automática a `anon` e `authenticated` em toda função nova, e o `REVOKE ... FROM public` não tirava isso. Um cliente, ou até um visitante sem login, conseguiria chamá-las com o número de outra conta. Corrigido: só o servidor executa. O ambiente de teste passou a imitar essas permissões automáticas do Supabase, e o teste de isolamento ganhou uma checagem que reprova qualquer função com poder total executável por quem não confere o chamador.
 
 ## Fase 6 — Painel operacional por loja + validação (dashboard da loja)
 Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja** da gestão.
@@ -162,9 +173,10 @@ Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja*
 - [ ] Grupos (por loja).
 - [ ] Pendências e justificativas ("Não aplicável").
 - [ ] Loja de recompensas e resgates.
-- [ ] Conquistas.
+- [ ] Conquistas. O gancho já existe: `apos_aprovar_entrega()` é chamada em toda aprovação e hoje não faz nada. Critérios do sistema antigo: total de tarefas aprovadas, tarefas aprovadas no período, sequência de dias com tarefa, sequência de feedback diário, total de comunicados lidos.
 - [ ] Feedbacks, canal confidencial e solicitações internas (visão do gestor).
 - [ ] Relatórios e histórico por funcionário.
+- [ ] **Nota híbrida do ranking mensal**, como no sistema antigo: 50% confiabilidade (pontos ganhos em tarefas normais ÷ pontos possíveis no mês, travado em 100%, sem os bônus) + 50% esforço (pontos totais ÷ os de quem mais fez, em cima de 100). Exige calcular os "pontos possíveis" varrendo o mês dia a dia. Até lá, o ranking mensal é a soma simples.
 - [ ] Extrato de pontos (substitui `pontos_analyzer.py`).
 
 ## Fase 8 — Metas e financeiro (por loja)
@@ -289,6 +301,14 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | Frequência **Mensal** com dia que não existe no mês (31 em abril, 30 em fevereiro) cai no **último dia do mês**. Regra na função `tarefa_cai_no_dia()`. |
 | 21/09/2026 | As 6 tarefas do sistema são criadas automaticamente em cada cliente novo (`cria_tarefas_do_sistema`), marcadas pela coluna `tarefas.sistema`, ligadas a toda loja nova por gatilho, e **não podem ser apagadas**. As 4 de bônus (feedback, leitura, meta, nota fiscal) **não podem ser atribuídas a ninguém**: só recebem entregas automáticas. As 2 de modelo só viram tarefa pelos fluxos de agendamento e de nota fiscal. Nenhuma das 6 aparece na lista de atribuição manual. |
 | 21/09/2026 | **Nota fiscal fica fora do cálculo de desempenho**, junto com leitura, feedback e meta. O sistema antigo excluía só os outros três — descuido dele. |
+| 21/09/2026 | Aprovar credita em `saldopontos` **e** em `pontostotal`. No sistema antigo `pontostotal` era morta (nada escrevia nela). Agora `saldopontos` é o que a pessoa tem para gastar e `pontostotal` é o que ela já ganhou na vida, que só desce por estorno. |
+| 21/09/2026 | `dataenvio` guarda o envio de verdade e `dataaprovacao` a aprovação. O sistema antigo sobrescrevia o envio na aprovação — o que apagava a hora real, necessária para conferir a foto pelo EXIF na Fase 15. O ranking usa a data da aprovação. |
+| 21/09/2026 | Pontos da entrega são os da tarefa **na hora da aprovação**, como no sistema antigo: permite corrigir um valor errado antes de aprovar. |
+| 21/09/2026 | Ranking do mês é a **soma simples** dos pontos aprovados. A nota híbrida do sistema antigo foi para a Fase 7. Os bônus contam no ranking (contavam no pódio antigo). |
+| 21/09/2026 | **Estorno** de aprovação, com motivo obrigatório: desconta de `saldopontos` e `pontostotal`, registra quem, quando e por quê, e pode deixar o saldo negativo. O sistema antigo não tinha como desfazer uma aprovação. |
+| 21/09/2026 | No máximo **uma entrega pendente ou aprovada por atribuição por dia**. Recusada ou estornada libera outra. O sistema antigo não impedia duplicatas, e a aprovação dele não conferia o status — aprovar duas vezes creditava duas vezes. |
+| 21/09/2026 | Gestor e responsável pelos agendamentos viraram **campos de cada loja**, no lugar de `ID_GESTOR_PADRAO` e `RESPONSAVEL_AGENDAMENTOS_ID`. |
+| 21/09/2026 | Conquistas ficam para a Fase 7, com o gancho `apos_aprovar_entrega()` já no lugar. |
 
 ## Referência — arquivo do sistema antigo → fase
 | Arquivo em `legado/` | Fase |

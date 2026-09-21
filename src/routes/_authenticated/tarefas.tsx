@@ -362,6 +362,7 @@ type Linha = {
   dias: number[];
   valor: number | null;
   dataagendamento: string | null;
+  encerradaEm: string | null;
 };
 
 function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: string }) {
@@ -372,6 +373,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   const [data, setData] = useState(hojeEmSaoPaulo());
   const [diasSemana, setDiasSemana] = useState<number[]>([]);
   const [diaMes, setDiaMes] = useState(1);
+  const [mostrarEncerradas, setMostrarEncerradas] = useState(false);
 
   // Só tarefas que valem nesta loja, e nunca as do sistema.
   const opcoesTarefas = useQuery({
@@ -423,16 +425,17 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   });
 
   const lista = useQuery({
-    queryKey: ["atribuicoes", lojaid],
+    queryKey: ["atribuicoes", lojaid, mostrarEncerradas],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let consulta = supabase
         .from("tarefasatribuidas")
         .select(
           "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia",
         )
         .eq("lojaid", lojaid)
-        .is("datafimvigencia", null)
         .order("atribuicaoid");
+      if (!mostrarEncerradas) consulta = consulta.is("datafimvigencia", null);
+      const { data, error } = await consulta;
       if (error) throw error;
 
       const linhas = data ?? [];
@@ -457,7 +460,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       // tela: mesma tarefa, mesma pessoa, mesma frequência.
       const agrupadas = new Map<string, Linha>();
       for (const l of linhas) {
-        const chave = `${l.tarefaid}|${l.funcionarioid}|${l.tipofrequencia}`;
+        const chave = `${l.tarefaid}|${l.funcionarioid}|${l.tipofrequencia}|${l.datafimvigencia ?? "ativa"}`;
         const atual = agrupadas.get(chave);
         if (atual) {
           atual.ids.push(l.atribuicaoid);
@@ -472,10 +475,14 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
             dias: l.valorfrequencia !== null ? [l.valorfrequencia] : [],
             valor: l.valorfrequencia,
             dataagendamento: l.dataagendamento,
+            encerradaEm: l.datafimvigencia,
           });
         }
       }
-      return [...agrupadas.values()];
+      // Ativas primeiro; as encerradas vêm depois.
+      return [...agrupadas.values()].sort(
+        (a, b) => Number(a.encerradaEm !== null) - Number(b.encerradaEm !== null),
+      );
     },
   });
 
@@ -684,6 +691,15 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       </form>
 
       <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={mostrarEncerradas}
+            onChange={(e) => setMostrarEncerradas(e.target.checked)}
+          />
+          Mostrar também as encerradas
+        </label>
+
         {lista.isLoading && <p className="text-muted-foreground">Carregando...</p>}
         {lista.isError && (
           <p className="text-sm text-destructive">{(lista.error as Error).message}</p>
@@ -695,24 +711,30 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
           >
             <div className="min-w-0">
-              <p className="font-medium">{l.titulo}</p>
+              <p className={`font-medium ${l.encerradaEm ? "text-muted-foreground" : ""}`}>{l.titulo}</p>
               <p className="text-sm text-muted-foreground">
                 {l.nome} · {descrever(l)}
               </p>
             </div>
-            <button
-              onClick={() => encerrar.mutate(l.ids)}
-              disabled={encerrar.isPending}
-              className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-60"
-            >
-              Encerrar
-            </button>
+            {l.encerradaEm ? (
+              <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                Encerrada em {new Date(`${l.encerradaEm}T12:00:00`).toLocaleDateString("pt-BR")}
+              </span>
+            ) : (
+              <button
+                onClick={() => encerrar.mutate(l.ids)}
+                disabled={encerrar.isPending}
+                className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-60"
+              >
+                Encerrar
+              </button>
+            )}
           </div>
         ))}
 
         {!lista.isLoading && linhas.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            Nenhuma atribuição ativa nesta loja.
+            {mostrarEncerradas ? "Nenhuma atribuição nesta loja." : "Nenhuma atribuição ativa nesta loja."}
           </p>
         )}
 

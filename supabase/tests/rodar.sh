@@ -18,9 +18,15 @@ limpar
 
 echo "==> subindo $IMAGEM"
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=teste "$IMAGEM" >/dev/null
-for _ in $(seq 1 30); do
-  sleep 2
-  docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break
+# A imagem oficial sobe um servidor temporario, roda a inicializacao e
+# reinicia. So consideramos pronto quando o servidor definitivo responde, que
+# e quando a mensagem "ready to accept connections" aparece pela segunda vez.
+for _ in $(seq 1 60); do
+  sleep 1
+  prontos=$(docker logs "$CONTAINER" 2>&1 | grep -c "ready to accept connections" || true)
+  if [ "$prontos" -ge 2 ] && docker exec "$CONTAINER" psql -U postgres -qtAc "select 1" >/dev/null 2>&1; then
+    break
+  fi
 done
 
 rodar() {

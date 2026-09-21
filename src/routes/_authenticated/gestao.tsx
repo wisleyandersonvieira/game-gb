@@ -13,7 +13,13 @@ export const Route = createFileRoute("/_authenticated/gestao")({
   component: Gestao,
 });
 
-const FORM_VAZIO = { nome: "", cidade: "", endereco: "" };
+const FORM_VAZIO = {
+  nome: "",
+  cidade: "",
+  endereco: "",
+  gestorid: "" as number | "",
+  responsavelagendamentosid: "" as number | "",
+};
 
 const campo =
   "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
@@ -41,9 +47,43 @@ function Gestao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lojas")
-        .select("lojaid, nome, cidade, endereco, ativa")
+        .select("lojaid, nome, cidade, endereco, ativa, gestorid, responsavelagendamentosid")
         .order("nome");
       if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  // Nomes, para mostrar quem é o gestor de cada loja.
+  const nomes = useQuery({
+    queryKey: ["nomes-funcionarios"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("funcionarios").select("funcionarioid, nomecompleto");
+      if (error) throw error;
+      return new Map((data ?? []).map((f) => [f.funcionarioid, f.nomecompleto]));
+    },
+  });
+
+  // Só quem trabalha na loja em edição pode ser o gestor ou o responsável dela.
+  // O banco confere isso de novo (chave composta pessoa + loja).
+  const pessoasDaLoja = useQuery({
+    queryKey: ["pessoas-da-loja", editando],
+    enabled: editando !== null,
+    queryFn: async () => {
+      const { data: vinculos, error } = await supabase
+        .from("funcionarioslojas")
+        .select("funcionarioid")
+        .eq("lojaid", editando!)
+        .eq("ativo", true);
+      if (error) throw error;
+      const ids = (vinculos ?? []).map((v) => v.funcionarioid);
+      if (ids.length === 0) return [];
+      const { data, error: erroNomes } = await supabase
+        .from("funcionarios")
+        .select("funcionarioid, nomecompleto")
+        .in("funcionarioid", ids)
+        .order("nomecompleto");
+      if (erroNomes) throw erroNomes;
       return data ?? [];
     },
   });
@@ -75,7 +115,15 @@ function Gestao() {
       const { error } =
         editando === null
           ? await supabase.from("lojas").insert(dados)
-          : await supabase.from("lojas").update(dados).eq("lojaid", editando);
+          : await supabase
+              .from("lojas")
+              .update({
+                ...dados,
+                gestorid: form.gestorid === "" ? null : form.gestorid,
+                responsavelagendamentosid:
+                  form.responsavelagendamentosid === "" ? null : form.responsavelagendamentosid,
+              })
+              .eq("lojaid", editando);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -180,6 +228,54 @@ function Gestao() {
                     className={campo}
                   />
                 </div>
+
+                {editando !== null && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-sm text-muted-foreground">
+                      <span>Gestor da loja</span>
+                      <select
+                        value={form.gestorid}
+                        onChange={(e) =>
+                          setForm({ ...form, gestorid: e.target.value === "" ? "" : Number(e.target.value) })
+                        }
+                        className={`${campo} w-full`}
+                      >
+                        <option value="">Ninguém definido</option>
+                        {(pessoasDaLoja.data ?? []).map((p) => (
+                          <option key={p.funcionarioid} value={p.funcionarioid}>
+                            {p.nomecompleto}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-sm text-muted-foreground">
+                      <span>Responsável pelos agendamentos</span>
+                      <select
+                        value={form.responsavelagendamentosid}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            responsavelagendamentosid: e.target.value === "" ? "" : Number(e.target.value),
+                          })
+                        }
+                        className={`${campo} w-full`}
+                      >
+                        <option value="">Ninguém definido</option>
+                        {(pessoasDaLoja.data ?? []).map((p) => (
+                          <option key={p.funcionarioid} value={p.funcionarioid}>
+                            {p.nomecompleto}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {(pessoasDaLoja.data ?? []).length === 0 && !pessoasDaLoja.isLoading && (
+                      <p className="text-xs text-muted-foreground md:col-span-2">
+                        Ninguém trabalha nesta loja ainda. Ligue pessoas a ela na tela Equipe.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="submit"
@@ -225,6 +321,14 @@ function Gestao() {
                   <p className="text-sm text-muted-foreground">
                     {[l.cidade, l.endereco].filter(Boolean).join(" · ") || "Sem endereço"}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    Gestor: {l.gestorid ? (nomes.data?.get(l.gestorid) ?? "—") : "não definido"}
+                    {" · "}
+                    Agendamentos:{" "}
+                    {l.responsavelagendamentosid
+                      ? (nomes.data?.get(l.responsavelagendamentosid) ?? "—")
+                      : "não definido"}
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -235,6 +339,8 @@ function Gestao() {
                         nome: l.nome,
                         cidade: l.cidade ?? "",
                         endereco: l.endereco ?? "",
+                        gestorid: l.gestorid ?? "",
+                        responsavelagendamentosid: l.responsavelagendamentosid ?? "",
                       });
                       setAbrirFormulario(true);
                     }}

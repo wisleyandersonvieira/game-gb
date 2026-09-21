@@ -364,9 +364,18 @@ function Funcionarios() {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">
-                <strong className="text-accent">{f.saldopontos}</strong> pontos
-              </span>
+              {f.saldopontos < 0 ? (
+                <span
+                  className="rounded-md border border-destructive px-2 py-0.5 text-sm font-semibold text-destructive"
+                  title="Saldo negativo: a pessoa gastou pontos que depois foram estornados."
+                >
+                  {f.saldopontos} pontos (negativo)
+                </span>
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  <strong className="text-accent">{f.saldopontos}</strong> pontos
+                </span>
+              )}
               <button
                 onClick={() => {
                   setEditando(f.funcionarioid);
