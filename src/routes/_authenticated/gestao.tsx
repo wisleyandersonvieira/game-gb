@@ -1,5 +1,6 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Nav } from "@/components/Nav";
 
@@ -12,95 +13,279 @@ export const Route = createFileRoute("/_authenticated/gestao")({
   component: Gestao,
 });
 
+const FORM_VAZIO = { nome: "", cidade: "", endereco: "" };
+
+const campo =
+  "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
+
 function Gestao() {
-  const dados = useQuery({
-    queryKey: ["minha-gestao"],
+  const qc = useQueryClient();
+  const [form, setForm] = useState(FORM_VAZIO);
+  const [editando, setEditando] = useState<number | null>(null);
+  const [abrirFormulario, setAbrirFormulario] = useState(false);
+
+  const conta = useQuery({
+    queryKey: ["minha-conta"],
     queryFn: async () => {
-      const { data: conta, error } = await supabase
+      const { data, error } = await supabase
         .from("contas")
-        .select("nome, cidade, limitelojas, status")
+        .select("contaid, nome, email, telefone, cidade, limitelojas, status")
         .single();
       if (error) throw error;
-      const { data: lojas, error: erroLojas } = await supabase
-        .from("lojas")
-        .select("lojaid, nome, cidade, ativa")
-        .order("nome");
-      if (erroLojas) throw erroLojas;
-      return { conta, lojas: lojas ?? [] };
+      return data;
     },
   });
 
-  const conta = dados.data?.conta;
-  const lojas = dados.data?.lojas ?? [];
-  const ativas = lojas.filter((l) => l.ativa).length;
+  const lojas = useQuery({
+    queryKey: ["lojas-todas"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("lojas")
+        .select("lojaid, nome, cidade, endereco, ativa")
+        .order("nome");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const todas = lojas.data ?? [];
+  const ativas = todas.filter((l) => l.ativa);
+  const limite = conta.data?.limitelojas ?? 0;
+  const noLimite = ativas.length >= limite;
+  const suspensa = conta.data?.status !== "ativa";
+
+  function fechar() {
+    setForm(FORM_VAZIO);
+    setEditando(null);
+    setAbrirFormulario(false);
+  }
+
+  function atualizarListas() {
+    qc.invalidateQueries({ queryKey: ["lojas-todas"] });
+    qc.invalidateQueries({ queryKey: ["lojas-ativas"] });
+  }
+
+  const salvar = useMutation({
+    mutationFn: async () => {
+      const dados = {
+        nome: form.nome.trim(),
+        cidade: form.cidade.trim() || null,
+        endereco: form.endereco.trim() || null,
+      };
+      const { error } =
+        editando === null
+          ? await supabase.from("lojas").insert(dados)
+          : await supabase.from("lojas").update(dados).eq("lojaid", editando);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      fechar();
+      atualizarListas();
+    },
+  });
+
+  const alternarAtiva = useMutation({
+    mutationFn: async ({ lojaid, ativa }: { lojaid: number; ativa: boolean }) => {
+      const { error } = await supabase.from("lojas").update({ ativa }).eq("lojaid", lojaid);
+      if (error) throw error;
+    },
+    onSuccess: atualizarListas,
+  });
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
       <Nav />
 
-      {dados.isLoading && <p className="text-muted-foreground">Carregando...</p>}
+      {conta.isLoading && <p className="text-muted-foreground">Carregando...</p>}
 
-      {conta && (
+      {conta.data && (
         <>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h1 className="text-3xl font-bold">{conta.nome}</h1>
+            <h1 className="text-3xl font-bold">{conta.data.nome}</h1>
             <p className="text-sm text-muted-foreground">
-              <strong className={ativas >= conta.limitelojas ? "text-accent" : "text-foreground"}>
-                {ativas}
+              <strong className={noLimite ? "text-accent" : "text-foreground"}>
+                {ativas.length}
               </strong>{" "}
-              de {conta.limitelojas} lojas usadas
+              de {limite} lojas usadas
             </p>
           </div>
 
-          {conta.status === "suspensa" && (
-            <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-accent">
-              Sua conta está suspensa: dá para consultar, mas não para cadastrar nem alterar.
-              Fale com o suporte.
+          <p className="text-sm text-muted-foreground">
+            {conta.data.email}
+            {conta.data.cidade && ` · ${conta.data.cidade}`}
+            {conta.data.telefone && ` · ${conta.data.telefone}`}
+          </p>
+
+          {suspensa && (
+            <p className="rounded-lg border border-accent bg-card px-4 py-3 text-sm text-accent">
+              <strong>Conta {conta.data.status}.</strong> Você continua consultando tudo, mas o
+              sistema não aceita cadastrar nem alterar nada. Fale com o suporte para reativar.
             </p>
           )}
 
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Suas lojas</h2>
-            {lojas.length === 0 ? (
-              <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-                Nenhuma loja cadastrada ainda. O cadastro de lojas entra na próxima etapa
-                (Fase 4). Até lá, as telas do app ficam sem loja para mostrar.
-              </p>
-            ) : (
-              lojas.map((l) => (
-                <div
-                  key={l.lojaid}
-                  className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">Suas lojas</h2>
+              {!abrirFormulario && (
+                <button
+                  onClick={() => {
+                    setForm(FORM_VAZIO);
+                    setEditando(null);
+                    setAbrirFormulario(true);
+                  }}
+                  disabled={noLimite || suspensa}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                 >
-                  <div>
-                    <p className="font-medium">{l.nome}</p>
-                    <p className="text-sm text-muted-foreground">{l.cidade ?? "—"}</p>
-                  </div>
-                  {!l.ativa && (
-                    <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                      inativa
-                    </span>
-                  )}
-                </div>
-              ))
+                  Nova loja
+                </button>
+              )}
+            </div>
+
+            {noLimite && !suspensa && (
+              <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-accent">
+                Você atingiu o limite do seu plano. Fale com o suporte para ampliar.
+              </p>
             )}
+
+            {abrirFormulario && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  salvar.mutate();
+                }}
+                className="space-y-3 rounded-xl border border-border bg-card p-4"
+              >
+                <p className="text-sm font-semibold">
+                  {editando === null ? "Nova loja" : "Editando loja"}
+                </p>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <input
+                    required
+                    autoFocus
+                    placeholder="Nome da loja"
+                    value={form.nome}
+                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                    className={campo}
+                  />
+                  <input
+                    placeholder="Cidade"
+                    value={form.cidade}
+                    onChange={(e) => setForm({ ...form, cidade: e.target.value })}
+                    className={campo}
+                  />
+                  <input
+                    placeholder="Endereço"
+                    value={form.endereco}
+                    onChange={(e) => setForm({ ...form, endereco: e.target.value })}
+                    className={campo}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="submit"
+                    disabled={salvar.isPending}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                  >
+                    {salvar.isPending ? "Salvando..." : "Salvar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fechar}
+                    className="rounded-lg border border-border px-4 py-2 text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                {salvar.isError && (
+                  <p className="text-sm text-destructive">{(salvar.error as Error).message}</p>
+                )}
+              </form>
+            )}
+
+            {todas.length === 0 && !abrirFormulario && (
+              <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                Nenhuma loja cadastrada ainda. Use o botão "Nova loja" para começar.
+              </p>
+            )}
+
+            {todas.map((l) => (
+              <div
+                key={l.lojaid}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {l.nome}
+                    {!l.ativa && (
+                      <span className="ml-2 rounded-md border border-border px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                        desativada
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {[l.cidade, l.endereco].filter(Boolean).join(" · ") || "Sem endereço"}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setEditando(l.lojaid);
+                      setForm({
+                        nome: l.nome,
+                        cidade: l.cidade ?? "",
+                        endereco: l.endereco ?? "",
+                      });
+                      setAbrirFormulario(true);
+                    }}
+                    disabled={suspensa}
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => alternarAtiva.mutate({ lojaid: l.lojaid, ativa: !l.ativa })}
+                    disabled={suspensa || (!l.ativa && noLimite)}
+                    title={
+                      !l.ativa && noLimite
+                        ? "Reativar passaria do limite do seu plano."
+                        : undefined
+                    }
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
+                  >
+                    {l.ativa ? "Desativar" : "Reativar"}
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {alternarAtiva.isError && (
+              <p className="text-sm text-destructive">{(alternarAtiva.error as Error).message}</p>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Desativar uma loja não apaga nada: o histórico dela continua guardado e ela pode
+              ser reativada. Uma loja desativada não ocupa vaga no seu plano.
+            </p>
           </section>
 
+          {/* Preenchido na Fase 6, com progresso do dia, pódio e Kanban por loja. */}
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Atalhos</h2>
-            <Link
-              to="/funcionarios"
-              className="inline-block rounded-lg border border-border px-4 py-2 text-sm"
-            >
-              Equipe
-            </Link>
+            <h2 className="text-sm font-semibold">Resumo das lojas</h2>
+            <div className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                Aqui vai aparecer o resumo de cada loja: progresso do dia, pódio e entregas
+                esperando validação.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Em construção (Fase 6).</p>
+            </div>
           </section>
         </>
       )}
 
-      {dados.isError && (
+      {conta.isError && (
         <p className="text-sm text-destructive">
-          Não foi possível carregar: {(dados.error as Error).message}
+          Não foi possível carregar: {(conta.error as Error).message}
         </p>
       )}
     </main>

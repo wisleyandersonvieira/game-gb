@@ -282,9 +282,10 @@ END $$;
 -- ===========================================================================
 
 DO $$
-DECLARE deu_erro boolean;
+DECLARE deu_erro boolean; nova integer; afetadas integer;
 BEGIN
-  RAISE NOTICE '9. limite de lojas da conta';
+  RAISE NOTICE '9. limite de lojas da conta (limite 2, ja usa 2)';
+
   BEGIN
     INSERT INTO public.lojas (nome) VALUES ('Loja A3 (acima do limite)');
     deu_erro := false;
@@ -292,6 +293,61 @@ BEGIN
     deu_erro := true;
   END;
   PERFORM public.exigir(deu_erro, 'conta com limite 2 nao cria a terceira loja ativa');
+
+  -- Loja desativada nao ocupa vaga.
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 1, 'desativar loja sempre e permitido, mesmo no limite');
+
+  INSERT INTO public.lojas (nome) VALUES ('Loja A3') RETURNING lojaid INTO nova;
+  PERFORM public.exigir(nova IS NOT NULL, 'com uma loja desativada, a vaga liberada permite criar outra');
+
+  -- Reativar tambem passa pela conferencia do limite.
+  BEGIN
+    UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'reativar loja acima do limite e recusado');
+
+  -- Desativar nao apaga nada: o historico da loja continua inteiro.
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefasatribuidas WHERE lojaid = 10) = 1,
+                        'atribuicoes da loja desativada continuam la');
+  PERFORM public.exigir((SELECT count(*) FROM public.entregas WHERE lojaid = 10) = 1,
+                        'entregas da loja desativada continuam la');
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE lojaid = 10) = 1,
+                        'a propria loja desativada continua acessivel');
+
+  -- Devolve o cenario ao estado anterior para as checagens seguintes.
+  DELETE FROM public.lojas WHERE lojaid = nova;
+  UPDATE public.lojas SET ativa = true WHERE lojaid IN (10, 11);
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE ativa) = 2, 'cenario restaurado: 2 lojas ativas');
+END $$;
+
+-- ===========================================================================
+-- 9b. Lojas de outro cliente nao existem para mim
+-- ===========================================================================
+
+DO $$
+DECLARE deu_erro boolean; afetadas integer;
+BEGIN
+  RAISE NOTICE '9b. lojas de outro cliente';
+
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE lojaid = 20) = 0, 'A nao ve a loja de B');
+
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 20;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'A nao desativa a loja de B');
+
+  BEGIN
+    INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 20);
+    deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'A nao usa a loja de B numa atribuicao');
 END $$;
 
 -- ===========================================================================
@@ -312,7 +368,37 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege OR not_null_violation OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao cadastra');
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao cadastra funcionario');
+
+  BEGIN
+    INSERT INTO public.lojas (nome) VALUES ('Loja em conta suspensa');
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege OR not_null_violation OR check_violation THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao cria loja');
+END $$;
+
+-- A conta suspensa continua enxergando o que e dela (so leitura de verdade).
+-- A loja e criada fora da RLS, como se tivesse sido cadastrada antes de a
+-- conta ser suspensa.
+RESET ROLE;
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE
+  VALUES (30, 3, 'Loja da suspensa');
+SET ROLE authenticated;
+SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+
+DO $$
+DECLARE afetadas integer;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE lojaid = 30) = 1,
+                        'conta suspensa continua lendo a propria loja');
+  UPDATE public.lojas SET nome = 'Tentativa' WHERE lojaid = 30;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'conta suspensa nao altera a propria loja');
+  DELETE FROM public.lojas WHERE lojaid = 30;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'conta suspensa nao apaga a propria loja');
 END $$;
 
 -- ===========================================================================
@@ -341,7 +427,7 @@ BEGIN
   RAISE NOTICE '12. administrador geral';
   PERFORM public.exigir((SELECT public.eh_admin_geral()),       'o e-mail do Wisley e reconhecido como admin geral');
   PERFORM public.exigir((SELECT count(*) FROM public.contas) = 3,  'o admin ve as 3 contas');
-  PERFORM public.exigir((SELECT count(*) FROM public.lojas) = 3,   'o admin conta as lojas de todos');
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas) = 4,   'o admin conta as lojas de todos (2 de A, 1 de B, 1 da suspensa)');
   PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'o admin NAO ve funcionarios dos clientes');
   PERFORM public.exigir((SELECT count(*) FROM public.entregas) = 0,     'o admin NAO ve entregas dos clientes');
 END $$;

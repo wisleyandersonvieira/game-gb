@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Nav } from "@/components/Nav";
+import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/funcionarios")({
   component: Funcionarios,
@@ -34,27 +35,76 @@ const campo =
 
 function Funcionarios() {
   const qc = useQueryClient();
+  const { lojas, lojaAtiva, carregando: carregandoLojas } = useLojaAtiva();
+
   const [form, setForm] = useState(FORM_VAZIO);
+  const [lojasEscolhidas, setLojasEscolhidas] = useState<number[]>([]);
   const [editando, setEditando] = useState<number | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
+  const [filtroLoja, setFiltroLoja] = useState<number | "todas">("todas");
 
-  const lista = useQuery({
-    queryKey: ["funcionarios"],
+  const equipe = useQuery({
+    queryKey: ["equipe"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: pessoas, error } = await supabase
         .from("funcionarios")
         .select(
           "funcionarioid, nomecompleto, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo",
         )
         .order("nomecompleto");
       if (error) throw error;
-      return data ?? [];
+
+      const { data: vinculos, error: erroVinculos } = await supabase
+        .from("funcionarioslojas")
+        .select("funcionarioid, lojaid, ativo");
+      if (erroVinculos) throw erroVinculos;
+
+      const porFuncionario = new Map<number, number[]>();
+      for (const v of vinculos ?? []) {
+        if (!v.ativo) continue;
+        porFuncionario.set(v.funcionarioid, [
+          ...(porFuncionario.get(v.funcionarioid) ?? []),
+          v.lojaid,
+        ]);
+      }
+
+      return (pessoas ?? []).map((p) => ({
+        ...p,
+        lojas: porFuncionario.get(p.funcionarioid) ?? [],
+      }));
     },
   });
 
   function limparFormulario() {
     setForm(FORM_VAZIO);
+    setLojasEscolhidas(lojaAtiva ? [lojaAtiva] : []);
     setEditando(null);
+  }
+
+  /**
+   * Acerta em quais lojas a pessoa trabalha.
+   * Sair de uma loja é desativar o vínculo, nunca apagar: o histórico de
+   * tarefas e entregas daquela loja aponta para ele.
+   */
+  async function sincronizarLojas(funcionarioid: number, escolhidas: number[]) {
+    if (escolhidas.length > 0) {
+      const { error } = await supabase.from("funcionarioslojas").upsert(
+        escolhidas.map((lojaid) => ({ funcionarioid, lojaid, ativo: true })),
+        { onConflict: "funcionarioid,lojaid" },
+      );
+      if (error) throw error;
+    }
+
+    const desativar = supabase
+      .from("funcionarioslojas")
+      .update({ ativo: false })
+      .eq("funcionarioid", funcionarioid);
+
+    const { error } =
+      escolhidas.length > 0
+        ? await desativar.not("lojaid", "in", `(${escolhidas.join(",")})`)
+        : await desativar;
+    if (error) throw error;
   }
 
   const salvar = useMutation({
@@ -66,15 +116,29 @@ function Funcionarios() {
         telefonewhatsapp: form.telefonewhatsapp.trim() || null,
         diadefolga: form.diadefolga,
       };
-      const { error } =
-        editando === null
-          ? await supabase.from("funcionarios").insert(dados)
-          : await supabase.from("funcionarios").update(dados).eq("funcionarioid", editando);
-      if (error) throw error;
+
+      let funcionarioid = editando;
+      if (funcionarioid === null) {
+        const { data, error } = await supabase
+          .from("funcionarios")
+          .insert(dados)
+          .select("funcionarioid")
+          .single();
+        if (error) throw error;
+        funcionarioid = data.funcionarioid;
+      } else {
+        const { error } = await supabase
+          .from("funcionarios")
+          .update(dados)
+          .eq("funcionarioid", funcionarioid);
+        if (error) throw error;
+      }
+
+      await sincronizarLojas(funcionarioid, lojasEscolhidas);
     },
     onSuccess: () => {
       limparFormulario();
-      qc.invalidateQueries({ queryKey: ["funcionarios"] });
+      qc.invalidateQueries({ queryKey: ["equipe"] });
     },
   });
 
@@ -86,21 +150,43 @@ function Funcionarios() {
         .eq("funcionarioid", funcionarioid);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["funcionarios"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["equipe"] }),
   });
 
-  const todos = lista.data ?? [];
-  const visiveis = mostrarInativos ? todos : todos.filter((f) => f.ativo);
-  const inativos = todos.length - todos.filter((f) => f.ativo).length;
+  if (carregandoLojas) {
+    return (
+      <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
+        <Nav />
+        <p className="text-muted-foreground">Carregando...</p>
+      </main>
+    );
+  }
+
+  if (lojas.length === 0) {
+    return (
+      <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
+        <Nav />
+        <h1 className="text-3xl font-bold">Equipe</h1>
+        <AvisoSemLoja />
+      </main>
+    );
+  }
+
+  const todos = equipe.data ?? [];
+  const porLoja =
+    filtroLoja === "todas" ? todos : todos.filter((f) => f.lojas.includes(filtroLoja));
+  const visiveis = mostrarInativos ? porLoja : porLoja.filter((f) => f.ativo);
+  const inativos = porLoja.length - porLoja.filter((f) => f.ativo).length;
+  const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
 
   return (
-    <main className="min-h-screen space-y-6 p-6">
+    <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
       <Nav />
 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-3xl font-bold">Equipe</h1>
         <p className="text-sm text-muted-foreground">
-          {todos.filter((f) => f.ativo).length} ativos
+          {porLoja.filter((f) => f.ativo).length} ativos
           {inativos > 0 && ` · ${inativos} inativos`}
         </p>
       </div>
@@ -155,6 +241,35 @@ function Funcionarios() {
           </select>
         </div>
 
+        <fieldset className="space-y-2">
+          <legend className="text-sm text-muted-foreground">
+            Trabalha em quais lojas? (pode marcar mais de uma)
+          </legend>
+          <div className="flex flex-wrap gap-3">
+            {lojas.map((l) => (
+              <label key={l.lojaid} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={lojasEscolhidas.includes(l.lojaid)}
+                  onChange={(e) =>
+                    setLojasEscolhidas((atual) =>
+                      e.target.checked
+                        ? [...atual, l.lojaid]
+                        : atual.filter((id) => id !== l.lojaid),
+                    )
+                  }
+                />
+                {l.nome}
+              </label>
+            ))}
+          </div>
+          {lojasEscolhidas.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Sem loja marcada, a pessoa fica cadastrada mas não pode receber tarefas.
+            </p>
+          )}
+        </fieldset>
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="submit"
@@ -181,23 +296,44 @@ function Funcionarios() {
         )}
       </form>
 
-      {inativos > 0 && (
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={mostrarInativos}
-            onChange={(e) => setMostrarInativos(e.target.checked)}
-          />
-          Mostrar também os inativos
-        </label>
-      )}
+      <div className="flex flex-wrap items-center gap-4">
+        {lojas.length > 1 && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            Loja:
+            <select
+              value={filtroLoja}
+              onChange={(e) =>
+                setFiltroLoja(e.target.value === "todas" ? "todas" : Number(e.target.value))
+              }
+              className={campo}
+            >
+              <option value="todas">Todas as lojas</option>
+              {lojas.map((l) => (
+                <option key={l.lojaid} value={l.lojaid}>
+                  {l.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {inativos > 0 && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={mostrarInativos}
+              onChange={(e) => setMostrarInativos(e.target.checked)}
+            />
+            Mostrar também os inativos
+          </label>
+        )}
+      </div>
 
       <div className="space-y-2">
-        {lista.isLoading && <p className="text-muted-foreground">Carregando...</p>}
-
-        {lista.isError && (
+        {equipe.isLoading && <p className="text-muted-foreground">Carregando...</p>}
+        {equipe.isError && (
           <p className="text-sm text-destructive">
-            Não foi possível carregar a equipe: {(lista.error as Error).message}
+            Não foi possível carregar a equipe: {(equipe.error as Error).message}
           </p>
         )}
 
@@ -220,6 +356,11 @@ function Funcionarios() {
                 {f.diadefolga > 0 &&
                   ` · Folga: ${DIAS_FOLGA.find((d) => d.valor === f.diadefolga)?.nome}`}
               </p>
+              <p className="text-sm text-muted-foreground">
+                {f.lojas.length > 0
+                  ? f.lojas.map(nomeDaLoja).join(" · ")
+                  : "Nenhuma loja"}
+              </p>
             </div>
 
             <div className="flex items-center gap-3">
@@ -236,6 +377,7 @@ function Funcionarios() {
                     telefonewhatsapp: f.telefonewhatsapp ?? "",
                     diadefolga: f.diadefolga,
                   });
+                  setLojasEscolhidas(f.lojas);
                 }}
                 className="rounded-md border border-border px-3 py-1 text-sm"
               >
@@ -253,11 +395,11 @@ function Funcionarios() {
           </div>
         ))}
 
-        {!lista.isLoading && visiveis.length === 0 && (
+        {!equipe.isLoading && visiveis.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {todos.length === 0
               ? "Nenhum funcionário cadastrado ainda. Use o formulário acima para começar."
-              : "Nenhum funcionário ativo."}
+              : "Nenhum funcionário ativo nesta loja."}
           </p>
         )}
       </div>

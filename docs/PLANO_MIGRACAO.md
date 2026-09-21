@@ -39,8 +39,8 @@ Administrador geral (Wisley)
 | 1 | Banco de dados (estrutura do sistema antigo) | ✅ Concluída |
 | 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ✅ Concluída |
 | 3 | **Painel do administrador geral** | ✅ Concluída |
-| 4 | **Gestão do usuário master** (lojas e seletor de loja) | 🟨 Próxima — `/gestao` existe, mas só mostra a conta e lista as lojas; falta cadastrar loja e o seletor de loja ativa |
-| 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Equipe feita sem lojas; precisa ajuste |
+| 4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
+| 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Próxima — Equipe pronta (com lojas). Faltam Tarefas e Quadro: 18 erros de TypeScript, ainda nas tabelas de teste do Lovable |
 | 6 | Painel operacional por loja + validação (dashboard da loja) | ⬜ |
 | 7 | Gestão de pessoas e gamificação | ⬜ |
 | 8 | Metas e financeiro | ⬜ |
@@ -118,15 +118,19 @@ O banco ainda está vazio, então as mudanças são baratas agora. Tudo aqui é 
 ⚠️ Para o convite funcionar, `SUPABASE_SERVICE_ROLE_KEY` precisa estar preenchida no `.env` (modelo em `.env.example`). Sem ela a tela abre e lista, mas o cadastro dá erro.
 
 ## Fase 4 — Gestão do usuário master
-- [ ] Rota `/gestao`: dados da conta e contador "X de Y lojas usadas".
-- [ ] Cadastro de lojas (criar, editar, desativar). O botão "Nova loja" fica bloqueado quando atinge o limite, com a mensagem "fale com o suporte para ampliar".
-- [ ] **Seletor de loja** no topo do app (loja ativa lembrada no navegador). Telas de nível loja mostram só a loja selecionada; telas de nível conta mostram tudo, com filtro por loja.
-- [ ] Criar uma conta nova preenche automaticamente as `configuracoes` padrão (taxa 0,03, bônus, horários).
-- [ ] Espaço reservado para o **dashboard por loja** (preenchido na Fase 6).
+- [x] Rota `/gestao`: dados da conta e contador "X de Y lojas usadas".
+- [x] Cadastro de lojas (criar, editar, desativar). O botão "Nova loja" fica bloqueado quando atinge o limite, com a mensagem "fale com o suporte para ampliar".
+- [x] **Seletor de loja** no topo do app (loja ativa lembrada no navegador). Telas de nível loja mostram só a loja selecionada; telas de nível conta mostram tudo, com filtro por loja.
+- [x] Criar uma conta nova preenche automaticamente as `configuracoes` padrão (taxa 0,03, bônus, horários).
+- [x] Espaço reservado para o **dashboard por loja** (preenchido na Fase 6).
+
+**Feito em 21/09/2026.** O seletor de loja fica no menu do topo (`src/lojas/loja-ativa.tsx`), lembra a escolha no navegador e, se a loja lembrada for desativada, cai para a primeira em vez de deixar a tela sem loja. Com uma loja só, ela aparece como texto, sem seletor. Sem loja nenhuma, as telas do app mostram "Cadastre sua primeira loja" com link para a gestão.
+
+As regras de limite já valiam no banco desde a Fase 2 e foram **provadas por teste**, não só pela tela: loja desativada não ocupa vaga, desativar é sempre permitido (mesmo no limite), reativar acima do limite é recusado, e desativar não apaga nada — as atribuições e entregas daquela loja continuam inteiras. A tela apenas reflete isso: o botão "Nova loja" some no limite e o "Reativar" fica bloqueado quando não há vaga.
 
 ## Fase 5 — Telas iniciais: Equipe, Tarefas, Quadro
 - [x] Equipe: listar, cadastrar, editar, ativar/desativar, dia de folga, filtro de inativos. *(Feita antes da Fase 2)*
-- [ ] Equipe: campo **lojas** (seleção múltipla; o funcionário pode estar em várias) e filtro por loja.
+- [x] Equipe: campo **lojas** (seleção múltipla; o funcionário pode estar em várias) e filtro por loja.
 - [ ] Tarefas: cadastrar, editar, desativar, com **seleção das lojas onde a tarefa vale**.
 - [ ] Atribuição: só permite atribuir a funcionários que trabalham numa loja onde a tarefa vale. Registra a loja.
 - [ ] Atribuir tarefa **não** cria entrega. A entrega nasce quando o funcionário envia (por enquanto, botão "Registrar entrega" com foto; depois, pelo bot).
@@ -267,9 +271,8 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | `funcionarios.chatidtelegram` é único **só dentro da conta** — a mesma pessoa pode trabalhar para duas empresas clientes. `grupos.chatidtelegram` é único no sistema inteiro. O vínculo chat → conta fica para a Fase 15. |
 | 21/09/2026 | O isolamento entre contas é feito por **chave estrangeira composta com o `contaid`**, não por trigger: as duas pontas leem o mesmo `contaid` da mesma linha, então apontar para outra conta é estruturalmente impossível. O mesmo truque garante que só se atribui tarefa a quem trabalha numa loja onde a tarefa vale. |
 | 21/09/2026 | Policies usam `(select minha_conta())` (avaliado uma vez por consulta, não por linha). `minha_conta()`, `minha_conta_editavel()` e `eh_admin_geral()` são `security definer` com `search_path` fixo. |
-| 21/09/2026 | EAN: fica em `produtosfornecedor` — `produtosestoque` não tem coluna de EAN. A unicidade é `(contaid, ean)` num índice parcial que ignora nulos e o marcador `'SEM EAN'` usado pelo sistema antigo. |
+| 21/09/2026 | EAN: fica em `produtosfornecedor` — `produtosestoque` não tem coluna de EAN. A unicidade é `(contaid, ean)` num índice parcial que ignora nulos e o marcador `'SEM EAN'` usado pelo sistema antigo. Avaliar movê-lo para o catálogo na Fase 12. |
 | 21/09/2026 | As 18 linhas de `configuracoes` da Fase 1 não pertenciam a conta nenhuma: viraram a função `cria_configuracoes_padrao(contaid)`, chamada ao criar cada conta. |
-| 21/09/2026 | EAN fica em `produtosfornecedor` (confirmado: `produtosestoque` não tem coluna de EAN). Avaliar movê-lo para o catálogo na Fase 12. |
 | 21/09/2026 | Cadastro público desligado na tela e no Supabase Auth. Só entra quem foi convidado. |
 | 21/09/2026 | O e-mail embutido do Supabase serve só para teste. SMTP próprio virou item da Fase 14, antes de vender. |
 
