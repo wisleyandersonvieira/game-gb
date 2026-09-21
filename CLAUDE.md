@@ -1,47 +1,64 @@
 # Game GB: instruções para o Claude Code
 
-Sistema de gamificação e gestão da loja Gela Boca: tarefas com pontos, validação de entregas, ranking, loja de recompensas, metas, agenda, escala, RH e estoque. Ele está sendo migrado de um sistema antigo (Python + SQL Server + Tkinter + bot do Telegram) para uma aplicação web única.
+**Produto multi-empresa (SaaS)** de gamificação e gestão de lojas: tarefas com pontos, validação de entregas, ranking, loja de recompensas, metas, agenda, escala, RH e estoque. Ele nasceu do sistema da loja Gela Boca (Python + SQL Server + Tkinter + bot do Telegram) e está sendo reconstruído como aplicação web vendida para várias empresas.
 
 **Sempre leia `docs/PLANO_MIGRACAO.md` antes de começar.** Ele define as fases, a ordem e o que já foi feito. Ao terminar um item, marque o checkbox, atualize a tabela "Status geral" e registre decisões novas em "Registro de decisões".
 
+## Modelo de negócio (a regra mais importante)
+- **Administrador geral:** somente o login `wisley_anderson@hotmail.com`, reconhecido no banco pela função `eh_admin_geral()`. Ele acessa `/admin`, cadastra as contas (clientes) e define `limitelojas`. Não vê os dados operacionais dos clientes.
+- **Conta = cliente = usuário master.** Cada login pertence a uma única conta (`contasusuarios`). O master acessa `/gestao` e o app.
+- **Lojas** pertencem a uma conta, e cada conta tem no máximo `contas.limitelojas` lojas ativas.
+- **Funcionários e tarefas** são da conta. Um funcionário pode estar em várias lojas (`funcionarioslojas`) e uma tarefa pode valer em várias lojas (`tarefaslojas`).
+- **Isolamento total entre contas:** nenhum dado de uma conta pode ser lido ou alterado por outra.
+
+## Regras de isolamento (obrigatórias em todo código novo)
+- **Toda** tabela de dados tem `contaid NOT NULL` com padrão `minha_conta()`. As tabelas de nível loja têm também `lojaid`. Consulte a classificação conta/loja em `docs/DICIONARIO_BANCO.md`.
+- **Toda** tabela tem RLS com `contaid = minha_conta()`. **Nunca** crie policy `USING (true)`.
+- O front-end **nunca** envia `contaid`, e nunca confie em `contaid` vindo do navegador. O banco preenche e confere.
+- FKs entre tabelas precisam garantir a mesma conta (ex.: um funcionário só pode ser ligado a lojas da própria conta). Use triggers ou FKs compostas (`contaid`, id).
+- Unicidades são **por conta ou por loja**, nunca globais (ex.: `UNIQUE (contaid, nomegrupo)`).
+- Arquivos no Storage ficam em `<contaid>/<lojaid>/...`, com policies por pasta.
+- Toda migração passa pelo **teste de isolamento** (duas contas; A não lê, altera nem apaga nada de B) antes de ir para o Supabase.
+- A chave `service_role` só existe em variável de servidor (nunca `VITE_`) e só é usada em funções de servidor para tarefas de admin (convites).
+
 ## Stack
 - React 19 + TanStack Start/Router (rotas por arquivo em `src/routes/`) + TanStack Query + Tailwind v4
-- Supabase (Postgres, Auth, Storage). Cliente em `src/integrations/supabase/client.ts`
+- Supabase (Postgres, Auth, Storage). Cliente em `src/integrations/supabase/client.ts`, que lê do `.env`
 - Gerenciador de pacotes: **bun** (`bun install`, `bun run dev` → http://localhost:8080, `bun run build`)
-- Migrações do banco: `supabase/migrations/*.sql` (Supabase CLI)
+- Migrações: `supabase/migrations/*.sql` (Supabase CLI)
 
 ## Estrutura
-- `src/routes/_authenticated/*` são as telas que exigem login. `src/components/Nav.tsx` é o menu.
+- `src/routes/admin/*` é o painel do administrador geral. `src/routes/_authenticated/*` são as telas do master (gestão e app). O seletor de loja ativa fica no topo.
 - `legado/` é o sistema antigo em Python, **só para consulta**. Use-o como referência de regra de negócio. Nunca o execute nem o edite.
-  - `legado/database.py` tem todas as consultas SQL e regras (pontos, saldo, validação, metas).
+  - `legado/database.py` tem todas as consultas e regras (pontos, saldo, validação, metas).
   - `legado/main.py` é o painel desktop do gestor (14 abas).
-  - `legado/api_server.py` + `legado/templates/painel.html` + `legado/static/js/painel.js` são o painel web antigo (Kanban, metas, mapa, agenda).
-  - `legado/telegram_bot.py`, `legado/agendador*.py` são o bot e as rotinas automáticas.
-  - `legado/config.py` tem parâmetros (IDs especiais, horários, taxa ponto→real). **Contém segredos: nunca copie valores dele para o código novo.**
-- `docs/DICIONARIO_BANCO.md` descreve as 42 tabelas, as colunas e os relacionamentos.
+  - `legado/api_server.py` + `legado/templates/painel.html` + `legado/static/js/painel.js` são o painel web antigo.
+  - `legado/telegram_bot.py`, `legado/agendador*.py` são o bot e as rotinas: a especificação da Fase 15.
+  - `legado/config.py` tem parâmetros. **Contém segredos: nunca copie valores dele.**
+- `docs/DICIONARIO_BANCO.md` tem as tabelas, as colunas, os relacionamentos e o nível conta/loja de cada tabela.
 
-## Regras do banco (não mudar sem registrar no plano)
-- **Banco limpo:** nenhum dado do sistema antigo é importado.
-- Nomes de tabelas e colunas são os originais do SQL Server **em minúsculas, sem aspas e sem underscores extras** (`FuncionarioID` → `funcionarioid`, `TarefasAtribuidas` → `tarefasatribuidas`). Colunas novas seguem o mesmo padrão.
-- Chaves primárias são `integer GENERATED BY DEFAULT AS IDENTITY` (não UUID).
-- Datas e horas em `timestamptz`, fuso da loja `America/Sao_Paulo`.
-- O saldo de pontos fica em `funcionarios.saldopontos` (não existe tabela de transações).
-- IDs especiais que no sistema antigo ficavam fixos no `config.py` (tarefa de feedback diário, leitura, nota fiscal etc.) vão para a tabela `configuracoes` (chave/valor). Nunca coloque IDs fixos no código.
-- Toda mudança de estrutura é uma **nova** migração em `supabase/migrations/` (nunca edite migrações já aplicadas). Depois dela, regenere `src/integrations/supabase/types.ts`.
-- Operações que mexem em pontos ou saldo devem ser atômicas, em funções SQL (RPC), não em várias chamadas do front-end.
+## Regras do banco
+- Banco limpo: nenhum dado do sistema antigo é importado.
+- Nomes originais do SQL Server **em minúsculas, sem aspas, sem underscores** (`FuncionarioID` → `funcionarioid`). Nomes novos seguem o mesmo padrão (`contaid`, `lojaid`, `limitelojas`).
+- Chaves primárias `integer GENERATED BY DEFAULT AS IDENTITY` (não UUID), exceto `userid` do Supabase Auth.
+- Datas em `timestamptz`, fuso `America/Sao_Paulo`.
+- Saldo de pontos em `funcionarios.saldopontos`.
+- Nada de IDs fixos no código: parâmetros e IDs especiais ficam em `configuracoes` (por conta).
+- Toda mudança de estrutura é uma **nova** migração (nunca edite uma já aplicada). Depois dela, regenere `src/integrations/supabase/types.ts`.
+- Operações com pontos ou saldo são atômicas, em funções SQL (RPC).
 
 ## Ordem de trabalho (decisões do Wisley)
 - Siga as fases do plano **em ordem**.
-- **Integrações com o bot do Telegram ficam para a Fase 11.** Não implemente envio de mensagens do Telegram antes disso.
-- **Segurança fica para a Fase 12 (última).** Até lá, as políticas de RLS seguem o padrão "usuário logado pode tudo". Não bloqueie o avanço por isso, mas também não piore a situação: nenhum segredo novo no código.
+- **Stripe (Fase 14) e Telegram/WhatsApp (Fase 15) ficam para o fim.** Não implemente envio de mensagens nem cobrança antes disso. Mas já prepare o modelo: `contas.status`, `contas.limitelojas`.
+- O **endurecimento** de segurança fica para a Fase 16. O **isolamento entre contas não é opcional** e vale desde a Fase 2.
 
 ## Padrões de código
-- Interface **em português (pt-BR)**. Datas no formato dd/mm/aaaa, moeda R$ (`Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`).
-- Leitura de dados com `useQuery`, escrita com `useMutation` + `invalidateQueries`.
-- Componentes pequenos, telas em `src/routes/_authenticated/<tela>.tsx`. Adicione cada tela nova ao `Nav.tsx`.
-- Antes de concluir uma tarefa, rode `bun run build` e confirme que não há erros de TypeScript.
+- Interface **em português (pt-BR)**. Datas dd/mm/aaaa, moeda R$ (`Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`).
+- Leitura com `useQuery`, escrita com `useMutation` + `invalidateQueries`. Inclua a loja ativa na `queryKey`.
+- Componentes pequenos. Adicione cada tela nova ao menu.
+- Antes de concluir, rode `bun run build` sem erros de TypeScript.
 
 ## Como se comunicar com o Wisley
-- Ele não é programador. Explique o que foi feito e o que ele deve testar em linguagem simples e passos curtos.
-- Quando uma decisão for dele (regra de negócio, layout, prioridade), pergunte antes de implementar.
-- Faça commits pequenos, com mensagem em português, um por item do plano.
+- Ele não é programador. Explique o que foi feito e o que testar em linguagem simples e passos curtos.
+- Decisões de negócio, layout ou prioridade são dele: pergunte antes (veja "Decisões em aberto" no plano).
+- Commits pequenos, em português, um por item do plano.
