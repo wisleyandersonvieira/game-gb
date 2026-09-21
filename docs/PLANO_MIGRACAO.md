@@ -37,7 +37,7 @@ Administrador geral (Wisley)
 | Fase | Tema | Status |
 |---|---|---|
 | 1 | Banco de dados (estrutura do sistema antigo) | ✅ Concluída |
-| 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ⬜ Próxima |
+| 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | 🟨 Banco pronto e aplicado (2.1–2.3); falta o acesso e a navegação (2.4) |
 | 3 | **Painel do administrador geral** | ⬜ |
 | 4 | **Gestão do usuário master** (lojas e seletor de loja) | ⬜ |
 | 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Equipe feita sem lojas; precisa ajuste |
@@ -71,33 +71,37 @@ Legenda: ⬜ não iniciada · 🟨 em andamento · ✅ concluída · ⏸️ paus
 O banco ainda está vazio, então as mudanças são baratas agora. Tudo aqui é migração nova em `supabase/migrations/`, testada num Postgres descartável antes de ir para o Supabase.
 
 **2.1 Tabelas novas**
-- [ ] `contas`: `contaid`, `nome` (nome do cliente/empresa), `email`, `telefone`, `cidade`, `limitelojas` (int, padrão 1), `status` (`ativa` / `suspensa` / `cancelada`), `observacoes`, `criadoem`.
-- [ ] `contasusuarios`: `contaid`, `userid` (→ `auth.users`), `papel` (hoje só `master`; no futuro `gerente`). PK (`contaid`, `userid`). **Regra: um login pertence a uma única conta.**
-- [ ] `lojas`: `lojaid`, `contaid`, `nome`, `cidade`, `endereco`, `ativa`, `criadoem`.
-- [ ] `funcionarioslojas`: (`funcionarioid`, `lojaid`). Liga um funcionário a várias lojas.
-- [ ] `tarefaslojas`: (`tarefaid`, `lojaid`). Define em quais lojas a tarefa vale.
+- [x] `contas`: `contaid`, `nome` (nome do cliente/empresa), `email`, `telefone`, `cidade`, `limitelojas` (int, padrão 1), `status` (`ativa` / `suspensa` / `cancelada`), `observacoes`, `criadoem`.
+- [x] `contasusuarios`: `contaid`, `userid` (→ `auth.users`), `papel` (hoje só `master`; no futuro `gerente`). PK (`contaid`, `userid`). **Regra: um login pertence a uma única conta.**
+- [x] `lojas`: `lojaid`, `contaid`, `nome`, `cidade`, `endereco`, `ativa`, `criadoem`.
+- [x] `funcionarioslojas`: (`funcionarioid`, `lojaid`). Liga um funcionário a várias lojas.
+- [x] `tarefaslojas`: (`tarefaid`, `lojaid`). Define em quais lojas a tarefa vale.
 
 **2.2 Coluna de conta e de loja nas tabelas existentes**
-- [ ] Todas as tabelas do sistema ganham `contaid NOT NULL` (→ `contas`), com padrão `minha_conta()`, para o front-end nunca precisar informar.
-- [ ] As tabelas que pertencem a uma loja ganham também `lojaid` (→ `lojas`). **Antes de migrar, o Claude Code apresenta ao Wisley uma tabela "tabela → nível (conta ou loja)" para aprovação.** Sugestão inicial:
+- [x] Todas as tabelas do sistema ganham `contaid NOT NULL` (→ `contas`), com padrão `minha_conta()`, para o front-end nunca precisar informar.
+- [x] As tabelas que pertencem a uma loja ganham também `lojaid` (→ `lojas`). **Antes de migrar, o Claude Code apresenta ao Wisley uma tabela "tabela → nível (conta ou loja)" para aprovação.** Sugestão inicial:
   - **Nível conta (compartilhado entre as lojas):** funcionarios, tarefas, conquistas, conquistasfuncionarios, produtosloja (loja de recompensas), resgates, feedbacks, feedbacksolicitacoes, denunciasanonimas, documentos, documentosassinaturas, documentospessoais, documentospessoaisciencia, onboardingstatus, categoriasproduto, fornecedores, produtosestoque, produtosfornecedor, configuracoes, configuracoessetores, historicoranking.
   - **Nível loja:** tarefasatribuidas, entregas, grupos (grupos do Telegram são da loja), funcionariosgrupos, escaladiaria, configuracoesescala, posicoesloja, picodiario, freelancers, agendamentos, metasprincipais, metasdiariasmodelos, metasdiariasapuracoes, metasdiariasinstancias, lucromensalhistorico, contagensestoque, itenscontagemestoque, notasfiscais, notasfiscaisentrada, itensnotafiscalentrada, solicitacoesinternas.
-- [ ] Refazer chaves e unicidades para serem **por conta/loja**, por exemplo: `configuracoessetores` (contaid, setor); `metasdiariasmodelos` e `picodiario` (lojaid, diasemanaid); `configuracoes` (contaid, chave); nomes únicos de grupos, conquistas e categorias, EAN de produto, CNPJ de fornecedor e `lucromensalhistorico`, todos únicos **dentro da conta**, não no sistema inteiro.
-- [ ] Garantias no banco: um funcionário só pode ser ligado a lojas da própria conta (o mesmo vale para tarefas e para toda FK entre tabelas); lojas ativas ≤ `contas.limitelojas`; conta `suspensa` fica só leitura.
-- [ ] `usuariosadmin` (login do painel Flask antigo) fica obsoleto: remover.
+- [x] Refazer chaves e unicidades para serem **por conta/loja**, por exemplo: `configuracoessetores` (contaid, setor); `metasdiariasmodelos` e `picodiario` (lojaid, diasemanaid); `configuracoes` (contaid, chave); nomes únicos de grupos, conquistas e categorias, EAN de produto, CNPJ de fornecedor e `lucromensalhistorico`, todos únicos **dentro da conta**, não no sistema inteiro.
+- [x] Garantias no banco: um funcionário só pode ser ligado a lojas da própria conta (o mesmo vale para tarefas e para toda FK entre tabelas); lojas ativas ≤ `contas.limitelojas`; conta `suspensa` fica só leitura.
+- [x] `usuariosadmin` (login do painel Flask antigo) fica obsoleto: remover.
 
 **2.3 Isolamento (RLS)**
-- [ ] Função `eh_admin_geral()`: verdadeiro somente para o login `wisley_anderson@hotmail.com` com e-mail confirmado. **Fixa no banco.**
-- [ ] Função `minha_conta()`: a conta do usuário logado (via `contasusuarios`).
-- [ ] Trocar **todas** as policies `USING (true)` por `contaid = minha_conta()`. `contas` e `contasusuarios`: o admin geral pode tudo; o master só lê a própria conta.
-- [ ] Storage: arquivos gravados em `<contaid>/<lojaid>/...`, com policies por pasta.
-- [ ] **Teste automático de isolamento:** cria 2 contas com 2 usuários e prova que A não lê, altera nem apaga nada de B, em todas as tabelas. Esse teste roda de novo a cada migração futura.
+- [x] Função `eh_admin_geral()`: verdadeiro somente para o login `wisley_anderson@hotmail.com` com e-mail confirmado. **Fixa no banco.**
+- [x] Função `minha_conta()`: a conta do usuário logado (via `contasusuarios`).
+- [x] Trocar **todas** as policies `USING (true)` por `contaid = minha_conta()`. `contas` e `contasusuarios`: o admin geral pode tudo; o master só lê a própria conta.
+- [x] Storage: arquivos gravados em `<contaid>/<lojaid>/...`, com policies por pasta.
+- [x] **Teste automático de isolamento:** cria 2 contas com 2 usuários e prova que A não lê, altera nem apaga nada de B, em todas as tabelas. Esse teste roda de novo a cada migração futura.
 
 **2.4 Acesso e navegação**
 - [ ] Desligar o cadastro público (tela e configuração do Supabase Auth). Só entra quem foi convidado.
 - [ ] Depois do login: admin geral → `/admin`; master → `/gestao`; login sem conta → tela "sem acesso".
-- [ ] `client.ts` lendo URL e chave do `.env`. A chave `service_role` fica **só** em variável de servidor, nunca `VITE_`.
-- [ ] Atualizar `CLAUDE.md` e `docs/DICIONARIO_BANCO.md` com o modelo novo.
+- [x] `client.ts` lendo URL e chave do `.env`. A chave `service_role` fica **só** em variável de servidor, nunca `VITE_`.
+- [x] Atualizar `CLAUDE.md` e `docs/DICIONARIO_BANCO.md` com o modelo novo.
+
+**Feito em 21/09/2026 (2.1 a 2.3):** 47 tabelas, nenhuma sem RLS, 201 policies, nenhuma liberada, banco vazio. O teste de isolamento (`supabase/tests/rodar.sh`) roda 30 checagens com duas contas e passa. Ele já pegou um bug antes de ir para o Supabase: as policies de Storage da Fase 1 não eram removidas e, como policies se somam, vazavam arquivos entre contas.
+
+**Falta (2.4):** desligar o cadastro público e o roteamento por tipo de usuário (`/admin`, `/gestao`, "sem acesso"). Enquanto não houver nenhuma conta cadastrada, as telas do app não mostram dados — é o comportamento correto.
 
 **Pronto quando:** o teste de isolamento passa e cada tipo de usuário cai na sua área.
 
@@ -199,7 +203,8 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 ## Fase 15 — Telegram e WhatsApp da plataforma + cobrança por uso
 **Estratégia (a detalhar quando chegar a hora):**
 - **Um único bot da plataforma** (token do Wisley), atendendo todas as contas, em vez de um bot por cliente. O cliente não precisa criar nada no Telegram.
-- **Vínculo por código:** cada funcionário recebe um link `t.me/<bot>?start=<código>`. Ao abrir, o `chat_id` fica ligado àquele funcionário, e com isso à conta e às lojas dele. Os grupos de cada loja são ligados com um comando `/vincular <código>` no grupo.
+- **Vínculo por código:** cada funcionário recebe um link `t.me/<bot>?start=<código>`. Ao abrir, o `chat_id` fica ligado àquele funcionário, e com isso à conta e às lojas dele.
+- ⚠️ **A desenhar aqui:** `funcionarios.chatidtelegram` é único **só dentro da conta**, porque a mesma pessoa pode trabalhar para duas empresas clientes. Então o `chat_id` sozinho não identifica a conta: quando a pessoa aparece em mais de uma, o bot precisa perguntar de qual empresa ela está falando (ou manter uma conta ativa por conversa). `grupos.chatidtelegram` é único no sistema inteiro, então grupo não tem essa ambiguidade. Os grupos de cada loja são ligados com um comando `/vincular <código>` no grupo.
 - **Bot reescrito como Edge Function (webhook) no Supabase**, e não mais o servidor Python. Isso muda a recomendação anterior (manter o Python): com várias contas, um serviço central na nuvem é mais simples e confiável. O `legado/telegram_bot.py` serve de especificação das funções.
 - **Fila de envio central** (tabela + processamento), respeitando os limites do Telegram (≈30 msg/s no total, ≈20/min por grupo), para uma conta não atrasar as outras.
 - **Medição de uso:** todo envio (Telegram/WhatsApp) é registrado em `usomensagens` (conta, loja, canal, tipo, data). O total do mês vai para o Stripe como **cobrança por uso** ou como franquia incluída no plano, com excedente.
@@ -248,6 +253,16 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | Funcionário pode trabalhar em várias lojas; tarefa pode valer para várias lojas. |
 | 21/09/2026 | Isolamento entre contas (RLS) é feito já na Fase 2. A "segurança por último" vale só para o endurecimento (Fase 16). |
 | 21/09/2026 | Telegram/WhatsApp: um bot central da plataforma, com medição de uso por conta para cobrança. Bot reescrito como Edge Function (substitui a ideia de manter o Python). |
+| 21/09/2026 | Classificação conta/loja aprovada. Duas correções à sugestão do plano: `historicoranking` é de **loja** (senão o ranking por loja do passado se perde) e `freelancers` é de **conta** (a mesma pessoa cobre lojas diferentes). |
+| 21/09/2026 | `posicaopadraoid` saiu de `funcionarios` e foi para `funcionarioslojas`: o lugar padrão no mapa é de cada loja. |
+| 21/09/2026 | `resgates` ganhou `lojaid` opcional, só para relatório. Comunicados (`documentos`) ficam na conta por enquanto. |
+| 21/09/2026 | Saldo de pontos: **um só por funcionário na conta toda** (decisão em aberto nº 1 resolvida). |
+| 21/09/2026 | `funcionarioslojas` e `tarefaslojas` têm `ativo`, e quem aponta para elas usa `ON DELETE RESTRICT`: tirar alguém de uma loja é desativar o vínculo, nunca apagar, para preservar o histórico. As telas só oferecem vínculos ativos em atribuições novas. |
+| 21/09/2026 | `funcionarios.chatidtelegram` é único **só dentro da conta** — a mesma pessoa pode trabalhar para duas empresas clientes. `grupos.chatidtelegram` é único no sistema inteiro. O vínculo chat → conta fica para a Fase 15. |
+| 21/09/2026 | O isolamento entre contas é feito por **chave estrangeira composta com o `contaid`**, não por trigger: as duas pontas leem o mesmo `contaid` da mesma linha, então apontar para outra conta é estruturalmente impossível. O mesmo truque garante que só se atribui tarefa a quem trabalha numa loja onde a tarefa vale. |
+| 21/09/2026 | Policies usam `(select minha_conta())` (avaliado uma vez por consulta, não por linha). `minha_conta()`, `minha_conta_editavel()` e `eh_admin_geral()` são `security definer` com `search_path` fixo. |
+| 21/09/2026 | EAN: fica em `produtosfornecedor` — `produtosestoque` não tem coluna de EAN. A unicidade é `(contaid, ean)` num índice parcial que ignora nulos e o marcador `'SEM EAN'` usado pelo sistema antigo. |
+| 21/09/2026 | As 18 linhas de `configuracoes` da Fase 1 não pertenciam a conta nenhuma: viraram a função `cria_configuracoes_padrao(contaid)`, chamada ao criar cada conta (Fase 4). |
 
 ## Referência — arquivo do sistema antigo → fase
 | Arquivo em `legado/` | Fase |

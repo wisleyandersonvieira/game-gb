@@ -27,7 +27,53 @@ ALTER TABLE public.funcionarios DROP COLUMN posicaopadraoid;
 --    nenhuma. Os valores passam para uma funcao, que a Fase 4 chama ao criar
 --    cada conta nova. A funcao que faz isso e criada no fim desta migracao.
 
-DELETE FROM public.configuracoes;
+--    Tambem limpa o que sobrou dos testes de tela: sao linhas anteriores ao
+--    modelo multi-empresa, que nao pertencem a conta nenhuma e nao teriam
+--    como receber um contaid. O plano ja previa o banco limpo.
+TRUNCATE TABLE
+  public.agendamentos,
+  public.categoriasproduto,
+  public.configuracoes,
+  public.configuracoesescala,
+  public.configuracoessetores,
+  public.conquistas,
+  public.conquistasfuncionarios,
+  public.contagensestoque,
+  public.denunciasanonimas,
+  public.documentos,
+  public.documentosassinaturas,
+  public.documentospessoais,
+  public.documentospessoaisciencia,
+  public.entregas,
+  public.escaladiaria,
+  public.feedbacks,
+  public.feedbacksolicitacoes,
+  public.fornecedores,
+  public.freelancers,
+  public.funcionarios,
+  public.funcionariosgrupos,
+  public.grupos,
+  public.historicoranking,
+  public.itenscontagemestoque,
+  public.itensnotafiscalentrada,
+  public.lucromensalhistorico,
+  public.metasdiariasapuracoes,
+  public.metasdiariasinstancias,
+  public.metasdiariasmodelos,
+  public.metasprincipais,
+  public.notasfiscais,
+  public.notasfiscaisentrada,
+  public.onboardingstatus,
+  public.picodiario,
+  public.posicoesloja,
+  public.produtosestoque,
+  public.produtosfornecedor,
+  public.produtosloja,
+  public.resgates,
+  public.solicitacoesinternas,
+  public.tarefas,
+  public.tarefasatribuidas
+RESTART IDENTITY CASCADE;
 
 -- 5. contaid em todas as tabelas. O padrao minha_conta() faz o banco preencher,
 --    para o navegador nunca precisar mandar (nem ser acreditado se mandar).

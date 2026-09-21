@@ -17,10 +17,12 @@ export type Database = {
       agendamentos: {
         Row: {
           agendamentoid: number
+          contaid: number
           cpfcliente: string | null
           datacriacao: string
           dataevento: string
           funcionarioid: number
+          lojaid: number
           msgconfirmacaoenviada: number | null
           msgcriacaoenviada: number | null
           msgposvendaenviada: number | null
@@ -33,10 +35,12 @@ export type Database = {
         }
         Insert: {
           agendamentoid?: number
+          contaid?: number
           cpfcliente?: string | null
           datacriacao?: string
           dataevento: string
           funcionarioid: number
+          lojaid: number
           msgconfirmacaoenviada?: number | null
           msgcriacaoenviada?: number | null
           msgposvendaenviada?: number | null
@@ -49,10 +53,12 @@ export type Database = {
         }
         Update: {
           agendamentoid?: number
+          contaid?: number
           cpfcliente?: string | null
           datacriacao?: string
           dataevento?: string
           funcionarioid?: number
+          lojaid?: number
           msgconfirmacaoenviada?: number | null
           msgcriacaoenviada?: number | null
           msgposvendaenviada?: number | null
@@ -65,92 +71,161 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "agendamentos_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "agendamentos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "agendamentos_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "agendamentos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
       categoriasproduto: {
         Row: {
           categoriaid: number
+          contaid: number
           nomecategoria: string
         }
         Insert: {
           categoriaid?: number
+          contaid?: number
           nomecategoria: string
         }
         Update: {
           categoriaid?: number
+          contaid?: number
           nomecategoria?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "categoriasproduto_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       configuracoes: {
         Row: {
           atualizadoem: string
           chave: string
+          contaid: number
           descricao: string | null
           valor: string | null
         }
         Insert: {
           atualizadoem?: string
           chave: string
+          contaid?: number
           descricao?: string | null
           valor?: string | null
         }
         Update: {
           atualizadoem?: string
           chave?: string
+          contaid?: number
           descricao?: string | null
           valor?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "configuracoes_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       configuracoesescala: {
         Row: {
           configid: number
+          contaid: number
           dataatualizacao: string | null
           duracaointervalo: number
           duracaojornadapadrao: number | null
+          lojaid: number
           maxhorassempausa: number
         }
         Insert: {
           configid?: number
+          contaid?: number
           dataatualizacao?: string | null
           duracaointervalo: number
           duracaojornadapadrao?: number | null
+          lojaid: number
           maxhorassempausa: number
         }
         Update: {
           configid?: number
+          contaid?: number
           dataatualizacao?: string | null
           duracaointervalo?: number
           duracaojornadapadrao?: number | null
+          lojaid?: number
           maxhorassempausa?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "configuracoesescala_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "configuracoesescala_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       configuracoessetores: {
         Row: {
+          contaid: number
           descricaopadrao: string | null
           setor: string
         }
         Insert: {
+          contaid?: number
           descricaopadrao?: string | null
           setor: string
         }
         Update: {
+          contaid?: number
           descricaopadrao?: string | null
           setor?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "configuracoessetores_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       conquistas: {
         Row: {
           conquistaid: number
+          contaid: number
           criteriotipo: string
           criteriovalor: number
           descricao: string
@@ -160,6 +235,7 @@ export type Database = {
         }
         Insert: {
           conquistaid?: number
+          contaid?: number
           criteriotipo: string
           criteriovalor: number
           descricao: string
@@ -169,6 +245,7 @@ export type Database = {
         }
         Update: {
           conquistaid?: number
+          contaid?: number
           criteriotipo?: string
           criteriovalor?: number
           descricao?: string
@@ -176,99 +253,206 @@ export type Database = {
           nome?: string
           pontosbonus?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "conquistas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       conquistasfuncionarios: {
         Row: {
           conquistafuncionarioid: number
           conquistaid: number
+          contaid: number
           dataconquista: string | null
           funcionarioid: number
         }
         Insert: {
           conquistafuncionarioid?: number
           conquistaid: number
+          contaid?: number
           dataconquista?: string | null
           funcionarioid: number
         }
         Update: {
           conquistafuncionarioid?: number
           conquistaid?: number
+          contaid?: number
           dataconquista?: string | null
           funcionarioid?: number
         }
         Relationships: [
           {
-            foreignKeyName: "conquistasfuncionarios_conquistaid_fkey"
-            columns: ["conquistaid"]
+            foreignKeyName: "conquistasfuncionarios_conquistaid_fk"
+            columns: ["contaid", "conquistaid"]
             isOneToOne: false
             referencedRelation: "conquistas"
-            referencedColumns: ["conquistaid"]
+            referencedColumns: ["contaid", "conquistaid"]
           },
           {
-            foreignKeyName: "conquistasfuncionarios_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "conquistasfuncionarios_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "conquistasfuncionarios_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       contagensestoque: {
         Row: {
           contagemid: number
+          contaid: number
           datacontagem: string
           dataregistro: string | null
           funcionarioid: number
+          lojaid: number
           nomecontagem: string | null
         }
         Insert: {
           contagemid?: number
+          contaid?: number
           datacontagem: string
           dataregistro?: string | null
           funcionarioid: number
+          lojaid: number
           nomecontagem?: string | null
         }
         Update: {
           contagemid?: number
+          contaid?: number
           datacontagem?: string
           dataregistro?: string | null
           funcionarioid?: number
+          lojaid?: number
           nomecontagem?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "contagensestoque_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "contagensestoque_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "contagensestoque_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "contagensestoque_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
+      contas: {
+        Row: {
+          cidade: string | null
+          contaid: number
+          criadoem: string
+          email: string
+          limitelojas: number
+          nome: string
+          observacoes: string | null
+          status: string
+          telefone: string | null
+        }
+        Insert: {
+          cidade?: string | null
+          contaid?: number
+          criadoem?: string
+          email: string
+          limitelojas?: number
+          nome: string
+          observacoes?: string | null
+          status?: string
+          telefone?: string | null
+        }
+        Update: {
+          cidade?: string | null
+          contaid?: number
+          criadoem?: string
+          email?: string
+          limitelojas?: number
+          nome?: string
+          observacoes?: string | null
+          status?: string
+          telefone?: string | null
+        }
+        Relationships: []
+      }
+      contasusuarios: {
+        Row: {
+          contaid: number
+          criadoem: string
+          papel: string
+          userid: string
+        }
+        Insert: {
+          contaid: number
+          criadoem?: string
+          papel?: string
+          userid: string
+        }
+        Update: {
+          contaid?: number
+          criadoem?: string
+          papel?: string
+          userid?: string
+        }
+        Relationships: []
+      }
       denunciasanonimas: {
         Row: {
+          contaid: number
           dataregistro: string | null
           denunciaid: number
           mensagem: string
           status: string | null
         }
         Insert: {
+          contaid?: number
           dataregistro?: string | null
           denunciaid?: number
           mensagem: string
           status?: string | null
         }
         Update: {
+          contaid?: number
           dataregistro?: string | null
           denunciaid?: number
           mensagem?: string
           status?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "denunciasanonimas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       documentos: {
         Row: {
+          contaid: number
           conteudo: string
           datacriacao: string | null
           documentoid: number
@@ -278,6 +462,7 @@ export type Database = {
           titulo: string
         }
         Insert: {
+          contaid?: number
           conteudo: string
           datacriacao?: string | null
           documentoid?: number
@@ -287,6 +472,7 @@ export type Database = {
           titulo: string
         }
         Update: {
+          contaid?: number
           conteudo?: string
           datacriacao?: string | null
           documentoid?: number
@@ -297,17 +483,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "documentos_funcionariocriadorid_fkey"
-            columns: ["funcionariocriadorid"]
+            foreignKeyName: "documentos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "documentos_funcionariocriadorid_fk"
+            columns: ["contaid", "funcionariocriadorid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       documentosassinaturas: {
         Row: {
           assinaturaid: number
+          contaid: number
           dataciencia: string | null
           dataenvio: string | null
           documentoid: number
@@ -316,6 +510,7 @@ export type Database = {
         }
         Insert: {
           assinaturaid?: number
+          contaid?: number
           dataciencia?: string | null
           dataenvio?: string | null
           documentoid: number
@@ -324,6 +519,7 @@ export type Database = {
         }
         Update: {
           assinaturaid?: number
+          contaid?: number
           dataciencia?: string | null
           dataenvio?: string | null
           documentoid?: number
@@ -332,24 +528,32 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "documentosassinaturas_documentoid_fkey"
-            columns: ["documentoid"]
+            foreignKeyName: "documentosassinaturas_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "documentos"
-            referencedColumns: ["documentoid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "documentosassinaturas_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "documentosassinaturas_documentoid_fk"
+            columns: ["contaid", "documentoid"]
+            isOneToOne: false
+            referencedRelation: "documentos"
+            referencedColumns: ["contaid", "documentoid"]
+          },
+          {
+            foreignKeyName: "documentosassinaturas_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       documentospessoais: {
         Row: {
           caminhoarquivo: string
+          contaid: number
           dataupload: string | null
           documentoid: number
           funcionarioid: number
@@ -358,6 +562,7 @@ export type Database = {
         }
         Insert: {
           caminhoarquivo: string
+          contaid?: number
           dataupload?: string | null
           documentoid?: number
           funcionarioid: number
@@ -366,6 +571,7 @@ export type Database = {
         }
         Update: {
           caminhoarquivo?: string
+          contaid?: number
           dataupload?: string | null
           documentoid?: number
           funcionarioid?: number
@@ -374,17 +580,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "documentospessoais_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "documentospessoais_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "documentospessoais_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       documentospessoaisciencia: {
         Row: {
           cienciaid: number
+          contaid: number
           dataciencia: string | null
           dataenvio: string | null
           documentoid: number
@@ -393,6 +607,7 @@ export type Database = {
         }
         Insert: {
           cienciaid?: number
+          contaid?: number
           dataciencia?: string | null
           dataenvio?: string | null
           documentoid: number
@@ -401,6 +616,7 @@ export type Database = {
         }
         Update: {
           cienciaid?: number
+          contaid?: number
           dataciencia?: string | null
           dataenvio?: string | null
           documentoid?: number
@@ -409,28 +625,37 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "documentospessoaisciencia_documentoid_fkey"
-            columns: ["documentoid"]
+            foreignKeyName: "documentospessoaisciencia_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "documentospessoais"
-            referencedColumns: ["documentoid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "documentospessoaisciencia_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "documentospessoaisciencia_documentoid_fk"
+            columns: ["contaid", "documentoid"]
+            isOneToOne: false
+            referencedRelation: "documentospessoais"
+            referencedColumns: ["contaid", "documentoid"]
+          },
+          {
+            foreignKeyName: "documentospessoaisciencia_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       entregas: {
         Row: {
           atribuicaoid: number | null
+          contaid: number
           dataenvio: string | null
           entregaid: number
           fileidtelegram: string | null
           funcionarioid: number
+          lojaid: number
           motivorecusa: string | null
           notificacaogestorenviada: boolean | null
           pathfotoevidencia: string | null
@@ -440,10 +665,12 @@ export type Database = {
         }
         Insert: {
           atribuicaoid?: number | null
+          contaid?: number
           dataenvio?: string | null
           entregaid?: number
           fileidtelegram?: string | null
           funcionarioid: number
+          lojaid: number
           motivorecusa?: string | null
           notificacaogestorenviada?: boolean | null
           pathfotoevidencia?: string | null
@@ -453,10 +680,12 @@ export type Database = {
         }
         Update: {
           atribuicaoid?: number | null
+          contaid?: number
           dataenvio?: string | null
           entregaid?: number
           fileidtelegram?: string | null
           funcionarioid?: number
+          lojaid?: number
           motivorecusa?: string | null
           notificacaogestorenviada?: boolean | null
           pathfotoevidencia?: string | null
@@ -466,23 +695,45 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "entregas_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "entregas_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "entregas_tarefaid_fkey"
-            columns: ["tarefaid"]
+            foreignKeyName: "entregas_funcionario_na_loja_fk"
+            columns: ["funcionarioid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "funcionarioslojas"
+            referencedColumns: ["funcionarioid", "lojaid"]
+          },
+          {
+            foreignKeyName: "entregas_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "entregas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "entregas_tarefaid_fk"
+            columns: ["contaid", "tarefaid"]
             isOneToOne: false
             referencedRelation: "tarefas"
-            referencedColumns: ["tarefaid"]
+            referencedColumns: ["contaid", "tarefaid"]
           },
         ]
       }
       escaladiaria: {
         Row: {
+          contaid: number
           dataescala: string
           escalaid: number
           fimintervalo: string | null
@@ -492,10 +743,12 @@ export type Database = {
           horarioentrada: string | null
           horariosaida: string | null
           iniciointervalo: string | null
+          lojaid: number
           posicaoid: number
           statusconfirmacao: string | null
         }
         Insert: {
+          contaid?: number
           dataescala: string
           escalaid?: number
           fimintervalo?: string | null
@@ -505,10 +758,12 @@ export type Database = {
           horarioentrada?: string | null
           horariosaida?: string | null
           iniciointervalo?: string | null
+          lojaid: number
           posicaoid: number
           statusconfirmacao?: string | null
         }
         Update: {
+          contaid?: number
           dataescala?: string
           escalaid?: number
           fimintervalo?: string | null
@@ -518,36 +773,59 @@ export type Database = {
           horarioentrada?: string | null
           horariosaida?: string | null
           iniciointervalo?: string | null
+          lojaid?: number
           posicaoid?: number
           statusconfirmacao?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "escaladiaria_freelancerid_fkey"
-            columns: ["freelancerid"]
+            foreignKeyName: "escaladiaria_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "escaladiaria_freelancerid_fk"
+            columns: ["contaid", "freelancerid"]
             isOneToOne: false
             referencedRelation: "freelancers"
-            referencedColumns: ["freelancerid"]
+            referencedColumns: ["contaid", "freelancerid"]
           },
           {
-            foreignKeyName: "escaladiaria_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "escaladiaria_funcionario_na_loja_fk"
+            columns: ["funcionarioid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "funcionarioslojas"
+            referencedColumns: ["funcionarioid", "lojaid"]
+          },
+          {
+            foreignKeyName: "escaladiaria_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
           {
-            foreignKeyName: "escaladiaria_posicaoid_fkey"
-            columns: ["posicaoid"]
+            foreignKeyName: "escaladiaria_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "escaladiaria_posicaoid_fk"
+            columns: ["contaid", "posicaoid"]
             isOneToOne: false
             referencedRelation: "posicoesloja"
-            referencedColumns: ["posicaoid"]
+            referencedColumns: ["contaid", "posicaoid"]
           },
         ]
       }
       feedbacks: {
         Row: {
           comentario: string | null
+          contaid: number
           datafeedback: string
           feedbackid: number
           funcionarioid: number
@@ -555,6 +833,7 @@ export type Database = {
         }
         Insert: {
           comentario?: string | null
+          contaid?: number
           datafeedback: string
           feedbackid?: number
           funcionarioid: number
@@ -562,6 +841,7 @@ export type Database = {
         }
         Update: {
           comentario?: string | null
+          contaid?: number
           datafeedback?: string
           feedbackid?: number
           funcionarioid?: number
@@ -569,16 +849,24 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "feedbacks_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "feedbacks_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "feedbacks_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       feedbacksolicitacoes: {
         Row: {
+          contaid: number
           dataresposta: string | null
           datasolicitacao: string
           funcionarioid: number
@@ -588,6 +876,7 @@ export type Database = {
           textoresposta: string | null
         }
         Insert: {
+          contaid?: number
           dataresposta?: string | null
           datasolicitacao?: string
           funcionarioid: number
@@ -597,6 +886,7 @@ export type Database = {
           textoresposta?: string | null
         }
         Update: {
+          contaid?: number
           dataresposta?: string | null
           datasolicitacao?: string
           funcionarioid?: number
@@ -607,58 +897,88 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "feedbacksolicitacoes_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "feedbacksolicitacoes_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "feedbacksolicitacoes_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       fornecedores: {
         Row: {
           cnpj: string
+          contaid: number
           fornecedorid: number
           nomefantasia: string
         }
         Insert: {
           cnpj: string
+          contaid?: number
           fornecedorid?: number
           nomefantasia: string
         }
         Update: {
           cnpj?: string
+          contaid?: number
           fornecedorid?: number
           nomefantasia?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fornecedores_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       freelancers: {
         Row: {
+          contaid: number
           freelancerid: number
           habilidadeprincipal: string | null
           nome: string
           telefone: string | null
         }
         Insert: {
+          contaid?: number
           freelancerid?: number
           habilidadeprincipal?: string | null
           nome: string
           telefone?: string | null
         }
         Update: {
+          contaid?: number
           freelancerid?: number
           habilidadeprincipal?: string | null
           nome?: string
           telefone?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "freelancers_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       funcionarios: {
         Row: {
           ativo: boolean
           cargo: string | null
           chatidtelegram: string | null
+          contaid: number
           cpf: string | null
           datafimafastamento: string | null
           datainicioafastamento: string | null
@@ -670,7 +990,6 @@ export type Database = {
           nivelacesso: string | null
           nomecompleto: string
           pontostotal: number | null
-          posicaopadraoid: number | null
           saldopontos: number
           senhahash: string | null
           setor: string | null
@@ -681,6 +1000,7 @@ export type Database = {
           ativo?: boolean
           cargo?: string | null
           chatidtelegram?: string | null
+          contaid?: number
           cpf?: string | null
           datafimafastamento?: string | null
           datainicioafastamento?: string | null
@@ -692,7 +1012,6 @@ export type Database = {
           nivelacesso?: string | null
           nomecompleto: string
           pontostotal?: number | null
-          posicaopadraoid?: number | null
           saldopontos?: number
           senhahash?: string | null
           setor?: string | null
@@ -703,6 +1022,7 @@ export type Database = {
           ativo?: boolean
           cargo?: string | null
           chatidtelegram?: string | null
+          contaid?: number
           cpf?: string | null
           datafimafastamento?: string | null
           datainicioafastamento?: string | null
@@ -714,7 +1034,6 @@ export type Database = {
           nivelacesso?: string | null
           nomecompleto?: string
           pontostotal?: number | null
-          posicaopadraoid?: number | null
           saldopontos?: number
           senhahash?: string | null
           setor?: string | null
@@ -723,67 +1042,166 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "funcionarios_posicaopadraoid_fkey"
-            columns: ["posicaopadraoid"]
+            foreignKeyName: "funcionarios_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "posicoesloja"
-            referencedColumns: ["posicaoid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
         ]
       }
       funcionariosgrupos: {
         Row: {
+          contaid: number
           funcionarioid: number
           grupoid: number
+          lojaid: number
         }
         Insert: {
+          contaid?: number
           funcionarioid: number
           grupoid: number
+          lojaid: number
         }
         Update: {
+          contaid?: number
           funcionarioid?: number
           grupoid?: number
+          lojaid?: number
         }
         Relationships: [
           {
-            foreignKeyName: "funcionariosgrupos_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "funcionariosgrupos_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "funcionariosgrupos_grupoid_fkey"
-            columns: ["grupoid"]
+            foreignKeyName: "funcionariosgrupos_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "funcionariosgrupos_grupoid_fk"
+            columns: ["contaid", "grupoid"]
             isOneToOne: false
             referencedRelation: "grupos"
-            referencedColumns: ["grupoid"]
+            referencedColumns: ["contaid", "grupoid"]
+          },
+          {
+            foreignKeyName: "funcionariosgrupos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      funcionarioslojas: {
+        Row: {
+          ativo: boolean
+          contaid: number
+          criadoem: string
+          funcionarioid: number
+          lojaid: number
+          posicaopadraoid: number | null
+        }
+        Insert: {
+          ativo?: boolean
+          contaid?: number
+          criadoem?: string
+          funcionarioid: number
+          lojaid: number
+          posicaopadraoid?: number | null
+        }
+        Update: {
+          ativo?: boolean
+          contaid?: number
+          criadoem?: string
+          funcionarioid?: number
+          lojaid?: number
+          posicaopadraoid?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funcionarioslojas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "funcionarioslojas_contaid_funcionarioid_fkey"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "funcionarioslojas_contaid_lojaid_fkey"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "funcionarioslojas_lojaid_posicaopadraoid_fkey"
+            columns: ["lojaid", "posicaopadraoid"]
+            isOneToOne: false
+            referencedRelation: "posicoesloja"
+            referencedColumns: ["lojaid", "posicaoid"]
           },
         ]
       }
       grupos: {
         Row: {
           chatidtelegram: string | null
+          contaid: number
           grupoid: number
+          lojaid: number
           nomegrupo: string
         }
         Insert: {
           chatidtelegram?: string | null
+          contaid?: number
           grupoid?: number
+          lojaid: number
           nomegrupo: string
         }
         Update: {
           chatidtelegram?: string | null
+          contaid?: number
           grupoid?: number
+          lojaid?: number
           nomegrupo?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "grupos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "grupos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       historicoranking: {
         Row: {
           ano: number
+          contaid: number
           funcionarioid: number
           historicoid: number
+          lojaid: number
           mes: number
           nomefuncionario: string
           percentualdesempenho: number
@@ -793,8 +1211,10 @@ export type Database = {
         }
         Insert: {
           ano: number
+          contaid?: number
           funcionarioid: number
           historicoid?: number
+          lojaid: number
           mes: number
           nomefuncionario: string
           percentualdesempenho: number
@@ -804,8 +1224,10 @@ export type Database = {
         }
         Update: {
           ano?: number
+          contaid?: number
           funcionarioid?: number
           historicoid?: number
+          lojaid?: number
           mes?: number
           nomefuncionario?: string
           percentualdesempenho?: number
@@ -815,73 +1237,113 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "historicoranking_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "historicoranking_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "historicoranking_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "historicoranking_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
       itenscontagemestoque: {
         Row: {
           contagemid: number
+          contaid: number
           eanavulso: string | null
           itemcontagemid: number
+          lojaid: number
           nomeavulso: string | null
           produtoid: number | null
           quantidadecontada: number
         }
         Insert: {
           contagemid: number
+          contaid?: number
           eanavulso?: string | null
           itemcontagemid?: number
+          lojaid: number
           nomeavulso?: string | null
           produtoid?: number | null
           quantidadecontada: number
         }
         Update: {
           contagemid?: number
+          contaid?: number
           eanavulso?: string | null
           itemcontagemid?: number
+          lojaid?: number
           nomeavulso?: string | null
           produtoid?: number | null
           quantidadecontada?: number
         }
         Relationships: [
           {
-            foreignKeyName: "itenscontagemestoque_contagemid_fkey"
-            columns: ["contagemid"]
+            foreignKeyName: "itenscontagemestoque_contagemid_fk"
+            columns: ["contaid", "contagemid"]
             isOneToOne: false
             referencedRelation: "contagensestoque"
-            referencedColumns: ["contagemid"]
+            referencedColumns: ["contaid", "contagemid"]
           },
           {
-            foreignKeyName: "itenscontagemestoque_produtoid_fkey"
-            columns: ["produtoid"]
+            foreignKeyName: "itenscontagemestoque_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "itenscontagemestoque_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "itenscontagemestoque_produtoid_fk"
+            columns: ["contaid", "produtoid"]
             isOneToOne: false
             referencedRelation: "produtosestoque"
-            referencedColumns: ["produtoid"]
+            referencedColumns: ["contaid", "produtoid"]
           },
         ]
       }
       itensnotafiscalentrada: {
         Row: {
+          contaid: number
           itemnotaid: number
+          lojaid: number
           notaid: number
           precocustounitario: number
           produtofornecedorid: number
           quantidade: number
         }
         Insert: {
+          contaid?: number
           itemnotaid?: number
+          lojaid: number
           notaid: number
           precocustounitario: number
           produtofornecedorid: number
           quantidade: number
         }
         Update: {
+          contaid?: number
           itemnotaid?: number
+          lojaid?: number
           notaid?: number
           precocustounitario?: number
           produtofornecedorid?: number
@@ -889,90 +1351,177 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "itensnotafiscalentrada_notaid_fkey"
-            columns: ["notaid"]
+            foreignKeyName: "itensnotafiscalentrada_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "notasfiscaisentrada"
-            referencedColumns: ["notaid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "itensnotafiscalentrada_produtofornecedorid_fkey"
-            columns: ["produtofornecedorid"]
+            foreignKeyName: "itensnotafiscalentrada_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "itensnotafiscalentrada_notaid_fk"
+            columns: ["contaid", "notaid"]
+            isOneToOne: false
+            referencedRelation: "notasfiscaisentrada"
+            referencedColumns: ["contaid", "notaid"]
+          },
+          {
+            foreignKeyName: "itensnotafiscalentrada_produtofornecedorid_fk"
+            columns: ["contaid", "produtofornecedorid"]
             isOneToOne: false
             referencedRelation: "produtosfornecedor"
-            referencedColumns: ["produtofornecedorid"]
+            referencedColumns: ["contaid", "produtofornecedorid"]
           },
         ]
+      }
+      lojas: {
+        Row: {
+          ativa: boolean
+          cidade: string | null
+          contaid: number
+          criadoem: string
+          endereco: string | null
+          lojaid: number
+          nome: string
+        }
+        Insert: {
+          ativa?: boolean
+          cidade?: string | null
+          contaid?: number
+          criadoem?: string
+          endereco?: string | null
+          lojaid?: number
+          nome: string
+        }
+        Update: {
+          ativa?: boolean
+          cidade?: string | null
+          contaid?: number
+          criadoem?: string
+          endereco?: string | null
+          lojaid?: number
+          nome?: string
+        }
+        Relationships: []
       }
       lucromensalhistorico: {
         Row: {
           ano: number
+          contaid: number
           dataregistro: string | null
           historicoid: number
+          lojaid: number
           mes: number
           percentuallucro: number
         }
         Insert: {
           ano: number
+          contaid?: number
           dataregistro?: string | null
           historicoid?: number
+          lojaid: number
           mes: number
           percentuallucro: number
         }
         Update: {
           ano?: number
+          contaid?: number
           dataregistro?: string | null
           historicoid?: number
+          lojaid?: number
           mes?: number
           percentuallucro?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "lucromensalhistorico_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "lucromensalhistorico_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       metasdiariasapuracoes: {
         Row: {
           apuracaoid: number
+          contaid: number
           dataapuracao: string
           funcionarioid_lancamento: number | null
+          lojaid: number
           metaprincipalid: number | null
           pontosmetadiariaganhos: number | null
           valordia: number
         }
         Insert: {
           apuracaoid?: number
+          contaid?: number
           dataapuracao: string
           funcionarioid_lancamento?: number | null
+          lojaid: number
           metaprincipalid?: number | null
           pontosmetadiariaganhos?: number | null
           valordia: number
         }
         Update: {
           apuracaoid?: number
+          contaid?: number
           dataapuracao?: string
           funcionarioid_lancamento?: number | null
+          lojaid?: number
           metaprincipalid?: number | null
           pontosmetadiariaganhos?: number | null
           valordia?: number
         }
         Relationships: [
           {
-            foreignKeyName: "metasdiariasapuracoes_funcionarioid_lancamento_fkey"
-            columns: ["funcionarioid_lancamento"]
+            foreignKeyName: "metasdiariasapuracoes_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "metasdiariasapuracoes_metaprincipalid_fkey"
-            columns: ["metaprincipalid"]
+            foreignKeyName: "metasdiariasapuracoes_funcionarioid_lancamento_fk"
+            columns: ["contaid", "funcionarioid_lancamento"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "metasdiariasapuracoes_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "metasdiariasapuracoes_metaprincipalid_fk"
+            columns: ["contaid", "metaprincipalid"]
             isOneToOne: false
             referencedRelation: "metasprincipais"
-            referencedColumns: ["metaprincipalid"]
+            referencedColumns: ["contaid", "metaprincipalid"]
           },
         ]
       }
       metasdiariasinstancias: {
         Row: {
+          contaid: number
           data: string
+          lojaid: number
           metainstanciaid: number
           metamodeloid: number | null
           status: string | null
@@ -980,7 +1529,9 @@ export type Database = {
           valormeta: number
         }
         Insert: {
+          contaid?: number
           data: string
+          lojaid: number
           metainstanciaid?: number
           metamodeloid?: number | null
           status?: string | null
@@ -988,41 +1539,81 @@ export type Database = {
           valormeta: number
         }
         Update: {
+          contaid?: number
           data?: string
+          lojaid?: number
           metainstanciaid?: number
           metamodeloid?: number | null
           status?: string | null
           valoratingido?: number | null
           valormeta?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "metasdiariasinstancias_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metasdiariasinstancias_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       metasdiariasmodelos: {
         Row: {
+          contaid: number
           diasemanaid: number
+          lojaid: number
           nomedia: string
           pontospremio: number
           valormeta: number
         }
         Insert: {
+          contaid?: number
           diasemanaid: number
+          lojaid: number
           nomedia: string
           pontospremio: number
           valormeta: number
         }
         Update: {
+          contaid?: number
           diasemanaid?: number
+          lojaid?: number
           nomedia?: string
           pontospremio?: number
           valormeta?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "metasdiariasmodelos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metasdiariasmodelos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       metasprincipais: {
         Row: {
+          contaid: number
           datafim: string
           datainicio: string
           descricao: string | null
+          lojaid: number
           metaprincipalid: number
           nomemeta: string
           pontospremio: number
@@ -1031,9 +1622,11 @@ export type Database = {
           valormetatotal: number
         }
         Insert: {
+          contaid?: number
           datafim: string
           datainicio: string
           descricao?: string | null
+          lojaid: number
           metaprincipalid?: number
           nomemeta: string
           pontospremio: number
@@ -1042,9 +1635,11 @@ export type Database = {
           valormetatotal: number
         }
         Update: {
+          contaid?: number
           datafim?: string
           datainicio?: string
           descricao?: string | null
+          lojaid?: number
           metaprincipalid?: number
           nomemeta?: string
           pontospremio?: number
@@ -1052,80 +1647,136 @@ export type Database = {
           status?: string | null
           valormetatotal?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "metasprincipais_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metasprincipais_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       notasfiscais: {
         Row: {
+          contaid: number
           datarecebimento: string | null
           fileidtelegram: string
           funcionarioid: number
+          lojaid: number
           notafiscalid: number
           pathfoto: string | null
           status: string | null
         }
         Insert: {
+          contaid?: number
           datarecebimento?: string | null
           fileidtelegram: string
           funcionarioid: number
+          lojaid: number
           notafiscalid?: number
           pathfoto?: string | null
           status?: string | null
         }
         Update: {
+          contaid?: number
           datarecebimento?: string | null
           fileidtelegram?: string
           funcionarioid?: number
+          lojaid?: number
           notafiscalid?: number
           pathfoto?: string | null
           status?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "notasfiscais_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "notasfiscais_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "notasfiscais_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "notasfiscais_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
       notasfiscaisentrada: {
         Row: {
+          contaid: number
           dataemissao: string
           dataimportacao: string | null
           fornecedorid: number
+          lojaid: number
           notaid: number
           numeronf: string
           valortotalnf: number
         }
         Insert: {
+          contaid?: number
           dataemissao: string
           dataimportacao?: string | null
           fornecedorid: number
+          lojaid: number
           notaid?: number
           numeronf: string
           valortotalnf: number
         }
         Update: {
+          contaid?: number
           dataemissao?: string
           dataimportacao?: string | null
           fornecedorid?: number
+          lojaid?: number
           notaid?: number
           numeronf?: string
           valortotalnf?: number
         }
         Relationships: [
           {
-            foreignKeyName: "notasfiscaisentrada_fornecedorid_fkey"
-            columns: ["fornecedorid"]
+            foreignKeyName: "notasfiscaisentrada_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "notasfiscaisentrada_fornecedorid_fk"
+            columns: ["contaid", "fornecedorid"]
             isOneToOne: false
             referencedRelation: "fornecedores"
-            referencedColumns: ["fornecedorid"]
+            referencedColumns: ["contaid", "fornecedorid"]
+          },
+          {
+            foreignKeyName: "notasfiscaisentrada_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
       onboardingstatus: {
         Row: {
+          contaid: number
           cpf_fileid: string | null
           cpfconjugue: string | null
           ctps_fileid: string | null
@@ -1144,6 +1795,7 @@ export type Database = {
           ultimaetapa: string | null
         }
         Insert: {
+          contaid?: number
           cpf_fileid?: string | null
           cpfconjugue?: string | null
           ctps_fileid?: string | null
@@ -1162,6 +1814,7 @@ export type Database = {
           ultimaetapa?: string | null
         }
         Update: {
+          contaid?: number
           cpf_fileid?: string | null
           cpfconjugue?: string | null
           ctps_fileid?: string | null
@@ -1181,65 +1834,115 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "onboardingstatus_funcionarioid_fkey"
-            columns: ["funcionarioid"]
-            isOneToOne: true
+            foreignKeyName: "onboardingstatus_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "onboardingstatus_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
       }
       picodiario: {
         Row: {
+          contaid: number
           diasemanaid: number
           horabloqueiofim: string | null
           horabloqueioinicio: string | null
+          lojaid: number
           nomedia: string
         }
         Insert: {
+          contaid?: number
           diasemanaid: number
           horabloqueiofim?: string | null
           horabloqueioinicio?: string | null
+          lojaid: number
           nomedia: string
         }
         Update: {
+          contaid?: number
           diasemanaid?: number
           horabloqueiofim?: string | null
           horabloqueioinicio?: string | null
+          lojaid?: number
           nomedia?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "picodiario_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "picodiario_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       posicoesloja: {
         Row: {
           ativo: boolean | null
+          contaid: number
           coordx: number
           coordy: number
+          lojaid: number
           nomeposicao: string
           posicaoid: number
           setor: string | null
         }
         Insert: {
           ativo?: boolean | null
+          contaid?: number
           coordx: number
           coordy: number
+          lojaid: number
           nomeposicao: string
           posicaoid?: number
           setor?: string | null
         }
         Update: {
           ativo?: boolean | null
+          contaid?: number
           coordx?: number
           coordy?: number
+          lojaid?: number
           nomeposicao?: string
           posicaoid?: number
           setor?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "posicoesloja_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "posicoesloja_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       produtosestoque: {
         Row: {
           categoria: string | null
+          contaid: number
           estoqueminimo: number | null
           nomeproduto: string
           produtoid: number
@@ -1247,6 +1950,7 @@ export type Database = {
         }
         Insert: {
           categoria?: string | null
+          contaid?: number
           estoqueminimo?: number | null
           nomeproduto: string
           produtoid?: number
@@ -1254,16 +1958,26 @@ export type Database = {
         }
         Update: {
           categoria?: string | null
+          contaid?: number
           estoqueminimo?: number | null
           nomeproduto?: string
           produtoid?: number
           unidademedida?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "produtosestoque_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       produtosfornecedor: {
         Row: {
           codigofornecedor: string | null
+          contaid: number
           datacriacao: string | null
           descricaoxml: string
           ean: string | null
@@ -1275,6 +1989,7 @@ export type Database = {
         }
         Insert: {
           codigofornecedor?: string | null
+          contaid?: number
           datacriacao?: string | null
           descricaoxml: string
           ean?: string | null
@@ -1286,6 +2001,7 @@ export type Database = {
         }
         Update: {
           codigofornecedor?: string | null
+          contaid?: number
           datacriacao?: string | null
           descricaoxml?: string
           ean?: string | null
@@ -1297,24 +2013,32 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "produtosfornecedor_fornecedorid_fkey"
-            columns: ["fornecedorid"]
+            foreignKeyName: "produtosfornecedor_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "fornecedores"
-            referencedColumns: ["fornecedorid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "produtosfornecedor_produtoid_fkey"
-            columns: ["produtoid"]
+            foreignKeyName: "produtosfornecedor_fornecedorid_fk"
+            columns: ["contaid", "fornecedorid"]
+            isOneToOne: false
+            referencedRelation: "fornecedores"
+            referencedColumns: ["contaid", "fornecedorid"]
+          },
+          {
+            foreignKeyName: "produtosfornecedor_produtoid_fk"
+            columns: ["contaid", "produtoid"]
             isOneToOne: false
             referencedRelation: "produtosestoque"
-            referencedColumns: ["produtoid"]
+            referencedColumns: ["contaid", "produtoid"]
           },
         ]
       }
       produtosloja: {
         Row: {
           ativo: boolean
+          contaid: number
           custoempontos: number
           descricao: string | null
           estoquedisponivel: number | null
@@ -1323,6 +2047,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          contaid?: number
           custoempontos: number
           descricao?: string | null
           estoquedisponivel?: number | null
@@ -1331,40 +2056,55 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          contaid?: number
           custoempontos?: number
           descricao?: string | null
           estoquedisponivel?: number | null
           nome?: string
           produtoid?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "produtosloja_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       resgates: {
         Row: {
+          contaid: number
           dataaprovacao: string | null
           datasolicitacao: string
           funcionarioid: number
           gestorid_aprovacao: number | null
+          lojaid: number | null
           pontosgastos: number
           produtoid: number
           resgateid: number
           status: string
         }
         Insert: {
+          contaid?: number
           dataaprovacao?: string | null
           datasolicitacao?: string
           funcionarioid: number
           gestorid_aprovacao?: number | null
+          lojaid?: number | null
           pontosgastos: number
           produtoid: number
           resgateid?: number
           status?: string
         }
         Update: {
+          contaid?: number
           dataaprovacao?: string | null
           datasolicitacao?: string
           funcionarioid?: number
           gestorid_aprovacao?: number | null
+          lojaid?: number | null
           pontosgastos?: number
           produtoid?: number
           resgateid?: number
@@ -1372,18 +2112,32 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "resgates_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "resgates_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "resgates_produtoid_fkey"
-            columns: ["produtoid"]
+            foreignKeyName: "resgates_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "resgates_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "resgates_produtoid_fk"
+            columns: ["contaid", "produtoid"]
             isOneToOne: false
             referencedRelation: "produtosloja"
-            referencedColumns: ["produtoid"]
+            referencedColumns: ["contaid", "produtoid"]
           },
         ]
       }
@@ -1391,10 +2145,12 @@ export type Database = {
         Row: {
           caminhofoto: string | null
           categoria: string | null
+          contaid: number
           dataconclusao: string | null
           datasolicitacao: string | null
           descricao: string | null
           funcionarioid: number | null
+          lojaid: number
           motivorecusa: string | null
           quantidade: number | null
           solicitacaoid: number
@@ -1404,10 +2160,12 @@ export type Database = {
         Insert: {
           caminhofoto?: string | null
           categoria?: string | null
+          contaid?: number
           dataconclusao?: string | null
           datasolicitacao?: string | null
           descricao?: string | null
           funcionarioid?: number | null
+          lojaid: number
           motivorecusa?: string | null
           quantidade?: number | null
           solicitacaoid?: number
@@ -1417,10 +2175,12 @@ export type Database = {
         Update: {
           caminhofoto?: string | null
           categoria?: string | null
+          contaid?: number
           dataconclusao?: string | null
           datasolicitacao?: string | null
           descricao?: string | null
           funcionarioid?: number | null
+          lojaid?: number
           motivorecusa?: string | null
           quantidade?: number | null
           solicitacaoid?: number
@@ -1429,17 +2189,32 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "solicitacoesinternas_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "solicitacoesinternas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "solicitacoesinternas_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
             isOneToOne: false
             referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "solicitacoesinternas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
       tarefas: {
         Row: {
           ativa: boolean | null
+          contaid: number
           datacriacao: string | null
           descricao: string | null
           pontos: number
@@ -1449,6 +2224,7 @@ export type Database = {
         }
         Insert: {
           ativa?: boolean | null
+          contaid?: number
           datacriacao?: string | null
           descricao?: string | null
           pontos: number
@@ -1458,6 +2234,7 @@ export type Database = {
         }
         Update: {
           ativa?: boolean | null
+          contaid?: number
           datacriacao?: string | null
           descricao?: string | null
           pontos?: number
@@ -1465,12 +2242,21 @@ export type Database = {
           tarefaid?: number
           titulo?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
       }
       tarefasatribuidas: {
         Row: {
           agendamentoid: number | null
           atribuicaoid: number
+          contaid: number
           dataaceite: string | null
           dataagendamento: string | null
           dataatribuicao: string | null
@@ -1481,6 +2267,7 @@ export type Database = {
           funcionarioresponsavelid: number | null
           grupoid: number | null
           horariodisparo: string | null
+          lojaid: number
           origematribuicaoid: number | null
           statustarefagrupo: string | null
           tarefaid: number
@@ -1490,6 +2277,7 @@ export type Database = {
         Insert: {
           agendamentoid?: number | null
           atribuicaoid?: number
+          contaid?: number
           dataaceite?: string | null
           dataagendamento?: string | null
           dataatribuicao?: string | null
@@ -1500,6 +2288,7 @@ export type Database = {
           funcionarioresponsavelid?: number | null
           grupoid?: number | null
           horariodisparo?: string | null
+          lojaid: number
           origematribuicaoid?: number | null
           statustarefagrupo?: string | null
           tarefaid: number
@@ -1509,6 +2298,7 @@ export type Database = {
         Update: {
           agendamentoid?: number | null
           atribuicaoid?: number
+          contaid?: number
           dataaceite?: string | null
           dataagendamento?: string | null
           dataatribuicao?: string | null
@@ -1519,6 +2309,7 @@ export type Database = {
           funcionarioresponsavelid?: number | null
           grupoid?: number | null
           horariodisparo?: string | null
+          lojaid?: number
           origematribuicaoid?: number | null
           statustarefagrupo?: string | null
           tarefaid?: number
@@ -1527,72 +2318,128 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "tarefasatribuidas_funcionarioid_fkey"
-            columns: ["funcionarioid"]
+            foreignKeyName: "tarefasatribuidas_contaid_fkey"
+            columns: ["contaid"]
             isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
           },
           {
-            foreignKeyName: "tarefasatribuidas_funcionarioresponsavelid_fkey"
-            columns: ["funcionarioresponsavelid"]
+            foreignKeyName: "tarefasatribuidas_funcionario_na_loja_fk"
+            columns: ["funcionarioid", "lojaid"]
             isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["funcionarioid"]
+            referencedRelation: "funcionarioslojas"
+            referencedColumns: ["funcionarioid", "lojaid"]
           },
           {
-            foreignKeyName: "tarefasatribuidas_grupoid_fkey"
-            columns: ["grupoid"]
+            foreignKeyName: "tarefasatribuidas_funcionarioid_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "tarefasatribuidas_funcionarioresponsavelid_fk"
+            columns: ["contaid", "funcionarioresponsavelid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "tarefasatribuidas_grupoid_fk"
+            columns: ["contaid", "grupoid"]
             isOneToOne: false
             referencedRelation: "grupos"
-            referencedColumns: ["grupoid"]
+            referencedColumns: ["contaid", "grupoid"]
           },
           {
-            foreignKeyName: "tarefasatribuidas_origematribuicaoid_fkey"
-            columns: ["origematribuicaoid"]
+            foreignKeyName: "tarefasatribuidas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "tarefasatribuidas_origematribuicaoid_fk"
+            columns: ["contaid", "origematribuicaoid"]
             isOneToOne: false
             referencedRelation: "tarefasatribuidas"
-            referencedColumns: ["atribuicaoid"]
+            referencedColumns: ["contaid", "atribuicaoid"]
           },
           {
-            foreignKeyName: "tarefasatribuidas_tarefaid_fkey"
-            columns: ["tarefaid"]
+            foreignKeyName: "tarefasatribuidas_tarefa_na_loja_fk"
+            columns: ["tarefaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "tarefaslojas"
+            referencedColumns: ["tarefaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "tarefasatribuidas_tarefaid_fk"
+            columns: ["contaid", "tarefaid"]
             isOneToOne: false
             referencedRelation: "tarefas"
-            referencedColumns: ["tarefaid"]
+            referencedColumns: ["contaid", "tarefaid"]
           },
         ]
       }
-      usuariosadmin: {
+      tarefaslojas: {
         Row: {
-          login: string
-          nivelacesso: number | null
-          nomeexibicao: string | null
-          senhahash: string
-          usuarioid: number
+          ativo: boolean
+          contaid: number
+          criadoem: string
+          lojaid: number
+          tarefaid: number
         }
         Insert: {
-          login: string
-          nivelacesso?: number | null
-          nomeexibicao?: string | null
-          senhahash: string
-          usuarioid?: number
+          ativo?: boolean
+          contaid?: number
+          criadoem?: string
+          lojaid: number
+          tarefaid: number
         }
         Update: {
-          login?: string
-          nivelacesso?: number | null
-          nomeexibicao?: string | null
-          senhahash?: string
-          usuarioid?: number
+          ativo?: boolean
+          contaid?: number
+          criadoem?: string
+          lojaid?: number
+          tarefaid?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tarefaslojas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "tarefaslojas_contaid_lojaid_fkey"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "tarefaslojas_contaid_tarefaid_fkey"
+            columns: ["contaid", "tarefaid"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["contaid", "tarefaid"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cria_configuracoes_padrao: {
+        Args: { p_contaid: number }
+        Returns: undefined
+      }
+      eh_admin_geral: { Args: never; Returns: boolean }
+      minha_conta: { Args: never; Returns: number }
+      minha_conta_editavel: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never
