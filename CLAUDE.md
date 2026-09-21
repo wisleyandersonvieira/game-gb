@@ -20,6 +20,8 @@
 - Arquivos no Storage ficam em `<contaid>/<lojaid>/...`, com policies por pasta.
 - Toda migração passa pelo **teste de isolamento** (duas contas; A não lê, altera nem apaga nada de B) antes de ir para o Supabase.
 - A chave `service_role` só existe em variável de servidor (nunca `VITE_`) e só é usada em funções de servidor para tarefas de admin (convites).
+- **Funções SQL nascem sem permissão para ninguém** (negadas por padrão desde a Fase 6). Toda função nova precisa de `GRANT EXECUTE ... TO authenticated` explícito na própria migração. Função `security definer` que recebe `contaid` ou `lojaid` como parâmetro **nunca** é liberada: ela é interna, chamada só por outra função que confere quem pediu. O teste de isolamento reprova qualquer exceção.
+- O visitante sem login (`anon`) só chama `painel_da_tv` e não lê nenhuma tabela.
 
 ## Stack
 - React 19 + TanStack Start/Router (rotas por arquivo em `src/routes/`) + TanStack Query + Tailwind v4

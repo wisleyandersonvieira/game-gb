@@ -615,5 +615,29 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `atribuicoes_para_entregar(loja)` | O que pode ser entregue hoje naquela loja |
 | `ranking_pontos(de, ate, loja)` | Soma dos pontos aprovados no período, pela data da aprovação. Sem loja = geral da conta |
 | `apos_aprovar_entrega(entrega)` | Gancho das conquistas (Fase 7). Hoje não faz nada |
+| `nome_curto(nome)` | "Ana Souza" → "Ana S.". Usado na TV |
+| `montar_painel(conta, loja, tv)` | **Interna, ninguém chama direto.** Monta o painel de uma loja (barra, pódio, colunas), sem ids, fotos, observações, telefone ou CPF |
+| `painel_da_loja(loja)` | O painel para quem está logado; só lojas da própria conta |
+| `resumo_das_lojas()` | Um cartão por loja ativa: progresso, pendentes e líder do dia |
+| `criar_link_tv(loja, nome)` | Cria um link de TV e devolve o código **uma única vez** |
+| `revogar_link_tv(link)` | Desliga um link de TV |
+| `painel_da_tv(codigo)` | **A única função que um visitante sem login pode chamar.** Devolve o painel da loja do link com nomes curtos, ou `{"disponivel": false}` |
 
 Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos` e `atribuicoes_para_entregar` rodam com a RLS de quem chamou.
+
+## linkstv
+Links de TV de cada loja (**nível loja**). O código em si nunca é guardado.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| linktvid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| nome | varchar(100) | obrigatório (ex.: "TV do balcão") |
+| tokenhash | char(64) | obrigatório; único. Impressão digital (sha256) do código. **Ninguém lê esta coluna pelo navegador, nem o dono** |
+| criadoem | timestamptz | obrigatório; padrão now() |
+| criadopor | uuid | → auth.users |
+| revogadoem | timestamptz | preenchida ao revogar; o link para na hora |
+| ultimouso | timestamptz | última vez que a TV buscou o painel (gravada no máximo uma vez por minuto) |
+
+O navegador só lê esta tabela; criar e revogar passam pelas funções.

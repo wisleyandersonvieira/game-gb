@@ -17,10 +17,12 @@ import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
+import { Route as AuthenticatedOperacionalRouteImport } from './routes/_authenticated/operacional'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
 import { Route as AuthenticatedRankingRouteImport } from './routes/_authenticated/ranking'
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -62,6 +64,12 @@ const AuthenticatedGestaoRoute = AuthenticatedGestaoRouteImport.update({
   path: '/gestao',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOperacionalRoute =
+  AuthenticatedOperacionalRouteImport.update({
+    id: '/operacional',
+    path: '/operacional',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedPainelRoute = AuthenticatedPainelRouteImport.update({
   id: '/painel',
   path: '/painel',
@@ -82,6 +90,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const TvCodigoRoute = TvCodigoRouteImport.update({
+  id: '/tv/$codigo',
+  path: '/tv/$codigo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -91,9 +104,11 @@ export interface FileRoutesByFullPath {
   '/sem-acesso': typeof SemAcessoRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
+  '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/ranking': typeof AuthenticatedRankingRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
+  '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
@@ -103,9 +118,11 @@ export interface FileRoutesByTo {
   '/sem-acesso': typeof SemAcessoRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
+  '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/ranking': typeof AuthenticatedRankingRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
+  '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
@@ -118,9 +135,11 @@ export interface FileRoutesById {
   '/sem-acesso': typeof SemAcessoRoute
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
+  '/_authenticated/operacional': typeof AuthenticatedOperacionalRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/ranking': typeof AuthenticatedRankingRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
+  '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -133,9 +152,11 @@ export interface FileRouteTypes {
     | '/sem-acesso'
     | '/funcionarios'
     | '/gestao'
+    | '/operacional'
     | '/painel'
     | '/ranking'
     | '/tarefas'
+    | '/tv/$codigo'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -145,9 +166,11 @@ export interface FileRouteTypes {
     | '/sem-acesso'
     | '/funcionarios'
     | '/gestao'
+    | '/operacional'
     | '/painel'
     | '/ranking'
     | '/tarefas'
+    | '/tv/$codigo'
     | '/admin'
   id:
     | '__root__'
@@ -159,9 +182,11 @@ export interface FileRouteTypes {
     | '/sem-acesso'
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
+    | '/_authenticated/operacional'
     | '/_authenticated/painel'
     | '/_authenticated/ranking'
     | '/_authenticated/tarefas'
+    | '/tv/$codigo'
     | '/admin/'
   fileRoutesById: FileRoutesById
 }
@@ -172,6 +197,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   DefinirSenhaRoute: typeof DefinirSenhaRoute
   SemAcessoRoute: typeof SemAcessoRoute
+  TvCodigoRoute: typeof TvCodigoRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -232,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedGestaoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/operacional': {
+      id: '/_authenticated/operacional'
+      path: '/operacional'
+      fullPath: '/operacional'
+      preLoaderRoute: typeof AuthenticatedOperacionalRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/painel': {
       id: '/_authenticated/painel'
       path: '/painel'
@@ -260,12 +293,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/tv/$codigo': {
+      id: '/tv/$codigo'
+      path: '/tv/$codigo'
+      fullPath: '/tv/$codigo'
+      preLoaderRoute: typeof TvCodigoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
+  AuthenticatedOperacionalRoute: typeof AuthenticatedOperacionalRoute
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedRankingRoute: typeof AuthenticatedRankingRoute
   AuthenticatedTarefasRoute: typeof AuthenticatedTarefasRoute
@@ -274,6 +315,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
+  AuthenticatedOperacionalRoute: AuthenticatedOperacionalRoute,
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedRankingRoute: AuthenticatedRankingRoute,
   AuthenticatedTarefasRoute: AuthenticatedTarefasRoute,
@@ -301,6 +343,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   DefinirSenhaRoute: DefinirSenhaRoute,
   SemAcessoRoute: SemAcessoRoute,
+  TvCodigoRoute: TvCodigoRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

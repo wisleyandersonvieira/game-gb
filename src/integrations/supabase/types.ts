@@ -1416,6 +1416,57 @@ export type Database = {
           },
         ]
       }
+      linkstv: {
+        Row: {
+          contaid: number
+          criadoem: string
+          criadopor: string | null
+          linktvid: number
+          lojaid: number
+          nome: string
+          revogadoem: string | null
+          tokenhash: string
+          ultimouso: string | null
+        }
+        Insert: {
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          linktvid?: number
+          lojaid: number
+          nome: string
+          revogadoem?: string | null
+          tokenhash: string
+          ultimouso?: string | null
+        }
+        Update: {
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          linktvid?: number
+          lojaid?: number
+          nome?: string
+          revogadoem?: string | null
+          tokenhash?: string
+          ultimouso?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "linkstv_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "linkstv_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
       lojas: {
         Row: {
           ativa: boolean
@@ -2518,6 +2569,10 @@ export type Database = {
         Args: { p_contaid: number }
         Returns: undefined
       }
+      criar_link_tv: {
+        Args: { p_lojaid: number; p_nome: string }
+        Returns: string
+      }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
       eh_admin_geral: { Args: never; Returns: boolean }
       estornar_entrega: {
@@ -2526,6 +2581,13 @@ export type Database = {
       }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
+      montar_painel: {
+        Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
+        Returns: Json
+      }
+      nome_curto: { Args: { p_nome: string }; Returns: string }
+      painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
+      painel_da_tv: { Args: { p_codigo: string }; Returns: Json }
       ranking_pontos: {
         Args: { p_ate: string; p_de: string; p_lojaid?: number }
         Returns: {
@@ -2548,6 +2610,8 @@ export type Database = {
         }
         Returns: number
       }
+      resumo_das_lojas: { Args: never; Returns: Json }
+      revogar_link_tv: { Args: { p_linktvid: number }; Returns: undefined }
       tarefa_cai_no_dia: {
         Args: {
           p_dataagendamento: string

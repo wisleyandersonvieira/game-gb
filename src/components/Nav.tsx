@@ -4,6 +4,7 @@ import { SeletorDeLoja } from "@/lojas/loja-ativa";
 
 const itens = [
   { to: "/gestao", label: "Gestão" },
+  { to: "/operacional", label: "Painel" },
   { to: "/painel", label: "Quadro" },
   { to: "/funcionarios", label: "Equipe" },
   { to: "/tarefas", label: "Tarefas" },

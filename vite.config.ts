@@ -21,6 +21,9 @@ export default defineConfig(({ mode }) => {
       port: 8080,
       strictPort: true,
       host: true,
+      // Endereço público do GitHub Codespaces (ex.: abrir o link de TV no
+      // celular). Só vale para o servidor de desenvolvimento.
+      allowedHosts: [".app.github.dev"],
     },
     resolve: {
       alias: {

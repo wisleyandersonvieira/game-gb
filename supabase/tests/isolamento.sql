@@ -17,6 +17,8 @@ BEGIN
   END IF;
   RAISE NOTICE '  ok  %', descricao;
 END $$;
+-- Funcao nova nasce sem permissao (negada por padrao): libera so esta, de teste.
+GRANT EXECUTE ON FUNCTION public.exigir(boolean, text) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Preparacao (como dono do banco: a RLS nao se aplica aqui)
@@ -831,6 +833,156 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- 19. Painel da loja, resumo e links de TV
+-- ===========================================================================
+
+DO $$
+DECLARE p jsonb; deu_erro boolean;
+BEGIN
+  RAISE NOTICE '19. painel da loja e resumo';
+
+  p := public.painel_da_loja(10);
+  PERFORM public.exigir(p->>'loja' = 'Loja A1', 'A ve o painel da propria loja');
+  PERFORM public.exigir(
+    (p->'progresso'->>'total')::integer =
+      (p->'progresso'->>'aprovadas')::integer + (p->'progresso'->>'emvalidacao')::integer
+      + jsonb_array_length(p->'parafazer'),
+    'a barra fecha: total = aprovadas + em validacao + para fazer');
+  PERFORM public.exigir(p::text NOT LIKE '%id"%', 'o painel nao expoe nenhum id');
+
+  BEGIN PERFORM public.painel_da_loja(20); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao ve o painel da loja de B');
+
+  PERFORM public.exigir(public.resumo_das_lojas()::text NOT LIKE '%Loja B1%', 'o resumo de A nao tem lojas de B');
+  PERFORM public.exigir(jsonb_array_length(public.resumo_das_lojas()) = (SELECT count(*) FROM public.lojas WHERE ativa),
+                        'o resumo tem um cartao por loja ativa');
+
+  PERFORM set_config('teste.tv_a',  public.criar_link_tv(10, 'TV do balcao'),  false);
+  PERFORM set_config('teste.tv_a2', public.criar_link_tv(11, 'TV da cozinha'), false);
+  PERFORM public.exigir(length(current_setting('teste.tv_a')) = 64, 'o codigo do link tem 64 caracteres');
+
+  BEGIN PERFORM tokenhash FROM public.linkstv; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono le a impressao digital do link');
+
+  BEGIN INSERT INTO public.linkstv (lojaid, nome, tokenhash) VALUES (10, 'pirata', repeat('a', 64)); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'link so nasce pela funcao');
+
+  BEGIN PERFORM public.criar_link_tv(20, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao cria link de TV para a loja de B');
+END $$;
+
+RESET ROLE;
+DO $$ BEGIN
+  PERFORM set_config('teste.id_tv_a', (SELECT linktvid::text FROM public.linkstv WHERE nome = 'TV do balcao'), false);
+END $$;
+SET ROLE authenticated;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM set_config('teste.tv_b', public.criar_link_tv(20, 'TV de B'), false);
+
+  BEGIN PERFORM public.painel_da_loja(10); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao ve o painel da loja de A');
+
+  PERFORM public.exigir((SELECT count(*) FROM public.linkstv) = 1, 'B so ve o proprio link de TV');
+
+  BEGIN PERFORM public.revogar_link_tv(current_setting('teste.id_tv_a')::integer); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao revoga o link de TV de A');
+END $$;
+
+-- Como um visitante sem login (a TV).
+RESET ROLE;
+SET ROLE anon;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM set_config('teste.r_a',     public.painel_da_tv(current_setting('teste.tv_a'))::text, false);
+  PERFORM set_config('teste.r_b',     public.painel_da_tv(current_setting('teste.tv_b'))::text, false);
+  PERFORM set_config('teste.r_inv',   public.painel_da_tv(repeat('0', 64))::text, false);
+  PERFORM set_config('teste.r_nulo',  public.painel_da_tv(NULL)::text, false);
+  PERFORM set_config('teste.r_curto', public.painel_da_tv('abc')::text, false);
+
+  BEGIN PERFORM 1 FROM public.lojas LIMIT 1; PERFORM set_config('teste.anon_tabela', 'leu', false);
+  EXCEPTION WHEN insufficient_privilege THEN PERFORM set_config('teste.anon_tabela', 'barrado', false); END;
+
+  BEGIN PERFORM public.painel_da_loja(10); PERFORM set_config('teste.anon_painel', 'chamou', false);
+  EXCEPTION WHEN insufficient_privilege THEN PERFORM set_config('teste.anon_painel', 'barrado', false); END;
+
+  BEGIN PERFORM public.minha_conta(); PERFORM set_config('teste.anon_funcao', 'chamou', false);
+  EXCEPTION WHEN insufficient_privilege THEN PERFORM set_config('teste.anon_funcao', 'barrado', false); END;
+END $$;
+RESET ROLE;
+
+DO $$
+DECLARE r jsonb := current_setting('teste.r_a')::jsonb;
+BEGIN
+  RAISE NOTICE '19b. modo TV';
+  PERFORM public.exigir((r->>'disponivel')::boolean AND r->>'loja' = 'Loja A1', 'o link da loja A1 mostra a loja A1');
+  PERFORM public.exigir(r::text NOT LIKE '%Loja B1%' AND r::text NOT LIKE '%Bruno%', 'o link de A nao mostra nada de B');
+  PERFORM public.exigir(r::text NOT LIKE '%Loja A2%', 'o link da loja A1 nao mostra a outra loja do mesmo cliente');
+  PERFORM public.exigir(r::text LIKE '%Ana A.%' AND r::text NOT LIKE '%Ana da conta A%', 'a TV mostra so "Nome I."');
+  PERFORM public.exigir(r::text NOT LIKE '%.jpg%' AND r::text NOT LIKE '%observacao%'
+                    AND r::text NOT LIKE '%Feito%' AND r::text NOT LIKE '%cpf%' AND r::text NOT LIKE '%telefone%',
+                        'a TV nao recebe foto, observacao, CPF nem telefone');
+  PERFORM public.exigir(r::text NOT LIKE '%id"%', 'a TV nao recebe nenhum id');
+  PERFORM public.exigir(current_setting('teste.r_b')::jsonb->>'loja' = 'Loja B1', 'o link de B mostra so a loja de B');
+
+  PERFORM public.exigir(current_setting('teste.r_inv')::jsonb   = '{"disponivel": false}'::jsonb, 'codigo inventado nao devolve nada');
+  PERFORM public.exigir(current_setting('teste.r_nulo')::jsonb  = '{"disponivel": false}'::jsonb, 'codigo vazio nao devolve nada');
+  PERFORM public.exigir(current_setting('teste.r_curto')::jsonb = '{"disponivel": false}'::jsonb, 'codigo curto nao devolve nada');
+
+  PERFORM public.exigir(current_setting('teste.anon_tabela') = 'barrado', 'visitante sem login nao le tabela nenhuma');
+  PERFORM public.exigir(current_setting('teste.anon_painel') = 'barrado', 'visitante sem login nao chama o painel logado');
+  PERFORM public.exigir(current_setting('teste.anon_funcao') = 'barrado', 'visitante sem login nao chama outras funcoes');
+
+  PERFORM public.exigir((SELECT ultimouso IS NOT NULL FROM public.linkstv WHERE nome = 'TV do balcao'),
+                        'o link registra a data do ultimo uso');
+END $$;
+
+-- Revogado, loja desativada, conta suspensa.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$ BEGIN
+  PERFORM public.revogar_link_tv((SELECT linktvid FROM public.linkstv WHERE nome = 'TV da cozinha'));
+  PERFORM set_config('teste.tv_a3', public.criar_link_tv(11, 'TV da vitrine'), false);
+END $$;
+UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+RESET ROLE;
+UPDATE public.contas SET status = 'suspensa' WHERE contaid = 2;
+
+SET ROLE anon;
+SET teste.uid = '';
+DO $$ BEGIN
+  PERFORM set_config('teste.r_revogado',   public.painel_da_tv(current_setting('teste.tv_a2'))::text, false);
+  PERFORM set_config('teste.r_desativada', public.painel_da_tv(current_setting('teste.tv_a3'))::text, false);
+  PERFORM set_config('teste.r_suspensa',   public.painel_da_tv(current_setting('teste.tv_b'))::text, false);
+  PERFORM set_config('teste.r_a_segue',    public.painel_da_tv(current_setting('teste.tv_a'))::text, false);
+END $$;
+RESET ROLE;
+UPDATE public.contas SET status = 'ativa' WHERE contaid = 2;
+UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+
+DO $$
+BEGIN
+  PERFORM public.exigir(current_setting('teste.r_revogado')::jsonb   = '{"disponivel": false}'::jsonb, 'link revogado para de funcionar');
+  PERFORM public.exigir(current_setting('teste.r_desativada')::jsonb = '{"disponivel": false}'::jsonb, 'link de loja desativada para de funcionar');
+  PERFORM public.exigir(current_setting('teste.r_suspensa')::jsonb   = '{"disponivel": false}'::jsonb, 'link de conta suspensa para de funcionar');
+  PERFORM public.exigir((current_setting('teste.r_a_segue')::jsonb->>'disponivel')::boolean,
+                        'suspender o cliente B nao derruba a TV do cliente A');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -892,10 +1044,30 @@ BEGIN
          OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
     AND p.proname NOT IN (
       'minha_conta', 'minha_conta_editavel', 'eh_admin_geral',
-      'registrar_entrega', 'aprovar_entrega', 'recusar_entrega', 'estornar_entrega'
+      'registrar_entrega', 'aprovar_entrega', 'recusar_entrega', 'estornar_entrega',
+      'painel_da_loja', 'resumo_das_lojas', 'criar_link_tv', 'revogar_link_tv', 'painel_da_tv'
     );
   PERFORM public.exigir(liberadas IS NULL,
-    'nenhuma funcao com poder total fica executavel por quem nao confere o chamador');
+    'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
+    || coalesce(' (sobrou: ' || liberadas || ')', ''));
+
+  -- Visitante sem login: so painel_da_tv, e nenhuma tabela.
+  SELECT string_agg(p.proname, ', ') INTO liberadas
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.prorettype <> 'trigger'::regtype
+    AND has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND p.proname <> 'painel_da_tv';
+  PERFORM public.exigir(liberadas IS NULL, 'visitante sem login so consegue chamar painel_da_tv' || coalesce(' (sobrou: ' || liberadas || ')', ''));
+
+  SELECT string_agg(c.relname, ', ') INTO liberadas
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v', 'm')
+    AND (has_table_privilege('anon', c.oid, 'SELECT') OR has_table_privilege('anon', c.oid, 'INSERT')
+      OR has_table_privilege('anon', c.oid, 'UPDATE') OR has_table_privilege('anon', c.oid, 'DELETE'));
+  PERFORM public.exigir(liberadas IS NULL, 'visitante sem login nao tem acesso a nenhuma tabela' || coalesce(' (sobrou: ' || liberadas || ')', ''));
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

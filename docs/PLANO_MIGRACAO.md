@@ -41,8 +41,8 @@ Administrador geral (Wisley)
 | 3 | **Painel do administrador geral** | ✅ Concluída |
 | 4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
 | 5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
-| 6 | Painel operacional por loja + validação (dashboard da loja) | ⬜ Próxima |
-| 7 | Gestão de pessoas e gamificação | ⬜ |
+| 6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
+| 7 | Gestão de pessoas e gamificação | ⬜ Próxima |
 | 8 | Metas e financeiro | ⬜ |
 | 9 | Agenda (agendamentos) | ⬜ |
 | 10 | Escala, mapa e pausas | ⬜ |
@@ -161,13 +161,29 @@ As frequências oferecidas são as quatro individuais do sistema antigo: **Únic
 
 ## Fase 6 — Painel operacional por loja + validação (dashboard da loja)
 Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja** da gestão.
-- [ ] Barra de progresso do dia e hora da última atualização (Realtime).
-- [ ] Pódio diário.
-- [ ] Kanban: Para Fazer (hoje) · Em Validação · Atividade Recente.
-- [ ] Resgates recentes.
-- [ ] Próximos agendamentos (depois da Fase 9).
-- [ ] Animação de fogos ao bater a meta.
-- [ ] Na `/gestao`: resumo de todas as lojas lado a lado.
+- [x] Barra de progresso do dia e hora da última atualização (Realtime).
+- [x] Pódio diário.
+- [x] Kanban: Para Fazer (hoje) · Em Validação · Atividade Recente.
+- [x] Resgates recentes — espaço reservado; preenchido na Fase 7.
+- [x] Próximos agendamentos — espaço reservado; preenchido na Fase 9.
+- [x] Fogos ao completar 100% das tarefas do dia. A meta de faturamento entra junto na Fase 8.
+- [x] Na `/gestao`: resumo de todas as lojas lado a lado.
+- [x] **Modo TV** com link por loja.
+
+**Feito em 21/09/2026.**
+
+- **Painel** (item novo no menu, `/operacional`): barra do dia em duas cores (verde = aprovado; faixa clara = entregue esperando validação), pódio do dia, e as colunas Para fazer hoje, Em validação e Atividade recente. Espaços reservados para Meta do dia (Fase 8), Resgates recentes (Fase 7) e Próximos agendamentos (Fase 9).
+- **Tempo real**: o painel logado se atualiza na hora em que alguém registra, aprova ou recusa (Realtime do Supabase em `entregas` e `tarefasatribuidas`, sempre respeitando a RLS), com uma conferência a cada 60 segundos.
+- **Barra do dia corrigida** em relação ao sistema antigo: só as tarefas de hoje (a antiga somava pendências de semanas atrás), sem bônus (a antiga contava feedback e nota fiscal como tarefa), e recusada/estornada volta para "a fazer". Só conta quem está ativo e continua naquela loja.
+- **Uma só fonte de dados**: a função interna `montar_painel` alimenta o painel logado, a TV e o resumo da Gestão. Ela nunca devolve id, foto, observação, telefone ou CPF.
+- **Gestão**: um cartão por loja com o progresso, as entregas esperando validação e o líder do dia. Clicar leva ao painel daquela loja.
+- **Modo TV** (`/tv/<código>`): criado na Gestão, mostrado uma única vez (o banco guarda só a impressão digital sha256). Sem login, só lê, letras grandes, tela cheia ao tocar, tenta manter a tela acesa, atualiza a cada 30 segundos, nomes como "Ana S.". Mostra "Painel indisponível" se o link for revogado, a loja desativada ou a conta suspensa/cancelada — sempre a mesma resposta, sem dizer o motivo. Registra o último uso, e a Gestão mostra "no ar agora" / "usado há X min".
+
+⚠️ **Duas correções de segurança nesta fase, pegas pelo teste antes de ir para produção:**
+1. `montar_painel` recebe o `contaid` como parâmetro e tinha ficado executável por qualquer cliente logado — um cliente conseguiria ler o painel de outro passando o número dele. Mesma causa do furo da Fase 5: o Supabase dá permissão automática em toda função nova.
+2. Para não depender mais de lembrar: **funções agora nascem negadas para todo mundo**, e cada migração libera explicitamente o que precisa. Regra registrada no `CLAUDE.md`. Detalhe técnico que custou uma rodada: a permissão padrão de `PUBLIC` em funções só pode ser retirada de forma global — com `IN SCHEMA` o Postgres aceita o comando e não faz nada.
+
+O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acesso a nenhuma tabela**. Antes a RLS já impedia a leitura, mas o acesso existia. Conferido de fora, pela internet, em produção.
 
 ## Fase 7 — Gestão de pessoas e gamificação (abas do `main.py`)
 - [ ] Grupos (por loja).
@@ -309,6 +325,12 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | No máximo **uma entrega pendente ou aprovada por atribuição por dia**. Recusada ou estornada libera outra. O sistema antigo não impedia duplicatas, e a aprovação dele não conferia o status — aprovar duas vezes creditava duas vezes. |
 | 21/09/2026 | Gestor e responsável pelos agendamentos viraram **campos de cada loja**, no lugar de `ID_GESTOR_PADRAO` e `RESPONSAVEL_AGENDAMENTOS_ID`. |
 | 21/09/2026 | Conquistas ficam para a Fase 7, com o gancho `apos_aprovar_entrega()` já no lugar. |
+| 21/09/2026 | O painel antigo era "o painel da TV", **sem login nenhum**: a função de exigir login existia no código mas nenhuma rota a usava. Qualquer um no Wi-Fi da loja lia tarefas, ranking, faturamento e a agenda de clientes. |
+| 21/09/2026 | Barra do dia: só tarefas de hoje, sem bônus, em duas cores (aprovado / esperando validação). A coluna "Em validação" mostra todas as pendentes, mesmo antigas; só a barra se limita a hoje. |
+| 21/09/2026 | Fogos ao completar 100% das tarefas do dia, uma vez por dia por loja em cada tela, só se houver tarefa. No sistema antigo os fogos eram da meta de faturamento — ela volta na Fase 8. |
+| 21/09/2026 | **Modo TV por link de loja**, revogável, sem login e só leitura. O código aparece uma vez; o banco guarda só a impressão digital. Tudo passa por `painel_da_tv`, a única função que um visitante sem login pode chamar. A TV só recebe "Nome I.", título da tarefa, pontos e horários. |
+| 21/09/2026 | Rodízio de telas na TV só quando existirem as outras telas (meta, agenda, mapa). |
+| 21/09/2026 | **Funções SQL negadas por padrão**: toda função nova precisa de `GRANT` explícito. Função `security definer` que recebe `contaid`/`lojaid` nunca é liberada. |
 
 ## Referência — arquivo do sistema antigo → fase
 | Arquivo em `legado/` | Fase |

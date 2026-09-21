@@ -1,8 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Nav } from "@/components/Nav";
+import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
+import { useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
@@ -375,17 +377,8 @@ function Gestao() {
             </p>
           </section>
 
-          {/* Preenchido na Fase 6, com progresso do dia, pódio e Kanban por loja. */}
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Resumo das lojas</h2>
-            <div className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                Aqui vai aparecer o resumo de cada loja: progresso do dia, pódio e entregas
-                esperando validação.
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">Em construção (Fase 6).</p>
-            </div>
-          </section>
+          <ResumoDasLojas />
+          <LinksDeTv suspensa={suspensa} />
         </>
       )}
 
@@ -397,3 +390,263 @@ function Gestao() {
     </main>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Resumo de todas as lojas, lado a lado                               */
+/* ------------------------------------------------------------------ */
+
+type Resumo = {
+  lojaid: number;
+  nome: string;
+  progresso: DadosPainel["progresso"];
+  pendentes: number;
+  lider: { pessoa: string; pontos: number } | null;
+};
+
+function ResumoDasLojas() {
+  const { escolherLoja } = useLojaAtiva();
+  const resumo = useQuery({
+    queryKey: ["resumo-lojas"],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("resumo_das_lojas");
+      if (error) throw error;
+      return (data ?? []) as unknown as Resumo[];
+    },
+  });
+
+  const lojas = resumo.data ?? [];
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold">Hoje em cada loja</h2>
+      {resumo.isError && <p className="text-sm text-destructive">{(resumo.error as Error).message}</p>}
+      {lojas.length === 0 && !resumo.isLoading && (
+        <p className="text-sm text-muted-foreground">Nenhuma loja ativa.</p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {lojas.map((l) => (
+          <Link
+            key={l.lojaid}
+            to="/operacional"
+            onClick={() => escolherLoja(l.lojaid)}
+            className="space-y-3 rounded-xl border border-border bg-card p-4 transition hover:border-primary"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="font-semibold">{l.nome}</p>
+              <p className="text-2xl font-bold">{percentual(l.progresso)}%</p>
+            </div>
+            <BarraDoDia progresso={l.progresso} compacta />
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <p>
+                {l.progresso.aprovadas} de {l.progresso.total} tarefas concluídas
+              </p>
+              <p className={l.pendentes > 0 ? "text-accent" : undefined}>
+                {l.pendentes} {l.pendentes === 1 ? "entrega esperando" : "entregas esperando"} validação
+              </p>
+              <p>
+                Líder do dia:{" "}
+                {l.lider ? (
+                  <strong className="text-foreground">
+                    🥇 {l.lider.pessoa} ({l.lider.pontos})
+                  </strong>
+                ) : (
+                  "ninguém pontuou ainda"
+                )}
+              </p>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Links de TV                                                         */
+/* ------------------------------------------------------------------ */
+
+function quandoFoi(iso: string | null) {
+  if (!iso) return "nunca usado";
+  const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutos < 2) return "no ar agora";
+  if (minutos < 60) return `usado há ${minutos} min`;
+  return `usado em ${new Date(iso).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function LinksDeTv({ suspensa }: { suspensa: boolean }) {
+  const qc = useQueryClient();
+  const { lojas } = useLojaAtiva();
+  const [lojaid, setLojaid] = useState<number | "">("");
+  const [nome, setNome] = useState("");
+  const [novoLink, setNovoLink] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
+
+  const links = useQuery({
+    queryKey: ["links-tv"],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("linkstv")
+        .select("linktvid, lojaid, nome, criadoem, revogadoem, ultimouso")
+        .order("criadoem", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const criar = useMutation({
+    mutationFn: async () => {
+      if (lojaid === "") throw new Error("Escolha a loja.");
+      const { data, error } = await supabase.rpc("criar_link_tv", { p_lojaid: lojaid, p_nome: nome });
+      if (error) throw error;
+      return `${window.location.origin}/tv/${data as string}`;
+    },
+    onSuccess: (endereco) => {
+      setNovoLink(endereco);
+      setCopiado(false);
+      setNome("");
+      qc.invalidateQueries({ queryKey: ["links-tv"] });
+    },
+  });
+
+  const revogar = useMutation({
+    mutationFn: async (linktvid: number) => {
+      const { error } = await supabase.rpc("revogar_link_tv", { p_linktvid: linktvid });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["links-tv"] }),
+  });
+
+  const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? "loja desativada";
+  const lista = links.data ?? [];
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold">Links de TV</h2>
+        <p className="text-xs text-muted-foreground">
+          Abra o link no navegador da TV da loja. Ele mostra só o painel daquela loja, sem login e
+          sem poder mudar nada. Se a TV sair da loja, revogue o link.
+        </p>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          criar.mutate();
+        }}
+        className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-4"
+      >
+        <select
+          required
+          value={lojaid}
+          onChange={(e) => setLojaid(e.target.value === "" ? "" : Number(e.target.value))}
+          className={campo}
+        >
+          <option value="">Loja...</option>
+          {lojas.map((l) => (
+            <option key={l.lojaid} value={l.lojaid}>
+              {l.nome}
+            </option>
+          ))}
+        </select>
+        <input
+          required
+          placeholder="Nome (ex.: TV do balcão)"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          className={campo}
+        />
+        <button
+          type="submit"
+          disabled={criar.isPending || suspensa}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          Criar link de TV
+        </button>
+        {criar.isError && <p className="w-full text-sm text-destructive">{(criar.error as Error).message}</p>}
+      </form>
+
+      {novoLink && (
+        <div className="space-y-2 rounded-xl border border-accent bg-card p-4">
+          <p className="text-sm font-semibold text-accent">
+            Copie agora: este link aparece uma única vez.
+          </p>
+          <p className="break-all rounded-md bg-background px-3 py-2 font-mono text-xs">{novoLink}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(novoLink);
+                  setCopiado(true);
+                } catch {
+                  setCopiado(false);
+                }
+              }}
+              className="rounded-md border border-border px-3 py-1 text-sm"
+            >
+              {copiado ? "Copiado!" : "Copiar link"}
+            </button>
+            <a href={novoLink} target="_blank" rel="noreferrer" className="rounded-md border border-border px-3 py-1 text-sm">
+              Abrir numa aba nova
+            </a>
+            <button onClick={() => setNovoLink(null)} className="rounded-md border border-border px-3 py-1 text-sm">
+              Já copiei, fechar
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Por segurança, guardamos só uma "impressão digital" do link. Se perdê-lo, crie outro.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {lista.map((k) => (
+          <div
+            key={k.linktvid}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
+          >
+            <div>
+              <p className={`font-medium ${k.revogadoem ? "text-muted-foreground line-through" : ""}`}>{k.nome}</p>
+              <p className="text-sm text-muted-foreground">
+                {nomeDaLoja(k.lojaid)} ·{" "}
+                {k.revogadoem ? (
+                  "revogado"
+                ) : (
+                  <span className={quandoFoi(k.ultimouso) === "no ar agora" ? "text-primary" : undefined}>
+                    {quandoFoi(k.ultimouso)}
+                  </span>
+                )}
+              </p>
+            </div>
+            {!k.revogadoem && (
+              <button
+                onClick={() => {
+                  if (window.confirm(`Revogar "${k.nome}"? A TV mostra "Painel indisponível" em até 30 segundos.`)) {
+                    revogar.mutate(k.linktvid);
+                  }
+                }}
+                disabled={suspensa}
+                className="rounded-md border border-destructive px-3 py-1 text-sm text-destructive disabled:opacity-50"
+              >
+                Revogar
+              </button>
+            )}
+          </div>
+        ))}
+        {lista.length === 0 && !links.isLoading && (
+          <p className="text-sm text-muted-foreground">Nenhum link de TV criado ainda.</p>
+        )}
+        {revogar.isError && <p className="text-sm text-destructive">{(revogar.error as Error).message}</p>}
+      </div>
+    </section>
+  );
+}
+
