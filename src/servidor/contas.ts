@@ -54,7 +54,7 @@ async function acharUsuarioPorEmail(
  */
 export const criarContaEConvidar = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
+  .validator(
     (d: {
       nome: string;
       email: string;
@@ -164,7 +164,7 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
 /** Reenvia o convite para o master de uma conta que ainda nao entrou. */
 export const reenviarConvite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { contaid: number }) => d)
+  .validator((d: { contaid: number }) => d)
   .handler(async ({ data, context }) => {
     await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
 
