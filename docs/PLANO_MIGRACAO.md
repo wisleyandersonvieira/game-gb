@@ -37,9 +37,9 @@ Administrador geral (Wisley)
 | Fase | Tema | Status |
 |---|---|---|
 | 1 | Banco de dados (estrutura do sistema antigo) | ✅ Concluída |
-| 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | 🟨 Banco pronto e aplicado (2.1–2.3); falta o acesso e a navegação (2.4) |
-| 3 | **Painel do administrador geral** | ⬜ |
-| 4 | **Gestão do usuário master** (lojas e seletor de loja) | ⬜ |
+| 2 | **Fundação multi-empresa** (contas, lojas, isolamento, acesso) | ✅ Concluída |
+| 3 | **Painel do administrador geral** | ✅ Concluída |
+| 4 | **Gestão do usuário master** (lojas e seletor de loja) | 🟨 Próxima — `/gestao` existe, mas só mostra a conta e lista as lojas; falta cadastrar loja e o seletor de loja ativa |
 | 5 | Telas iniciais: Equipe, Tarefas, Quadro | 🟨 Equipe feita sem lojas; precisa ajuste |
 | 6 | Painel operacional por loja + validação (dashboard da loja) | ⬜ |
 | 7 | Gestão de pessoas e gamificação | ⬜ |
@@ -94,24 +94,28 @@ O banco ainda está vazio, então as mudanças são baratas agora. Tudo aqui é 
 - [x] **Teste automático de isolamento:** cria 2 contas com 2 usuários e prova que A não lê, altera nem apaga nada de B, em todas as tabelas. Esse teste roda de novo a cada migração futura.
 
 **2.4 Acesso e navegação**
-- [ ] Desligar o cadastro público (tela e configuração do Supabase Auth). Só entra quem foi convidado.
-- [ ] Depois do login: admin geral → `/admin`; master → `/gestao`; login sem conta → tela "sem acesso".
+- [x] Desligar o cadastro público (tela e configuração do Supabase Auth). Só entra quem foi convidado.
+- [x] Depois do login: admin geral → `/admin`; master → `/gestao`; login sem conta → tela "sem acesso".
 - [x] `client.ts` lendo URL e chave do `.env`. A chave `service_role` fica **só** em variável de servidor, nunca `VITE_`.
 - [x] Atualizar `CLAUDE.md` e `docs/DICIONARIO_BANCO.md` com o modelo novo.
 
 **Feito em 21/09/2026 (2.1 a 2.3):** 47 tabelas, nenhuma sem RLS, 201 policies, nenhuma liberada, banco vazio. O teste de isolamento (`supabase/tests/rodar.sh`) roda 30 checagens com duas contas e passa. Ele já pegou um bug antes de ir para o Supabase: as policies de Storage da Fase 1 não eram removidas e, como policies se somam, vazavam arquivos entre contas.
 
-**Falta (2.4):** desligar o cadastro público e o roteamento por tipo de usuário (`/admin`, `/gestao`, "sem acesso"). Enquanto não houver nenhuma conta cadastrada, as telas do app não mostram dados — é o comportamento correto.
+**Feito em 21/09/2026 (2.4):** cadastro público desligado na tela e no Supabase Auth (`disable_signup`). URL do site e lista de redirecionamentos apontando para `http://localhost:8080`. A porta de entrada (`/`) encaminha conforme o banco responde: admin geral → `/admin`, master → `/gestao`, login sem conta → `/sem-acesso`. Rota `/definir-senha` criada para o link do convite.
 
 **Pronto quando:** o teste de isolamento passa e cada tipo de usuário cai na sua área.
 
 ## Fase 3 — Painel do administrador geral (só o Wisley)
-- [ ] Rota `/admin`, visível e acessível somente se `eh_admin_geral()`. A proteção vale na tela e no banco.
-- [ ] Cadastro de usuários master (contas): nome, e-mail, telefone, cidade, **quantidade de lojas liberadas**, status, observações.
-- [ ] Criar o master envia um **convite por e-mail** para ele definir a senha (função de servidor com `service_role`).
-- [ ] Editar, suspender, reativar, reenviar convite.
-- [ ] Lista com lojas usadas / lojas liberadas por cliente.
-- [ ] Decisão registrada: o admin geral **não** vê os dados operacionais dos clientes (equipe, tarefas etc.), só o cadastro da conta. *(Rever se precisar de suporte: modo "ver como cliente" com registro de acesso.)*
+- [x] Rota `/admin`, visível e acessível somente se `eh_admin_geral()`. A proteção vale na tela e no banco.
+- [x] Cadastro de usuários master (contas): nome, e-mail, telefone, cidade, **quantidade de lojas liberadas**, status, observações.
+- [x] Criar o master envia um **convite por e-mail** para ele definir a senha (função de servidor com `service_role`).
+- [x] Editar, suspender, reativar, reenviar convite.
+- [x] Lista com lojas usadas / lojas liberadas por cliente.
+- [x] Decisão registrada: o admin geral **não** vê os dados operacionais dos clientes (equipe, tarefas etc.), só o cadastro da conta. *(Rever se precisar de suporte: modo "ver como cliente" com registro de acesso.)*
+
+**Feito em 21/09/2026.** As funções de servidor ficam em `src/servidor/contas.ts`. A chave `service_role` é lida em `client.server.ts` a partir de `process.env` (sem `VITE_`), por import dinâmico dentro do handler, para não entrar no pacote que vai para o navegador. **Toda** função confere `eh_admin_geral()` no servidor, com o token de quem chamou — esconder o botão na tela não é proteção. Se o convite falhar, a conta recém-criada é desfeita, para não sobrar cadastro pela metade. Criar um cliente já semeia as configurações padrão dele.
+
+⚠️ Para o convite funcionar, `SUPABASE_SERVICE_ROLE_KEY` precisa estar preenchida no `.env` (modelo em `.env.example`). Sem ela a tela abre e lista, mas o cadastro dá erro.
 
 ## Fase 4 — Gestão do usuário master
 - [ ] Rota `/gestao`: dados da conta e contador "X de Y lojas usadas".
@@ -180,6 +184,7 @@ Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja*
 ## Fase 12 — Estoque
 - [ ] Catálogo e categorias (da conta); estoque e contagens (por loja).
 - [ ] Fornecedores e vínculo DE/PARA.
+- [ ] **Avaliar mover o EAN para o catálogo.** Hoje o código de barras fica em `produtosfornecedor`, porque era assim no sistema antigo e `produtosestoque` não tem coluna de EAN. Conceitualmente o EAN é do produto, não do fornecedor. Avaliar a mudança aqui, junto com as telas de estoque.
 - [ ] Importação de XML de NF-e.
 - [ ] Contagem física (computador e **celular**, com leitura de código de barras).
 - [ ] Auditoria de EAN pelo celular.
@@ -192,6 +197,7 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - [ ] Delegação de tarefas de folga.
 
 ## Fase 14 — Comercialização: publicação online + Stripe
+- [ ] **Configurar SMTP próprio (ex.: Resend) antes de vender.** O e-mail embutido do Supabase só serve para teste: tem limite baixo de envios e não usa o nosso domínio. Sem isso, convite e recuperação de senha não são confiáveis para clientes de verdade.
 - [ ] Publicar o app (hospedagem + domínio próprio), com ambientes de teste e produção separados.
 - [ ] Nome e identidade do produto (hoje "Game GB", ligado à Gela Boca).
 - [ ] Termos de uso e política de privacidade (LGPD: o app guarda CPF e telefone de funcionários dos clientes).
@@ -262,7 +268,10 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | O isolamento entre contas é feito por **chave estrangeira composta com o `contaid`**, não por trigger: as duas pontas leem o mesmo `contaid` da mesma linha, então apontar para outra conta é estruturalmente impossível. O mesmo truque garante que só se atribui tarefa a quem trabalha numa loja onde a tarefa vale. |
 | 21/09/2026 | Policies usam `(select minha_conta())` (avaliado uma vez por consulta, não por linha). `minha_conta()`, `minha_conta_editavel()` e `eh_admin_geral()` são `security definer` com `search_path` fixo. |
 | 21/09/2026 | EAN: fica em `produtosfornecedor` — `produtosestoque` não tem coluna de EAN. A unicidade é `(contaid, ean)` num índice parcial que ignora nulos e o marcador `'SEM EAN'` usado pelo sistema antigo. |
-| 21/09/2026 | As 18 linhas de `configuracoes` da Fase 1 não pertenciam a conta nenhuma: viraram a função `cria_configuracoes_padrao(contaid)`, chamada ao criar cada conta (Fase 4). |
+| 21/09/2026 | As 18 linhas de `configuracoes` da Fase 1 não pertenciam a conta nenhuma: viraram a função `cria_configuracoes_padrao(contaid)`, chamada ao criar cada conta. |
+| 21/09/2026 | EAN fica em `produtosfornecedor` (confirmado: `produtosestoque` não tem coluna de EAN). Avaliar movê-lo para o catálogo na Fase 12. |
+| 21/09/2026 | Cadastro público desligado na tela e no Supabase Auth. Só entra quem foi convidado. |
+| 21/09/2026 | O e-mail embutido do Supabase serve só para teste. SMTP próprio virou item da Fase 14, antes de vender. |
 
 ## Referência — arquivo do sistema antigo → fase
 | Arquivo em `legado/` | Fase |

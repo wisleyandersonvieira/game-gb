@@ -348,10 +348,50 @@ END $$;
 
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
+DECLARE afetadas integer; deu_erro boolean;
 BEGIN
-  RAISE NOTICE '13. um master nao vira admin geral';
+  RAISE NOTICE '13. um master nao vira admin geral nem mexe no proprio contrato';
   PERFORM public.exigir(NOT (SELECT public.eh_admin_geral()), 'master comum nao e admin geral');
   PERFORM public.exigir((SELECT count(*) FROM public.contas) = 1, 'master so enxerga a propria conta');
+  PERFORM public.exigir((SELECT count(*) FROM public.contas WHERE contaid = 2) = 0, 'master nao le a conta de outro cliente');
+
+  -- O limite de lojas e o status sao contratuais: so o admin geral muda.
+  UPDATE public.contas SET limitelojas = 99 WHERE contaid = 1;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'master NAO aumenta o proprio limite de lojas');
+  PERFORM public.exigir((SELECT limitelojas FROM public.contas WHERE contaid = 1) = 2, 'o limite continua o contratado');
+
+  UPDATE public.contas SET status = 'ativa' WHERE contaid = 3;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'master nao reativa conta suspensa');
+
+  UPDATE public.contas SET nome = 'INVADIDA' WHERE contaid = 2;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'master nao altera a conta de outro cliente');
+
+  DELETE FROM public.contas WHERE contaid = 2;
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'master nao apaga a conta de outro cliente');
+
+  BEGIN
+    INSERT INTO public.contas (nome, email) VALUES ('Conta pirata', 'pirata@exemplo.com');
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege OR check_violation THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'master nao cria conta nova (so o admin geral)');
+
+  -- Nem se auto-inscreve na conta alheia para enxerga-la depois.
+  PERFORM public.exigir((SELECT count(*) FROM public.contasusuarios WHERE contaid = 2) = 0,
+                        'master nao le os usuarios de outro cliente');
+  BEGIN
+    INSERT INTO public.contasusuarios (contaid, userid)
+    VALUES (2, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege OR unique_violation THEN
+    deu_erro := true;
+  END;
+  PERFORM public.exigir(deu_erro, 'master nao se adiciona a conta de outro cliente');
 END $$;
 
 -- ===========================================================================

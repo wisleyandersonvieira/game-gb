@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 
 const itens = [
+  { to: "/gestao", label: "Gestão" },
   { to: "/painel", label: "Quadro" },
   { to: "/funcionarios", label: "Equipe" },
   { to: "/tarefas", label: "Tarefas" },
