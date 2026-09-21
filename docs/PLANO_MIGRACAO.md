@@ -18,7 +18,7 @@ Recolocar em funcionamento todas as funcionalidades do sistema original (painel 
 | Fase | Tema | Status |
 |---|---|---|
 | 1 | Banco de dados (estrutura limpa, sem dados) | ✅ Concluída — 42 tabelas + `configuracoes` aplicadas no Supabase, vazias. Pendente do Wisley: recadastrar as tarefas/pessoas especiais e preencher os IDs em `configuracoes`. |
-| 2 | Refazer as telas iniciais (Quadro, Equipe, Tarefas) | 🟨 Próxima — as 3 telas atuais quebraram (29 erros de TypeScript), como previsto |
+| 2 | Refazer as telas iniciais (Quadro, Equipe, Tarefas) | 🟨 Em andamento — **Equipe refeita** (21/09/2026). Faltam Quadro e Tarefas: 18 erros de TypeScript restantes |
 | 3 | Painel Operacional + Validação | ⬜ Não iniciada |
 | 4 | Gestão de pessoas e gamificação | ⬜ Não iniciada |
 | 5 | Metas e Financeiro | ⬜ Não iniciada |
@@ -61,20 +61,24 @@ Base para todas as fases seguintes. Referência completa: `docs/DICIONARIO_BANCO
 
 ## Fase 2 — Refazer as telas iniciais (Quadro, Equipe, Tarefas)
 - [ ] Refazer as telas Quadro/Equipe/Tarefas sobre as tabelas reais (`funcionarios`, `tarefas`, `tarefasatribuidas`, `entregas`) — param de funcionar após a Fase 1.
+  - [x] **Equipe** (`funcionarios.tsx`) — listagem, cadastro, edição e ativar/desativar sobre `funcionarios`. *(21/09/2026)*
+  - [ ] **Quadro** (`painel.tsx`)
+  - [ ] **Tarefas** (`tarefas.tsx`)
 - [ ] Atribuir tarefa **não** deve criar entrega. Entrega nasce quando o funcionário envia (por enquanto: botão "Registrar entrega" no painel com upload de foto; depois pelo bot).
 - [ ] Aprovação credita pontos em `funcionarios.saldopontos` de forma atômica (função SQL `aprovar_entrega`), como o `database.py` fazia.
 - [ ] Recusa exige motivo (`motivo_recusa`).
 - [ ] Mostrar foto da entrega na validação (Storage).
 - [ ] Ranking: diário e mensal (não "de todos os tempos").
 - [ ] Tarefas recorrentes: tela de atribuição com frequência (Única / Diária / Semanal / Mensal), data de agendamento e fim de vigência.
-- [ ] Editar/desativar funcionários e tarefas.
+- [ ] Editar/desativar funcionários e tarefas. *(funcionários: feito em 21/09/2026; tarefas: pendente)*
 
-**Estado em 19/09/2026 (fim da Fase 1):** `bun run build` **passa** (o Vite não checa tipos), mas `bunx tsc --noEmit` acusa **29 erros de TypeScript**, todos nestas três telas, porque elas ainda usam as tabelas de teste do Lovable. Na prática as telas quebram ao abrir no navegador, não ao compilar:
-- `src/routes/_authenticated/tarefas.tsx` — 17 erros (usa a tabela `tarefas_atribuidas`, que agora se chama `tarefasatribuidas`, e as colunas `tarefa_id`/`funcionario_id`/`atribuicao_id`)
-- `src/routes/_authenticated/funcionarios.tsx` — 10 erros (usa `id`, `nome` e `ativo`; agora são `funcionarioid`, `nomecompleto` e não existe `ativo`)
+**Estado em 21/09/2026:** `bun run build` **passa** (o Vite não checa tipos). `bunx tsc --noEmit` acusa **18 erros**, nas duas telas que faltam:
+- `src/routes/_authenticated/tarefas.tsx` — 16 erros (usa a tabela `tarefas_atribuidas`, que agora se chama `tarefasatribuidas`, e as colunas `tarefa_id`/`funcionario_id`/`atribuicao_id`)
 - `src/routes/_authenticated/painel.tsx` — 2 erros (usa `id` e `status_validacao`; agora são `entregaid` e `statusvalidacao`)
 
-Nenhum outro arquivo do projeto quebrou.
+`funcionarios.tsx` foi refeita e compila limpa. Nenhum outro arquivo do projeto quebrou.
+
+**Regra de negócio preservada na tela Equipe:** `funcionarios.diadefolga` usa a codificação do sistema antigo — `0` = sem folga fixa, `1` = domingo … `7` = sábado (ver `legado/database.py`, filtro de folga do dia).
 
 ## Fase 3 — Painel Operacional + Validação (substitui `painel.html` aba Operacional e aba "Validar Entregas")
 - [ ] Barra de progresso do dia + "última atualização" (auto-refresh / Realtime).
