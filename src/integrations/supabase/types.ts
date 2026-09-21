@@ -90,19 +90,19 @@ export type Database = {
       }
       configuracoes: {
         Row: {
-          atualizado_em: string
+          atualizadoem: string
           chave: string
           descricao: string | null
           valor: string | null
         }
         Insert: {
-          atualizado_em?: string
+          atualizadoem?: string
           chave: string
           descricao?: string | null
           valor?: string | null
         }
         Update: {
-          atualizado_em?: string
+          atualizadoem?: string
           chave?: string
           descricao?: string | null
           valor?: string | null
@@ -656,6 +656,7 @@ export type Database = {
       }
       funcionarios: {
         Row: {
+          ativo: boolean
           cargo: string | null
           chatidtelegram: string | null
           cpf: string | null
@@ -677,6 +678,7 @@ export type Database = {
           verificadorcpf: string | null
         }
         Insert: {
+          ativo?: boolean
           cargo?: string | null
           chatidtelegram?: string | null
           cpf?: string | null
@@ -698,6 +700,7 @@ export type Database = {
           verificadorcpf?: string | null
         }
         Update: {
+          ativo?: boolean
           cargo?: string | null
           chatidtelegram?: string | null
           cpf?: string | null
@@ -1180,7 +1183,7 @@ export type Database = {
           {
             foreignKeyName: "onboardingstatus_funcionarioid_fkey"
             columns: ["funcionarioid"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "funcionarios"
             referencedColumns: ["funcionarioid"]
           },

@@ -7,7 +7,7 @@
 | `agendamentos` | agendamentoid | funcionarios |
 | `categoriasproduto` | categoriaid |  |
 | `configuracoesescala` | configid |  |
-| `configuracoessetores` |  |  |
+| `configuracoessetores` | setor |  |
 | `conquistas` | conquistaid |  |
 | `conquistasfuncionarios` | conquistafuncionarioid | conquistas, funcionarios |
 | `contagensestoque` | contagemid | funcionarios |
@@ -23,7 +23,7 @@
 | `fornecedores` | fornecedorid |  |
 | `freelancers` | freelancerid |  |
 | `funcionarios` | funcionarioid | posicoesloja |
-| `funcionariosgrupos` |  | funcionarios, grupos |
+| `funcionariosgrupos` | funcionarioid + grupoid | funcionarios, grupos |
 | `grupos` | grupoid |  |
 | `historicoranking` | historicoid | funcionarios |
 | `itenscontagemestoque` | itemcontagemid | contagensestoque, produtosestoque |
@@ -31,12 +31,12 @@
 | `lucromensalhistorico` | historicoid |  |
 | `metasdiariasapuracoes` | apuracaoid | funcionarios, metasprincipais |
 | `metasdiariasinstancias` | metainstanciaid |  |
-| `metasdiariasmodelos` |  |  |
+| `metasdiariasmodelos` | diasemanaid |  |
 | `metasprincipais` | metaprincipalid |  |
 | `notasfiscais` | notafiscalid | funcionarios |
 | `notasfiscaisentrada` | notaid | fornecedores |
-| `onboardingstatus` |  | funcionarios |
-| `picodiario` |  |  |
+| `onboardingstatus` | funcionarioid | funcionarios |
+| `picodiario` | diasemanaid |  |
 | `posicoesloja` | posicaoid |  |
 | `produtosestoque` | produtoid |  |
 | `produtosfornecedor` | produtofornecedorid | fornecedores, produtosestoque |
@@ -83,7 +83,7 @@
 ## configuracoessetores
 | Coluna | Tipo | Obs |
 |---|---|---|
-| setor | varchar(50) | obrigatório |
+| setor | varchar(50) | obrigatório; chave primária |
 | descricaopadrao | text |  |
 
 ## conquistas
@@ -250,12 +250,13 @@
 | domingofolgamensal | integer | padrão 0 |
 | datainicioafastamento | date |  |
 | datafimafastamento | date |  |
+| ativo | boolean | obrigatório; padrão true. Acrescentada em 21/09/2026: `false` = desligado definitivamente. As datas de afastamento valem só para afastamento temporário. |
 
 ## funcionariosgrupos
 | Coluna | Tipo | Obs |
 |---|---|---|
-| funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
-| grupoid | integer | obrigatório; → grupos.grupoid |
+| funcionarioid | integer | obrigatório; chave primária composta; → funcionarios.funcionarioid |
+| grupoid | integer | obrigatório; chave primária composta; → grupos.grupoid |
 
 ## grupos
 | Coluna | Tipo | Obs |
@@ -328,7 +329,7 @@
 ## metasdiariasmodelos
 | Coluna | Tipo | Obs |
 |---|---|---|
-| diasemanaid | integer | obrigatório |
+| diasemanaid | integer | obrigatório; chave primária |
 | nomedia | varchar(50) | obrigatório |
 | valormeta | numeric(18,2) | obrigatório |
 | pontospremio | integer | obrigatório |
@@ -369,7 +370,7 @@
 ## onboardingstatus
 | Coluna | Tipo | Obs |
 |---|---|---|
-| funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
+| funcionarioid | integer | obrigatório; chave primária; → funcionarios.funcionarioid |
 | statusworkflow | varchar(50) | obrigatório; padrão 'Pendente' |
 | ultimaetapa | varchar(100) |  |
 | escolaridade | varchar(50) |  |
@@ -389,7 +390,7 @@
 ## picodiario
 | Coluna | Tipo | Obs |
 |---|---|---|
-| diasemanaid | integer | obrigatório |
+| diasemanaid | integer | obrigatório; chave primária |
 | nomedia | varchar(20) | obrigatório |
 | horabloqueioinicio | time |  |
 | horabloqueiofim | time |  |
@@ -503,3 +504,15 @@
 | senhahash | varchar(64) | obrigatório |
 | nomeexibicao | varchar(100) |  |
 | nivelacesso | integer | padrão 1 |
+
+---
+
+## configuracoes
+Tabela **nova**, não existia no SQL Server. Guarda os parâmetros que ficavam fixos no `legado/config.py`.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| chave | varchar(100) | obrigatório; chave primária |
+| valor | text |  |
+| descricao | text |  |
+| atualizadoem | timestamptz | obrigatório; padrão now() |

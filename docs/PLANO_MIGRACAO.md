@@ -2,7 +2,7 @@
 
 > **Documento-guia do projeto.** Toda sessão de trabalho deve começar lendo este plano e terminar atualizando o **Status** e o **Registro de decisões**.
 > Repositório: https://github.com/wisleyandersonvieira/game-gb
-> Última atualização: 19/09/2026 (Fase 1 concluída — banco limpo aplicado no Supabase; ferramenta: Claude Code)
+> Última atualização: 21/09/2026 (Fase 1 concluída; Fase 2 iniciada pela tela Equipe; ferramenta: Claude Code)
 
 ---
 
@@ -49,6 +49,7 @@ Base para todas as fases seguintes. Referência completa: `docs/DICIONARIO_BANCO
 - [ ] Como o banco é limpo, os IDs fixos do `config.py` **não existem mais**. Recadastrar as tarefas/pessoas especiais e guardar os novos IDs em `configuracoes`: TAREFA_ID_FEEDBACK_DIARIO (era 5), TAREFA_ID_LEITURA (38), TAREFA_MODELO_AGENDAMENTO_ID (92), TAREFA_ID_PONTOS_META (121), TAREFA_ID_NOTA_FISCAL (156), TAREFA_ID_GUARDAR_MERCADORIA_MODELO (157), ID_GESTOR_PADRAO (2), RESPONSAVEL_AGENDAMENTOS_ID (3). *As 8 chaves já existem em `configuracoes` com valor vazio; falta o Wisley recadastrar e preencher.*
 - [x] Criar buckets no Storage: `entregas` (fotos), `notas-fiscais`, `documentos-rh`, `layout-loja`. Criados privados; URLs assinadas revistas na Fase 12.
 - [x] RLS provisória (usuário logado); endurecimento por papel na Fase 12.
+- [x] *(21/09/2026)* Chaves primárias nas 5 tabelas que estavam sem, coluna `funcionarios.ativo` e renomeação de `configuracoes.atualizadoem` — migração `20260921000000_chaves_primarias_e_ativo.sql`. As 43 tabelas têm chave primária.
 
 **Pronto quando:** as 42 tabelas existem no Supabase (vazias). ✅ Atingido em 19/09/2026.
 
@@ -184,6 +185,9 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 19/09/2026 | O projeto Supabase do Lovable (`asgdynxdcdnjglgyyaek`) é acessível pela conta do Wisley. Decidido mantê-lo em vez de criar um novo, e apagar as 4 tabelas de teste do Lovable, cujos nomes conflitavam com os reais. |
 | 19/09/2026 | `.env` deixou de ser versionado (estava rastreado pelo Git apesar do `.gitignore`). |
 | 19/09/2026 | A tabela `configuracoes` usa a coluna `atualizado_em` (com underscore), conforme especificado pelo Wisley — exceção à regra de nomes, que vale para as tabelas herdadas do SQL Server. |
+| 21/09/2026 | Revertida a exceção acima: `configuracoes.atualizado_em` renomeada para `atualizadoem`, voltando à regra geral de nomes. |
+| 21/09/2026 | As 5 tabelas que estavam sem chave primária passaram a ter **chave natural**, não ID automático: `configuracoessetores` (setor), `funcionariosgrupos` (funcionarioid + grupoid), `metasdiariasmodelos` (diasemanaid), `onboardingstatus` (funcionarioid), `picodiario` (diasemanaid). Motivo: o `legado/database.py` endereça as 5 por essas colunas (`WHERE Setor = ?`, `WHERE DiaSemanaID = ?` etc.); um ID automático permitiria duplicatas que quebrariam esses UPDATEs. |
+| 21/09/2026 | Funcionário desligado: coluna `funcionarios.ativo` (boolean, padrão true). As datas de afastamento passam a valer só para afastamento temporário. |
 
 ## Referência rápida — mapa arquivo original → fase
 | Arquivo original | Fase |
