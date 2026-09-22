@@ -10,6 +10,7 @@ import { CaixaGrafico, GraficoEntregas, GraficoPontos, GraficoVendas } from "@/i
 import { Guia, guiaCompleto } from "@/inicio/Guia";
 import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, type PainelInicio } from "@/inicio/tipos";
+import { Pontos } from "@/ui/Pontos";
 
 export const Route = createFileRoute("/_authenticated/inicio")({
   component: Inicio,
@@ -94,7 +95,7 @@ function Inicio() {
                   onClick={() => escolher(id)}
                   aria-pressed={alcance === id}
                   className={`rounded-md px-3 py-1.5 text-sm ${
-                    alcance === id ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                    alcance === id ? "bg-azul-soft font-semibold text-azul" : "text-muted-foreground hover:bg-muted"
                   }`}
                 >
                   {rotulo}
@@ -231,7 +232,7 @@ function Graficos({ p }: { p: PainelInicio }) {
 
 function Lista({ titulo, para, vazio, children, n }: { titulo: string; para: string; vazio: string; n: number; children: React.ReactNode }) {
   return (
-    <section className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm">
+    <section className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-card">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">{titulo}</h2>
         <Link to={para} className="shrink-0 whitespace-nowrap text-xs font-medium text-primary hover:underline">
@@ -250,9 +251,9 @@ function Listas({ p }: { p: PainelInicio }) {
       <Lista titulo="Top 5 do mês" para="/ranking" vazio="Ninguém pontuou neste mês ainda." n={p.ranking.length}>
         {p.ranking.map((r, i) => (
           <li key={r.nome + i} className="flex items-center gap-3 py-2 text-sm">
-            <span className={`w-6 text-center font-mono font-medium tabular-nums ${i === 0 ? "text-azul" : "text-muted-foreground"}`}>{i + 1}º</span>
+            <span className={`w-6 text-center font-mono font-medium tabular-nums ${i === 0 ? "text-ouro-ink" : "text-muted-foreground"}`}>{i + 1}º</span>
             <span className="min-w-0 flex-1 truncate">{r.nome}</span>
-            <span className="font-semibold tabular-nums">{r.pontos} pts</span>
+            <Pontos valor={r.pontos} sufixo="pts" />
           </li>
         ))}
       </Lista>

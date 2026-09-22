@@ -83,7 +83,7 @@ export function MeuPerfil() {
               }}
               aria-pressed={tema === id}
               className={`min-h-12 rounded-lg border px-3 text-sm ${
-                tema === id ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border"
+                tema === id ? "border-azul bg-azul-soft font-semibold text-azul" : "border-border"
               }`}
             >
               {rotulo}

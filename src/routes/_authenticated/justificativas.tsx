@@ -16,8 +16,8 @@ const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 
 const COR: Record<string, string> = {
   Pendente: "border-azul/40 bg-azul-soft text-azul",
-  Aceita: "border-sucesso text-sucesso",
-  Recusada: "border-destructive text-destructive",
+  Aceita: "border-sucesso/40 bg-sucesso-soft text-sucesso",
+  Recusada: "border-perigo/40 bg-perigo-soft text-perigo",
 };
 
 type Linha = {

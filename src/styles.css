@@ -84,6 +84,17 @@ h3 {
   font-family: var(--font-display);
 }
 
+/* Foco do teclado: contorno azul de 2px, afastado 2px. */
+:focus-visible {
+  outline: 2px solid var(--stg-azul);
+  outline-offset: 2px;
+}
+
+/* Ícones (Lucide) com o traço da marca. */
+svg.lucide {
+  stroke-width: 1.75;
+}
+
 /* Celular: área de toque grande e nada de rolagem para o lado. */
 html,
 body {

@@ -4,6 +4,7 @@
 // observação, telefone ou CPF.
 import { MetaCartao, type MetaPainel } from "./MetaDaLoja";
 import { AgendaCartao, type ItemAgenda } from "./AgendaDaLoja";
+import { Pontos } from "@/ui/Pontos";
 
 export type DadosPainel = {
   loja: string;
@@ -69,7 +70,7 @@ export function PainelDaLoja({ dados, tv = false }: { dados: DadosPainel; tv?: b
                     <span className="mr-2">{MEDALHAS[i]}</span>
                     {p.pessoa}
                   </span>
-                  <strong className="text-azul">{p.pontos}</strong>
+                  <Pontos valor={p.pontos} sufixo="" grande={tv} />
                 </li>
               ))}
             </ol>

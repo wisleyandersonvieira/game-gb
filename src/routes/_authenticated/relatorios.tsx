@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { Justificar } from "@/pessoas/justificar";
+import { Pontos } from "@/ui/Pontos";
 
 export const Route = createFileRoute("/_authenticated/relatorios")({
   component: Relatorios,
@@ -59,9 +60,9 @@ type TarefaAnalise = {
 
 const COR_STATUS: Record<string, string> = {
   Pendente: "border-azul/40 bg-azul-soft text-azul",
-  Aprovada: "border-sucesso text-sucesso",
-  Recusada: "border-destructive text-destructive",
-  Estornada: "border-destructive text-destructive",
+  Aprovada: "border-sucesso/40 bg-sucesso-soft text-sucesso",
+  Recusada: "border-perigo/40 bg-perigo-soft text-perigo",
+  Estornada: "border-perigo/40 bg-perigo-soft text-perigo",
 };
 
 function Relatorios() {
@@ -217,7 +218,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                     title={`Ganhou em ${c.dataconquista ? dataHora(c.dataconquista) : "—"}`}
                   >
                     {c.icone} {c.nome}
-                    {c.pontosbonus > 0 && <span className="ml-1 text-azul">+{c.pontosbonus}</span>}
+                    {c.pontosbonus > 0 && <span className="ml-1"><Pontos valor={c.pontosbonus} sinal sufixo="" /></span>}
                   </span>
                 ))}
               </div>
@@ -323,7 +324,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                     </p>
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {e.status === "Aprovada" ? <strong className="text-azul">+{e.pontos}</strong> : "—"}
+                    {e.status === "Aprovada" ? <Pontos valor={e.pontos} sinal sufixo="" /> : "—"}
                   </span>
                 </div>
               ))}

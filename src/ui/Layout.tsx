@@ -45,10 +45,10 @@ function ItemLateral({ item, caminho, recolhido }: { item: ItemMenu; caminho: st
       title={recolhido ? item.label : undefined}
       aria-current={eh ? "page" : undefined}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
-        eh ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        eh ? "bg-azul-soft font-semibold text-azul" : "text-muted-foreground hover:bg-muted hover:text-foreground"
       } ${recolhido ? "justify-center px-0" : ""}`}
     >
-      <Icone className="h-[18px] w-[18px] shrink-0" aria-hidden />
+      <Icone className="h-5 w-5 shrink-0" aria-hidden />
       {!recolhido && <span className="truncate">{item.label}</span>}
     </Link>
   );
@@ -110,7 +110,7 @@ function MenuCompleto({ menu, caminho, fechar, sair }: { menu: GrupoMenu[]; cami
                     to={i.to}
                     onClick={fechar}
                     className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
-                      eh ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border bg-card"
+                      eh ? "border-azul bg-azul-soft font-semibold text-azul" : "border-border bg-card"
                     }`}
                   >
                     <Icone className="h-5 w-5 shrink-0" aria-hidden />

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Pontos } from "@/ui/Pontos";
 
 export const Route = createFileRoute("/_authenticated/conquistas")({
   component: Conquistas,
@@ -397,7 +398,7 @@ function Cadastro() {
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {descreverRegra(c.criteriotipo, c.criteriovalor, c.criteriodias)} ·{" "}
-                      <strong className="text-azul">+{c.pontosbonus ?? 0}</strong> pontos de bônus
+                      <Pontos valor={c.pontosbonus ?? 0} sinal sufixo="pontos de bônus" />
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {c.contardesde
@@ -492,7 +493,7 @@ function Ganhadores() {
             {g.pontosbonus > 0 && (
               <>
                 {" "}
-                · <strong className="text-azul">+{g.pontosbonus}</strong> pontos
+                · <Pontos valor={g.pontosbonus} sinal />
               </>
             )}
           </p>

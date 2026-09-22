@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { Pontos } from "@/ui/Pontos";
 
 export const Route = createFileRoute("/_authenticated/funcionarios")({
   component: Funcionarios,
@@ -369,7 +370,7 @@ function Funcionarios() {
                 </span>
               ) : (
                 <span className="text-sm text-muted-foreground">
-                  <strong className="text-azul">{f.saldopontos}</strong> pontos
+                  <Pontos valor={f.saldopontos} />
                 </span>
               )}
               <button

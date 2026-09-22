@@ -48,7 +48,7 @@ export function CartaoNumero({
       {detalhe && <p className="mt-1 text-xs text-muted-foreground">{detalhe}</p>}
     </>
   );
-  const classe = "block rounded-xl border border-border bg-card p-4 shadow-sm";
+  const classe = "block rounded-xl border border-border bg-card p-4 shadow-card";
   return para ? (
     <Link to={para} className={`${classe} transition hover:border-primary hover:shadow-md focus-visible:outline-2 focus-visible:outline-primary`}>
       {corpo}

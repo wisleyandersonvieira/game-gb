@@ -31,7 +31,7 @@ const legenda = { wrapperStyle: { fontSize: 12, color: COR.texto } };
 
 export function CaixaGrafico({ titulo, descricao, children }: { titulo: string; descricao?: string; children: ReactNode }) {
   return (
-    <section className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm">
+    <section className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-card">
       <h2 className="text-sm font-semibold">{titulo}</h2>
       {descricao && <p className="text-xs text-muted-foreground">{descricao}</p>}
       <div className="mt-3 h-56 sm:h-64">{children}</div>

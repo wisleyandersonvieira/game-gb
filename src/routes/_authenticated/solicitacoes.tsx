@@ -22,7 +22,7 @@ const COR: Record<string, string> = {
   Aberta: "border-azul/40 bg-azul-soft text-azul",
   "Em andamento": "border-primary text-primary",
   Concluída: "border-border text-muted-foreground",
-  Recusada: "border-destructive text-destructive",
+  Recusada: "border-perigo/40 bg-perigo-soft text-perigo",
 };
 
 function dataHora(iso: string) {

@@ -82,7 +82,7 @@ type Agendamento = {
 const COR: Record<string, string> = {
   Confirmado: "border-primary text-primary",
   Realizado: "border-border text-muted-foreground",
-  Cancelado: "border-destructive text-destructive",
+  Cancelado: "border-perigo/40 bg-perigo-soft text-perigo",
 };
 
 function atualizarTudo(qc: ReturnType<typeof useQueryClient>) {

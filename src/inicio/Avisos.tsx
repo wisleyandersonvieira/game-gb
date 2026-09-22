@@ -54,7 +54,7 @@ export function Avisos({ avisos }: { avisos: PainelInicio["avisos"] }) {
         <li key={i.texto}>
           <Link
             to={i.para}
-            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm transition hover:shadow-sm ${
+            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm transition hover:shadow-card ${
               i.grave ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-azul/40 bg-azul-soft"
             }`}
           >

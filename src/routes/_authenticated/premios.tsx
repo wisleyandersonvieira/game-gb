@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { pdfReciboResgate } from "@/rh/pdf";
+import { Pontos } from "@/ui/Pontos";
 
 export const Route = createFileRoute("/_authenticated/premios")({
   component: Premios,
@@ -299,9 +300,9 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
 
 const COR_STATUS: Record<string, string> = {
   Pendente: "border-azul/40 bg-azul-soft text-azul",
-  Entregue: "border-sucesso text-sucesso",
+  Entregue: "border-sucesso/40 bg-sucesso-soft text-sucesso",
   Cancelado: "border-border text-muted-foreground",
-  Estornado: "border-destructive text-destructive",
+  Estornado: "border-perigo/40 bg-perigo-soft text-perigo",
 };
 
 type Troca = {
@@ -598,7 +599,7 @@ function Catalogo() {
                   )}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  <strong className="text-azul">{p.custoempontos}</strong> pontos ·{" "}
+                  <Pontos valor={p.custoempontos} /> ·{" "}
                   {p.estoquedisponivel === null ? "estoque ilimitado" : `${p.estoquedisponivel} em estoque`}
                   {p.descricao && ` · ${p.descricao}`}
                 </p>

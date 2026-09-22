@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { MesesFechados } from "@/ranking/MesesFechados";
+import { Pontos } from "@/ui/Pontos";
 
 export const Route = createFileRoute("/_authenticated/ranking")({
   component: Ranking,
@@ -151,7 +152,7 @@ function PontosDoPeriodo({
               <span className="font-medium">{l.nomecompleto}</span>
             </span>
             <span className="text-sm text-muted-foreground">
-              <strong className="text-azul">{l.pontos}</strong> pontos · {l.entregas}{" "}
+              <Pontos valor={l.pontos} /> · {l.entregas}{" "}
               {l.entregas === 1 ? "entrega" : "entregas"}
             </span>
           </li>
@@ -243,7 +244,7 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
                 <span className="w-8 text-center font-mono text-lg tabular-nums">{MEDALHAS[i] ?? `${i + 1}º`}</span>
                 <span className="font-medium">{l.nomecompleto}</span>
               </span>
-              <span className="font-mono text-2xl font-medium tabular-nums text-azul">
+              <span className="font-mono text-2xl font-medium tabular-nums text-foreground">
                 {Number(l.nota).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
               </span>
             </div>
