@@ -54,6 +54,47 @@ jobs:
           fi
           echo "Só o bun.lock no repositório."
 
+  contrato:
+    name: Servidor e banco combinam
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toda função chamada pelo servidor existe numa migração
+        run: |
+          # O servidor chama funções do banco pelo nome. Se o nome não existir
+          # em nenhuma migração, a publicação quebra só na hora de usar — foi o
+          # que deixou o administrador sem entrar em 23/09/2026.
+          faltando=""
+          for f in $(grep -rhoE 'rpc\("[a-z_]+"' src | sed -E 's/rpc\("([a-z_]+)"/\1/' | sort -u); do
+            # Vale criada (CREATE FUNCTION) ou renomeada (RENAME TO).
+            if ! grep -rqE "FUNCTION public\.$f\(" supabase/migrations/ \
+               && ! grep -rqE "RENAME TO $f\b" supabase/migrations/; then
+              faltando="$faltando $f"
+            fi
+          done
+          if [ -n "$faltando" ]; then
+            echo "::error::O servidor chama função que nenhuma migração cria:$faltando"
+            exit 1
+          fi
+          echo "Toda função chamada pelo servidor existe numa migração."
+      - name: Todo segredo usado está no .env.example
+        run: |
+          faltando=""
+          for v in $(grep -rhoE "process\.env\[[\"']([A-Z_]+)[\"']\]" src | grep -oE "[A-Z_]{4,}" | sort -u); do
+            # NODE_ENV é do próprio Vite; SUPABASE_SERVICE_ROLE_KEY é o nome antigo,
+            # aceito só em desenvolvimento; LOVABLE_* são segredos do próprio Lovable.
+            case "$v" in NODE_ENV|SUPABASE_SERVICE_ROLE_KEY|LOVABLE_*) continue;; esac
+            if ! grep -q "^$v=" .env.example; then
+              faltando="$faltando $v"
+            fi
+          done
+          if [ -n "$faltando" ]; then
+            echo "::error::Segredo usado no código e ausente do .env.example:$faltando"
+            echo "Sem isso, quem publica não sabe o que precisa cadastrar."
+            exit 1
+          fi
+          echo "Todo segredo usado está documentado no .env.example."
+
   build:
     name: Build (bun run build)
     runs-on: ubuntu-latest

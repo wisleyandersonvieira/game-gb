@@ -212,7 +212,16 @@ async function abrirTentativa(contaid: number | null, tipo: "senha" | "pin" | "t
   const { data, error } = await supabaseAdmin.rpc("tentativa_abrir", {
     p_contaid: contaid as unknown as number, p_tipo: tipo, p_chave: chave, p_origem: origem,
   });
-  if (error) throw new Error("Não foi possível conferir o acesso agora.");
+  if (error) {
+    // Função ausente = o banco não recebeu as migrações desta versão. Dizer
+    // isso na tela evita ficar horas procurando onde está o erro.
+    if (error.code === "PGRST202" || error.message.includes("Could not find")) {
+      throw new Error(
+        "O banco de dados ainda não recebeu as atualizações desta versão. Abra /saude para ver o que falta.",
+      );
+    }
+    throw new Error("Não foi possível conferir o acesso agora.");
+  }
   if (data === null || data === undefined) throw new Error(ERRO_TRAVADO);
   return data as number;
 }
@@ -820,3 +829,40 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
   });
+
+// ---------------------------------------------------------------------------
+// Diagnóstico: o que está faltando para o sistema funcionar
+// ---------------------------------------------------------------------------
+
+/**
+ * Responde o que está faltando, sem revelar valor de segredo nenhum: só "tem"
+ * ou "não tem". Existe porque uma publicação sem as atualizações do banco
+ * deixava todo mundo de fora com uma mensagem que não dizia o motivo.
+ */
+export const diagnostico = createServerFn({ method: "GET" }).handler(async () => {
+  const temPepper = !!process.env["STGAME_PIN_PEPPER"] && process.env["STGAME_PIN_PEPPER"]!.length >= 16;
+  const temChave = !!(process.env["STGAME_SERVICE_ROLE_KEY"] ?? process.env["SUPABASE_SERVICE_ROLE_KEY"]);
+  const temSite = !!process.env["SITE_URL"];
+
+  let banco: "ok" | "desatualizado" | "sem resposta" = "sem resposta";
+  let faltando: string[] = [];
+  if (temChave) {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data, error } = await supabaseAdmin.rpc("diagnostico_do_sistema");
+      if (error) {
+        // A própria função de diagnóstico não existe: o banco não recebeu as
+        // atualizações desta versão.
+        banco = error.message.includes("Could not find") || error.code === "PGRST202" ? "desatualizado" : "sem resposta";
+      } else {
+        const d = data as { funcoesfaltando: string[]; tabelasfaltando: string[] };
+        faltando = [...(d?.funcoesfaltando ?? []), ...(d?.tabelasfaltando ?? [])];
+        banco = faltando.length === 0 ? "ok" : "desatualizado";
+      }
+    } catch {
+      banco = "sem resposta";
+    }
+  }
+
+  return { temPepper, temChave, temSite, banco, faltando };
+});

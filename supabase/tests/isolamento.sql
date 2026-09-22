@@ -5264,4 +5264,104 @@ BEGIN
   DELETE FROM public.contas WHERE contaid = 9001;
 END $$;
 
+
+-- ===========================================================================
+-- 44. CONTRATO: o servidor so chama funcao que existe, e os logins de quem
+--     manda na conta continuam funcionando.
+--     (Motivo: o admin geral ficou sem entrar porque o banco nao tinha
+--     recebido as migracoes, e nada avisava.)
+-- ===========================================================================
+RESET ROLE;
+DO $$ BEGIN RAISE NOTICE '44. contrato servidor-banco e login de quem manda'; END $$;
+
+DO $$
+DECLARE f text; v_faltando text[] := ARRAY[]::text[];
+BEGIN
+  -- Toda funcao que as funcoes de servidor chamam por RPC. Se uma sumir numa
+  -- migracao futura, o teste falha aqui, e nao no ar.
+  FOREACH f IN ARRAY ARRAY[
+    'tentativa_abrir', 'tentativa_fechar', 'acesso_por_email', 'definir_senha_gestor',
+    'senha_app_de', 'senha_app_do_funcionario', 'definir_senha_app', 'definir_pin',
+    'criar_codigo_acesso', 'usar_codigo_acesso', 'conta_do_codigo',
+    'criar_acesso_loja', 'criar_acesso_colaborador', 'redefinir_acesso', 'trocar_cpf',
+    'meu_acesso', 'situacao_dos_acessos', 'minha_politica_de_uso', 'politica_dar_ciencia',
+    'limpar_senha_gestor', 'publicar_politica_de_uso', 'sou_master', 'minha_conta',
+    'eh_admin_geral', 'diagnostico_do_sistema'
+  ] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.proname = f) THEN
+      v_faltando := v_faltando || f;
+    END IF;
+  END LOOP;
+  PERFORM public.exigir(cardinality(v_faltando) = 0,
+    'toda funcao que o servidor chama existe no banco' ||
+    coalesce(' (faltando: ' || array_to_string(v_faltando, ', ') || ')', ''));
+END $$;
+
+-- A chave de servidor precisa poder executar o que o servidor chama.
+DO $$
+DECLARE f text; v_sem text[] := ARRAY[]::text[];
+BEGIN
+  FOREACH f IN ARRAY ARRAY[
+    'public.tentativa_abrir(integer, text, text, text)',
+    'public.tentativa_fechar(bigint, boolean)',
+    'public.acesso_por_email(text)',
+    'public.definir_senha_gestor(uuid, integer, text)',
+    'public.senha_app_de(integer, text)',
+    'public.conta_do_codigo(text)',
+    'public.usar_codigo_acesso(integer, text, text)',
+    'public.diagnostico_do_sistema()'
+  ] LOOP
+    IF NOT has_function_privilege('service_role', f, 'EXECUTE') THEN
+      v_sem := v_sem || f;
+    END IF;
+  END LOOP;
+  PERFORM public.exigir(cardinality(v_sem) = 0,
+    'a chave de servidor executa tudo o que precisa' ||
+    coalesce(' (sem permissao: ' || array_to_string(v_sem, ', ') || ')', ''));
+END $$;
+
+-- O caminho do login do ADMIN GERAL e do MASTER, ponta a ponta no banco.
+DO $$
+DECLARE v jsonb; v_id bigint;
+BEGIN
+  DELETE FROM public.tentativasacesso;
+
+  -- Administrador geral: nao pertence a conta nenhuma, e mesmo assim entra.
+  v := public.acesso_por_email('wisley_anderson@hotmail.com');
+  PERFORM public.exigir(v IS NOT NULL, 'o administrador geral e encontrado pelo e-mail');
+  PERFORM public.exigir(v->>'papel' = 'admin', 'e reconhecido como administrador geral');
+  PERFORM public.exigir((v->>'userid') = 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+                        'com o login certo');
+  v_id := public.tentativa_abrir(NULL, 'senha', repeat('a', 64), 'ip-do-admin');
+  PERFORM public.exigir(v_id IS NOT NULL, 'a trava deixa o administrador tentar entrar');
+  PERFORM public.tentativa_fechar(v_id, true);
+
+  -- Master da conta A.
+  v := public.acesso_por_email('master.a@exemplo.com');
+  PERFORM public.exigir(v->>'papel' = 'master', 'o master e encontrado e reconhecido');
+  PERFORM public.exigir((v->>'contaid')::integer = 1, 'com a conta certa');
+
+  -- Guardar e reconhecer o resumo da senha do gestor.
+  PERFORM public.definir_senha_gestor('cccccccc-cccc-cccc-cccc-cccccccccccc', NULL, 'pbkdf2$210000$aa$bb');
+  v := public.acesso_por_email('wisley_anderson@hotmail.com');
+  PERFORM public.exigir(v->>'senhahash' = 'pbkdf2$210000$aa$bb',
+                        'a senha guardada do administrador volta para o servidor conferir');
+  DELETE FROM public.senhasgestor WHERE userid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  DELETE FROM public.tentativasacesso;
+END $$;
+
+-- O diagnostico enxerga o que falta (e nao devolve segredo nenhum).
+DO $$
+DECLARE d jsonb;
+BEGIN
+  d := public.diagnostico_do_sistema();
+  PERFORM public.exigir(jsonb_array_length(d->'funcoesfaltando') = 0,
+                        'o diagnostico nao encontra funcao faltando num banco atualizado');
+  PERFORM public.exigir(jsonb_array_length(d->'tabelasfaltando') = 0,
+                        'nem tabela faltando');
+  PERFORM public.exigir(NOT (d::text ILIKE '%pbkdf2%') AND NOT (d::text ILIKE '%senhahash%'),
+                        'o diagnostico nao devolve nenhum segredo');
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

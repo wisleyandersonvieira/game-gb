@@ -16,6 +16,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
 import { Route as MeuAcessoRouteImport } from './routes/meu-acesso'
 import { Route as PrimeiroAcessoRouteImport } from './routes/primeiro-acesso'
+import { Route as SaudeRouteImport } from './routes/saude'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedCanalConfidencialRouteImport } from './routes/_authenticated/canal-confidencial'
@@ -76,6 +77,11 @@ const MeuAcessoRoute = MeuAcessoRouteImport.update({
 const PrimeiroAcessoRoute = PrimeiroAcessoRouteImport.update({
   id: '/primeiro-acesso',
   path: '/primeiro-acesso',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SaudeRoute = SaudeRouteImport.update({
+  id: '/saude',
+  path: '/saude',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SemAcessoRoute = SemAcessoRouteImport.update({
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/definir-senha': typeof DefinirSenhaRoute
   '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
+  '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
@@ -263,6 +270,7 @@ export interface FileRoutesByTo {
   '/definir-senha': typeof DefinirSenhaRoute
   '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
+  '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
@@ -300,6 +308,7 @@ export interface FileRoutesById {
   '/definir-senha': typeof DefinirSenhaRoute
   '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
+  '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
@@ -337,6 +346,7 @@ export interface FileRouteTypes {
     | '/definir-senha'
     | '/meu-acesso'
     | '/primeiro-acesso'
+    | '/saude'
     | '/sem-acesso'
     | '/agenda'
     | '/canal-confidencial'
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
     | '/definir-senha'
     | '/meu-acesso'
     | '/primeiro-acesso'
+    | '/saude'
     | '/sem-acesso'
     | '/agenda'
     | '/canal-confidencial'
@@ -407,6 +418,7 @@ export interface FileRouteTypes {
     | '/definir-senha'
     | '/meu-acesso'
     | '/primeiro-acesso'
+    | '/saude'
     | '/sem-acesso'
     | '/_authenticated/agenda'
     | '/_authenticated/canal-confidencial'
@@ -444,6 +456,7 @@ export interface RootRouteChildren {
   DefinirSenhaRoute: typeof DefinirSenhaRoute
   MeuAcessoRoute: typeof MeuAcessoRoute
   PrimeiroAcessoRoute: typeof PrimeiroAcessoRoute
+  SaudeRoute: typeof SaudeRoute
   SemAcessoRoute: typeof SemAcessoRoute
   ECodigoRoute: typeof ECodigoRoute
   TvCodigoRoute: typeof TvCodigoRoute
@@ -498,6 +511,13 @@ declare module '@tanstack/react-router' {
       path: '/primeiro-acesso'
       fullPath: '/primeiro-acesso'
       preLoaderRoute: typeof PrimeiroAcessoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saude': {
+      id: '/saude'
+      path: '/saude'
+      fullPath: '/saude'
+      preLoaderRoute: typeof SaudeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sem-acesso': {
@@ -767,6 +787,7 @@ const rootRouteChildren: RootRouteChildren = {
   DefinirSenhaRoute: DefinirSenhaRoute,
   MeuAcessoRoute: MeuAcessoRoute,
   PrimeiroAcessoRoute: PrimeiroAcessoRoute,
+  SaudeRoute: SaudeRoute,
   SemAcessoRoute: SemAcessoRoute,
   ECodigoRoute: ECodigoRoute,
   TvCodigoRoute: TvCodigoRoute,
