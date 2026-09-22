@@ -161,6 +161,15 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
   const [mes, setMes] = useState(hoje.slice(0, 7));
   const [ano, numeroMes] = mes.split("-").map(Number);
   const mesCorrente = mes === hoje.slice(0, 7);
+  // Mesma janela do banco: do dia 1 até o fim do mês, ou até ontem no mês corrente.
+  const dd = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+  const ontem = new Date(`${hoje}T12:00:00Z`);
+  ontem.setUTCDate(ontem.getUTCDate() - 1);
+  const ontemIso = ontem.toISOString().slice(0, 10);
+  const fimDoMes = ano && numeroMes ? new Date(Date.UTC(ano, numeroMes, 0)).toISOString().slice(0, 10) : "";
+  const inicio = `${mes}-01`;
+  const fim = mesCorrente ? ontemIso : fimDoMes;
+  const semDias = mesCorrente && hoje.slice(8, 10) === "01";
 
   const nota = useQuery({
     queryKey: ["ranking-mensal", mes, lojaid],
@@ -196,8 +205,10 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
 
       <div className="space-y-1 text-xs text-muted-foreground">
         <p>
-          <strong>Nota = metade confiabilidade + metade esforço.</strong>
-          {mesCorrente && " No mês corrente, a conta vai até ontem."}
+          <strong>Nota = metade confiabilidade + metade esforço.</strong>{" "}
+          {semDias
+            ? "Hoje é dia 1: a nota deste mês começa a aparecer amanhã."
+            : `Contando de ${dd(inicio)} a ${dd(fim)}${mesCorrente ? " (no mês corrente, até ontem; o que for feito hoje entra amanhã)" : ""}.`}
         </p>
         <p>
           <strong>Confiabilidade:</strong> dos pontos que a pessoa podia fazer nas tarefas dela, quanto fez (pelo dia
@@ -234,7 +245,11 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
 
       {!nota.isLoading && linhas.length === 0 && (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          Ninguém com tarefas neste mês.
+          {mesCorrente
+            ? semDias
+              ? "A nota deste mês começa a aparecer amanhã."
+              : `Ninguém com tarefas entre ${dd(inicio)} e ${dd(fim)}. O que foi feito hoje entra na nota amanhã.`
+            : "Ninguém com tarefas neste mês."}
         </p>
       )}
     </>
