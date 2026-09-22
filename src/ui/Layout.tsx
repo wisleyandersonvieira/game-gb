@@ -9,6 +9,7 @@ import { SeletorDeLoja } from "@/lojas/loja-ativa";
 import type { GrupoMenu, ItemMenu } from "./menu";
 import { carregarTemaDoUsuario, escolherTema, temaAtual, type Tema } from "./tema";
 import { useUsuario } from "./usuario";
+import { Logo, Simbolo } from "./Logo";
 
 const CHAVE_RECOLHIDO = "gamegb.menurecolhido";
 
@@ -59,8 +60,8 @@ function MenuLateral({ menu, caminho, recolhido, alternar }: { menu: GrupoMenu[]
       className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-border bg-card md:flex ${recolhido ? "w-16" : "w-64"}`}
       aria-label="Menu principal"
     >
-      <div className={`flex h-14 items-center border-b border-border ${recolhido ? "justify-center" : "px-4"}`}>
-        <span className="text-lg font-bold text-primary">{recolhido ? "ST" : "STGame"}</span>
+      <div className={`flex h-14 items-center border-b border-border ${recolhido ? "justify-center" : "px-2"}`}>
+        {recolhido ? <Simbolo tamanho={32} /> : <Logo altura={28} />}
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
         {menu.map((g) => (
@@ -90,7 +91,7 @@ function MenuCompleto({ menu, caminho, fechar, sair }: { menu: GrupoMenu[]; cami
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden" role="dialog" aria-modal="true" aria-label="Menu completo">
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
-        <span className="text-lg font-bold text-primary">Menu</span>
+        <Logo altura={28} respiro={false} />
         <button onClick={fechar} className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-muted" aria-label="Fechar o menu">
           <X className="h-6 w-6" />
         </button>
@@ -215,6 +216,7 @@ export function Layout({
       <MenuLateral menu={menu} caminho={caminho} recolhido={recolhido} alternar={alternar} />
       <div className={recolhido ? "md:pl-16" : "md:pl-64"}>
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur sm:px-5">
+          <Simbolo tamanho={28} className="md:hidden" />
           <p className="min-w-0 flex-1 truncate font-semibold">{comLoja ? conta.data || " " : titulo}</p>
           {comLoja && (
             <div className="min-w-0 max-w-[45vw] sm:max-w-none">

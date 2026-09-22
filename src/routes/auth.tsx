@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { destinoDoUsuario } from "@/integrations/supabase/destino";
+import { Logo } from "@/ui/Logo";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -65,7 +66,8 @@ function AuthPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-2 p-6">
+      <Logo altura={40} />
       <form
         onSubmit={entrar}
         className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6"

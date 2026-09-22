@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { Logo } from "@/ui/Logo";
 
 export const Route = createFileRoute("/sem-acesso")({
   ssr: false,
@@ -9,7 +10,8 @@ export const Route = createFileRoute("/sem-acesso")({
 function SemAcesso() {
   const navigate = useNavigate();
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-2 p-6">
+      <Logo altura={40} />
       <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6 text-center">
         <h1 className="text-2xl font-bold">Sem acesso</h1>
         <p className="text-muted-foreground">
