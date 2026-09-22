@@ -3080,6 +3080,24 @@ VALUES
   (1, 7201, 7006, 11, 7407, '2026-12-28 10:00-03', 'Aprovada', 10, '2026-12-28 11:00-03'),
   (1, 7201, 7006, 11, 7407, '2026-12-29 10:00-03', 'Aprovada', 10, '2026-12-29 11:00-03');
 
+-- Fechamento não fecha mês anterior à criação da conta (a conta A foi
+-- criada neste mês, pelo relógio real do teste).
+DO $$
+DECLARE r jsonb; criada date; anterior date;
+BEGIN
+  SELECT date_trunc('month', public.dia_em_sao_paulo(criadoem))::date INTO criada FROM public.contas WHERE contaid = 1;
+  anterior := (criada - interval '1 month')::date;
+  r := public.rotina_fechamento_mensal(1, public.teste_agora(criada + 1, '09:00'));
+  PERFORM public.exigir(r->>'acao' = 'mes anterior a criacao da conta'
+                        AND NOT EXISTS (SELECT 1 FROM public.fechamentosmensais
+                                         WHERE contaid = 1 AND ano = extract(year FROM anterior) AND mes = extract(month FROM anterior)),
+                        'fechamento nao fecha mes anterior a criacao da conta');
+  r := public.rotina_fechamento_mensal(1, public.teste_agora((criada + interval '1 month')::date + 1, '09:00'));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.fechamentosmensais
+                                 WHERE contaid = 1 AND ano = extract(year FROM criada) AND mes = extract(month FROM criada)),
+                        'o primeiro mes fechado e o mes em que a conta foi criada');
+END $$;
+
 -- Fechamento de dezembro/2026.
 DO $$
 DECLARE r jsonb; f integer;
