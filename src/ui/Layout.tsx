@@ -60,7 +60,7 @@ function MenuLateral({ menu, caminho, recolhido, alternar }: { menu: GrupoMenu[]
       aria-label="Menu principal"
     >
       <div className={`flex h-14 items-center border-b border-border ${recolhido ? "justify-center" : "px-4"}`}>
-        <span className="text-lg font-bold text-primary">{recolhido ? "GB" : "Game GB"}</span>
+        <span className="text-lg font-bold text-primary">{recolhido ? "ST" : "STGame"}</span>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
         {menu.map((g) => (

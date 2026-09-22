@@ -6,12 +6,12 @@ import { destinoDoUsuario } from "@/integrations/supabase/destino";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Entrar — Game GB" },
+      { title: "Entrar — STGame" },
       {
         name: "description",
         content: "Área restrita. O acesso é por convite do administrador.",
       },
-      { property: "og:title", content: "Entrar — Game GB" },
+      { property: "og:title", content: "Entrar — STGame" },
       { property: "og:description", content: "Área restrita." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

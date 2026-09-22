@@ -14,8 +14,20 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { title: "STGame" },
+      { name: "description", content: "STGame: gestão de lojas e gamificação da equipe." },
+      { name: "application-name", content: "STGame" },
+      { name: "apple-mobile-web-app-title", content: "STGame" },
+      { name: "theme-color", content: "#1f4fe0" },
+      { property: "og:site_name", content: "STGame" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/site.webmanifest" },
+    ],
   }),
   component: RootLayout,
 });

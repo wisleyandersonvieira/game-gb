@@ -14,7 +14,7 @@ export const Route = createFileRoute("/tv/$codigo")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Painel da loja" },
+      { title: "Painel da loja — STGame" },
       // A TV não deve aparecer em buscadores nem ser indexada.
       { name: "robots", content: "noindex, nofollow" },
     ],
