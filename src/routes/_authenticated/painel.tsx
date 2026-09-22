@@ -43,6 +43,8 @@ type Entrega = {
   pontosDaTarefa: number;
   nome: string;
   foto: string | null;
+  /** Foto apagada pelo prazo da conta (a entrega e os pontos continuam valendo). */
+  fotoExpirada: boolean;
 };
 
 function Quadro() {
@@ -232,7 +234,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
       const { data, error } = await supabase
         .from("entregas")
         .select(
-          "entregaid, tarefaid, funcionarioid, statusvalidacao, dataenvio, dataaprovacao, datarecusa, dataestorno, pontosganhos, observacao, motivorecusa, motivoestorno, pathfotoevidencia",
+          "entregaid, tarefaid, funcionarioid, statusvalidacao, dataenvio, dataaprovacao, datarecusa, dataestorno, pontosganhos, observacao, motivorecusa, motivoestorno, pathfotoevidencia, fotoexpiradaem",
         )
         .eq("lojaid", lojaid)
         .or(`statusvalidacao.eq.Pendente,dataenvio.gte.${desde}`)
@@ -267,6 +269,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
         pontosDaTarefa: tarefa.get(l.tarefaid)?.pontos ?? 0,
         nome: nome.get(l.funcionarioid) ?? "—",
         foto: l.pathfotoevidencia ? (links.get(l.pathfotoevidencia) ?? null) : null,
+        fotoExpirada: l.fotoexpiradaem !== null,
       }));
     },
   });
@@ -426,6 +429,11 @@ function Cartao({ e, children }: { e: Entrega; children: React.ReactNode }) {
         <a href={e.foto} target="_blank" rel="noreferrer">
           <img src={e.foto} alt={`Foto de ${e.titulo}`} className="max-h-40 w-full rounded-md object-cover" />
         </a>
+      )}
+      {!e.foto && e.fotoExpirada && (
+        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+          Foto removida por tempo. A entrega e os pontos continuam valendo.
+        </p>
       )}
       <div>
         <p className="font-medium">{e.titulo}</p>

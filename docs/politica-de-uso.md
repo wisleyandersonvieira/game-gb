@@ -54,7 +54,7 @@ Ao dar ciência neste comunicado, você confirma que leu e entendeu estas regras
 
 | Item | Situação |
 |---|---|
-| 6 — fotos apagadas automaticamente | 🟨 Em construção na Etapa 1.12: prazo por conta (`DIAS_GUARDAR_FOTO_ENTREGA`, padrão 180, mínimo 90), rotina diária que apaga só o arquivo; entrega passa a mostrar "foto removida por tempo". **A política só pode ser publicada depois que isso estiver no ar.** |
+| 6 — fotos apagadas automaticamente | ✅ Pronto (23/09/2026): prazo por conta em Configurações (`DIAS_GUARDAR_FOTO_ENTREGA`, padrão 180, mínimo 90), rotina diária que apaga só o arquivo e Edge Function `expurgo-fotos` que o remove do Storage. A entrega, os pontos e o histórico ficam; o Quadro mostra "foto removida por tempo". |
 | 3 — nenhuma mensagem enviada | 🟨 Verdade com o Telegram desligado (padrão). Trava aprovada: ligar o bot exige publicar uma versão nova desta política e colher ciência de novo; sem 100% de ciência, o bot fica desligado. |
 | 6 — quem vê a foto | ✅ Texto corrigido: gestão e a própria pessoa, nas entregas dela. |
 | 10 — lista de dados | ✅ Telefone incluído. |
@@ -62,7 +62,7 @@ Ao dar ciência neste comunicado, você confirma que leu e entendeu estas regras
 | 9 — só o dia, sem quem enviou | ✅ Confere (`denunciasanonimas` não tem coluna de autor e guarda só a data). |
 | 8 — estorno com motivo registrado | ✅ Confere (livro `movimentospontos`, motivo obrigatório). |
 | 2 — troca de senha e PIN no primeiro acesso | 🟨 Etapa 1.12, parte A. |
-| 12 — responsável | 🟨 Campo `CONTATO_PRIVACIDADE` em Configurações, preenchido pelo master. |
+| 12 — responsável | ✅ Campo `CONTATO_PRIVACIDADE` em Configurações (grupo "Política de uso"), preenchido pelo master. |
 
 ## Versões
 Cada mudança neste texto gera uma **versão nova**, publicada como comunicado. As ciências

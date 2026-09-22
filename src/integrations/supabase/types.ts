@@ -1163,6 +1163,7 @@ export type Database = {
           entregaid: number
           estornadopor: string | null
           fileidtelegram: string | null
+          fotoexpiradaem: string | null
           fotoidunico: string | null
           funcionarioid: number
           lojaid: number
@@ -1192,6 +1193,7 @@ export type Database = {
           entregaid?: number
           estornadopor?: string | null
           fileidtelegram?: string | null
+          fotoexpiradaem?: string | null
           fotoidunico?: string | null
           funcionarioid: number
           lojaid: number
@@ -1221,6 +1223,7 @@ export type Database = {
           entregaid?: number
           estornadopor?: string | null
           fileidtelegram?: string | null
+          fotoexpiradaem?: string | null
           fotoidunico?: string | null
           funcionarioid?: number
           lojaid?: number
@@ -1576,6 +1579,54 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contas"
             referencedColumns: ["contaid"]
+          },
+        ]
+      }
+      fotosexpurgo: {
+        Row: {
+          caminho: string
+          contaid: number
+          criadoem: string
+          entregaid: number
+          erro: string | null
+          expurgoid: number
+          removidoem: string | null
+          tentativas: number
+        }
+        Insert: {
+          caminho: string
+          contaid?: number
+          criadoem?: string
+          entregaid: number
+          erro?: string | null
+          expurgoid?: number
+          removidoem?: string | null
+          tentativas?: number
+        }
+        Update: {
+          caminho?: string
+          contaid?: number
+          criadoem?: string
+          entregaid?: number
+          erro?: string | null
+          expurgoid?: number
+          removidoem?: string | null
+          tentativas?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fotosexpurgo_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "fotosexpurgo_entrega_fk"
+            columns: ["contaid", "entregaid"]
+            isOneToOne: false
+            referencedRelation: "entregas"
+            referencedColumns: ["contaid", "entregaid"]
           },
         ]
       }
@@ -4794,6 +4845,7 @@ export type Database = {
         Returns: boolean
       }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
+      dias_guardar_foto: { Args: { p_contaid: number }; Returns: number }
       documento_rh_liberado: {
         Args: { p_acao: string; p_nome: string }
         Returns: boolean
@@ -4841,6 +4893,11 @@ export type Database = {
         Returns: string
       }
       exige_master_editavel: { Args: never; Returns: number }
+      expurgo_pegar: { Args: { p_limite?: number }; Returns: Json }
+      expurgo_resultado: {
+        Args: { p_erro?: string; p_ids: number[] }
+        Returns: undefined
+      }
       extrato_pontos: {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }
         Returns: Json
@@ -4850,6 +4907,7 @@ export type Database = {
         Returns: number
       }
       fora_do_comunicado: { Args: { p_documentoid: number }; Returns: Json }
+      fotos_expurgo_disparar: { Args: never; Returns: undefined }
       funcionario_do_bot: { Args: never; Returns: number }
       historico_da_pessoa: {
         Args: { p_funcionarioid: number; p_limite?: number }
@@ -5215,6 +5273,10 @@ export type Database = {
         Args: { p_agora: string; p_contaid: number }
         Returns: Json
       }
+      rotina_expurgo_fotos: {
+        Args: { p_agora: string; p_contaid: number }
+        Returns: Json
+      }
       rotina_fechamento_mensal: {
         Args: { p_agora: string; p_contaid: number }
         Returns: Json
@@ -5467,3 +5529,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

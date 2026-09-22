@@ -18,7 +18,7 @@ const campo =
 const reais = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
-type Item = { chave: string; rotulo: string; ajuda: string; tipo: "taxa" | "inteiro" | "horario"; unidade?: string };
+type Item = { chave: string; rotulo: string; ajuda: string; tipo: "taxa" | "inteiro" | "horario" | "texto"; unidade?: string };
 
 /** O que aparece na tela. Os IDs das tarefas do sistema (TAREFA_*) ficam de fora: o sistema cuida deles. */
 const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
@@ -123,6 +123,26 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Diferença máxima entre a hora em que a foto foi tirada e o envio. Usada pelo bot.",
         tipo: "inteiro",
         unidade: "segundos",
+      },
+      {
+        chave: "DIAS_GUARDAR_FOTO_ENTREGA",
+        rotulo: "Por quanto tempo guardar a foto da entrega",
+        ajuda:
+          "Passado esse prazo, o arquivo da foto é apagado automaticamente. A entrega, os pontos e o histórico ficam; a tela passa a mostrar \"foto removida por tempo\". Mínimo 90 dias.",
+        tipo: "inteiro",
+        unidade: "dias",
+      },
+    ],
+  },
+  {
+    titulo: "Política de uso",
+    aviso: "Aparece na política que cada pessoa aceita no primeiro acesso.",
+    itens: [
+      {
+        chave: "CONTATO_PRIVACIDADE",
+        rotulo: "Responsável pelos dados",
+        ajuda: "Nome e contato de quem responde sobre dados pessoais (LGPD). Ex.: Maria Silva — rh@empresa.com.br",
+        tipo: "texto",
       },
     ],
   },
@@ -316,7 +336,9 @@ function Linha({
             value={texto}
             disabled={!podeAlterar}
             onChange={(e) => setTexto(e.target.value)}
-            className={`${campo} ${item.tipo === "horario" ? "w-36" : "w-28"}`}
+            maxLength={item.tipo === "texto" ? 200 : undefined}
+            placeholder={item.tipo === "texto" ? "Nome — e-mail ou telefone" : undefined}
+            className={`${campo} ${item.tipo === "horario" ? "w-36" : item.tipo === "texto" ? "w-full sm:w-96" : "w-28"}`}
           />
           {item.unidade && item.unidade !== "R$" && (
             <span className="text-sm text-muted-foreground">{item.unidade}</span>

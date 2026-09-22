@@ -24,6 +24,7 @@ const NOME: Record<string, string> = {
   fechamento_mensal: "Fechamento do ranking",
   conferencia_livro: "Conferência do livro de pontos",
   limpeza: "Limpeza do registro",
+  expurgo_fotos: "Expurgo das fotos antigas",
 };
 
 const FUSO = "America/Sao_Paulo";
@@ -51,6 +52,10 @@ function resumo(e: Execucao): string {
   if (e.rotina === "fechamento_mensal") return `${d.mes ?? ""}: ${d.acao ?? ""}`;
   if (e.rotina === "conferencia_livro") return `${d.pessoas ?? 0} pessoas conferidas, tudo certo`;
   if (e.rotina === "limpeza") return `${d.apagados ?? 0} registros antigos apagados`;
+  if (e.rotina === "expurgo_fotos") {
+    if (d.fotos === 0) return `Nenhuma foto passou de ${d.dias ?? 180} dias`;
+    return `${d.fotos ?? 0} fotos com mais de ${d.dias ?? 180} dias apagadas`;
+  }
   return "";
 }
 
@@ -114,7 +119,7 @@ export function Rotinas({ podeRodar }: { podeRodar: boolean }) {
       {rodar.isError && <p className="text-sm text-destructive">{(rodar.error as Error).message}</p>}
 
       <div className="grid gap-2 sm:grid-cols-2">
-        {(["lista_do_dia", "fechamento_mensal", "conferencia_livro", "limpeza"] as const).map((r) => {
+        {(["lista_do_dia", "fechamento_mensal", "conferencia_livro", "limpeza", "expurgo_fotos"] as const).map((r) => {
           const e = ultima(r);
           const ok = e?.resultado === "ok";
           return (

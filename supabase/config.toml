@@ -8,3 +8,8 @@ verify_jwt = false
 
 [functions.telegram-fila]
 verify_jwt = false
+
+# Expurgo das fotos de entrega vencidas (Etapa 1.12). Confere o cabeçalho
+# x-expurgo-segredo (chamada pelo pg_net, a partir da rotina diária).
+[functions.expurgo-fotos]
+verify_jwt = false

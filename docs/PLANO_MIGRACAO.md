@@ -364,6 +364,15 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 - [x] `minha_conta()` responde **nulo** para os acessos de loja e de colaborador: as ~200 regras de acesso que já existem passam a negar tudo para eles, sem serem reescritas. As visões novas leem e gravam **só por funções**, que entram num contexto de servidor (o mesmo desenho do bot).
 - [x] Telegram (1.13) fica pronto no sistema, porém **desligado por padrão**; 1.13B2 e 1.13C pausadas. Nada do bot é apagado.
 
+**Expurgo das fotos de entrega (23/09/2026, feito antes da parte A)**
+- [x] Prazo por conta em Configurações: `DIAS_GUARDAR_FOTO_ENTREGA` (padrão 180, **mínimo 90**; o banco recusa menos).
+- [x] Rotina diária `expurgo_fotos` (junto com a limpeza, depois do `HORARIO_CONFERENCIA_LIVRO`): marca a entrega, zera o caminho e enfileira em `fotosexpurgo`. Até 2.000 fotos por rodada.
+- [x] Edge Function `expurgo-fotos` (cabeçalho `x-expurgo-segredo`, no molde da fila do Telegram) apaga o arquivo do Storage: SQL não apaga arquivo.
+- [x] A entrega, os pontos e o histórico **ficam**; o Quadro mostra "foto removida por tempo". Documento de RH não entra: tem regra própria.
+- [x] Campo `CONTATO_PRIVACIDADE` em Configurações (responsável pela política, item 12).
+- [x] Texto da política corrigido (itens 3, 6 e 10) em `docs/politica-de-uso.md`.
+- [ ] **Antes de publicar a política:** cadastrar os segredos `stgame_expurgo_segredo` (Vault) e `STGAME_EXPURGO_SEGREDO` (Edge Function), e publicar a função.
+
 **Divisão do trabalho**
 - [x] Texto da política de uso recebido (23/09/2026): `docs/politica-de-uso.md`. Vira comunicado com ciência no primeiro acesso, publicado com **0 pontos**. O arquivo lista o que precisa ser ajustado antes de publicar (ver a frase sobre guardar fotos).
 - [ ] **A — Acesso** (grande, risco alto): CPF na Equipe, os dois acessos novos, papéis, senha provisória, "Redefinir acesso", travas de tentativa, isolamento e teste.

@@ -71,6 +71,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `solicitacoeshistorico` | **loja** | historicoid | solicitacoesinternas |
 | `solicitacoesinternas` | **loja** | solicitacaoid | funcionarios |
 | `rotinasexecucoes` | conta | execucaoid |  |
+| `fotosexpurgo` | conta | expurgoid | entregas |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
 | `tiposevento` | conta | tipoeventoid |  |
@@ -328,6 +329,7 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | dataestorno | timestamptz |  |
 | estornadopor | uuid | → auth.users |
 | motivoestorno | text | Obrigatório quando o status é Estornada |
+| fotoexpiradaem | timestamptz | Quando a foto foi apagada por tempo (Etapa 1.12). A entrega, os pontos e o histórico continuam valendo; a tela mostra "foto removida por tempo" |
 
 **Regras de `entregas`:** `statusvalidacao` é `Pendente`, `Aprovada`, `Recusada` ou `Estornada`. Recusada exige `motivorecusa` e Estornada exige `motivoestorno` (o banco recusa sem). No máximo uma entrega Pendente ou Aprovada por atribuição por dia, no fuso de São Paulo. A entrega aponta para a sua atribuição e tem de concordar com ela em tarefa, pessoa e loja. **O navegador não grava nesta tabela:** tudo passa por `registrar_entrega`, `aprovar_entrega`, `recusar_entrega` e `estornar_entrega`.
 
@@ -482,7 +484,7 @@ Dias em que a lista da conta foi gerada (`contaid`, `dia`, `recuperado`). Nunca 
 | Coluna | Tipo | Obs |
 |---|---|---|
 | execucaoid | integer | ID automático |
-| rotina | varchar | lista_do_dia, fechamento_mensal, conferencia_livro, limpeza |
+| rotina | varchar | lista_do_dia, fechamento_mensal, conferencia_livro, limpeza, mensagens, expurgo_fotos |
 | referencia | date | o dia a que se refere |
 | origem | varchar | agendada ou manual ("Rodar agora") |
 | recuperado | boolean | dia recuperado depois de parada |
@@ -492,6 +494,22 @@ Dias em que a lista da conta foi gerada (`contaid`, `dia`, `recuperado`). Nunca 
 | erro | text | mensagem do erro (só o master da conta lê) |
 
 Apagado depois de 180 dias pela própria rotina.
+
+## fotosexpurgo (Etapa 1.12)
+Fila do que precisa sair do Storage. Nível conta.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| expurgoid | integer | ID automático |
+| contaid | integer | obrigatório |
+| entregaid | integer | → entregas (junto com contaid) |
+| caminho | text | caminho do arquivo no bucket `entregas`; único por conta |
+| criadoem | timestamptz | padrão now() |
+| removidoem | timestamptz | quando o arquivo saiu do Storage |
+| tentativas | integer | para em 5 |
+| erro | text | último erro da remoção |
+
+**Ninguém lê pelo navegador** (RLS ligada e sem policy; sem GRANT para `anon` nem `authenticated`). SQL não apaga arquivo do Storage: a rotina `rotina_expurgo_fotos(conta, agora)` marca a entrega (`fotoexpiradaem`), zera `pathfotoevidencia` e põe o caminho aqui; a Edge Function **expurgo-fotos** (cabeçalho `x-expurgo-segredo`, chamada por `fotos_expurgo_disparar()` via pg_net) apaga o arquivo e responde por `expurgo_pegar` / `expurgo_resultado`. Prazo por conta em `DIAS_GUARDAR_FOTO_ENTREGA` (padrão 180, mínimo 90, garantido também por `dias_guardar_foto`). **`fotoidunico` não é apagado**: é a marca que impede reenviar a mesma foto. **Documento de RH não entra aqui**: tem regra própria.
 
 ## itenscontagemestoque
 | Coluna | Tipo | Obs |
@@ -808,7 +826,7 @@ Tabela **nova**, não existia no SQL Server. Guarda os parâmetros que ficavam f
 | descricao | text |  |
 | atualizadoem | timestamptz | obrigatório; padrão now() |
 
-O navegador só lê; altera por `alterar_configuracao` (só o master; os `TAREFA_*` não). Um gatilho valida todo caminho: taxa numérica > 0 e ≤ 10; `PONTOS_BONUS_*` inteiro de 0 a 10.000; `MAX_DIFERENCA_FOTO_SEGUNDOS` inteiro até 86.400; `HORARIO_*` no formato HH:MM.
+O navegador só lê; altera por `alterar_configuracao` (só o master; os `TAREFA_*` não). Um gatilho valida todo caminho: taxa numérica > 0 e ≤ 10; `PONTOS_BONUS_*` inteiro de 0 a 10.000; `MAX_DIFERENCA_FOTO_SEGUNDOS` inteiro até 86.400; `DIAS_GUARDAR_FOTO_ENTREGA` inteiro de 90 a 3.650; `CONTATO_PRIVACIDADE` texto de até 200 letras; `HORARIO_*` no formato HH:MM.
 
 ## justificativas
 Tabela **nova** (Etapa 1.7, parte 3), **nível loja**. "Não se aplica" de uma tarefa num dia.

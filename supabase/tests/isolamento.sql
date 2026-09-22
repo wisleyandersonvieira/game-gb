@@ -3353,6 +3353,98 @@ END $$;
 DELETE FROM public.rotinasexecucoes WHERE contaid = 2 AND iniciadoem < now() - interval '180 days';
 
 -- ---------------------------------------------------------------------------
+-- Expurgo das fotos de entrega (Etapa 1.12): apaga so o ARQUIVO.
+-- Usa entregas que ja existem no teste, so mudando data e caminho da foto.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  r jsonb; mov integer;
+  v_velha integer; v_nova integer; v_b integer;
+  v_status text; v_pontos integer;
+BEGIN
+  RAISE NOTICE '38b. expurgo das fotos de entrega';
+  SELECT count(*) INTO mov FROM public.movimentospontos;
+
+  SELECT min(entregaid) INTO v_velha FROM public.entregas WHERE contaid = 1;
+  SELECT min(entregaid) INTO v_nova  FROM public.entregas WHERE contaid = 1 AND entregaid > v_velha;
+  SELECT min(entregaid) INTO v_b     FROM public.entregas WHERE contaid = 2;
+  PERFORM public.exigir(v_velha IS NOT NULL AND v_nova IS NOT NULL AND v_b IS NOT NULL,
+                        'o teste tem entregas das duas contas para o expurgo');
+
+  UPDATE public.entregas SET dataenvio = now() - interval '200 days', pathfotoevidencia = '1/10/velha.jpg'
+   WHERE entregaid = v_velha;
+  UPDATE public.entregas SET dataenvio = now() - interval '10 days',  pathfotoevidencia = '1/10/nova.jpg'
+   WHERE entregaid = v_nova;
+  UPDATE public.entregas SET dataenvio = now() - interval '200 days', pathfotoevidencia = '2/20/outra.jpg'
+   WHERE entregaid = v_b;
+  SELECT statusvalidacao, pontosganhos INTO v_status, v_pontos FROM public.entregas WHERE entregaid = v_velha;
+
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '00:01'));
+  PERFORM public.exigir(r->>'acao' = 'antes do horario', 'expurgo nao roda antes do horario da conta');
+
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  PERFORM public.exigir((r->>'fotos')::integer = 1, 'expurgo marca so a foto vencida');
+  PERFORM public.exigir((r->>'dias')::integer = 180, 'expurgo usa o prazo da conta (180 dias)');
+
+  -- O que sai e o que FICA.
+  PERFORM public.exigir((SELECT pathfotoevidencia IS NULL AND fotoexpiradaem IS NOT NULL
+                           FROM public.entregas WHERE entregaid = v_velha),
+                        'a entrega vencida fica marcada como foto removida por tempo');
+  PERFORM public.exigir((SELECT statusvalidacao = v_status AND coalesce(pontosganhos, 0) = coalesce(v_pontos, 0)
+                           FROM public.entregas WHERE entregaid = v_velha),
+                        'o registro da entrega e os pontos continuam de pe');
+  PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos) = mov,
+                        'o expurgo nao toca no livro de pontos');
+  PERFORM public.exigir((SELECT pathfotoevidencia = '1/10/nova.jpg' AND fotoexpiradaem IS NULL
+                           FROM public.entregas WHERE entregaid = v_nova),
+                        'a foto dentro do prazo continua no lugar');
+  PERFORM public.exigir((SELECT count(*) FROM public.fotosexpurgo
+                          WHERE contaid = 1 AND caminho = '1/10/velha.jpg' AND removidoem IS NULL) = 1,
+                        'o caminho entra na fila para a Edge Function apagar');
+
+  -- Isolamento: a rotina da conta A nao encosta na conta B.
+  PERFORM public.exigir((SELECT pathfotoevidencia = '2/20/outra.jpg' AND fotoexpiradaem IS NULL
+                           FROM public.entregas WHERE entregaid = v_b),
+                        'o expurgo da conta A nao apaga foto da conta B');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosexpurgo WHERE contaid <> 1),
+                        'nada de outra conta entra na fila da conta A');
+
+  -- Uma vez por dia.
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  PERFORM public.exigir(r->>'acao' = 'ja rodou hoje', 'expurgo roda uma vez por dia');
+
+  -- Documento de RH tem regra propria: nada dele entra nesta fila.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosexpurgo WHERE caminho LIKE '%funcionarios%'),
+                        'nenhum documento pessoal entra na fila de expurgo');
+
+  -- Prazo: minimo de 90 dias, mesmo se alguem tentar gravar menos.
+  BEGIN
+    UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'DIAS_GUARDAR_FOTO_ENTREGA';
+    PERFORM public.exigir(false, 'prazo menor que 90 dias e recusado');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  -- Limpa o que este bloco montou.
+  UPDATE public.entregas SET pathfotoevidencia = NULL, fotoexpiradaem = NULL
+   WHERE entregaid IN (v_velha, v_nova, v_b);
+  DELETE FROM public.fotosexpurgo;
+END $$;
+
+-- A fila e as funcoes do expurgo nao existem para o navegador.
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.fotosexpurgo', 'SELECT')
+                        AND NOT has_table_privilege('anon', 'public.fotosexpurgo', 'SELECT'),
+                        'ninguem le a fila de expurgo pelo navegador');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.expurgo_pegar(integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.expurgo_resultado(integer[], text)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.rotina_expurgo_fotos(integer, timestamptz)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.expurgo_pegar(integer)', 'EXECUTE'),
+                        'funcoes do expurgo nao ficam liberadas para o navegador');
+END $$;
+
+
+-- ---------------------------------------------------------------------------
 -- Passar tarefa de quem está de folga HOJE (data real).
 -- ---------------------------------------------------------------------------
 INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, ativo, datainicioafastamento, datafimafastamento)
