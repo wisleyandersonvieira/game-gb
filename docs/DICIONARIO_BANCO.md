@@ -910,6 +910,7 @@ Em quais lojas cada funcionário trabalha. Tirar alguém de uma loja = `ativo = 
 | lojaid | integer | obrigatório; chave primária composta; → lojas (junto com contaid) |
 | posicaopadraoid | integer | lugar padrão no mapa **daquela loja**; → posicoesloja (junto com lojaid) |
 | ativo | boolean | obrigatório; padrão true |
+| validador | boolean | obrigatório; padrão false. Pode aprovar e recusar entregas **desta loja** pelo Telegram e usar `/pendencias`, `/lancar` e `/status_meta` no grupo de gestão (Etapa 1.13A) |
 | criadoem | timestamptz | obrigatório; padrão now() |
 
 ## tarefaslojas
@@ -1068,3 +1069,52 @@ O navegador só lê. Os tipos `aprovacao`, `estorno_entrega`, `bonus` e `estorno
 **produtosloja** ganhou `sistema` (`abate_comanda`, o prêmio do sistema escondido do catálogo; único por conta, não pode ser apagado). Estoque em branco = ilimitado, 0 = esgotado; custo > 0 nos prêmios comuns. O navegador cadastra e edita só nome, descrição, custo, estoque e ativo.
 
 **resgates**: `status` é `Pendente`, `Entregue`, `Cancelado` ou `Estornado`. Novas colunas: `valorreais` e `taxaconversao` (comanda), `registradopor`, `dataentrega`/`entreguepor`, `datacancelamento`/`canceladopor`/`motivocancelamento`, `dataestorno`/`estornadopor`/`motivoestorno`. Cancelado e Estornado exigem motivo. O navegador só lê; tudo muda pelas funções. As colunas antigas `gestorid_aprovacao` e `dataaprovacao` ficaram sem uso.
+
+
+## Telegram (Etapa 1.13A)
+
+Tudo aqui é **nível conta** (os grupos têm também a loja). O navegador só **lê** `telegramvinculos`, `avisossistema` e `usomensagens`; o resto passa pelas funções. As funções `bot_*` só são liberadas para a chave de servidor (o webhook e a fila); nenhuma para o navegador.
+
+### telegramvinculos
+Quem está ligado ao bot: a pessoa da equipe, o master ou um grupo da loja.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| vinculoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| tipo | varchar(10) | `pessoa`, `master` ou `grupo` |
+| chatid | bigint | obrigatório. Conversa privada (> 0) ou grupo (< 0) |
+| funcionarioid | integer | só em `pessoa`; → funcionarios (junto com contaid) |
+| userid | uuid | só em `master`; → auth.users |
+| lojaid | integer | só em `grupo`; → lojas (junto com contaid) |
+| papelgrupo | varchar(10) | só em `grupo`: `equipe` ou `gestao` |
+| nometelegram | varchar(120) | nome mostrado no Telegram (pessoa) ou título do grupo |
+| ativo | boolean | desligar = `false`, nunca apagar |
+| vinculadoem / desligadoem / desligadopor | | quando ligou; quando e quem desligou |
+
+Únicos (entre os ativos): um Telegram por pessoa; um por master em cada conta; um chat por conta; um grupo em uma conta só; um grupo de cada papel por loja. A mesma pessoa pode estar ligada em duas empresas com o mesmo Telegram: o bot pergunta com qual quer falar.
+
+### telegramconvites
+Convites de 48 h e uso único. **Só o hash (sha256) do código fica guardado**; ninguém lê pelo navegador. Colunas: `conviteid`, `contaid`, `tipo`, `funcionarioid`/`userid`/`lojaid`+`papelgrupo`, `codigohash` (único), `expiraem`, `usadoem`, `canceladoem`, `criadopor`, `criadoem`.
+
+### avisossistema
+Avisos dentro do sistema (ex.: "Bruna Lima ligou o Telegram agora."). Colunas: `avisoid`, `contaid`, `tipo`, `texto` (300), `criadoem`, `lidoem` (preenchido por `marcar_aviso_lido`).
+
+### mensagensfila
+Fila central de avisos e rotinas (a resposta a uma ação da própria pessoa não passa por aqui). Colunas: `filaid`, `contaid`, `lojaid`, `chatid`, `tipo`, `conteudo` (jsonb), `referencia` (ex.: a entrega), `status` (`pendente`, `enviando`, `enviada`, `falhou`, `descartada`), `tentativas`, `proximaem`, `criadoem`, `enviadoem`, `erro` (só o código de erro do Telegram). Linhas terminadas são apagadas depois de 7 dias. Ninguém lê pelo navegador.
+
+### usomensagens
+Medição de uso por dia: `contaid`, `lojaid`, `canal` (`telegram`/`whatsapp`), `tipo`, `dia`, `quantidade`. **Nunca o texto.** Único por conta + loja + canal + tipo + dia.
+
+### Schema `bot` (controle técnico, sem acesso nenhum pelo navegador)
+- `bot.updates`: `update_id` já tratados (3 dias), para a mesma mensagem nunca ser tratada duas vezes.
+- `bot.tentativas`: códigos de convite errados por chat (1 dia). 5 em 1 hora bloqueiam.
+- `bot.estados`: passo da conversa (ex.: esperando a foto da tarefa X, 10 min; motivo de recusa). Nunca guarda texto de mensagem.
+- `bot.contaativa`: empresa escolhida por quem está em mais de uma.
+
+### Colunas novas em tabelas existentes
+- **entregas:** `canalenvio` (`app`/`telegram`), `canalvalidacao`, `validadorfuncionarioid` (quem validou pelo Telegram, quando não é o master), `fotoidunico` (id único da foto no Telegram; único por conta, recusa foto repetida), `avisochatid`/`avisomsgid` (a mensagem no grupo de gestão, para atualizar depois da validação). Preenchidas por gatilho; o navegador não escolhe.
+- **documentosacessos:** `funcionarioid` (quando a própria pessoa abriu) e `canal` (`app`/`telegram`).
+
+### Funções para as telas (master)
+`criar_convite_telegram(funcionario)`, `criar_convite_grupo(loja, papel)`, `criar_convite_meu_telegram()`: devolvem o código uma vez só. `desligar_telegram(vinculo)`, `marcar_aviso_lido(aviso)`.

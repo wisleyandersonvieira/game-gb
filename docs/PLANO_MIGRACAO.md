@@ -63,7 +63,7 @@ Administrador geral (Wisley)
 | 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ✅ Concluída |
 | 1.11 | Rotinas automáticas sem Telegram | ✅ Concluída (22/09/2026) |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
-| 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
+| 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | 🟨 1.13A pronta (22/09/2026), aguardando o teste na loja · 1.13B e 1.13C a fazer |
 | 1.14 | Segurança final (endurecimento) | ⬜ |
 | **FASE 2** | **Expansão — adiada** | Nada daqui é construído sem pedido explícito do Wisley |
 | 2.1 | Escala, mapa e pausas | ⏸️ Adiada |
@@ -353,16 +353,41 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 - [ ] O painel do admin mostra a situação da assinatura de cada cliente.
 
 ### Etapa 1.13 — Telegram e WhatsApp da plataforma + cobrança por uso
-- [ ] **Grupos por loja** (criar, membros, ligar ao grupo do Telegram). Vieram da Etapa 1.7.
+> Dividida em três partes, cada uma testada na loja antes da próxima: **1.13A** base do bot · **1.13B** rotinas com mensagens · **1.13C** WhatsApp (API oficial da Meta) e onboarding pelo bot. Bot: **@STGameAppBot**, um só para todas as contas.
 
-**Estratégia (a detalhar quando chegar a hora):**
+**1.13A — Base do bot (22/09/2026)**
+- [x] Webhook (Edge Function `telegram-webhook`, `verify_jwt = false`): confere o cabeçalho `X-Telegram-Bot-Api-Secret-Token` em toda chamada, com comparação de tempo constante; sem ele ou errado, **401 e nada acontece** (nem abre o banco). Responde 200 na hora e trabalha em segundo plano. Cada `update_id` é tratado uma vez só.
+- [x] Vínculo: pessoa (link + QR na tela Equipe), grupos da loja (equipe e gestão, com `/vincular@STGameAppBot <código>` na tela Lojas) e o Telegram do master (Meu perfil). Convite de 48 h, uso único, código de 64 caracteres aleatórios (só o hash fica no banco); gerar outro cancela o anterior. 5 códigos errados em 1 hora bloqueiam o chat.
+- [x] Aviso de vínculo novo para o master, no sistema (Início, "marcar como lido") e no Telegram dele. Ícone "Telegram" na Equipe e botão "Desligar Telegram" por pessoa e por grupo.
+- [x] Quem não tem vínculo recebe só "Peça o convite ao seu gestor." (nada da empresa ou de pessoas). Grupo sem vínculo recebe só "Grupo não vinculado."; ali só `/vincular` com código válido funciona.
+- [x] Menu do funcionário: tarefas do dia, entrega com foto, "não se aplica" (vira justificativa pendente), saldo, histórico, conquistas, ranking, meta em %, prêmios, comanda, feedback do dia, ciência de comunicado e documentos pessoais (só na conversa privada, link de 5 minutos, com registro de acesso).
+- [x] Foto da entrega: só dentro de 10 minutos depois de "Enviar foto"; encaminhada, repetida (mesmo `file_unique_id`) ou mandada como arquivo é recusada. A foto vai para o Storage em `<contaid>/<lojaid>/`.
+- [x] Trava (b): resgate e comanda só depois do feedback de ontem (se ontem foi dia de trabalho). O resto funciona.
+- [x] Grupo de gestão: foto da entrega com Aprovar/Recusar (motivo respondendo à pergunta do bot, guardado no banco), `/pendencias`, `/lancar`, `/status_meta`. Só o master e quem é **validador daquela loja** (marca nova na Equipe); os outros recebem "Sem permissão." e nada muda. Fica gravado quem validou e por qual canal. Duas aprovações ao mesmo tempo: vale uma.
+- [x] Avisos imediatos pela fila: entrega aprovada/recusada (com motivo) no privado, conquista desbloqueada, meta batida no grupo da equipe e vínculo novo para o master. Validação feita pelo sistema também atualiza a mensagem do grupo.
+- [x] Fila central (`mensagensfila` + Edge Function `telegram-fila`, chamada pelo banco na hora e a cada 15 s pelo pg_cron, com o cabeçalho `x-fila-segredo`): até 18 por minuto por grupo, espera o `retry_after` do Telegram, tenta de novo com intervalo crescente (5 vezes). Linhas enviadas somem em 7 dias.
+- [x] Medição de uso (`usomensagens`): conta, loja, canal, tipo e dia, sem texto. Respostas diretas e avisos da fila contam. A cobrança fica para a Etapa 2.0.
+- [x] O bot chama as **mesmas funções** das telas (entrega, aprovar, recusar, resgate, comanda, feedback, justificativa, ciência com `origem = 'funcionario'`). Todo ponto passa pelo livro.
+- [x] Teste de isolamento (seção 39, 87 conferências) + concorrência (duas aprovações juntas) + teste Deno do segredo (401), todos no `bash supabase/tests/rodar.sh`.
+- [ ] **Teste na loja com dois celulares (funcionário e gestor).**
+
+**1.13B — Rotinas com mensagens (a fazer)**
+- [ ] Lembretes e rotinas do legado (`agendador*.py`) pela fila; repasse automático das tarefas de folga com "o primeiro que clicar" (atômico); agenda no grupo (só primeiro nome, hora, tipo e pagamento; nunca telefone ou CPF).
+- [ ] Canal confidencial pelo bot (master recebe só "N relatos novos") e solicitações pelo bot (só com a marca "pode fazer solicitações").
+- [ ] **Grupos por loja** (cadastro de grupos com membros, tabela `grupos`). Vieram da Etapa 1.7.
+
+**1.13C — WhatsApp e onboarding pelo bot (a fazer)**
+- [ ] WhatsApp pela API oficial da Meta (nada de Z-API).
+- [ ] Onboarding pelo bot.
+
+**Estratégia (escrita antes da 1.13A; o que mudou está acima):**
 - **Um único bot da plataforma** (token do Wisley), atendendo todas as contas, em vez de um bot por cliente. O cliente não precisa criar nada no Telegram.
 - **Vínculo por código:** cada funcionário recebe um link `t.me/<bot>?start=<código>`. Ao abrir, o `chat_id` fica ligado àquele funcionário, e com isso à conta e às lojas dele.
 - ⚠️ **A desenhar aqui:** `funcionarios.chatidtelegram` é único **só dentro da conta**, porque a mesma pessoa pode trabalhar para duas empresas clientes. Então o `chat_id` sozinho não identifica a conta: quando a pessoa aparece em mais de uma, o bot precisa perguntar de qual empresa ela está falando (ou manter uma conta ativa por conversa). `grupos.chatidtelegram` é único no sistema inteiro, então grupo não tem essa ambiguidade. Os grupos de cada loja são ligados com um comando `/vincular <código>` no grupo.
 - **Bot reescrito como Edge Function (webhook) no Supabase**, e não mais o servidor Python. Isso muda a recomendação anterior (manter o Python): com várias contas, um serviço central na nuvem é mais simples e confiável. O `legado/telegram_bot.py` serve de especificação das funções.
 - **Fila de envio central** (tabela + processamento), respeitando os limites do Telegram (≈30 msg/s no total, ≈20/min por grupo), para uma conta não atrasar as outras.
 - **Medição de uso:** todo envio (Telegram/WhatsApp) é registrado em `usomensagens` (conta, loja, canal, tipo, data). O total do mês vai para o Stripe como **cobrança por uso** ou como franquia incluída no plano, com excedente.
-- **WhatsApp (Z-API):** decidir entre um número da plataforma para todos ou um número por cliente (custo por instância repassado).
+- **WhatsApp:** API oficial da Meta, na 1.13C (decisão de 22/09/2026; a Z-API foi descartada).
 - ⚠️ **Canal confidencial no bot:** a entrada chama só `registrar_relato(conta, texto)` pelo servidor, sem nenhum dado de quem envia. O bot **não pode logar mensagem + `chat_id`** nesse fluxo (nem em nível DEBUG da biblioteca do Telegram), não guarda o texto no estado da conversa depois de enviar e **não avisa o gestor na hora** (aviso agrupado, uma vez por dia, sem horário), para ninguém cruzar horários. O protocolo vai só para quem enviou; a consulta usa `consultar_relato`.
 - **Repasse automático das tarefas de folga ("drop"):** no `HORARIO_DELEGACAO_FOLGA`, o bot publica no grupo da loja as tarefas de quem está de folga (a lista do dia já diz quais são) e o primeiro que aceitar recebe, usando a mesma função do Quadro (`passar_tarefa_de_folga`: uma vez por dia, esforço extra). Veio da Etapa 1.11.
 - **RH no bot:** ciência de comunicado e de documento pessoal pelo próprio funcionário (`origem = 'funcionario'`), entrega do holerite com link temporário (sempre com registro de acesso), lembrete de ciência pendente.
@@ -507,6 +532,8 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Conferência do livro nunca corrige sozinha. Limpeza só do registro de rotinas (180 dias). O papel do pg_cron ignora a RLS: toda função de rotina filtra a conta em todas as consultas e não é liberada para o navegador. |
 | 22/09/2026 | Produto renomeado para STGame; identidade visual aplicada (tokens em `src/styles/stgame-theme.css`). |
 | 22/09/2026 | Publicação no Lovable: o build volta a usar `@lovable.dev/vite-tanstack-config` + `nitro`, que empacota o servidor inteiro para o Cloudflare (sem isso, "internal server error": módulo `h3-v2` não encontrado). Só o bun (`bun.lock`); `package-lock.json` (criado por um `npm install` em 19/09) apagado e barrado no `.gitignore` e na verificação do GitHub. Versões fixas (sem `^`) dos pacotes `@tanstack/*`, `vite`, `nitro`, `react` e do Supabase. Removido o `index.html` da raiz, que fazia o nitro tratar o app como site estático. |
+| 22/09/2026 | **Etapa 1.13A:** um bot só (@STGameAppBot). O webhook confere o `secret_token` (tempo constante) e chama só funções `bot_*`, liberadas apenas para a chave de servidor; elas entram num "contexto do bot" que um usuário logado não consegue ativar, e usam as mesmas funções de negócio das telas. Aprovação pelo Telegram só pelo master e por quem é validador da loja. Trava (b): resgate e comanda depois do feedback de ontem. Fotos: janela de 10 min, sem encaminhada, repetida ou arquivo. Convite de 48 h, uso único. Respostas à ação da própria pessoa saem direto do webhook; a fila é só para avisos e rotinas. Divisão: 1.13A base, 1.13B rotinas, 1.13C WhatsApp (API oficial da Meta) e onboarding. |
+| 22/09/2026 | No Telegram, o funcionário pode estar em mais de uma empresa: o bot pergunta com qual quer falar (`/empresa` troca). Master pelo Telegram age como o próprio login. Documentos pessoais nunca em grupo. |
 
 ## Referência — arquivo do sistema antigo → etapa
 | Arquivo em `legado/` | Etapa |
