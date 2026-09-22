@@ -1,0 +1,27 @@
+# Barra qualquer arquivo .env enviado ao GitHub (só o .env.example é permitido).
+# Roda em todo envio (push), de qualquer branch e de qualquer autor, inclusive
+# do Lovable, e em todo pedido de alteração (pull request).
+name: Nenhum .env no repositório
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sem-env:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Procurar arquivos .env
+        run: |
+          encontrados=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -vE '(^|/)\.env\.example$' || true)
+          if [ -n "$encontrados" ]; then
+            echo "::error::Arquivo .env enviado ao GitHub. Ele pode conter chaves secretas."
+            echo "Arquivos encontrados:"
+            echo "$encontrados"
+            echo ""
+            echo "O que fazer: tire o arquivo do Git (git rm --cached <arquivo>), confira"
+            echo "se ele tinha alguma chave secreta e, se tinha, troque essa chave no Supabase."
+            exit 1
+          fi
+          echo "Nenhum .env no repositório (só o .env.example, que é permitido)."

@@ -372,6 +372,8 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 
 ### Etapa 1.14 — Segurança final (endurecimento)
 - [ ] **Já, sem esperar esta fase:** deixar o repositório GitHub privado (se ainda não foi) e revogar o token `sbp_` colado no chat.
+- [ ] **Trocar as chaves antigas do Supabase (`eyJ...`) pelas novas (`sb_secret_...` / `sb_publishable_...`), também no Lovable.** No Lovable, a `SUPABASE_SERVICE_ROLE_KEY` é preenchida pelo próprio Lovable (os nomes `SUPABASE_` são reservados; ficam em More → Cloud → Secrets). Depois da troca, testar um convite de ponta a ponta. Se o Lovable não aceitar a chave nova com esse nome, cadastrar como `STGAME_SERVICE_ROLE_KEY` e ajustar `src/integrations/supabase/client.server.ts` para ler esse nome.
+- [x] Verificação automática no GitHub (`.github/workflows/sem-env.yml`): barra qualquer `.env` enviado ao repositório, exceto o `.env.example` (22/09/2026).
 - [ ] Revogar o token antigo do bot (@BotFather), os tokens da Z-API e as senhas antigas do `legado/config.py`; remover o `legado/config.py` do histórico.
 - [ ] Papéis extras dentro da conta (gerente de loja com acesso só às suas lojas).
 - [ ] Revisão completa das policies, do Storage (buckets privados + URLs assinadas) e das funções `security definer`.
