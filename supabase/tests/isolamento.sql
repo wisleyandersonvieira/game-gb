@@ -3413,6 +3413,19 @@ BEGIN
   r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
   PERFORM public.exigir(r->>'acao' = 'ja rodou hoje', 'expurgo roda uma vez por dia');
 
+  -- Duas entregas com o MESMO arquivo: a recente nao pode perder a foto junto.
+  UPDATE public.entregas SET pathfotoevidencia = '1/10/dividida.jpg', fotoexpiradaem = NULL,
+                             dataenvio = now() - interval '300 days' WHERE entregaid = v_velha;
+  UPDATE public.entregas SET pathfotoevidencia = '1/10/dividida.jpg', fotoexpiradaem = NULL,
+                             dataenvio = now() - interval '3 days' WHERE entregaid = v_nova;
+  DELETE FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos';
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  PERFORM public.exigir((SELECT fotoexpiradaem IS NOT NULL FROM public.entregas WHERE entregaid = v_velha),
+                        'a entrega vencida perde a foto');
+  PERFORM public.exigir((SELECT fotoexpiradaem IS NULL AND pathfotoevidencia = '1/10/dividida.jpg'
+                           FROM public.entregas WHERE entregaid = v_nova),
+                        'a entrega DENTRO do prazo nao perde a foto, mesmo dividindo o arquivo');
+
   -- Documento de RH tem regra propria: nada dele entra nesta fila.
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosexpurgo WHERE caminho LIKE '%funcionarios%'),
                         'nenhum documento pessoal entra na fila de expurgo');
@@ -5005,14 +5018,16 @@ DO $$
 DECLARE v_chave text := repeat('p', 64);
 BEGIN
   DELETE FROM public.tentativasacesso;
-  -- 30 ERROS de PIN no dia travam o adivinhador (acerto nao conta).
-  INSERT INTO public.tentativasacesso (contaid, tipo, chave, origem, sucesso, em)
-  SELECT 1, 'pin', v_chave, 'origem-' || g, false, now() - interval '1 minute' - (g || ' seconds')::interval
-    FROM generate_series(1, 29) g;
+  -- O adivinhador de PIN ACERTA quase sempre (o numero livre e aceito), entao o
+  -- teto conta TODA tentativa, nao so erro. Era esse o furo: contando so erro,
+  -- 500 tentativas passavam e o atacante descobria o PIN dos colegas.
+  FOR i IN 1..29 LOOP
+    PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'pin', v_chave, 'origem-' || i), true);
+  END LOOP;
   PERFORM public.exigir(public.tentativa_abrir(1, 'pin', v_chave, 'origem-nova') IS NOT NULL,
-                        'ate 30 erros de PIN no dia ainda passam');
+                        'ate 30 tentativas de PIN no dia ainda passam');
   PERFORM public.exigir(public.tentativa_abrir(1, 'pin', v_chave, 'origem-nova2') IS NULL,
-                        'o teto do dia trava o adivinhador de PIN, mesmo trocando de origem');
+                        'o teto do dia trava o adivinhador de PIN mesmo quando ele ACERTA');
   PERFORM public.exigir(public.tentativa_abrir(1, 'pin', repeat('q', 64), 'origem-nova') IS NOT NULL,
                         'o teto e por pessoa: nao trava o resto da equipe');
 
@@ -5025,6 +5040,44 @@ BEGIN
   PERFORM public.exigir(public.tentativa_abrir(1, 'senha', repeat('m', 64), 'origem-nova') IS NOT NULL,
                         'erro antigo nao trava o login do dono: a janela e de 15 minutos, nao de um dia');
   DELETE FROM public.tentativasacesso;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- O tablet da loja nao pode ser derrubado por e-mail (decisao de 23/09/2026)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_chave text := repeat('w', 64);
+BEGIN
+  DELETE FROM public.tentativasacesso;
+  -- Um estranho erra 5 vezes o e-mail do tablet, de outro lugar.
+  FOR i IN 1..5 LOOP
+    PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'tablet', v_chave, 'atacante'), false);
+  END LOOP;
+  PERFORM public.exigir(public.tentativa_abrir(1, 'tablet', v_chave, 'atacante') IS NULL,
+                        'o atacante e barrado pela origem dele');
+  -- ...e o tablet da loja continua entrando normalmente.
+  PERFORM public.exigir(public.tentativa_abrir(1, 'tablet', v_chave, 'ip-da-loja') IS NOT NULL,
+                        'o tablet continua entrando: ninguem derruba o balcao errando o e-mail dele');
+
+  -- Mas o gestor e o colaborador continuam com a trava por chave (senha
+  -- escolhida por pessoa, que da para adivinhar).
+  DELETE FROM public.tentativasacesso;
+  FOR i IN 1..5 LOOP
+    PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'senha', v_chave, 'atacante'), false);
+  END LOOP;
+  PERFORM public.exigir(public.tentativa_abrir(1, 'senha', v_chave, 'outro-lugar') IS NULL,
+                        'para senha de pessoa, a trava por chave continua valendo');
+  DELETE FROM public.tentativasacesso;
+END $$;
+
+-- Login por e-mail: quem nao tem papel nenhum nao entra (e nao vira "admin").
+DO $$
+BEGIN
+  INSERT INTO auth.users (id, email, email_confirmed_at)
+  VALUES ('10100000-0000-0000-0000-000000000099', 'orfao@exemplo.com', now());
+  PERFORM public.exigir(public.acesso_por_email('orfao@exemplo.com') IS NULL,
+                        'login sem vinculo nenhum nao entra pela porta do e-mail');
+  DELETE FROM auth.users WHERE id = '10100000-0000-0000-0000-000000000099';
 END $$;
 
 -- ---------------------------------------------------------------------------

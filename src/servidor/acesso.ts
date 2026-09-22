@@ -207,7 +207,7 @@ async function abrirSessao(userid: string, email: string) {
  * Conferir e registrar em duas idas separadas deixava uma rajada simultânea
  * passar inteira por cima do teto — era assim que o adivinhador voltava.
  */
-async function abrirTentativa(contaid: number | null, tipo: "senha" | "pin", chave: string, origem: string) {
+async function abrirTentativa(contaid: number | null, tipo: "senha" | "pin" | "tablet", chave: string, origem: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin.rpc("tentativa_abrir", {
     p_contaid: contaid as unknown as number, p_tipo: tipo, p_chave: chave, p_origem: origem,
@@ -307,12 +307,18 @@ export const entrarMaster = createServerFn({ method: "POST" })
     const senha = data.senha ?? "";
     const origem = origemDaChamada();
     const chave = await embaralhar(`email:${email}`);
-    const tentativa = await abrirTentativa(null, "senha", chave, origem);
 
     const { data: achado } = await supabaseAdmin.rpc("acesso_por_email", { p_email: email });
     const acesso = achado as
       | { userid: string; senhahash: string | null; contaid: number | null; papel: string | null }
       | null;
+
+    // O tablet tem trava própria: só por origem. A senha dele é sorteada pelo
+    // servidor (impossível de adivinhar), e travar por e-mail deixaria a loja
+    // sem sistema no balcão por 15 minutos — o prejuízo iria para a vítima,
+    // não para quem ataca.
+    const tipo = acesso?.papel === "loja" ? "tablet" : "senha";
+    const tentativa = await abrirTentativa(null, tipo, chave, origem);
 
     // Caminho normal: o resumo é nosso.
     if (acesso?.senhahash) {
@@ -336,11 +342,18 @@ export const entrarMaster = createServerFn({ method: "POST" })
       password: await senhaInterna(acesso.userid),
     });
     if (!erroTroca) {
-      await supabaseAdmin.rpc("definir_senha_gestor", {
+      const { error: erroResumo } = await supabaseAdmin.rpc("definir_senha_gestor", {
         p_userid: acesso.userid,
         p_contaid: acesso.contaid as unknown as number,
         p_hash: await resumoDaSenha(senha),
       });
+      // Se o resumo não gravar, a senha antiga já morreu: avisa para a pessoa
+      // usar "Esqueci minha senha" em vez de tentar de novo para sempre.
+      if (erroResumo) {
+        throw new Error(
+          "Sua senha foi atualizada pela metade. Use 'Esqueci minha senha' para definir uma nova.",
+        );
+      }
     } else {
       console.error("conversão da senha do gestor falhou; será tentada no próximo login", erroTroca.message);
     }
@@ -692,22 +705,30 @@ export const desativarColaborador = createServerFn({ method: "POST" })
       .eq("funcionarioid", data.funcionarioid);
     if (error) throw new Error(error.message);
 
-    if (!data.ativo) {
-      const { data: acesso } = await supabaseAdmin
-        .from("contasusuarios")
-        .select("userid")
-        .eq("contaid", contaid)
-        .eq("funcionarioid", data.funcionarioid)
-        .single();
-      if (acesso) {
-        // Senha nova e aleatória: mesmo quem tivesse trocado a própria senha
-        // no Supabase por fora perde a entrada. Depois, derruba as sessões.
-        await supabaseAdmin.auth.admin
-          .updateUserById(acesso.userid, { password: senhaSorteada() + senhaSorteada() })
-          .catch(() => undefined);
-        await supabaseAdmin.rpc("limpar_senha_gestor", { p_userid: acesso.userid });
-        await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
-      }
+    const { data: acesso } = await supabaseAdmin
+      .from("contasusuarios")
+      .select("userid")
+      .eq("contaid", contaid)
+      .eq("funcionarioid", data.funcionarioid)
+      .maybeSingle();
+
+    if (acesso && !data.ativo) {
+      // Senha nova e aleatória: mesmo quem tivesse trocado a própria senha no
+      // Supabase por fora perde a entrada. Depois, derruba as sessões.
+      await supabaseAdmin.auth.admin
+        .updateUserById(acesso.userid, { password: senhaSorteada() + senhaSorteada() })
+        .catch(() => undefined);
+      await supabaseAdmin.rpc("limpar_senha_gestor", { p_userid: acesso.userid });
+      await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
+    }
+
+    if (acesso && data.ativo) {
+      // Reativar devolve a senha interna. Sem isto, a pessoa ficava sem entrar
+      // para sempre: a senha sorteada na desativação ninguém guarda.
+      const { error: erroVolta } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
+        password: await senhaInterna(acesso.userid),
+      });
+      if (erroVolta) throw new Error(`Pessoa reativada, mas o acesso não voltou: ${erroVolta.message}`);
     }
     return { ok: true };
   });
@@ -758,9 +779,13 @@ export const criarAcessoLoja = createServerFn({ method: "POST" })
       await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
       throw new Error(`Não foi possível criar o acesso: ${erroInterna.message}`);
     }
-    await supabaseAdmin.rpc("definir_senha_gestor", {
+    const { error: erroResumo } = await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: criado.user.id, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
     });
+    if (erroResumo) {
+      await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
+      throw new Error(`Não foi possível criar o acesso: ${erroResumo.message}`);
+    }
     // A senha aparece UMA vez, como o link da TV.
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
   });
