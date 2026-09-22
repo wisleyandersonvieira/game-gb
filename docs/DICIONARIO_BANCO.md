@@ -398,7 +398,8 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | chatidtelegram | varchar(100) |  |
 | cargo | varchar(100) |  |
 | pontostotal | integer | padrão 0. Tudo o que a pessoa já ganhou (aprovações, bônus, estornos de entrega; resgates não contam). Só o gatilho do livro altera |
-| horarionotificacao | time | padrão '08:00' |
+| horarionotificacao | time | **hora de entrada** (nome herdado do sistema antigo). Vazio = a pessoa não recebe as mensagens de jornada (Etapa 1.13B1). O padrão 08:00 foi retirado |
+| horariosaida | time | hora de saída. Vazio = entrada + 8h20. Menor que a entrada = turno da noite, que atravessa a meia-noite |
 | diadefolga | integer | obrigatório; padrão 0 |
 | saldopontos | integer | obrigatório; padrão 0. O que a pessoa tem para gastar. **Sempre a soma de `movimentospontos`**; só o gatilho do livro altera. Pode ficar negativo por estorno de entrega, nunca por resgate |
 | verificadorcpf | varchar(3) |  |
@@ -1118,3 +1119,25 @@ Medição de uso por dia: `contaid`, `lojaid`, `canal` (`telegram`/`whatsapp`), 
 
 ### Funções para as telas (master)
 `criar_convite_telegram(funcionario)`, `criar_convite_grupo(loja, papel)`, `criar_convite_meu_telegram()`: devolvem o código uma vez só. `desligar_telegram(vinculo)`, `marcar_aviso_lido(aviso)`.
+
+## Rotinas com mensagem (Etapa 1.13B1)
+
+### mensagensrotinas
+Liga/desliga de cada rotina do bot, **por loja**. Tudo nasce ligado: só aparece aqui o que o master mudou. Colunas: `contaid`, `lojaid`, `rotina` (`inicio_jornada`, `lembrete3`, `lembrete6`, `fim_jornada`, `comunicado_novo`, `comunicado_lembrete`, `folga_drop`, `missao`), `ativo`, `alteradoem`, `alteradopor`. O navegador só lê; muda por `definir_rotina_mensagem(loja, rotina, ativo)`.
+
+### missoesaceites
+Quem pegou cada missão em cada dia. A chave `(contaid, atribuicaoid, dia)` é o que garante **o primeiro que clicar**: dois cliques no mesmo instante só deixam um passar. Colunas: `funcionarioid`, `novaatribuicaoid` (a tarefa de hoje criada para quem pegou), `canal` (`app`/`telegram`), `aceitoem`.
+
+### Missão da equipe
+Não é tabela nova: é uma linha de **`tarefasatribuidas` sem `funcionarioid`**, com `lojaid` e `horariodisparo`. Quem aceita ganha uma tarefa `Unica` de hoje com `origematribuicaoid` apontando para a missão — por isso ela conta como **esforço extra** (entra nos pontos ganhos, não nos possíveis), igual à tarefa de quem está de folga. Entra por `pegar_missao(atribuicao, funcionario)`.
+
+### Colunas novas
+- **`mensagensfila`**: `funcionarioid` (de quem é o aviso, para o limite diário e a folga), `automatica`, `naoreenviar` (rotina não é reenviada se falhar), `chave` (etiqueta única por conta: o banco recusa a segunda mensagem igual) e `juntarchave` (avisos que viram uma mensagem só). Situação nova **`guardada`**: aviso retido porque a pessoa está de folga ou afastada.
+- **`telegramvinculos`**: `bloqueadoem` (o Telegram recusou o envio; some sozinho quando a pessoa volta a usar o bot).
+- **`rotinasexecucoes.rotina`** aceita também `mensagens`.
+
+### Configurações novas
+`HORARIO_SILENCIO_INICIO` (22:00) e `HORARIO_SILENCIO_FIM` (07:00) — o silêncio **não vale dentro do turno da pessoa**; `MAX_MENSAGENS_AUTOMATICAS_DIA` (8); `MAX_TAREFAS_FOLGA_POR_PESSOA` (3).
+
+### Funções (todas internas ou só para o servidor)
+`jornada_da_pessoa(conta, pessoa, dia)` (o turno que começa no dia; entende o turno da noite), `bot_janela(conta, pessoa, agora)` (pode mandar agora? senão, quando), `no_silencio`, `bot_enviadas_hoje`, `rotina_mensagens(conta, agora)` (chamada pelo despachante a cada 5 minutos), `bot_texto_rotina` (monta a mensagem na hora de enviar; devolve vazio quando não faz mais sentido), `bot_resumo_ausencia`, `bot_marcar_bloqueio`, `bot_visto(chat)`, `bot_pegar_folga` e `bot_pegar_missao` (grupo da equipe). Para as telas: `definir_horario_equipe(pessoas[], entrada, saida)` e `definir_rotina_mensagem(loja, rotina, ativo)`.

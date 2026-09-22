@@ -63,7 +63,7 @@ Administrador geral (Wisley)
 | 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ✅ Concluída |
 | 1.11 | Rotinas automáticas sem Telegram | ✅ Concluída (22/09/2026) |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
-| 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | 🟨 1.13A pronta (22/09/2026), aguardando o teste na loja · 1.13B e 1.13C a fazer |
+| 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | 🟨 1.13A e 1.13B1 prontas (22/09/2026), aguardando o teste na loja · 1.13B2 e 1.13C a fazer |
 | 1.14 | Segurança final (endurecimento) | ⬜ |
 | **FASE 2** | **Expansão — adiada** | Nada daqui é construído sem pedido explícito do Wisley |
 | 2.1 | Escala, mapa e pausas | ⏸️ Adiada |
@@ -371,9 +371,25 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 - [x] Teste de isolamento (seção 39, 87 conferências) + concorrência (duas aprovações juntas) + teste Deno do segredo (401), todos no `bash supabase/tests/rodar.sh`.
 - [ ] **Teste na loja com dois celulares (funcionário e gestor).**
 
-**1.13B — Rotinas com mensagens (a fazer)**
-- [ ] Lembretes e rotinas do legado (`agendador*.py`) pela fila; repasse automático das tarefas de folga com "o primeiro que clicar" (atômico); agenda no grupo (só primeiro nome, hora, tipo e pagamento; nunca telefone ou CPF).
-- [ ] Canal confidencial pelo bot (master recebe só "N relatos novos") e solicitações pelo bot (só com a marca "pode fazer solicitações").
+**1.13B1 — Rotinas com mensagem: jornada, comunicados, folga e missões (22/09/2026)**
+- [x] **Jornada por pessoa**: hora de entrada e de saída na tela Equipe, iguais todos os dias, com "aplicar a várias pessoas de uma vez". Saída em branco = entrada + 8h20. Saída menor que a entrada = turno da noite. O padrão 08:00 automático foi apagado: quem não tem horário não recebe as mensagens de jornada (só os avisos).
+- [x] Início da jornada (tarefas do dia com o botão da foto), lembretes de 3 h e 6 h (só o que está em aberto; somem se já foi feito) e fim da jornada (resumo do dia + botão de avaliar o dia).
+- [x] Comunicado novo com o botão "Estou ciente" e lembrete uma vez, 24 h depois, só dentro do turno.
+- [x] Tarefas de quem está de folga e **missões da equipe** no grupo da equipe, com "o primeiro que clicar" (atômico, mesma função do "Passar para…"; a missão é uma tarefa sem dono, criada na tela Tarefas com hora de disparo). Limite de 3 tarefas extras por pessoa por dia.
+- [x] **Configurações → Mensagens automáticas**: liga/desliga de cada rotina, loja por loja. Quem trabalha em duas lojas recebe se estiver ligado em pelo menos uma.
+- [x] Proteções contra excesso: silêncio 22:00–07:00 ajustável (**não vale dentro do turno**, por causa do turno da noite), no máximo 8 mensagens automáticas por pessoa por dia, avisos de aprovação juntados numa mensagem só, lembrete cancelado se a tarefa já foi feita, uma mensagem só para quem está em duas lojas.
+- [x] Folga e afastamento: nada é enviado; os avisos ficam guardados e viram **um resumo só** ("Enquanto você esteve fora: 3 comunicados, 5 entregas aprovadas") no próximo dia de trabalho, olhando no máximo 7 dias para trás.
+- [x] Rotina nunca repete (etiqueta única no banco; se falhar, não é reenviada). Aviso do que aconteceu com a pessoa continua sendo reenviado.
+- [x] **Bot bloqueado** (403): para de tentar, marca o vínculo, avisa o master no sistema e no Telegram, e volta sozinho quando a pessoa usar o bot de novo. A Equipe mostra "Bot bloqueado" ao lado do nome.
+- [x] Testes: turno da noite atravessando a meia-noite, pessoa sem horário, folga, silêncio, limite diário, lembrete cancelado, duas lojas, resumo da volta de 20 dias, bot bloqueado, liga/desliga por loja, dois cliques simultâneos em "Eu aceito" (conexões de verdade) e isolamento entre contas.
+- [ ] **Teste na loja com dois celulares.**
+
+**1.13B2 — Agenda, pódio, canal confidencial e solicitações (a fazer)**
+- [ ] Agenda de hoje, de amanhã e da semana no grupo de gestão (só primeiro nome, hora, tipo e pagamento; nunca telefone ou CPF).
+- [ ] Aviso ao responsável quando um agendamento é criado, remarcado, cancelado ou troca de responsável.
+- [ ] Fechamento do mês: pódio no grupo da equipe (posição e pontos, sem a nota) no dia 8, com texto de prêmio por posição editável em Configurações, e parabéns no privado.
+- [ ] Canal confidencial pelo bot (o bot apaga a mensagem da conversa depois de gravar, avisando antes; o master recebe só "N relatos novos" às 08:00 do dia seguinte).
+- [ ] Solicitações pelo bot, só com a marca "pode fazer solicitações", com foto no Storage.
 - [ ] **Grupos por loja** (cadastro de grupos com membros, tabela `grupos`). Vieram da Etapa 1.7.
 
 **1.13C — WhatsApp e onboarding pelo bot (a fazer)**
@@ -535,6 +551,8 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | O Lovable não recebe o `.env` nem aceita Secrets `VITE_`/`SUPABASE_`. URL e chave **pública** do Supabase ficam no código (`src/integrations/supabase/config-publica.ts`), usadas pelo navegador e pelo servidor. A chave secreta fica só no Secret `STGAME_SERVICE_ROLE_KEY` (o `SUPABASE_SERVICE_ROLE_KEY` do `.env` vale só em desenvolvimento, porque o Lovable pode preencher esse nome com a chave de outro projeto). |
 | 22/09/2026 | **Etapa 1.13A:** um bot só (@STGameAppBot). O webhook confere o `secret_token` (tempo constante) e chama só funções `bot_*`, liberadas apenas para a chave de servidor; elas entram num "contexto do bot" que um usuário logado não consegue ativar, e usam as mesmas funções de negócio das telas. Aprovação pelo Telegram só pelo master e por quem é validador da loja. Trava (b): resgate e comanda depois do feedback de ontem. Fotos: janela de 10 min, sem encaminhada, repetida ou arquivo. Convite de 48 h, uso único. Respostas à ação da própria pessoa saem direto do webhook; a fila é só para avisos e rotinas. Divisão: 1.13A base, 1.13B rotinas, 1.13C WhatsApp (API oficial da Meta) e onboarding. |
 | 22/09/2026 | No Telegram, o funcionário pode estar em mais de uma empresa: o bot pergunta com qual quer falar (`/empresa` troca). Master pelo Telegram age como o próprio login. Documentos pessoais nunca em grupo. |
+
+| 22/09/2026 | **Etapa 1.13B1:** jornada por pessoa (entrada e saída iguais todos os dias; a escala por dia fica para a Fase 2); o padrão 08:00 foi apagado e quem não tem horário não recebe jornada. Silêncio 22:00–07:00 que **não vale dentro do turno** (turno da noite recebe normalmente). Limite de 8 mensagens automáticas por pessoa por dia e 3 tarefas extras por pessoa por dia. Na folga nada é enviado: vira um resumo só na volta, de no máximo 7 dias. Rotina tem etiqueta única e não é reenviada se falhar; aviso da pessoa continua sendo reenviado. Bot bloqueado para os envios e aparece na Equipe. Missão da equipe = tarefa sem dono, com hora de disparo, que o primeiro a clicar leva (esforço extra). A 1.13B foi dividida em B1 (feita) e B2 (agenda, pódio, canal confidencial e solicitações). |
 
 ## Referência — arquivo do sistema antigo → etapa
 | Arquivo em `legado/` | Etapa |
