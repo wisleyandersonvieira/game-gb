@@ -16,6 +16,8 @@ function DefinirSenha() {
   const [temSessao, setTemSessao] = useState(false);
   const [senha, setSenha] = useState("");
   const [repetir, setRepetir] = useState("");
+  // Só é pedida a quem já tem senha (troca voluntária); no convite fica vazia.
+  const [senhaAtual, setSenhaAtual] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
@@ -50,7 +52,7 @@ function DefinirSenha() {
     // A senha do gestor passa a ser conferida pelo nosso servidor: é ele quem
     // guarda o resumo e troca a senha do Supabase pela interna.
     try {
-      await definirSenhaDeGestor({ data: { senha } });
+      await definirSenhaDeGestor({ data: { senha, senhaatual: senhaAtual } });
     } catch (e) {
       setSalvando(false);
       setErro((e as Error).message);
@@ -90,6 +92,14 @@ function DefinirSenha() {
           </p>
         )}
 
+        <input
+          type="password"
+          autoComplete="current-password"
+          value={senhaAtual}
+          onChange={(e) => setSenhaAtual(e.target.value)}
+          placeholder="Senha atual (só se você já tinha uma)"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2"
+        />
         <input
           type="password"
           required

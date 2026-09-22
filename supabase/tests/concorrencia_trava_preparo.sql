@@ -6,7 +6,8 @@
 INSERT INTO public.contas (contaid, nome, email, limitelojas) OVERRIDING SYSTEM VALUE
 VALUES (15, 'Empresa Trava', 'trava@exemplo.com', 1);
 
--- 29 tentativas de hoje: falta uma para o teto de 30.
+-- 29 ERROS de PIN hoje: falta um para o teto de 30. Ficam fora da janela de
+-- 1 minuto, para quem barrar seja o teto do dia, e nao os 5 erros seguidos.
 INSERT INTO public.tentativasacesso (contaid, tipo, chave, origem, sucesso, em)
-SELECT 15, 'pin', repeat('t', 64), 'origem-' || g, true, now() - interval '1 minute'
+SELECT 15, 'pin', repeat('t', 64), 'origem-' || g, false, now() - interval '5 minutes'
   FROM generate_series(1, 29) g;

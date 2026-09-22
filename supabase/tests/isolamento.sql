@@ -5005,17 +5005,96 @@ DO $$
 DECLARE v_chave text := repeat('p', 64);
 BEGIN
   DELETE FROM public.tentativasacesso;
-  -- 30 tentativas no dia (mesmo espacadas, mesmo bem-sucedidas) travam.
-  FOR i IN 1..29 LOOP
-    PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'pin', v_chave, 'origem-' || i), true);
-  END LOOP;
+  -- 30 ERROS de PIN no dia travam o adivinhador (acerto nao conta).
+  INSERT INTO public.tentativasacesso (contaid, tipo, chave, origem, sucesso, em)
+  SELECT 1, 'pin', v_chave, 'origem-' || g, false, now() - interval '1 minute' - (g || ' seconds')::interval
+    FROM generate_series(1, 29) g;
   PERFORM public.exigir(public.tentativa_abrir(1, 'pin', v_chave, 'origem-nova') IS NOT NULL,
-                        'ate 30 tentativas de PIN no dia ainda passam');
-  PERFORM public.exigir(public.tentativa_abrir(1, 'pin', v_chave, 'origem-nova') IS NULL,
+                        'ate 30 erros de PIN no dia ainda passam');
+  PERFORM public.exigir(public.tentativa_abrir(1, 'pin', v_chave, 'origem-nova2') IS NULL,
                         'o teto do dia trava o adivinhador de PIN, mesmo trocando de origem');
   PERFORM public.exigir(public.tentativa_abrir(1, 'pin', repeat('q', 64), 'origem-nova') IS NOT NULL,
                         'o teto e por pessoa: nao trava o resto da equipe');
+
+  -- E o teto NAO vale para o login: senao qualquer um travaria o dono da conta
+  -- por um dia inteiro, so errando o e-mail dele 50 vezes.
   DELETE FROM public.tentativasacesso;
+  INSERT INTO public.tentativasacesso (contaid, tipo, chave, origem, sucesso, em)
+  SELECT 1, 'senha', repeat('m', 64), 'origem-' || g, false, now() - interval '30 minutes'
+    FROM generate_series(1, 60) g;
+  PERFORM public.exigir(public.tentativa_abrir(1, 'senha', repeat('m', 64), 'origem-nova') IS NOT NULL,
+                        'erro antigo nao trava o login do dono: a janela e de 15 minutos, nao de um dia');
+  DELETE FROM public.tentativasacesso;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Ninguem tranca a conta de outro para sempre (defeito que o conserto anterior
+-- tinha criado: 5 tentativas de um estranho deixavam o dono de fora)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_chave text := repeat('v', 64);
+BEGIN
+  DELETE FROM public.tentativasacesso;
+  -- Um estranho erra 5 vezes o e-mail do dono.
+  FOR i IN 1..5 LOOP
+    PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'senha', v_chave, 'atacante'), false);
+  END LOOP;
+  PERFORM public.exigir(public.tentativa_abrir(1, 'senha', v_chave, 'atacante') IS NULL,
+                        'depois de 5 erros o atacante e barrado');
+
+  -- A janela e curta: 16 minutos depois, o dono entra.
+  UPDATE public.tentativasacesso SET em = em - interval '16 minutes' WHERE chave = v_chave;
+  PERFORM public.exigir(public.tentativa_abrir(1, 'senha', v_chave, 'dono') IS NOT NULL,
+                        'passada a janela de 15 minutos, o dono entra de novo');
+
+  -- E um acerto zera tudo na hora.
+  PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'senha', v_chave, 'dono'), true);
+  FOR i IN 1..3 LOOP
+    PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'senha', v_chave, 'atacante2'), false);
+  END LOOP;
+  PERFORM public.tentativa_fechar(public.tentativa_abrir(1, 'senha', v_chave, 'dono'), true);
+  PERFORM public.exigir(public.tentativa_abrir(1, 'senha', v_chave, 'dono') IS NOT NULL,
+                        'depois de um acerto, os erros anteriores nao contam mais');
+  DELETE FROM public.tentativasacesso;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- O login por e-mail (gestor, admin e tablet) confere papel, pessoa e loja
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.acesso_por_email('master.a@exemplo.com');
+  PERFORM public.exigir(v->>'papel' = 'master', 'o master entra pela porta do e-mail');
+  v := public.acesso_por_email('wisley_anderson@hotmail.com');
+  PERFORM public.exigir(v->>'papel' = 'admin', 'o administrador geral tambem');
+  v := public.acesso_por_email('loja-a1@lojas.stgame.app');
+  PERFORM public.exigir(v->>'papel' = 'loja', 'o tablet da loja tambem');
+
+  -- Colaborador NAO entra por esta porta (a dele e por CPF, com as regras dela).
+  PERFORM public.exigir(public.acesso_por_email('colab-a@colab.stgame.app') IS NULL,
+                        'colaborador nao entra pela porta do e-mail');
+
+  -- Loja desativada perde o acesso no LOGIN, nao so depois.
+  -- (A senha guardada TEM de existir antes, senao o teste passaria sozinho.)
+  INSERT INTO public.senhasgestor (userid, contaid, senhahashapp)
+  VALUES ('10100000-0000-0000-0000-000000000001', 1, 'pbkdf2$1$aa$bb')
+  ON CONFLICT (userid) DO UPDATE SET senhahashapp = excluded.senhahashapp;
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.senhasgestor
+                                 WHERE userid = '10100000-0000-0000-0000-000000000001'),
+                        'o tablet tem senha guardada antes de a loja ser desativada');
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
+  PERFORM public.exigir(public.acesso_por_email('loja-a1@lojas.stgame.app') IS NULL,
+                        'tablet de loja desativada nao entra');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.senhasgestor s
+                                     JOIN public.contasusuarios cu ON cu.userid = s.userid
+                                    WHERE cu.lojaid = 10),
+                        'desativar a loja apaga a senha guardada do tablet');
+  UPDATE public.lojas SET ativa = true WHERE lojaid = 10;
+
+  -- E-mail que nao existe nao devolve nada.
+  PERFORM public.exigir(public.acesso_por_email('ninguem@exemplo.com') IS NULL,
+                        'e-mail desconhecido nao devolve nada');
 END $$;
 
 -- ---------------------------------------------------------------------------

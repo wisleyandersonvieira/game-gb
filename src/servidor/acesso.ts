@@ -329,14 +329,21 @@ export const entrarMaster = createServerFn({ method: "POST" })
     await fecharTentativa(tentativa, !error);
     if (error || !sessao?.session || !acesso) throw new Error(ERRO_LOGIN_EMAIL);
 
-    await supabaseAdmin.rpc("definir_senha_gestor", {
-      p_userid: acesso.userid,
-      p_contaid: acesso.contaid as unknown as number,
-      p_hash: await resumoDaSenha(senha),
-    });
-    await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
+    // A ordem importa: primeiro fecha a porta antiga (senha do Supabase vira a
+    // interna) e só então guarda o resumo. Se o Supabase falhar, nada muda e a
+    // conversão é tentada de novo no próximo login.
+    const { error: erroTroca } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
       password: await senhaInterna(acesso.userid),
     });
+    if (!erroTroca) {
+      await supabaseAdmin.rpc("definir_senha_gestor", {
+        p_userid: acesso.userid,
+        p_contaid: acesso.contaid as unknown as number,
+        p_hash: await resumoDaSenha(senha),
+      });
+    } else {
+      console.error("conversão da senha do gestor falhou; será tentada no próximo login", erroTroca.message);
+    }
     return { access_token: sessao.session.access_token, refresh_token: sessao.session.refresh_token };
   });
 
@@ -347,7 +354,7 @@ export const entrarMaster = createServerFn({ method: "POST" })
  */
 export const definirSenhaDeGestor = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { senha: string }) => d)
+  .validator((d: { senha: string; senhaatual?: string }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const { data: acessoAtual, error: erroAcesso } = await supabase.rpc("meu_acesso");
@@ -365,15 +372,29 @@ export const definirSenhaDeGestor = createServerFn({ method: "POST" })
       .eq("userid", userId)
       .maybeSingle();
 
-    await supabaseAdmin.rpc("definir_senha_gestor", {
-      p_userid: userId,
-      p_contaid: (achado?.contaid ?? null) as unknown as number,
-      p_hash: await resumoDaSenha(senha),
-    });
+    // Quem já tem senha guardada precisa digitar a atual: sem isso, uma sessão
+    // esquecida aberta trocaria a senha do dono da conta.
+    const { data: guardadaAtual } = await supabaseAdmin
+      .from("senhasgestor")
+      .select("senhahashapp")
+      .eq("userid", userId)
+      .maybeSingle();
+    const guardada = guardadaAtual?.senhahashapp ?? null;
+    if (guardada && !(await senhaConfere(data.senhaatual ?? "", guardada))) {
+      throw new Error("A senha atual não confere.");
+    }
+
     const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       password: await senhaInterna(userId),
     });
     if (error) throw new Error(`Não foi possível salvar a senha: ${error.message}`);
+    const { error: erroBanco } = await supabaseAdmin.rpc("definir_senha_gestor", {
+      p_userid: userId,
+      p_contaid: (achado?.contaid ?? null) as unknown as number,
+      p_hash: await resumoDaSenha(senha),
+    });
+    if (erroBanco) throw new Error(`Não foi possível salvar a senha: ${erroBanco.message}`);
+    if (guardada) await supabaseAdmin.auth.admin.signOut(userId, "others").catch(() => undefined);
     return { ok: true };
   });
 
@@ -419,8 +440,8 @@ export const trocarMinhaSenha = createServerFn({ method: "POST" })
 
     // Quem JÁ tem senha precisa digitar a atual: sem isso, uma sessão
     // emprestada ou esquecida aberta viraria tomada de conta.
-    const { data: atual } = await supabaseAdmin.rpc("senha_app_de", {
-      p_contaid: pessoa.contaid, p_cpf: pessoa.cpf ?? "",
+    const { data: atual } = await supabaseAdmin.rpc("senha_app_do_funcionario", {
+      p_contaid: pessoa.contaid, p_funcionarioid: pessoa.funcionarioid,
     });
     const guardada = (atual as { senhahash: string | null } | null)?.senhahash ?? null;
     if (guardada && !(await senhaConfere(data.senhaatual ?? "", guardada))) {
@@ -678,7 +699,15 @@ export const desativarColaborador = createServerFn({ method: "POST" })
         .eq("contaid", contaid)
         .eq("funcionarioid", data.funcionarioid)
         .single();
-      if (acesso) await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
+      if (acesso) {
+        // Senha nova e aleatória: mesmo quem tivesse trocado a própria senha
+        // no Supabase por fora perde a entrada. Depois, derruba as sessões.
+        await supabaseAdmin.auth.admin
+          .updateUserById(acesso.userid, { password: senhaSorteada() + senhaSorteada() })
+          .catch(() => undefined);
+        await supabaseAdmin.rpc("limpar_senha_gestor", { p_userid: acesso.userid });
+        await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
+      }
     }
     return { ok: true };
   });
@@ -722,11 +751,15 @@ export const criarAcessoLoja = createServerFn({ method: "POST" })
     }
     // A senha do tablet também é conferida por nós: guardamos o resumo e a
     // senha do Supabase vira a interna. Assim o tablet não é uma porta aberta.
+    const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(criado.user.id, {
+      password: await senhaInterna(criado.user.id),
+    });
+    if (erroInterna) {
+      await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
+      throw new Error(`Não foi possível criar o acesso: ${erroInterna.message}`);
+    }
     await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: criado.user.id, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
-    });
-    await supabaseAdmin.auth.admin.updateUserById(criado.user.id, {
-      password: await senhaInterna(criado.user.id),
     });
     // A senha aparece UMA vez, como o link da TV.
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
@@ -750,13 +783,14 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
     if (!acesso) throw new Error("Esta loja ainda não tem acesso.");
 
     const senha = senhaSorteada();
+    const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
+      password: await senhaInterna(acesso.userid),
+    });
+    if (erroInterna) throw new Error(`Não foi possível redefinir: ${erroInterna.message}`);
     const { error } = await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: acesso.userid, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
     });
     if (error) throw new Error(`Não foi possível redefinir: ${error.message}`);
-    await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
-      password: await senhaInterna(acesso.userid),
-    });
     // Derruba os tablets que estavam abertos com a senha antiga.
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };

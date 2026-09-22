@@ -5166,6 +5166,7 @@ export type Database = {
         Args: { p_documentoid: number }
         Returns: string
       }
+      limpar_senha_gestor: { Args: { p_userid: string }; Returns: undefined }
       lista_candidatos: {
         Args: { p_contaid: number; p_dia: string }
         Returns: {
@@ -5591,6 +5592,10 @@ export type Database = {
       }
       senha_app_de: {
         Args: { p_contaid: number; p_cpf: string }
+        Returns: Json
+      }
+      senha_app_do_funcionario: {
+        Args: { p_contaid: number; p_funcionarioid: number }
         Returns: Json
       }
       situacao_dos_acessos: {
