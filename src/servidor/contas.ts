@@ -180,6 +180,16 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
       );
     }
 
+    // E com um único tipo de evento genérico na agenda; o cliente cadastra os dele.
+    const { error: erroTipos } = await supabaseAdmin.rpc("cria_tipos_evento_padrao", {
+      p_contaid: conta.contaid,
+    });
+    if (erroTipos) {
+      throw new Error(
+        `O cliente foi criado e o convite enviado, mas o tipo de evento padrão falhou: ${erroTipos.message}`,
+      );
+    }
+
     return { contaid: conta.contaid as number, email, reaproveitouLogin: Boolean(jaExiste) };
   });
 

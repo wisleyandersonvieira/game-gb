@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { hora, PainelDaLoja, type DadosPainel } from "@/painel/PainelDaLoja";
 import { soltarFogosUmaVezPorDia } from "@/painel/fogos";
 import { TelaDaMeta } from "@/painel/MetaDaLoja";
+import { TelaDaAgenda } from "@/painel/AgendaDaLoja";
 
 export const Route = createFileRoute("/tv/$codigo")({
   ssr: false,
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/tv/$codigo")({
 });
 
 const ATUALIZAR_A_CADA = 30_000;
-/** Rodízio de telas: painel da loja ↔ meta, 30 segundos cada. */
+/** Rodízio de telas: painel da loja → meta → agenda, 30 segundos cada (só as que têm conteúdo). */
 const TROCAR_TELA_A_CADA = 30_000;
 
 type Resposta = ({ disponivel: true } & DadosPainel) | { disponivel: false };
@@ -30,7 +31,7 @@ type Resposta = ({ disponivel: true } & DadosPainel) | { disponivel: false };
 function TelaTv() {
   const { codigo } = Route.useParams();
   const [dica, setDica] = useState(true);
-  const [telaDaMeta, setTelaDaMeta] = useState(false);
+  const [tela, setTela] = useState(0);
 
   const painel = useQuery({
     queryKey: ["tv", codigo],
@@ -79,16 +80,16 @@ function TelaTv() {
     if (dados.meta?.dia?.bateu) soltarFogosUmaVezPorDia(`tv-${dados.loja}-meta`, dados.hoje);
   }, [dados]);
 
-  // Rodízio: só alterna se a loja tiver meta.
-  const temMeta = !!dados?.meta;
+  // Rodízio: entram só as telas com conteúdo.
+  const telas = ["painel", ...(dados?.meta ? ["meta"] : []), ...((dados?.agenda ?? []).length > 0 ? ["agenda"] : [])];
+  const quantas = telas.length;
   useEffect(() => {
-    if (!temMeta) {
-      setTelaDaMeta(false);
-      return;
-    }
-    const t = window.setInterval(() => setTelaDaMeta((v) => !v), TROCAR_TELA_A_CADA);
+    setTela(0);
+    if (quantas < 2) return;
+    const t = window.setInterval(() => setTela((v) => (v + 1) % quantas), TROCAR_TELA_A_CADA);
     return () => window.clearInterval(t);
-  }, [temMeta]);
+  }, [quantas]);
+  const atual = telas[tela % quantas] ?? "painel";
 
   // Tocar em qualquer lugar liga a tela cheia (o navegador exige um toque).
   function telaCheia() {
@@ -120,7 +121,14 @@ function TelaTv() {
         </p>
       </header>
 
-      {dados && (telaDaMeta && dados.meta ? <TelaDaMeta meta={dados.meta} /> : <PainelDaLoja dados={dados} tv />)}
+      {dados &&
+        (atual === "meta" && dados.meta ? (
+          <TelaDaMeta meta={dados.meta} />
+        ) : atual === "agenda" ? (
+          <TelaDaAgenda agenda={dados.agenda} />
+        ) : (
+          <PainelDaLoja dados={dados} tv />
+        ))}
 
       {dica && (
         <p className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-card px-4 py-2 text-lg text-muted-foreground">

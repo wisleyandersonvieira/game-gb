@@ -2236,6 +2236,251 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- 35. Agenda (Loja A1 = 10)
+-- ===========================================================================
+
+RESET ROLE;
+SELECT public.cria_tipos_evento_padrao(1);
+-- Carla (110) e a responsavel pelos agendamentos da Loja A1.
+UPDATE public.lojas SET responsavelagendamentosid = 110 WHERE lojaid = 10;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+INSERT INTO public.tiposevento (nome) VALUES ('Aniversário');
+
+DO $$
+DECLARE
+  hoje date := public.dia_em_sao_paulo(now());
+  d1 timestamptz := ((public.dia_em_sao_paulo(now()) + 3)::timestamp + time '15:00') AT TIME ZONE 'America/Sao_Paulo';
+  d2 timestamptz := ((public.dia_em_sao_paulo(now()) + 5)::timestamp + time '10:00') AT TIME ZONE 'America/Sao_Paulo';
+  t integer; ag integer; ta record; deu_erro boolean; h record;
+BEGIN
+  RAISE NOTICE '35. agenda';
+  PERFORM public.exigir((SELECT string_agg(nome, ',' ORDER BY nome) FROM public.tiposevento) = 'Aniversário,Evento',
+                        'conta nova comeca so com o tipo generico "Evento" (e cadastra os dela)');
+  t := (SELECT tipoeventoid FROM public.tiposevento WHERE nome = 'Aniversário');
+
+  ag := public.criar_agendamento(10, t, d1, 'Maria Souza', '123.456.789-09', '(11) 98888-7777', 'Bolo de morango',
+                                 150, 'Sinal pago', NULL, true);
+  PERFORM public.exigir((SELECT funcionarioid = 110 AND cpfcliente = '12345678909' AND telefonecliente = '11988887777'
+                                AND statusagendamento = 'Confirmado' AND statuspagamento = 'Sinal pago'
+                           FROM public.agendamentos WHERE agendamentoid = ag),
+                        'sem escolher, o responsavel e o da loja; CPF e telefone guardados so com numeros');
+  SELECT * INTO ta FROM public.tarefasatribuidas WHERE agendamentoid = ag;
+  PERFORM public.exigir(ta.funcionarioid = 110 AND ta.tipofrequencia = 'Unica' AND ta.dataagendamento = d1,
+                        'a tarefa "Atender agendamento" nasce para o responsavel, no dia do evento');
+  PERFORM public.exigir(ta.descricaooverride = '15:00 — Aniversário' AND ta.descricaooverride NOT LIKE '%Maria%',
+                        'a tarefa nao leva dados do cliente (so "15:00 — Aniversário")');
+
+  BEGIN PERFORM public.criar_agendamento(10, t, d1, 'X', NULL, NULL, NULL, NULL, 'Pendente', 120); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'responsavel que nao trabalha na loja e recusado');
+  BEGIN PERFORM public.criar_agendamento(10, t, now() - interval '3 days', 'X'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'data no passado e recusada');
+  BEGIN PERFORM public.criar_agendamento(10, t, d1, 'X', '123'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'CPF incompleto e recusado');
+
+  PERFORM public.exigir(jsonb_array_length(public.conflitos_agendamento(10, d1 + interval '1 hour')) = 1
+                        AND jsonb_array_length(public.conflitos_agendamento(10, d1 + interval '3 hours')) = 0,
+                        'aviso de outro agendamento a menos de 2 horas (sem bloquear)');
+
+  -- Remarcar: a tarefa muda de dia.
+  PERFORM public.remarcar_agendamento(ag, d2, 'Cliente pediu');
+  SELECT * INTO ta FROM public.tarefasatribuidas WHERE agendamentoid = ag;
+  PERFORM public.exigir((SELECT dataevento FROM public.agendamentos WHERE agendamentoid = ag) = d2
+                        AND ta.dataagendamento = d2 AND ta.descricaooverride = '10:00 — Aniversário',
+                        'remarcou: a tarefa muda de dia junto');
+  SELECT * INTO h FROM public.agendamentoshistorico WHERE agendamentoid = ag AND acao = 'remarcado';
+  PERFORM public.exigir(h.valoranterior = to_char(d1 AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI')
+                        AND h.valornovo = to_char(d2 AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI')
+                        AND h.alteradopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND h.motivo = 'Cliente pediu',
+                        'o historico guarda a data antiga, a nova, quem e quando');
+
+  -- Trocar o responsavel: a tarefa muda de pessoa.
+  PERFORM public.trocar_responsavel_agendamento(ag, 124);
+  PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE agendamentoid = ag) = 124,
+                        'trocou o responsavel: a tarefa vai para a nova pessoa');
+  BEGIN PERFORM public.trocar_responsavel_agendamento(ag, 120); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o novo responsavel tambem precisa trabalhar na loja');
+
+  BEGIN UPDATE public.tarefasatribuidas SET datafimvigencia = hoje WHERE agendamentoid = ag; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a tarefa do agendamento nao se mexe por fora da agenda');
+  BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+        VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica');
+        deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem atribui "Atender agendamento" na mao');
+
+  PERFORM public.alterar_pagamento_agendamento(ag, 'Pago', 150);
+  PERFORM public.exigir((SELECT valoranterior = 'Sinal pago (R$ 150,00)' AND valornovo = 'Pago (R$ 150,00)'
+                           FROM public.agendamentoshistorico WHERE agendamentoid = ag AND acao = 'pagamento'),
+                        'mudanca de pagamento no historico');
+
+  -- Realizado e volta para confirmado com motivo.
+  PERFORM public.marcar_agendamento_realizado(ag);
+  BEGIN PERFORM public.remarcar_agendamento(ag, d1); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'realizado nao se remarca');
+  BEGIN PERFORM public.reabrir_agendamento(ag, ''); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'voltar de realizado exige motivo');
+  PERFORM public.reabrir_agendamento(ag, 'Marquei no errado');
+  PERFORM public.exigir((SELECT statusagendamento FROM public.agendamentos WHERE agendamentoid = ag) = 'Confirmado'
+                        AND EXISTS (SELECT 1 FROM public.agendamentoshistorico WHERE agendamentoid = ag AND acao = 'reaberto'
+                                                                               AND motivo = 'Marquei no errado'),
+                        'realizado volta para confirmado, com motivo no historico');
+
+  -- Cancelar.
+  BEGIN PERFORM public.cancelar_agendamento(ag, '  '); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o banco recusa cancelar sem motivo');
+  PERFORM public.cancelar_agendamento(ag, 'Cliente desistiu');
+  PERFORM public.exigir((SELECT statusagendamento = 'Cancelado' AND motivocancelamento = 'Cliente desistiu'
+                           FROM public.agendamentos WHERE agendamentoid = ag)
+                        AND (SELECT datafimvigencia FROM public.tarefasatribuidas WHERE agendamentoid = ag) = hoje,
+                        'cancelou: a tarefa e encerrada');
+  BEGIN PERFORM public.remarcar_agendamento(ag, d1); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'cancelado e final (nao se remarca)');
+  BEGIN PERFORM public.marcar_agendamento_realizado(ag); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem vira realizado');
+  BEGIN UPDATE public.agendamentos SET statusagendamento = 'Confirmado' WHERE agendamentoid = ag; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'agendamento so muda pelas funcoes');
+  BEGIN DELETE FROM public.agendamentos WHERE agendamentoid = ag; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'agendamento nao se apaga');
+  PERFORM set_config('teste.ag', ag::text, false);
+END $$;
+
+-- Tarefa ja entregue: remarcar e cancelar nao mexem nela.
+DO $$
+DECLARE
+  hoje date := public.dia_em_sao_paulo(now());
+  t integer := (SELECT tipoeventoid FROM public.tiposevento WHERE nome = 'Evento');
+  ag integer; atr integer;
+BEGIN
+  ag := public.criar_agendamento(10, t, (hoje::timestamp + time '23:00') AT TIME ZONE 'America/Sao_Paulo', 'Pedro');
+  atr := (SELECT atribuicaoid FROM public.tarefasatribuidas WHERE agendamentoid = ag);
+  PERFORM public.registrar_entrega(atr);
+  PERFORM public.remarcar_agendamento(ag, ((hoje + 4)::timestamp + time '09:00') AT TIME ZONE 'America/Sao_Paulo');
+  PERFORM public.exigir(public.dia_em_sao_paulo((SELECT dataagendamento FROM public.tarefasatribuidas WHERE atribuicaoid = atr)) = hoje,
+                        'tarefa ja entregue nao muda de dia (nada duplica)');
+  PERFORM public.cancelar_agendamento(ag, 'Teste');
+  PERFORM public.exigir((SELECT datafimvigencia FROM public.tarefasatribuidas WHERE atribuicaoid = atr) IS NULL
+                        AND (SELECT count(*) FROM public.tarefasatribuidas WHERE agendamentoid = ag) = 1,
+                        'e o cancelamento nao apaga a entrega feita');
+END $$;
+
+-- TV: so hora e tipo. Anexos no Storage.
+DO $$
+DECLARE
+  t integer := (SELECT tipoeventoid FROM public.tiposevento WHERE nome = 'Aniversário');
+  ag3 integer; deu_erro boolean; x jsonb; caminho text; anexo integer;
+BEGIN
+  ag3 := public.criar_agendamento(10, t, ((public.dia_em_sao_paulo(now()) + 2)::timestamp + time '15:00') AT TIME ZONE 'America/Sao_Paulo',
+                                  'Joaquim Pereira', '98765432100', '11977776666', 'Segredo da festa', 777, 'Pendente');
+  PERFORM set_config('teste.ag3', ag3::text, false);
+  PERFORM set_config('teste.tv_agenda', public.criar_link_tv(10, 'TV da agenda'), false);
+  x := public.painel_da_loja(10);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x->'agenda') i WHERE i->>'cliente' = 'Joaquim')
+                        AND x::text NOT LIKE '%98765432100%' AND x::text NOT LIKE '%Pereira%',
+                        'painel logado mostra hora, tipo e so o primeiro nome');
+
+  -- Anexo na pasta certa.
+  caminho := '1/10/' || ag3 || '/contrato.pdf';
+  INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', caminho);
+  anexo := public.registrar_anexo_agendamento(ag3, caminho, 'contrato.pdf', 'application/pdf', 1000);
+  PERFORM public.exigir(anexo IS NOT NULL, 'anexo guardado na pasta da conta, da loja e do agendamento');
+  BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/11/' || ag3 || '/errado.pdf'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'anexo fora da pasta do agendamento e recusado pelo Storage');
+  BEGIN PERFORM public.registrar_anexo_agendamento(ag3, '1/10/999999/x.pdf', 'x.pdf', 'application/pdf', 10); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'e pela funcao tambem');
+  PERFORM set_config('teste.anexo', anexo::text, false);
+END $$;
+
+SET ROLE anon;
+DO $$ BEGIN PERFORM set_config('teste.tv_ag', public.painel_da_tv(current_setting('teste.tv_agenda'))::text, false); END $$;
+RESET ROLE;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE tv jsonb := current_setting('teste.tv_ag')::jsonb; sobra text;
+BEGIN
+  PERFORM public.exigir(jsonb_array_length(tv->'agenda') >= 1, 'a TV recebe os proximos agendamentos');
+  SELECT string_agg(DISTINCT k, ',') INTO sobra
+    FROM jsonb_array_elements(tv->'agenda') i, jsonb_object_keys(i) k WHERE k NOT IN ('quando', 'tipo');
+  PERFORM public.exigir(sobra IS NULL, 'na TV cada agendamento tem so hora e tipo' || coalesce(' (sobrou: ' || sobra || ')', ''));
+  PERFORM public.exigir(tv::text NOT LIKE '%Joaquim%' AND tv::text NOT LIKE '%Maria%' AND tv::text NOT LIKE '%98765432100%'
+                        AND tv::text NOT LIKE '%11977776666%' AND tv::text NOT LIKE '%Segredo%' AND tv::text NOT LIKE '%777%',
+                        'a TV nao recebe nome, CPF, telefone, observacoes nem valor');
+
+  sobra := public.remover_anexo_agendamento(current_setting('teste.anexo')::integer);
+  PERFORM public.exigir(sobra LIKE '1/10/%'
+                        AND EXISTS (SELECT 1 FROM public.agendamentoshistorico WHERE acao = 'anexo_removido')
+                        AND (SELECT removidoem IS NOT NULL FROM public.agendamentosanexos
+                              WHERE anexoid = current_setting('teste.anexo')::integer),
+                        'remover anexo fica no historico');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean; ag3 integer := current_setting('teste.ag3')::integer;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.agendamentos) = 0
+                        AND (SELECT count(*) FROM public.agendamentoshistorico) = 0
+                        AND (SELECT count(*) FROM public.agendamentosanexos) = 0
+                        AND (SELECT count(*) FROM public.tiposevento) = 0,
+                        'B nao ve a agenda, o historico, os anexos nem os tipos de A');
+  PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'agendamentos') = 0,
+                        'documento de outro cliente nao abre (B nao le o arquivo de A)');
+  BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '2/10/' || ag3 || '/x.pdf'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao grava arquivo no agendamento de A, nem na pasta dela');
+  BEGIN PERFORM public.cancelar_agendamento(ag3, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao cancela agendamento de A');
+  BEGIN PERFORM public.criar_agendamento(10, 1, now() + interval '1 day', 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao cria agendamento em loja de A');
+  PERFORM public.exigir(public.conflitos_agendamento(10, now() + interval '2 days') = '[]'::jsonb,
+                        'B nao ve os horarios de A');
+END $$;
+
+SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.cancelar_agendamento(current_setting('teste.ag3')::integer, 'x'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao mexe na agenda');
+END $$;
+
+RESET ROLE;
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN DELETE FROM public.agendamentos WHERE agendamentoid = current_setting('teste.ag')::integer; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco apaga agendamento');
+  BEGIN UPDATE public.agendamentos SET statusagendamento = 'Confirmado' WHERE agendamentoid = current_setting('teste.ag')::integer;
+        deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem reabre cancelado');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -2303,7 +2548,10 @@ BEGIN
       'criar_conquista', 'alterar_configuracao',
       'registrar_feedback', 'anular_feedback', 'registrar_justificativa', 'decidir_justificativa',
       'sou_master', 'tratar_relato', 'abrir_solicitacao', 'mudar_situacao_solicitacao',
-      'lancar_venda_do_dia', 'salvar_meta_do_mes'
+      'lancar_venda_do_dia', 'salvar_meta_do_mes',
+      'criar_agendamento', 'remarcar_agendamento', 'trocar_responsavel_agendamento', 'alterar_pagamento_agendamento',
+      'editar_agendamento', 'marcar_agendamento_realizado', 'reabrir_agendamento', 'cancelar_agendamento',
+      'registrar_anexo_agendamento', 'remover_anexo_agendamento', 'pasta_de_agendamento_minha'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'

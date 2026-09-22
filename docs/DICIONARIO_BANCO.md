@@ -16,7 +16,9 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 
 | Tabela | Nível | Chave | Referencia |
 |---|---|---|---|
-| `agendamentos` | **loja** | agendamentoid | funcionarios |
+| `agendamentos` | **loja** | agendamentoid | funcionarios, tiposevento |
+| `agendamentosanexos` | **loja** | anexoid | agendamentos |
+| `agendamentoshistorico` | **loja** | historicoid | agendamentos |
 | `categoriasproduto` | conta | categoriaid |  |
 | `configuracoesescala` | **loja** | configid |  |
 | `configuracoessetores` | conta | setor |  |
@@ -63,6 +65,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `solicitacoeshistorico` | **loja** | historicoid | solicitacoesinternas |
 | `solicitacoesinternas` | **loja** | solicitacaoid | funcionarios |
 | `tarefas` | conta | tarefaid |  |
+| `tiposevento` | conta | tipoeventoid |  |
 | `tarefasatribuidas` | **loja** | atribuicaoid | funcionarios, grupos, tarefas, tarefasatribuidas |
 
 ## agendamentos
@@ -76,12 +79,60 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | dataevento | timestamptz | obrigatório |
 | statusagendamento | varchar(50) | obrigatório; padrão 'Confirmado' |
 | statuspagamento | varchar(50) | obrigatório; padrão 'Pendente' |
-| funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
+| funcionarioid | integer | obrigatório; **o responsável**. → funcionarioslojas (junto com lojaid): tem de trabalhar na loja |
 | observacoes | text |  |
 | datacriacao | timestamptz | obrigatório; padrão now() |
-| msgcriacaoenviada | integer | padrão 0 |
-| msgconfirmacaoenviada | integer | padrão 0 |
-| msgposvendaenviada | integer | padrão 0 |
+| msgcriacaoenviada | timestamptz | quando a confirmação por WhatsApp foi enviada (Etapa 1.13) |
+| msgconfirmacaoenviada | timestamptz | quando o lembrete da véspera foi enviado (1.13) |
+| msgposvendaenviada | timestamptz | quando o pós-venda foi enviado (1.13) |
+| tipoeventoid | integer | → tiposevento (junto com contaid). `tipoevento` guarda o nome |
+| valor | numeric(12,2) | valor combinado, opcional |
+| aceitawhatsapp | boolean | obrigatório; padrão false. Consentimento do cliente para mensagens |
+| registradopor | uuid | quem cadastrou |
+| atualizadoem | timestamptz | obrigatório; padrão now() |
+| realizadoem / realizadopor | timestamptz / uuid | ao marcar Realizado |
+| canceladoem / canceladopor / motivocancelamento | timestamptz / uuid / text | ao cancelar (motivo obrigatório) |
+
+`statusagendamento`: `Confirmado`, `Realizado` ou `Cancelado` (Confirmado → Realizado/Cancelado; Realizado → Confirmado; Cancelado é final). `statuspagamento`: `Pendente`, `Sinal pago` ou `Pago`. CPF só com 11 números. **Nada se apaga.** Entra e muda só pelas funções da agenda. A tarefa gerada fica em `tarefasatribuidas.agendamentoid`.
+
+## tiposevento
+Tabela **nova** (Etapa 1.9), **nível conta**. Tipos de evento da agenda, editáveis pelo cliente. Conta nova começa só com "Evento".
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| tipoeventoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| nome | varchar(100) | obrigatório; único na conta (sem diferenciar maiúsculas) |
+| ativo | boolean | obrigatório; padrão true. Desativado sai da lista de novos agendamentos |
+| criadoem | timestamptz | obrigatório; padrão now() |
+
+## agendamentoshistorico
+Tabela **nova** (Etapa 1.9), **nível loja**. Cada mudança de um agendamento. **Nunca muda nem se apaga.**
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| historicoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| agendamentoid | integer | obrigatório; → agendamentos (junto com contaid) |
+| acao | varchar(20) | `criado`, `editado`, `remarcado`, `responsavel`, `pagamento`, `realizado`, `reaberto`, `cancelado`, `anexo`, `anexo_removido` |
+| valoranterior / valornovo | text | ex.: data antiga e nova. A edição não copia CPF nem telefone |
+| motivo | text | obrigatório em cancelar e reabrir |
+| alteradopor / alteradoem | uuid / timestamptz | quem e quando |
+
+## agendamentosanexos
+Tabela **nova** (Etapa 1.9), **nível loja**. Arquivos do bucket privado `agendamentos`, pasta `<contaid>/<lojaid>/<agendamentoid>/`.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| anexoid | integer | ID automático; chave primária |
+| contaid / lojaid / agendamentoid | integer | obrigatórios; → agendamentos (junto com contaid) |
+| caminho | text | obrigatório; único |
+| nomearquivo | varchar(200) | obrigatório |
+| tipoarquivo | varchar(50) | `application/pdf`, `image/jpeg` ou `image/png` |
+| tamanho | integer | até 10 MB |
+| enviadopor / enviadoem | uuid / timestamptz | |
+| removidoem / removidopor | timestamptz / uuid | ao remover (o arquivo sai do Storage) |
 
 ## categoriasproduto
 | Coluna | Tipo | Obs |
@@ -811,6 +862,15 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `pagar_premio_meta(...)` / `estornar_premio_meta(premio, motivo)` | **Internas.** Pagam pelo livro e estornam exatamente de quem recebeu |
 | `reavaliar_meta_do_dia(lancamento)` / `reavaliar_meta_do_mes(conta, loja, mes)` | **Internas.** Aplicam a regra de correção |
 | `meta_para_painel(conta, loja, tv)` | **Interna.** Bloco da meta do painel; na TV sem a opção da loja, só porcentagens |
+| `cria_tipos_evento_padrao(conta)` | **Só o servidor.** Conta nova começa com o tipo "Evento" |
+| `criar_agendamento(loja, tipo, data, cliente, cpf, telefone, observacoes, valor, pagamento, responsavel, aceitawhatsapp)` | Cria e gera a tarefa "Atender agendamento" para o responsável |
+| `remarcar_agendamento(ag, novadata, motivo)` / `trocar_responsavel_agendamento(ag, pessoa)` | Só Confirmado; a tarefa vai junto (se ainda não foi entregue) |
+| `editar_agendamento(...)` / `alterar_pagamento_agendamento(ag, situacao, valor)` | Dados do cliente e pagamento |
+| `marcar_agendamento_realizado(ag)` / `reabrir_agendamento(ag, motivo)` / `cancelar_agendamento(ag, motivo)` | Situações; cancelar encerra a tarefa |
+| `conflitos_agendamento(loja, data, ignorar)` | Agendamentos confirmados a menos de 2 h (aviso) |
+| `registrar_anexo_agendamento(...)` / `remover_anexo_agendamento(anexo)` | Anexos do Storage, com histórico |
+| `pasta_de_agendamento_minha(caminho, editavel)` | Usada nas regras do Storage: a pasta tem de ser de um agendamento da conta e da loja |
+| `agenda_para_painel(conta, loja, tv)` | **Interna.** Próximos agendamentos; na TV só hora e tipo |
 | `alterar_configuracao(chave, valor)` | Só o master; recusa os `TAREFA_*`; o gatilho valida e registra no histórico |
 
 Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos`, `atribuicoes_para_entregar`, `ranking_mensal`, `listar_trocas` e os relatórios rodam com a RLS de quem chamou.

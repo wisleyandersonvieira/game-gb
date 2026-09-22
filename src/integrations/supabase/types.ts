@@ -16,58 +16,88 @@ export type Database = {
     Tables: {
       agendamentos: {
         Row: {
+          aceitawhatsapp: boolean
           agendamentoid: number
+          atualizadoem: string
+          canceladoem: string | null
+          canceladopor: string | null
           contaid: number
           cpfcliente: string | null
           datacriacao: string
           dataevento: string
           funcionarioid: number
           lojaid: number
-          msgconfirmacaoenviada: number | null
-          msgcriacaoenviada: number | null
-          msgposvendaenviada: number | null
+          motivocancelamento: string | null
+          msgconfirmacaoenviada: string | null
+          msgcriacaoenviada: string | null
+          msgposvendaenviada: string | null
           nomecliente: string
           observacoes: string | null
+          realizadoem: string | null
+          realizadopor: string | null
+          registradopor: string | null
           statusagendamento: string
           statuspagamento: string
           telefonecliente: string | null
           tipoevento: string
+          tipoeventoid: number | null
+          valor: number | null
         }
         Insert: {
+          aceitawhatsapp?: boolean
           agendamentoid?: number
+          atualizadoem?: string
+          canceladoem?: string | null
+          canceladopor?: string | null
           contaid?: number
           cpfcliente?: string | null
           datacriacao?: string
           dataevento: string
           funcionarioid: number
           lojaid: number
-          msgconfirmacaoenviada?: number | null
-          msgcriacaoenviada?: number | null
-          msgposvendaenviada?: number | null
+          motivocancelamento?: string | null
+          msgconfirmacaoenviada?: string | null
+          msgcriacaoenviada?: string | null
+          msgposvendaenviada?: string | null
           nomecliente: string
           observacoes?: string | null
+          realizadoem?: string | null
+          realizadopor?: string | null
+          registradopor?: string | null
           statusagendamento?: string
           statuspagamento?: string
           telefonecliente?: string | null
           tipoevento: string
+          tipoeventoid?: number | null
+          valor?: number | null
         }
         Update: {
+          aceitawhatsapp?: boolean
           agendamentoid?: number
+          atualizadoem?: string
+          canceladoem?: string | null
+          canceladopor?: string | null
           contaid?: number
           cpfcliente?: string | null
           datacriacao?: string
           dataevento?: string
           funcionarioid?: number
           lojaid?: number
-          msgconfirmacaoenviada?: number | null
-          msgcriacaoenviada?: number | null
-          msgposvendaenviada?: number | null
+          motivocancelamento?: string | null
+          msgconfirmacaoenviada?: string | null
+          msgcriacaoenviada?: string | null
+          msgposvendaenviada?: string | null
           nomecliente?: string
           observacoes?: string | null
+          realizadoem?: string | null
+          realizadopor?: string | null
+          registradopor?: string | null
           statusagendamento?: string
           statuspagamento?: string
           telefonecliente?: string | null
           tipoevento?: string
+          tipoeventoid?: number | null
+          valor?: number | null
         }
         Relationships: [
           {
@@ -86,6 +116,148 @@ export type Database = {
           },
           {
             foreignKeyName: "agendamentos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "agendamentos_responsavel_trabalha_na_loja"
+            columns: ["funcionarioid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "funcionarioslojas"
+            referencedColumns: ["funcionarioid", "lojaid"]
+          },
+          {
+            foreignKeyName: "agendamentos_tipo_fk"
+            columns: ["contaid", "tipoeventoid"]
+            isOneToOne: false
+            referencedRelation: "tiposevento"
+            referencedColumns: ["contaid", "tipoeventoid"]
+          },
+        ]
+      }
+      agendamentosanexos: {
+        Row: {
+          agendamentoid: number
+          anexoid: number
+          caminho: string
+          contaid: number
+          enviadoem: string
+          enviadopor: string | null
+          lojaid: number
+          nomearquivo: string
+          removidoem: string | null
+          removidopor: string | null
+          tamanho: number
+          tipoarquivo: string
+        }
+        Insert: {
+          agendamentoid: number
+          anexoid?: number
+          caminho: string
+          contaid?: number
+          enviadoem?: string
+          enviadopor?: string | null
+          lojaid: number
+          nomearquivo: string
+          removidoem?: string | null
+          removidopor?: string | null
+          tamanho: number
+          tipoarquivo: string
+        }
+        Update: {
+          agendamentoid?: number
+          anexoid?: number
+          caminho?: string
+          contaid?: number
+          enviadoem?: string
+          enviadopor?: string | null
+          lojaid?: number
+          nomearquivo?: string
+          removidoem?: string | null
+          removidopor?: string | null
+          tamanho?: number
+          tipoarquivo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentosanexos_agendamento_fk"
+            columns: ["contaid", "agendamentoid"]
+            isOneToOne: false
+            referencedRelation: "agendamentos"
+            referencedColumns: ["contaid", "agendamentoid"]
+          },
+          {
+            foreignKeyName: "agendamentosanexos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "agendamentosanexos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      agendamentoshistorico: {
+        Row: {
+          acao: string
+          agendamentoid: number
+          alteradoem: string
+          alteradopor: string | null
+          contaid: number
+          historicoid: number
+          lojaid: number
+          motivo: string | null
+          valoranterior: string | null
+          valornovo: string | null
+        }
+        Insert: {
+          acao: string
+          agendamentoid: number
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          historicoid?: number
+          lojaid: number
+          motivo?: string | null
+          valoranterior?: string | null
+          valornovo?: string | null
+        }
+        Update: {
+          acao?: string
+          agendamentoid?: number
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          historicoid?: number
+          lojaid?: number
+          motivo?: string | null
+          valoranterior?: string | null
+          valornovo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentoshistorico_agendamento_fk"
+            columns: ["contaid", "agendamentoid"]
+            isOneToOne: false
+            referencedRelation: "agendamentos"
+            referencedColumns: ["contaid", "agendamentoid"]
+          },
+          {
+            foreignKeyName: "agendamentoshistorico_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "agendamentoshistorico_loja_fk"
             columns: ["contaid", "lojaid"]
             isOneToOne: false
             referencedRelation: "lojas"
@@ -3023,6 +3195,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "tarefasatribuidas_agendamento_fk"
+            columns: ["contaid", "agendamentoid"]
+            isOneToOne: false
+            referencedRelation: "agendamentos"
+            referencedColumns: ["contaid", "agendamentoid"]
+          },
+          {
             foreignKeyName: "tarefasatribuidas_contaid_fkey"
             columns: ["contaid"]
             isOneToOne: false
@@ -3133,6 +3312,38 @@ export type Database = {
           },
         ]
       }
+      tiposevento: {
+        Row: {
+          ativo: boolean
+          contaid: number
+          criadoem: string
+          nome: string
+          tipoeventoid: number
+        }
+        Insert: {
+          ativo?: boolean
+          contaid?: number
+          criadoem?: string
+          nome: string
+          tipoeventoid?: number
+        }
+        Update: {
+          ativo?: boolean
+          contaid?: number
+          criadoem?: string
+          nome?: string
+          tipoeventoid?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiposevento_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -3150,9 +3361,54 @@ export type Database = {
         }
         Returns: number
       }
+      agenda_para_painel: {
+        Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
+        Returns: Json
+      }
+      agendamento_para_mudar: {
+        Args: { p_agendamentoid: number }
+        Returns: {
+          aceitawhatsapp: boolean
+          agendamentoid: number
+          atualizadoem: string
+          canceladoem: string | null
+          canceladopor: string | null
+          contaid: number
+          cpfcliente: string | null
+          datacriacao: string
+          dataevento: string
+          funcionarioid: number
+          lojaid: number
+          motivocancelamento: string | null
+          msgconfirmacaoenviada: string | null
+          msgcriacaoenviada: string | null
+          msgposvendaenviada: string | null
+          nomecliente: string
+          observacoes: string | null
+          realizadoem: string | null
+          realizadopor: string | null
+          registradopor: string | null
+          statusagendamento: string
+          statuspagamento: string
+          telefonecliente: string | null
+          tipoevento: string
+          tipoeventoid: number | null
+          valor: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "agendamentos"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       alterar_configuracao: {
         Args: { p_chave: string; p_valor: string }
         Returns: string
+      }
+      alterar_pagamento_agendamento: {
+        Args: { p_agendamentoid: number; p_status: string; p_valor?: number }
+        Returns: undefined
       }
       analise_de_tarefas: {
         Args: { p_ate: string; p_de: string; p_lojaid?: number }
@@ -3183,11 +3439,19 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number }
         Returns: number
       }
+      cancelar_agendamento: {
+        Args: { p_agendamentoid: number; p_motivo: string }
+        Returns: undefined
+      }
       cancelar_troca: {
         Args: { p_motivo: string; p_resgateid: number }
         Returns: undefined
       }
       concluir_troca: { Args: { p_resgateid: number }; Returns: undefined }
+      conflitos_agendamento: {
+        Args: { p_dataevento: string; p_ignorar?: number; p_lojaid: number }
+        Returns: Json
+      }
       consultar_relato: {
         Args: { p_contaid: number; p_protocolo: string }
         Returns: Json
@@ -3203,6 +3467,26 @@ export type Database = {
       cria_tarefas_do_sistema: {
         Args: { p_contaid: number }
         Returns: undefined
+      }
+      cria_tipos_evento_padrao: {
+        Args: { p_contaid: number }
+        Returns: undefined
+      }
+      criar_agendamento: {
+        Args: {
+          p_aceitawhatsapp?: boolean
+          p_cpf?: string
+          p_dataevento: string
+          p_lojaid: number
+          p_nomecliente: string
+          p_observacoes?: string
+          p_pagamento?: string
+          p_responsavelid?: number
+          p_telefone?: string
+          p_tipoeventoid: number
+          p_valor?: number
+        }
+        Returns: number
       }
       criar_conquista: {
         Args: {
@@ -3250,6 +3534,18 @@ export type Database = {
         Returns: boolean
       }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
+      editar_agendamento: {
+        Args: {
+          p_aceitawhatsapp: boolean
+          p_agendamentoid: number
+          p_cpf: string
+          p_nomecliente: string
+          p_observacoes: string
+          p_telefone: string
+          p_tipoeventoid: number
+        }
+        Returns: undefined
+      }
       eh_admin_geral: { Args: never; Returns: boolean }
       equipe_da_meta: {
         Args: { p_contaid: number; p_dia: string; p_lojaid: number }
@@ -3300,6 +3596,10 @@ export type Database = {
         }
         Returns: number
       }
+      marcar_agendamento_realizado: {
+        Args: { p_agendamentoid: number }
+        Returns: undefined
+      }
       meta_do_dia: {
         Args: { p_dia: string; p_lojaid: number }
         Returns: {
@@ -3345,6 +3645,10 @@ export type Database = {
       }
       painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
       painel_da_tv: { Args: { p_codigo: string }; Returns: Json }
+      pasta_de_agendamento_minha: {
+        Args: { p_editavel: boolean; p_nome: string }
+        Returns: boolean
+      }
       pendencias_da_pessoa: {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }
         Returns: Json
@@ -3380,6 +3684,10 @@ export type Database = {
           pontos: number
         }[]
       }
+      reabrir_agendamento: {
+        Args: { p_agendamentoid: number; p_motivo: string }
+        Returns: undefined
+      }
       reais: { Args: { p_valor: number }; Returns: string }
       reavaliar_meta_do_dia: {
         Args: { p_apuracaoid: number }
@@ -3392,6 +3700,28 @@ export type Database = {
       recusar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined
+      }
+      registra_agenda: {
+        Args: {
+          p_acao: string
+          p_agendamentoid: number
+          p_antes: string
+          p_contaid: number
+          p_depois: string
+          p_lojaid: number
+          p_motivo: string
+        }
+        Returns: undefined
+      }
+      registrar_anexo_agendamento: {
+        Args: {
+          p_agendamentoid: number
+          p_caminho: string
+          p_nomearquivo: string
+          p_tamanho: number
+          p_tipo: string
+        }
+        Returns: number
       }
       registrar_entrega: {
         Args: {
@@ -3442,6 +3772,18 @@ export type Database = {
         }
         Returns: number
       }
+      remarcar_agendamento: {
+        Args: { p_agendamentoid: number; p_motivo?: string; p_novadata: string }
+        Returns: undefined
+      }
+      remover_anexo_agendamento: {
+        Args: { p_anexoid: number }
+        Returns: string
+      }
+      responsavel_valido: {
+        Args: { p_contaid: number; p_funcionarioid: number; p_lojaid: number }
+        Returns: boolean
+      }
       resumo_das_lojas: { Args: never; Returns: Json }
       revogar_link_tv: { Args: { p_linktvid: number }; Returns: undefined }
       salvar_meta_do_mes: {
@@ -3455,6 +3797,7 @@ export type Database = {
         }
         Returns: number
       }
+      so_digitos: { Args: { p_texto: string }; Returns: string }
       sou_master: { Args: never; Returns: boolean }
       tarefa_cai_no_dia: {
         Args: {
@@ -3463,6 +3806,10 @@ export type Database = {
           p_tipofrequencia: string
           p_valorfrequencia: number
         }
+        Returns: boolean
+      }
+      tarefa_da_agenda_entregue: {
+        Args: { p_atribuicaoid: number }
         Returns: boolean
       }
       taxa_da_conta: { Args: { p_contaid: number }; Returns: number }
@@ -3475,8 +3822,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      texto_da_tarefa_agenda: {
+        Args: { p_dataevento: string; p_tipo: string }
+        Returns: string
+      }
       tratar_relato: {
         Args: { p_denunciaid: number; p_resposta?: string; p_status: string }
+        Returns: undefined
+      }
+      trocar_responsavel_agendamento: {
+        Args: { p_agendamentoid: number; p_funcionarioid: number }
         Returns: undefined
       }
     }

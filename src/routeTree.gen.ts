@@ -15,6 +15,7 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
+import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedCanalConfidencialRouteImport } from './routes/_authenticated/canal-confidencial'
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
 import { Route as AuthenticatedConquistasRouteImport } from './routes/_authenticated/conquistas'
@@ -62,6 +63,11 @@ const SemAcessoRoute = SemAcessoRouteImport.update({
   id: '/sem-acesso',
   path: '/sem-acesso',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
+  id: '/agenda',
+  path: '/agenda',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedCanalConfidencialRoute =
   AuthenticatedCanalConfidencialRouteImport.update({
@@ -166,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/conquistas': typeof AuthenticatedConquistasRoute
@@ -190,6 +197,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/conquistas': typeof AuthenticatedConquistasRoute
@@ -217,6 +225,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/conquistas': typeof AuthenticatedConquistasRoute
@@ -244,6 +253,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/definir-senha'
     | '/sem-acesso'
+    | '/agenda'
     | '/canal-confidencial'
     | '/configuracoes'
     | '/conquistas'
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/definir-senha'
     | '/sem-acesso'
+    | '/agenda'
     | '/canal-confidencial'
     | '/configuracoes'
     | '/conquistas'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/definir-senha'
     | '/sem-acesso'
+    | '/_authenticated/agenda'
     | '/_authenticated/canal-confidencial'
     | '/_authenticated/configuracoes'
     | '/_authenticated/conquistas'
@@ -367,6 +379,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/sem-acesso'
       preLoaderRoute: typeof SemAcessoRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/agenda': {
+      id: '/_authenticated/agenda'
+      path: '/agenda'
+      fullPath: '/agenda'
+      preLoaderRoute: typeof AuthenticatedAgendaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/canal-confidencial': {
       id: '/_authenticated/canal-confidencial'
@@ -498,6 +517,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedCanalConfidencialRoute: typeof AuthenticatedCanalConfidencialRoute
   AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
   AuthenticatedConquistasRoute: typeof AuthenticatedConquistasRoute
@@ -517,6 +537,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
   AuthenticatedCanalConfidencialRoute: AuthenticatedCanalConfidencialRoute,
   AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
   AuthenticatedConquistasRoute: AuthenticatedConquistasRoute,

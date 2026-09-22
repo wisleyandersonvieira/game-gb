@@ -58,7 +58,7 @@ Administrador geral (Wisley)
 | 1.6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
 | 1.7 | Gestão de pessoas e gamificação | ✅ Concluída (22/09/2026) — partes 1, 2 e 3 |
 | 1.8 | Metas de faturamento | ✅ Concluída (22/09/2026) |
-| 1.9 | Agenda (agendamentos) | ⬜ |
+| 1.9 | Agenda (agendamentos) | ✅ Concluída (22/09/2026) |
 | 1.10 | RH (onboarding, comunicados, documentos) | ⬜ |
 | 1.11 | Rotinas automáticas sem Telegram | ⬜ |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
@@ -203,7 +203,7 @@ Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja*
 
 O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acesso a nenhuma tabela**. Antes a RLS já impedia a leitura, mas o acesso existia. Conferido de fora, pela internet, em produção.
 
-- [ ] **Rodízio de telas no Modo TV**: painel da loja, meta do dia (Etapa 1.8) e agenda (Etapa 1.9), quando existirem. O mapa entra só na Etapa 2.1. *(painel ↔ meta feito na 1.8, 30 s cada; falta a agenda, na 1.9)*
+- [x] **Rodízio de telas no Modo TV**: painel da loja, meta do dia (Etapa 1.8) e agenda (Etapa 1.9), 30 s cada, só as telas com conteúdo. O mapa entra só na Etapa 2.1. *(22/09/2026)*
 
 ### Etapa 1.7 — Gestão de pessoas e gamificação (abas do `main.py`)
 > Dividida em partes: **parte 1** prêmios, resgates, comanda e extrato · **parte 2** conquistas, nota do ranking mensal, relatórios e configurações · **parte 3** feedbacks, canal confidencial, solicitações e justificativas. Os **grupos** foram para a Etapa 1.13, junto com o Telegram.
@@ -280,9 +280,26 @@ Só o faturamento. Meta de lucro, histórico de lucro e relatórios financeiros 
 **Problemas do sistema antigo corrigidos:** quem ganhava era quem tinha o texto do "setor" no cargo, mesmo de folga ou inativo; o prêmio podia sair duas vezes e o saldo era somado por fora do histórico; o estorno tirava pontos de quem **hoje** tem o cargo, não de quem recebeu; excluir um lançamento não devolvia os pontos; "quem lançou" era sempre o funcionário nº 2; não havia histórico de correções; o prêmio do mês dependia de o gestor abrir a tela e confirmar; e a trava de modelos era "um por dia da semana por conta" (só uma loja do cliente teria meta de segunda-feira) — agora é por loja.
 
 ### Etapa 1.9 — Agenda (por loja)
-- [ ] Calendário (mês/semana).
-- [ ] Cadastro de agendamento: funcionário, cliente, telefone, CPF, data, hora, tipo, pagamento, observações.
-- [ ] Marcar pagamento; documentos anexos.
+- [x] Calendário (mês) e lista. *(22/09/2026)*
+- [x] Cadastro de agendamento: responsável, cliente, telefone, CPF, data, hora, tipo, pagamento, observações.
+- [x] Marcar pagamento; documentos anexos.
+
+**Feito em 22/09/2026.**
+
+- **Tela Agenda** (Operação → Agenda, por loja): lista (Próximos, Realizados, Cancelados, Todos), **calendário do mês**, novo agendamento e **tipos de evento**. Os tipos são uma lista por conta, editável; **conta nova começa só com "Evento"**. Os 3 tipos antigos ("Carrinho de Sorvete", "Festa de Aniversario", "Reserva de Tortas de Sorvete") foram colocados só na conta de teste atual (Premier Lojas), por fora da migração.
+- **Responsável:** vem o responsável pelos agendamentos da loja, e pode ser outro, desde que trabalhe na loja (o banco garante).
+- **Situações:** Confirmado → Realizado (marcado à mão; pode voltar para Confirmado com motivo) ou → Cancelado (motivo obrigatório, final). Nada se apaga; remarcar, trocar o responsável, editar e cancelar só em Confirmado. **Pagamento:** Pendente, Sinal pago ou Pago, com valor combinado opcional.
+- **Mesmo horário:** a tela avisa quando já há agendamento confirmado na loja a menos de 2 horas e pergunta se quer agendar assim mesmo (não bloqueia).
+- **A tarefa acompanha:** criar gera "Atender agendamento" (Única, no dia do evento) para o responsável, com o texto "15:00 — Tipo", **sem dados do cliente**. Remarcou, muda de dia; trocou o responsável, muda de pessoa; cancelou, é encerrada. Se já tinha sido entregue, nada muda nem duplica. Essa tarefa não se mexe por fora da agenda, e ninguém a atribui na mão.
+- **Histórico** (`agendamentoshistorico`, nunca muda): criação, edição (sem copiar CPF/telefone), remarcação com data antiga e nova, responsável, pagamento, realizado, reaberto, cancelado, anexos — sempre com quem e quando.
+- **Anexos:** bucket privado `agendamentos` (até 10 MB; PDF, JPG ou PNG), pasta `<conta>/<loja>/<agendamento>/`; o Storage só aceita e só mostra arquivos de agendamento da própria conta e loja. Abrir gera **link temporário de 5 minutos**. Remover fica no histórico.
+- **CPF** mascarado nas listas (`***.***.123-45`) e completo só no detalhe; CPF e telefone guardados só com números.
+- **Painel da loja:** "Próximos agendamentos" com hora, tipo e primeiro nome. **TV:** só hora e tipo ("15h — Aniversário"); o banco não envia nome, CPF, telefone, observações nem valor, e o teste confere. **Rodízio da TV:** painel → meta → agenda, 30 s cada.
+- **WhatsApp (1.13):** as marcas `msg*enviada` viraram "enviada em" (data e hora), vazias; novo campo "cliente aceita receber WhatsApp" (consentimento). Nada é enviado.
+- **Dados de conta nova:** conferido que nada com a marca Gela Boca é criado automaticamente (tarefas do sistema, prêmio "Abate na comanda" e configurações são genéricos; os valores padrão das configurações são só números editáveis).
+- **Bloqueadores:** 109 endereços do app, 8 listas, nenhum barrado.
+
+**Problemas do sistema antigo corrigidos:** remarcar e excluir chamavam funções que não existiam (a tarefa ficava na data antiga ou órfã); cancelar era apagar; a tarefa ia sempre para um responsável fixo e levava nome, telefone e observações do cliente; o painel da loja mostrava nome e telefone; as rotas de agendamento não pediam login (qualquer um na rede listava CPF e telefone); "quem cadastrou" ficava no lugar do responsável.
 
 ### Etapa 1.10 — RH
 - [ ] Onboarding / admissional.
@@ -440,6 +457,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Justificativa: dois botões ("Registrar e aceitar" / "Registrar para decidir depois"). Aceita sai das pendências e dos pontos possíveis e é **dia neutro** na sequência de dias (como a folga). |
 | 22/09/2026 | Foto da manutenção fica para a 1.13 (vem pelo bot). Menu agrupado em Operação, Pessoas, Gamificação, Relatórios e Gestão. |
 | 22/09/2026 | **Metas (1.8):** meta do dia fixa por dia da semana, com **meta especial** por data que substitui o modelo. Ganha quem está ligado à loja, ativo e no **dia da venda** sem folga nem afastamento; meta do mês: ligado e ativo quando bateu. Correção: deixou de bater → estorno automático de quem recebeu; voltou a bater → paga de novo. Lançar ou corrigir **só no mês atual e no anterior**. Bônus de meta fora do ranking e da nota. TV só em %, com a opção por loja "mostrar valores". Rodízio painel ↔ meta, 30 s. Tela "Metas" em Operação. |
+| 22/09/2026 | **Agenda (1.9):** mesmo horário só avisa (2 h), sem bloquear; tipos de evento por conta, editáveis — conta nova começa com "Evento", os 3 antigos só na conta de teste; pagamento Pendente / Sinal pago / Pago com valor opcional; Realizado à mão, podendo voltar para Confirmado com motivo; Cancelado final; remarcar e cancelar só em Confirmado; painel logado com o primeiro nome, TV só hora e tipo; "Agenda" em Operação. |
 | 22/09/2026 | Funções da loja de prêmios com **nomes neutros** (`*_troca`), por causa de bloqueadores de anúncio. Endereços novos passam pelas listas de bloqueio antes de entrar. |
 | 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
 

@@ -9,6 +9,7 @@ export type Loja = {
   cidade: string | null;
   endereco: string | null;
   ativa: boolean;
+  responsavelagendamentosid: number | null;
 };
 
 const CHAVE_NAVEGADOR = "gamegb.lojaAtiva";
@@ -50,7 +51,7 @@ export function ProvedorLojaAtiva({ children }: { children: ReactNode }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lojas")
-        .select("lojaid, nome, cidade, endereco, ativa")
+        .select("lojaid, nome, cidade, endereco, ativa, responsavelagendamentosid")
         .eq("ativa", true)
         .order("nome");
       if (error) throw error;

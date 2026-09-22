@@ -3,6 +3,7 @@
 // Os dados vêm prontos do banco (montar_painel), sem nenhum id, foto,
 // observação, telefone ou CPF.
 import { MetaCartao, type MetaPainel } from "./MetaDaLoja";
+import { AgendaCartao, type ItemAgenda } from "./AgendaDaLoja";
 
 export type DadosPainel = {
   loja: string;
@@ -15,6 +16,7 @@ export type DadosPainel = {
   podio: { pessoa: string; pontos: number }[];
   atividade: { titulo: string; pessoa: string; pontos: number; aprovadaem: string }[];
   meta: MetaPainel;
+  agenda: ItemAgenda[];
 };
 
 const MEDALHAS = ["🥇", "🥈", "🥉"];
@@ -109,7 +111,7 @@ export function PainelDaLoja({ dados, tv = false }: { dados: DadosPainel; tv?: b
       <div className={`grid gap-4 ${tv ? "lg:grid-cols-3" : "md:grid-cols-3"}`}>
         <MetaCartao meta={dados.meta} tv={tv} />
         <Reservado tv={tv} titulo="Resgates recentes" fase="Fase 7" />
-        <Reservado tv={tv} titulo="Próximos agendamentos" fase="Fase 9" />
+        <AgendaCartao agenda={dados.agenda ?? []} tv={tv} />
       </div>
     </div>
   );
