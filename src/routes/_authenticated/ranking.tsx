@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { MesesFechados } from "@/ranking/MesesFechados";
 
 export const Route = createFileRoute("/_authenticated/ranking")({
   component: Ranking,
@@ -17,7 +18,7 @@ const MEDALHAS = ["🥇", "🥈", "🥉"];
 
 function Ranking() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
-  const [periodo, setPeriodo] = useState<"dia" | "mes" | "nota">("dia");
+  const [periodo, setPeriodo] = useState<"dia" | "mes" | "nota" | "fechados">("dia");
   const [alcance, setAlcance] = useState<"loja" | "conta">("loja");
 
   const hoje = hojeEmSaoPaulo();
@@ -26,7 +27,7 @@ function Ranking() {
 
   const ranking = useQuery({
     queryKey: ["ranking", de, hoje, lojaFiltro],
-    enabled: lojaAtiva !== null && periodo !== "nota",
+    enabled: lojaAtiva !== null && (periodo === "dia" || periodo === "mes"),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("ranking_pontos", {
         p_de: de,
@@ -35,6 +36,15 @@ function Ranking() {
       });
       if (error) throw error;
       return data ?? [];
+    },
+  });
+
+  const master = useQuery({
+    queryKey: ["sou-master"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("sou_master");
+      if (error) throw error;
+      return data === true;
     },
   });
 
@@ -63,8 +73,8 @@ function Ranking() {
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ranking</h1>
 
-      <div className="flex flex-wrap gap-6">
-        <div className="flex gap-1 rounded-lg border border-border p-1">
+      <div className="flex flex-wrap gap-3 sm:gap-6">
+        <div className="flex flex-wrap gap-1 rounded-lg border border-border p-1">
           <button className={botao(periodo === "dia")} onClick={() => setPeriodo("dia")}>
             Hoje
           </button>
@@ -73,6 +83,9 @@ function Ranking() {
           </button>
           <button className={botao(periodo === "nota")} onClick={() => setPeriodo("nota")}>
             Nota do mês
+          </button>
+          <button className={botao(periodo === "fechados")} onClick={() => setPeriodo("fechados")}>
+            Meses fechados
           </button>
         </div>
         <div className="flex gap-1 rounded-lg border border-border p-1">
@@ -85,7 +98,9 @@ function Ranking() {
         </div>
       </div>
 
-      {periodo === "nota" ? (
+      {periodo === "fechados" ? (
+        <MesesFechados lojaid={lojaFiltro} master={master.data === true} />
+      ) : periodo === "nota" ? (
         <NotaDoMes hoje={hoje} lojaid={lojaFiltro} />
       ) : (
         <PontosDoPeriodo
@@ -208,11 +223,12 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
         </p>
         <p>
           <strong>Confiabilidade:</strong> dos pontos que a pessoa podia fazer nas tarefas dela, quanto fez (pelo dia
-          do envio). Folga, domingo de folga e afastamento não contam.
+          do envio). Folga, domingo de folga e afastamento não contam. Os pontos possíveis de cada dia vêm da lista
+          do dia, gravada pela rotina: mudar o cadastro hoje não muda os dias que já passaram.
         </p>
         <p>
           <strong>Esforço:</strong> os pontos aprovados no mês comparados com os de quem mais fez. Bônus de conquista não
-          entra.
+          entra. Tarefa recebida de quem estava de folga conta aqui, como esforço extra, e não nos pontos possíveis.
         </p>
       </div>
 
