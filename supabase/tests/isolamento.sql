@@ -3895,6 +3895,407 @@ SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- ===========================================================================
+-- 40. Rotinas com mensagem (Etapa 1.13B1)
+--     Diana 7510 (chats 5010, lojas 10 e 11, 08:00–17:00), Nelson 7511
+--     (5011, loja 10, turno da noite 18:00–02:00), Sandra 7512 (5012, sem
+--     horário), Fábio 7513 (5013, de folga hoje). Conta B: Bruno 7610 (6010).
+-- ===========================================================================
+
+RESET ROLE;
+SET teste.uid = '';
+
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, horarionotificacao, horariosaida)
+OVERRIDING SYSTEM VALUE VALUES
+  (7510, 1, 'Diana Diurna',   0, '08:00', '17:00'),
+  (7511, 1, 'Nelson Noturno', 0, '18:00', '02:00'),
+  (7512, 1, 'Sandra Sem Horario', 0, NULL, NULL),
+  (7513, 1, 'Fabio Folga', (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1), '08:00', '17:00'),
+  (7610, 2, 'Bruno de B',    0, '08:00', '17:00');
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+  (1, 7510, 10), (1, 7510, 11), (1, 7511, 10), (1, 7512, 10), (1, 7513, 10), (2, 7610, 20);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (7710, 1, 'Conferir freezer', 5), (7711, 1, 'Trocar sabor', 5), (7712, 1, 'Lavar calhas', 8),
+  (7713, 1, 'Missao do estoque', 20), (7714, 1, 'Tarefa do Nelson', 4), (7715, 2, 'Tarefa do Bruno', 6);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES
+  (1, 7710, 10), (1, 7711, 11), (1, 7712, 10), (1, 7713, 10), (1, 7714, 10), (2, 7715, 20);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                      dataatribuicao, horariodisparo)
+OVERRIDING SYSTEM VALUE VALUES
+  (7810, 1, 7710, 7510, 10, 'Diaria', now() - interval '3 days', NULL),   -- Diana, loja 10
+  (7811, 1, 7711, 7510, 11, 'Diaria', now() - interval '3 days', NULL),   -- Diana, loja 11
+  (7812, 1, 7712, 7513, 10, 'Diaria', now() - interval '3 days', NULL),   -- Fabio (de folga hoje)
+  (7814, 1, 7714, 7511, 10, 'Diaria', now() - interval '3 days', NULL),   -- Nelson
+  (7813, 1, 7713, NULL,  10, 'Diaria', now() - interval '3 days', '10:00'),  -- missão da equipe
+  (7815, 2, 7715, 7610, 20, 'Diaria', now() - interval '3 days', NULL);
+-- Chats: pessoas de A e de B, e o grupo da equipe de B.
+INSERT INTO public.telegramvinculos (contaid, tipo, chatid, funcionarioid) VALUES
+  (1, 'pessoa', 5010, 7510), (1, 'pessoa', 5011, 7511), (1, 'pessoa', 5012, 7512), (1, 'pessoa', 5013, 7513),
+  (2, 'pessoa', 6010, 7610);
+INSERT INTO public.telegramvinculos (contaid, tipo, chatid, lojaid, papelgrupo) VALUES (2, 'grupo', -2002, 20, 'equipe');
+
+CREATE TEMP TABLE b1_b_antes AS
+SELECT (SELECT md5(string_agg(m::text, '' ORDER BY filaid)) FROM public.mensagensfila m WHERE contaid = 2) AS fila,
+       (SELECT count(*) FROM public.mensagensfila WHERE contaid = 2) AS fila_n,
+       (SELECT md5(string_agg(t::text, '' ORDER BY atribuicaoid)) FROM public.tarefasatribuidas t WHERE contaid = 2) AS atribuicoes;
+
+-- ---------------------------------------------------------------------------
+-- Janela de envio: turno, turno da noite, silêncio e folga
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_hoje date := public.dia_em_sao_paulo(now());
+  j jsonb;
+BEGIN
+  RAISE NOTICE '40. rotinas com mensagem';
+
+  -- Turno da noite: 23:00 está DENTRO do turno, mesmo no horário de silêncio.
+  j := public.bot_janela(1, 7511, public.instante_local(v_hoje, '23:00'));
+  PERFORM public.exigir((j->>'pode')::boolean, 'turno da noite recebe as 23:00, apesar do silencio');
+
+  -- 01:00 do dia seguinte ainda é o turno que começou ontem.
+  j := public.bot_janela(1, 7511, public.instante_local(v_hoje + 1, '01:00'));
+  PERFORM public.exigir((j->>'pode')::boolean, 'turno da noite recebe depois da meia-noite');
+
+  -- 03:00 já passou do fim (02:00 + 30 min de folga).
+  j := public.bot_janela(1, 7511, public.instante_local(v_hoje + 1, '03:00'));
+  PERFORM public.exigir(NOT (j->>'pode')::boolean AND j->>'motivo' = 'fora_do_turno',
+                        'depois do fim do turno da noite, espera');
+  PERFORM public.exigir((j->>'proxima')::timestamptz = public.instante_local(v_hoje + 1, '18:00'),
+                        'a espera vai ate a proxima entrada da noite');
+
+  -- Diurna: 23:00 está fora do turno dela.
+  j := public.bot_janela(1, 7510, public.instante_local(v_hoje, '23:00'));
+  PERFORM public.exigir(NOT (j->>'pode')::boolean, 'quem trabalha de dia nao recebe as 23:00');
+  j := public.bot_janela(1, 7510, public.instante_local(v_hoje, '10:00'));
+  PERFORM public.exigir((j->>'pode')::boolean, 'quem trabalha de dia recebe as 10:00');
+
+  -- Sem horário: vale só o silêncio.
+  j := public.bot_janela(1, 7512, public.instante_local(v_hoje, '23:00'));
+  PERFORM public.exigir(NOT (j->>'pode')::boolean AND j->>'motivo' = 'silencio',
+                        'sem horario, o silencio da noite vale');
+  j := public.bot_janela(1, 7512, public.instante_local(v_hoje, '12:00'));
+  PERFORM public.exigir((j->>'pode')::boolean, 'sem horario, recebe avisos durante o dia');
+
+  -- Folga: nada.
+  j := public.bot_janela(1, 7513, public.instante_local(v_hoje, '10:00'));
+  PERFORM public.exigir(NOT (j->>'pode')::boolean AND j->>'motivo' = 'folga', 'na folga ninguem recebe');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- As rotinas: início, lembretes, fim, e nunca repetir
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_hoje date := public.dia_em_sao_paulo(now());
+  v_n integer;
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+
+  -- 08:00: início da jornada.
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:00'));
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:05'));   -- roda de novo
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:10'));   -- e de novo
+
+  SELECT count(*) INTO v_n FROM public.mensagensfila
+   WHERE contaid = 1 AND tipo = 'inicio_jornada' AND funcionarioid = 7510;
+  PERFORM public.exigir(v_n = 1, 'rodar a rotina tres vezes gera uma mensagem so (etiqueta unica)');
+
+  SELECT count(*) INTO v_n FROM public.mensagensfila
+   WHERE contaid = 1 AND tipo = 'inicio_jornada' AND funcionarioid IN (7512, 7513);
+  PERFORM public.exigir(v_n = 0, 'quem esta de folga ou sem horario nao recebe a jornada');
+
+  SELECT count(*) INTO v_n FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada';
+  PERFORM public.exigir(v_n = 1, 'quem trabalha em duas lojas recebe uma mensagem so');
+
+  -- Turno da noite: início às 18:00 e fim às 02:00 do dia seguinte.
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '18:00'));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila
+                                 WHERE contaid = 1 AND tipo = 'inicio_jornada' AND funcionarioid = 7511
+                                   AND chave = 'inicio:7511:' || v_hoje),
+                        'turno da noite recebe o inicio as 18:00');
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje + 1, '02:05'));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila
+                                 WHERE contaid = 1 AND tipo = 'fim_jornada' AND funcionarioid = 7511
+                                   AND chave = 'fim:7511:' || v_hoje),
+                        'o fim do turno da noite conta no dia em que o turno comecou');
+
+  -- Lembretes: 3 h e 6 h depois da entrada da Diana.
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '11:00'));
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '14:00'));
+  SELECT count(*) INTO v_n FROM public.mensagensfila
+   WHERE contaid = 1 AND funcionarioid = 7510 AND tipo IN ('lembrete3', 'lembrete6');
+  PERFORM public.exigir(v_n = 2, 'os lembretes de 3 h e 6 h sao gerados');
+
+  -- Nada foi criado para a conta B.
+  SELECT count(*) INTO v_n FROM public.mensagensfila WHERE contaid = 2;
+  PERFORM public.exigir(v_n = (SELECT fila_n FROM b1_b_antes), 'a rotina da conta A nao cria mensagem na conta B');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Liga/desliga por loja
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  INSERT INTO public.mensagensrotinas (contaid, lojaid, rotina, ativo) VALUES (1, 10, 'inicio_jornada', false);
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:00'));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada'
+                                  AND funcionarioid = 7510),
+                        'desligado numa loja, quem tem outra loja ligada continua recebendo');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada'
+                                      AND funcionarioid = 7511),
+                        'desligado na loja, quem so tem essa loja nao recebe');
+
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  INSERT INTO public.mensagensrotinas (contaid, lojaid, rotina, ativo) VALUES (1, 11, 'inicio_jornada', false);
+  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:00'));
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada'),
+                        'desligado nas duas lojas, ninguem recebe');
+  DELETE FROM public.mensagensrotinas WHERE contaid = 1;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Fila: silêncio, limite do dia, lembrete cancelado e avisos juntados
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_hoje date := public.dia_em_sao_paulo(now());
+  v_id bigint;
+  v_saida jsonb;
+  r public.mensagensfila%ROWTYPE;
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+
+  -- Lembrete sem nada em aberto: some na hora de enviar.
+  INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao, dataenvio)
+  VALUES (1, 10, 7810, 7710, 7510, 'Pendente', now()), (1, 11, 7811, 7711, 7510, 'Pendente', now());
+  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'lembrete3', '{}', NULL, 'teste-lembrete', NULL, true, now());
+  v_saida := public.bot_fila_pegar(10);
+  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
+  PERFORM public.exigir(r.status = 'descartada', 'lembrete some quando as tarefas ja foram entregues');
+
+  -- Avisos juntados: duas aprovações viram uma mensagem só.
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  PERFORM public.bot_enfileirar_ex(1, 10, 5010, 7510, 'entrega_aprovada',
+    jsonb_build_object('metodo', 'sendMessage', 'titulo', 'Tarefa 1', 'pontos', 10, 'texto', 'a'),
+    NULL, NULL, 'juntas', false, now() - interval '1 minute');
+  PERFORM public.bot_enfileirar_ex(1, 10, 5010, 7510, 'entrega_aprovada',
+    jsonb_build_object('metodo', 'sendMessage', 'titulo', 'Tarefa 2', 'pontos', 5, 'texto', 'b'),
+    NULL, NULL, 'juntas', false, now() - interval '1 minute');
+  v_saida := public.bot_fila_pegar(10);
+  PERFORM public.exigir(jsonb_array_length(v_saida) = 1, 'duas aprovacoes juntas viram uma mensagem so');
+  PERFORM public.exigir((v_saida->0->>'texto') LIKE '%2 entregas aprovadas%' AND (v_saida->0->>'texto') LIKE '%15 pontos%',
+                        'a mensagem juntada soma os pontos das duas');
+  PERFORM public.exigir((SELECT count(*) FROM public.mensagensfila
+                          WHERE contaid = 1 AND status = 'descartada' AND erro = 'juntada') = 1,
+                        'a segunda mensagem nao e enviada de novo');
+
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+END $$;
+
+-- Fora do turno (e no silêncio): o aviso espera a próxima entrada.
+DO $$
+DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE; v_hora time;
+BEGIN
+  v_hora := (now() AT TIME ZONE 'America/Sao_Paulo')::time;
+  -- Turno curto daqui a 2 horas: agora a Diana está fora do turno dela.
+  UPDATE public.funcionarios SET horarionotificacao = v_hora + interval '2 hours',
+                                 horariosaida = v_hora + interval '4 hours'
+   WHERE funcionarioid = 7510;
+  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
+            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
+  v_saida := public.bot_fila_pegar(10);
+  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
+  PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
+                        'aviso fora do turno espera a proxima entrada');
+  PERFORM public.exigir(jsonb_array_length(v_saida) = 0, 'nada e enviado fora do turno');
+  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00' WHERE funcionarioid = 7510;
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Limite de mensagens por dia
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE;
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  UPDATE public.configuracoes SET valor = '1' WHERE contaid = 1 AND chave = 'MAX_MENSAGENS_AUTOMATICAS_DIA';
+
+  -- Uma já enviada hoje.
+  INSERT INTO public.mensagensfila (contaid, chatid, funcionarioid, tipo, conteudo, status, enviadoem, automatica)
+  VALUES (1, 5012, 7512, 'conquista', '{}', 'enviada', now(), true);
+
+  -- Rotina passa do limite: é descartada.
+  v_id := public.bot_enfileirar_ex(1, NULL, 5012, 7512, 'inicio_jornada', '{}', NULL, 'lim-rotina', NULL, true, now());
+  v_saida := public.bot_fila_pegar(10);
+  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
+  PERFORM public.exigir(r.status = 'descartada' AND r.erro = 'limite do dia',
+                        'rotina acima do limite diario e descartada');
+
+  -- Aviso passa do limite: fica para o dia seguinte.
+  v_id := public.bot_enfileirar_ex(1, NULL, 5012, 7512, 'conquista',
+            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
+  v_saida := public.bot_fila_pegar(10);
+  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
+  PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
+                        'aviso acima do limite espera o dia seguinte');
+
+  UPDATE public.configuracoes SET valor = '8' WHERE contaid = 1 AND chave = 'MAX_MENSAGENS_AUTOMATICAS_DIA';
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Folga: avisos guardados viram um resumo só (7 dias)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_saida jsonb; v_id bigint; v_texto text;
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+
+  -- Aviso para quem está de folga hoje: fica guardado, não é enviado.
+  v_id := public.bot_enfileirar_ex(1, NULL, 5013, 7513, 'entrega_aprovada',
+            jsonb_build_object('metodo', 'sendMessage', 'titulo', 'T', 'pontos', 3, 'texto', 'x'),
+            NULL, NULL, NULL, false, now());
+  v_saida := public.bot_fila_pegar(10);
+  PERFORM public.exigir((SELECT status FROM public.mensagensfila WHERE filaid = v_id) = 'guardada',
+                        'aviso de quem esta de folga fica guardado');
+
+  -- Afastamento de 20 dias: 5 avisos recentes e 2 antigos viram UM resumo.
+  INSERT INTO public.mensagensfila (contaid, chatid, funcionarioid, tipo, conteudo, status, criadoem, automatica)
+  SELECT 1, 5013, 7513, x.tipo, '{}', 'guardada', now() - x.idade, true
+    FROM (VALUES ('entrega_aprovada', interval '2 days'), ('entrega_aprovada', interval '3 days'),
+                 ('comunicado_novo',  interval '4 days'), ('conquista', interval '5 days'),
+                 ('entrega_recusada', interval '15 days'), ('conquista', interval '20 days')) AS x(tipo, idade);
+
+  v_texto := public.bot_texto_rotina('resumo_ausencia', 1, 7513, NULL)->>'texto';
+  PERFORM public.exigir(v_texto LIKE '%Enquanto você esteve fora%' AND v_texto LIKE '%3 entregas aprovadas%'
+                          AND v_texto LIKE '%comunicado%',
+                        'a volta gera um resumo so, com as contagens');
+  PERFORM public.exigir(v_texto NOT LIKE '%recusada%',
+                        'o resumo ignora o que ficou guardado ha mais de 7 dias');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.mensagensfila
+                                     WHERE contaid = 1 AND funcionarioid = 7513 AND status = 'guardada'),
+                        'depois do resumo nada fica guardado');
+  PERFORM public.exigir(public.bot_texto_rotina('resumo_ausencia', 1, 7513, NULL) IS NULL,
+                        'sem nada guardado, o resumo nao se repete');
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Bot bloqueado pela pessoa
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_id bigint; v_saida jsonb;
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
+            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
+  v_saida := public.bot_fila_pegar(10);
+  PERFORM public.bot_fila_resultado(v_id, false, NULL, '403 Forbidden: bot was blocked by the user', 0);
+
+  PERFORM public.exigir((SELECT bloqueadoem IS NOT NULL FROM public.telegramvinculos
+                          WHERE chatid = 5010 AND ativo), 'bot bloqueado marca o vinculo');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.avisossistema
+                                 WHERE contaid = 1 AND tipo = 'telegram_bloqueado' AND lidoem IS NULL),
+                        'o master e avisado no sistema quando alguem bloqueia o bot');
+  PERFORM public.exigir(public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista', '{}', NULL, NULL, NULL, false, now()) IS NULL,
+                        'com o bot bloqueado, nada mais e enfileirado');
+  PERFORM public.bot_visto(5010);
+  PERFORM public.exigir((SELECT bloqueadoem IS NULL FROM public.telegramvinculos WHERE chatid = 5010 AND ativo),
+                        'quando a pessoa volta a usar o bot, o bloqueio some sozinho');
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- "O primeiro que clicar": missão e tarefa de folga
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE r jsonb; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  -- Missão: o segundo a clicar não leva.
+  r := public.bot_pegar_missao(-1002, 5010, 7813);
+  PERFORM public.exigir((r->>'ok')::boolean, 'a primeira pessoa pega a missao');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas
+                                 WHERE contaid = 1 AND origematribuicaoid = 7813 AND funcionarioid = 7510
+                                   AND tipofrequencia = 'Unica'),
+                        'quem pegou a missao ganha a tarefa de hoje (esforco extra)');
+  r := public.bot_pegar_missao(-1002, 5011, 7813);
+  PERFORM public.exigir(NOT (r->>'ok')::boolean AND r->>'erro' = 'ja_pega', 'a segunda pessoa recebe "ja foi pega"');
+
+  -- Quem não tem o Telegram ligado não pega nada.
+  r := public.bot_pegar_missao(-1002, 9999, 7813);
+  PERFORM public.exigir(NOT (r->>'ok')::boolean AND r->>'erro' = 'sem_vinculo', 'quem nao tem vinculo nao pega missao');
+
+  -- Tarefa de folga do Fábio: o limite por pessoa é respeitado.
+  UPDATE public.configuracoes SET valor = '1' WHERE contaid = 1 AND chave = 'MAX_TAREFAS_FOLGA_POR_PESSOA';
+  r := public.bot_pegar_folga(-1002, 5010, 7812);
+  PERFORM public.exigir((r->>'ok')::boolean, 'a tarefa de quem esta de folga e pega pelo grupo');
+  PERFORM public.exigir((SELECT passadapara FROM public.tarefasdodia
+                          WHERE contaid = 1 AND dia = v_hoje AND atribuicaoid = 7812) = 7510,
+                        'a lista do dia registra para quem a tarefa foi');
+  r := public.bot_pegar_folga(-1002, 5011, 7812);
+  PERFORM public.exigir(NOT (r->>'ok')::boolean AND r->>'erro' = 'ja_pega', 'a mesma tarefa nao e pega duas vezes');
+  UPDATE public.configuracoes SET valor = '3' WHERE contaid = 1 AND chave = 'MAX_TAREFAS_FOLGA_POR_PESSOA';
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Isolamento entre contas
+-- ---------------------------------------------------------------------------
+SET ROLE authenticated;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';   -- master da conta B
+DO $$
+DECLARE deu_erro boolean; v_n integer;
+BEGIN
+  SELECT count(*) INTO v_n FROM public.mensagensrotinas;
+  PERFORM public.exigir(v_n = 0, 'B nao le o liga/desliga de rotinas de A');
+  SELECT count(*) INTO v_n FROM public.missoesaceites;
+  PERFORM public.exigir(v_n = 0, 'B nao le as missoes aceitas em A');
+
+  BEGIN PERFORM public.definir_rotina_mensagem(10, 'inicio_jornada', false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao desliga uma rotina de uma loja de A');
+
+  -- A função existe para B, mas não alcança ninguém de A: 0 pessoas mudadas.
+  PERFORM public.exigir(public.definir_horario_equipe(ARRAY[7510], '07:00', '15:00') = 0,
+                        'B pede para mudar o horario de alguem de A e nao muda ninguem');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT horarionotificacao FROM public.funcionarios WHERE funcionarioid = 7510) = '08:00',
+                        'B nao muda o horario de ninguem de A');
+  PERFORM public.exigir((SELECT md5(string_agg(t::text, '' ORDER BY atribuicaoid)) FROM public.tarefasatribuidas t
+                          WHERE contaid = 2) = (SELECT atribuicoes FROM b1_b_antes),
+                        'nada da conta B foi alterado pelas rotinas de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.mensagensfila WHERE contaid = 2) = (SELECT fila_n FROM b1_b_antes),
+                        'a fila da conta B continua igual');
+END $$;
+
+-- As funções novas do bot não ficam liberadas para o navegador.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text; deu_erro boolean;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['public.bot_pegar_folga(-1002::bigint, 5010::bigint, 7812)',
+                           'public.bot_pegar_missao(-1002::bigint, 5010::bigint, 7813)',
+                           'public.bot_visto(5010::bigint)',
+                           'public.rotina_mensagens(1, now())',
+                           'public.bot_janela(1, 7510, now())',
+                           'public.pegar_missao(7813, 7510)'] LOOP
+    BEGIN EXECUTE format('SELECT %s', f); deu_erro := false;
+    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+    PERFORM public.exigir(deu_erro, 'usuario logado nao chama ' || split_part(f, '(', 1));
+  END LOOP;
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -3971,7 +4372,8 @@ BEGIN
       'registrar_documento_pessoal', 'registrar_ciencia_documento', 'excluir_documento_por_engano',
       'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding',
       'rodar_geracao_hoje', 'passar_tarefa_de_folga', 'refazer_fechamento', 'rotinas_resumo_admin',
-      'criar_convite_telegram', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'desligar_telegram', 'marcar_aviso_lido'
+      'criar_convite_telegram', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'desligar_telegram', 'marcar_aviso_lido',
+      'definir_rotina_mensagem', 'definir_horario_equipe'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'

@@ -202,6 +202,28 @@ if [ "$ok_t" != "1" ] || [ "$ja_validada" != "1" ] || [ "$erros_t" != "0" ]; the
 $saida_t"
 fi
 
+echo "==> dois cliques em \"Eu aceito\" (missao da equipe) ao mesmo tempo"
+rodar "$RAIZ/supabase/tests/concorrencia_missao_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_missao_sessao.sql" "$CONTAINER:/sessao_m.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -v usuario=14001 -f /sessao_m.sql >/tmp/gamegb-sessao15.txt 2>&1 &
+p15=$!
+docker exec "$CONTAINER" psql -U postgres -q -v usuario=14002 -f /sessao_m.sql >/tmp/gamegb-sessao16.txt 2>&1 &
+p16=$!
+wait "$p15" "$p16" || true
+ja_pega=$(cat /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep -c "ja_pega" || true)
+erros_m=$(cat /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep -c "ERROR" || true)
+grep -h ERROR /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt || true
+rm -f /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt
+echo "    conexao que encontrou a missao ja pega: $ja_pega de 2; erros: $erros_m"
+
+saida_m="$(rodar "$RAIZ/supabase/tests/concorrencia_missao_confere.sql" 2>&1)" && ok_m=1 || ok_m=0
+echo "$saida_m" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_m" != "1" ] || [ "$ja_pega" != "1" ] || [ "$erros_m" != "0" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_m"
+fi
+
 echo "==> bot do Telegram: chamada sem o segredo certo e recusada (401)"
 if docker run --rm -v "$RAIZ/supabase/functions:/f" -w /f denoland/deno:2.1.4 \
      deno test --allow-env --no-check tests/ >/tmp/gamegb-deno.txt 2>&1; then
