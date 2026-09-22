@@ -365,6 +365,7 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 - [x] Telegram (1.13) fica pronto no sistema, porém **desligado por padrão**; 1.13B2 e 1.13C pausadas. Nada do bot é apagado.
 
 **Divisão do trabalho**
+- [x] Texto da política de uso recebido (23/09/2026): `docs/politica-de-uso.md`. Vira comunicado com ciência no primeiro acesso, publicado com **0 pontos**. O arquivo lista o que precisa ser ajustado antes de publicar (ver a frase sobre guardar fotos).
 - [ ] **A — Acesso** (grande, risco alto): CPF na Equipe, os dois acessos novos, papéis, senha provisória, "Redefinir acesso", travas de tentativa, isolamento e teste.
 - [ ] **B — Tablet** (grande): painel, fila do dia, PIN, aceitar, entregar com foto, mural com ciência, feedback, justificativa, solicitação, modo quiosque, pareamento e corte de tablet.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
