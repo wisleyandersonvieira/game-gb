@@ -23,7 +23,10 @@ CREATE TABLE auth.users (
 -- No Supabase real, auth.uid() le o token JWT. Aqui le uma variavel de sessao.
 CREATE FUNCTION auth.uid() RETURNS uuid
 LANGUAGE sql STABLE AS $$
-  SELECT nullif(current_setting('teste.uid', true), '')::uuid
+  -- Como no Supabase: o sub do token (request.jwt.claims) quando existir.
+  SELECT coalesce(nullif(current_setting('teste.uid', true), ''),
+                  nullif(current_setting('request.jwt.claim.sub', true), ''),
+                  nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid
 $$;
 
 CREATE SCHEMA storage;

@@ -180,6 +180,40 @@ if [ "$ok_r" != "1" ] || [ "$repasse" != "1" ] || [ "$erros_r" != "0" ]; then
 $saida_r"
 fi
 
+echo "==> duas aprovacoes pelo Telegram ao mesmo tempo (validador e master)"
+rodar "$RAIZ/supabase/tests/concorrencia_telegram_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_telegram_sessao.sql" "$CONTAINER:/sessao_t.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -v usuario=13002 -f /sessao_t.sql >/tmp/gamegb-sessao13.txt 2>&1 &
+p13=$!
+docker exec "$CONTAINER" psql -U postgres -q -v usuario=13000 -f /sessao_t.sql >/tmp/gamegb-sessao14.txt 2>&1 &
+p14=$!
+wait "$p13" "$p14" || true
+ja_validada=$(cat /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt | grep -c "ja_validada" || true)
+erros_t=$(cat /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt | grep -c "ERROR" || true)
+grep -h ERROR /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt || true
+rm -f /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt
+echo "    conexao que encontrou a entrega ja aprovada: $ja_validada de 2; erros: $erros_t"
+
+saida_t="$(rodar "$RAIZ/supabase/tests/concorrencia_telegram_confere.sql" 2>&1)" && ok_t=1 || ok_t=0
+echo "$saida_t" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_t" != "1" ] || [ "$ja_validada" != "1" ] || [ "$erros_t" != "0" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_t"
+fi
+
+echo "==> bot do Telegram: chamada sem o segredo certo e recusada (401)"
+if docker run --rm -v "$RAIZ/supabase/functions:/f" -w /f denoland/deno:2.1.4 \
+     deno test --allow-env --no-check tests/ >/tmp/gamegb-deno.txt 2>&1; then
+  echo "    $(grep -oE '[0-9]+ passed \| [0-9]+ failed' /tmp/gamegb-deno.txt | tail -1)"
+else
+  cat /tmp/gamegb-deno.txt
+  ok_c=0
+  saida_c="$saida_c
+ERROR: teste do segredo do webhook FALHOU"
+fi
+rm -f /tmp/gamegb-deno.txt
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"
