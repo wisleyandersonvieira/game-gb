@@ -3751,6 +3751,35 @@ export type Database = {
           },
         ]
       }
+      senhasgestor: {
+        Row: {
+          atualizadoem: string
+          contaid: number | null
+          senhahashapp: string
+          userid: string
+        }
+        Insert: {
+          atualizadoem?: string
+          contaid?: number | null
+          senhahashapp: string
+          userid: string
+        }
+        Update: {
+          atualizadoem?: string
+          contaid?: number | null
+          senhahashapp?: string
+          userid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "senhasgestor_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       solicitacoeshistorico: {
         Row: {
           alteradoem: string
@@ -4497,15 +4526,7 @@ export type Database = {
         }
         Returns: number
       }
-      acesso_travado: {
-        Args: {
-          p_chave: string
-          p_contaid: number
-          p_origem: string
-          p_tipo: string
-        }
-        Returns: boolean
-      }
+      acesso_por_email: { Args: { p_email: string }; Returns: Json }
       agenda_para_painel: {
         Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
         Returns: Json
@@ -4995,6 +5016,10 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number; p_hash: string }
         Returns: undefined
       }
+      definir_senha_gestor: {
+        Args: { p_contaid: number; p_hash: string; p_userid: string }
+        Returns: undefined
+      }
       desfazer_ciencia: {
         Args: { p_assinaturaid: number; p_motivo: string }
         Returns: undefined
@@ -5453,16 +5478,6 @@ export type Database = {
         Args: { p_contaid: number; p_mensagem: string }
         Returns: string
       }
-      registrar_tentativa: {
-        Args: {
-          p_chave: string
-          p_contaid: number
-          p_origem: string
-          p_sucesso: boolean
-          p_tipo: string
-        }
-        Returns: undefined
-      }
       registrar_troca: {
         Args: {
           p_entregar?: boolean
@@ -5618,6 +5633,19 @@ export type Database = {
           p_tipo: string
         }
         Returns: boolean
+      }
+      tentativa_abrir: {
+        Args: {
+          p_chave: string
+          p_contaid: number
+          p_origem: string
+          p_tipo: string
+        }
+        Returns: number
+      }
+      tentativa_fechar: {
+        Args: { p_sucesso: boolean; p_tentativaid: number }
+        Returns: undefined
       }
       texto_da_tarefa_agenda: {
         Args: { p_dataevento: string; p_tipo: string }

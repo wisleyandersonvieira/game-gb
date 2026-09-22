@@ -224,6 +224,27 @@ if [ "$ok_m" != "1" ] || [ "$ja_pega" != "1" ] || [ "$erros_m" != "0" ]; then
 $saida_m"
 fi
 
+echo "==> duas tentativas de acesso no mesmo instante (trava)"
+rodar "$RAIZ/supabase/tests/concorrencia_trava_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_trava_sessao.sql" "$CONTAINER:/sessao_t.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -v origem=tablet-a -f /sessao_t.sql >/tmp/gamegb-trava1.txt 2>&1 &
+t1=$!
+docker exec "$CONTAINER" psql -U postgres -q -v origem=tablet-b -f /sessao_t.sql >/tmp/gamegb-trava2.txt 2>&1 &
+t2=$!
+wait "$t1" "$t2" || true
+travadas=$(cat /tmp/gamegb-trava1.txt /tmp/gamegb-trava2.txt | grep -c "TRAVADA" || true)
+echo "    conexao recusada pela trava: $travadas de 2"
+rm -f /tmp/gamegb-trava1.txt /tmp/gamegb-trava2.txt
+
+saida_t="$(rodar "$RAIZ/supabase/tests/concorrencia_trava_confere.sql" 2>&1)" && ok_t=1 || ok_t=0
+echo "$saida_t" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET|DELETE)' || true
+if [ "$ok_t" != "1" ]; then
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (trava de tentativas)"
+  echo "$saida_t" | grep -E 'ERROR|FALHOU' || true
+  exit 1
+fi
+
 echo "==> bot do Telegram: chamada sem o segredo certo e recusada (401)"
 if docker run --rm -v "$RAIZ/supabase/functions:/f" -w /f denoland/deno:2.1.4 \
      deno test --allow-env --no-check tests/ >/tmp/gamegb-deno.txt 2>&1; then

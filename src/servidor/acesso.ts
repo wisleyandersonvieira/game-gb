@@ -93,10 +93,16 @@ async function resumoDaSenha(senha: string) {
   return `pbkdf2$${ITERACOES_SENHA}$${hex(sal.buffer as ArrayBuffer)}$${hex(bits)}`;
 }
 
-/** Confere a senha comparando sempre tudo (para o tempo nao dar pista). */
+/**
+ * Confere a senha. Quando não existe senha guardada, confere contra um resumo
+ * de mentira: sem isso, a resposta voltava na hora e o tempo dizia se aquele
+ * CPF existe (dava para descobrir quem trabalha na empresa).
+ */
+const RESUMO_DE_MENTIRA = `pbkdf2$${ITERACOES_SENHA}$${"00".repeat(16)}$${"00".repeat(32)}`;
+
 async function senhaConfere(senha: string, guardado: string | null) {
-  if (!guardado) return false;
-  const [tipo, iteracoes, sal, esperado] = guardado.split("$");
+  const usar = guardado && guardado.startsWith("pbkdf2$") ? guardado : RESUMO_DE_MENTIRA;
+  const [tipo, iteracoes, sal, esperado] = usar.split("$");
   if (tipo !== "pbkdf2" || !sal || !esperado) return false;
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(senha), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
@@ -105,10 +111,12 @@ async function senhaConfere(senha: string, guardado: string | null) {
     256,
   );
   const calculado = hex(bits);
-  if (calculado.length !== esperado.length) return false;
-  let diferenca = 0;
-  for (let i = 0; i < calculado.length; i++) diferenca |= calculado.charCodeAt(i) ^ esperado.charCodeAt(i);
-  return diferenca === 0;
+  let diferenca = calculado.length === esperado.length ? 0 : 1;
+  for (let i = 0; i < Math.min(calculado.length, esperado.length); i++) {
+    diferenca |= calculado.charCodeAt(i) ^ esperado.charCodeAt(i);
+  }
+  // Sem senha guardada nunca vale, mesmo que o resumo de mentira batesse.
+  return diferenca === 0 && !!guardado;
 }
 
 const soNumeros = (v: string) => (v ?? "").replace(/\D/g, "");
@@ -123,14 +131,14 @@ const emailDaLoja = (lojaid: number, contaid: number) => `loja${lojaid}.${contai
  */
 function origemDaChamada() {
   try {
-    const req = getRequest();
-    const ip =
-      req?.headers.get("cf-connecting-ip") ??
-      req?.headers.get("x-real-ip") ??
-      (req?.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
-    return (ip || "desconhecida").slice(0, 40);
+    // Só o cabeçalho que a hospedagem (Cloudflare) escreve por cima do que o
+    // navegador manda. x-forwarded-for e x-real-ip são escolhidos pelo cliente
+    // quando não há um intermediário confiável, e por isso não servem: com
+    // eles, bastava mandar um valor novo a cada tentativa para zerar a trava.
+    const ip = getRequest()?.headers.get("cf-connecting-ip");
+    return (ip || "sem-ip").slice(0, 40);
   } catch {
-    return "desconhecida";
+    return "sem-ip";
   }
 }
 
@@ -142,11 +150,11 @@ function codigoSorteado() {
   return `${c.slice(0, 4)}-${c.slice(4)}`;
 }
 
-/** Senha do tablet: sorteada, mostrada uma vez. */
+/** Senha do tablet: sorteada, mostrada uma vez. 32 letras: sem viés no sorteio. */
 function senhaSorteada() {
-  const letras = "abcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return [...bytes].map((b) => letras[b % letras.length]).join("");
+  const letras = "abcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(14));
+  return [...bytes].map((b) => letras[b % 32]).join("");
 }
 
 /** Recusa senha e PIN faceis de adivinhar. */
@@ -160,7 +168,12 @@ function conferirSegredo(valor: string, minimo: number, cpf: string | null, oQue
   if (cpf && /^\d+$/.test(v) && soNumeros(cpf).includes(v)) {
     throw new Error(`${nome} não pode ser uma parte do seu CPF.`);
   }
-  if (/^(\d)\1+$/.test(v)) throw new Error("Não use o mesmo número repetido.");
+  if (/^(.)\1+$/.test(v)) throw new Error("Não repita o mesmo caractere.");
+  if (oQue === "senha") {
+    const comuns = ["12345678", "senha123", "password", "123456789", "qwertyui", "abcd1234", "stgame123"];
+    if (comuns.includes(v.toLowerCase())) throw new Error("Essa senha é fácil demais. Escolha outra.");
+    if (/^\d+$/.test(v)) throw new Error("A senha precisa ter pelo menos uma letra.");
+  }
   const digitos = v.split("").map(Number);
   if (/^\d+$/.test(v) && digitos.every((d, i) => i === 0 || d === digitos[i - 1] + 1)) {
     throw new Error("Não use uma sequência (123456).");
@@ -189,10 +202,31 @@ async function abrirSessao(userid: string, email: string) {
   return { access_token: data.session.access_token, refresh_token: data.session.refresh_token };
 }
 
+/**
+ * Abre uma tentativa: o banco tranca a chave, confere os limites e já registra.
+ * Conferir e registrar em duas idas separadas deixava uma rajada simultânea
+ * passar inteira por cima do teto — era assim que o adivinhador voltava.
+ */
+async function abrirTentativa(contaid: number | null, tipo: "senha" | "pin", chave: string, origem: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("tentativa_abrir", {
+    p_contaid: contaid as unknown as number, p_tipo: tipo, p_chave: chave, p_origem: origem,
+  });
+  if (error) throw new Error("Não foi possível conferir o acesso agora.");
+  if (data === null || data === undefined) throw new Error(ERRO_TRAVADO);
+  return data as number;
+}
+
+async function fecharTentativa(tentativaid: number, sucesso: boolean) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin.rpc("tentativa_fechar", { p_tentativaid: tentativaid, p_sucesso: sucesso });
+}
+
 /** Mensagens únicas: nunca dizem se o CPF existe. */
 const ERRO_LOGIN = "CPF ou senha inválidos.";
 const ERRO_CODIGO = "CPF ou código inválidos.";
 const ERRO_TRAVADO = "Muitas tentativas. Espere um pouco e tente de novo.";
+const ERRO_LOGIN_EMAIL = "E-mail ou senha inválidos.";
 
 // ---------------------------------------------------------------------------
 // Entrar
@@ -212,18 +246,13 @@ export const entrarColaborador = createServerFn({ method: "POST" })
     if (typeof contaid !== "number") throw new Error(ERRO_LOGIN);
 
     const chave = await embaralhar(`cpf:${contaid}:${cpf}`);
-    const { data: travado } = await supabaseAdmin.rpc("acesso_travado", {
-      p_contaid: contaid, p_tipo: "senha", p_chave: chave, p_origem: origem,
-    });
-    if (travado === true) throw new Error(ERRO_TRAVADO);
+    const tentativa = await abrirTentativa(contaid, "senha", chave, origem);
 
     const { data: pessoa } = await supabaseAdmin.rpc("senha_app_de", { p_contaid: contaid, p_cpf: cpf });
     const dados = pessoa as { funcionarioid: number; userid: string; senhahash: string | null } | null;
     const ok = await senhaConfere(data.senha ?? "", dados?.senhahash ?? null);
 
-    await supabaseAdmin.rpc("registrar_tentativa", {
-      p_contaid: contaid, p_tipo: "senha", p_chave: chave, p_origem: origem, p_sucesso: ok,
-    });
+    await fecharTentativa(tentativa, ok);
     if (!ok || !dados) throw new Error(ERRO_LOGIN);
 
     return abrirSessao(dados.userid, emailDoColaborador(cpf, contaid));
@@ -243,10 +272,7 @@ export const entrarComCodigo = createServerFn({ method: "POST" })
     if (typeof contaid !== "number") throw new Error(ERRO_CODIGO);
 
     const chave = await embaralhar(`cpf:${contaid}:${cpf}`);
-    const { data: travado } = await supabaseAdmin.rpc("acesso_travado", {
-      p_contaid: contaid, p_tipo: "senha", p_chave: chave, p_origem: origem,
-    });
-    if (travado === true) throw new Error(ERRO_TRAVADO);
+    const tentativa = await abrirTentativa(contaid, "senha", chave, origem);
 
     const codigoLimpo = (data.codigoacesso ?? "").trim().toUpperCase().replace(/\s/g, "");
     const { data: usado } = await supabaseAdmin.rpc("usar_codigo_acesso", {
@@ -254,9 +280,7 @@ export const entrarComCodigo = createServerFn({ method: "POST" })
       p_cpf: cpf,
       p_codigohash: await embaralhar(`codigo:${contaid}:${codigoLimpo}`),
     });
-    await supabaseAdmin.rpc("registrar_tentativa", {
-      p_contaid: contaid, p_tipo: "senha", p_chave: chave, p_origem: origem, p_sucesso: !!usado,
-    });
+    await fecharTentativa(tentativa, !!usado);
     if (!usado) throw new Error(ERRO_CODIGO);
 
     const { data: pessoa } = await supabaseAdmin.rpc("senha_app_de", { p_contaid: contaid, p_cpf: cpf });
@@ -265,28 +289,92 @@ export const entrarComCodigo = createServerFn({ method: "POST" })
     return abrirSessao(dados.userid, emailDoColaborador(cpf, contaid));
   });
 
-/** Entrada do master: e-mail e senha do Supabase, com a nossa trava por cima. */
+/**
+ * Entrada por e-mail: serve para o gestor (master), para o administrador geral
+ * e para o tablet da loja.
+ *
+ * A senha também é conferida por NÓS, como a do colaborador. Quem ainda não tem
+ * resumo guardado (todo mundo, no dia em que isto entra no ar) entra uma última
+ * vez pela senha antiga do Supabase — e nesse momento a senha é convertida: o
+ * resumo passa a ser nosso e a senha do Supabase vira o valor interno. Depois
+ * disso, falar direto com o Supabase não serve mais.
+ */
 export const entrarMaster = createServerFn({ method: "POST" })
   .validator((d: { email: string; senha: string }) => d)
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const email = (data.email ?? "").trim().toLowerCase();
+    const senha = data.senha ?? "";
     const origem = origemDaChamada();
     const chave = await embaralhar(`email:${email}`);
+    const tentativa = await abrirTentativa(null, "senha", chave, origem);
 
-    const { data: travado } = await supabaseAdmin.rpc("acesso_travado", {
-      p_contaid: null as unknown as number, p_tipo: "senha", p_chave: chave, p_origem: origem,
-    });
-    if (travado === true) throw new Error(ERRO_TRAVADO);
+    const { data: achado } = await supabaseAdmin.rpc("acesso_por_email", { p_email: email });
+    const acesso = achado as
+      | { userid: string; senhahash: string | null; contaid: number | null; papel: string | null }
+      | null;
 
+    // Caminho normal: o resumo é nosso.
+    if (acesso?.senhahash) {
+      const ok = await senhaConfere(senha, acesso.senhahash);
+      await fecharTentativa(tentativa, ok);
+      if (!ok) throw new Error(ERRO_LOGIN_EMAIL);
+      return abrirSessao(acesso.userid, email);
+    }
+
+    // Conversão (uma vez por login antigo): confere no Supabase e passa a
+    // guardar o resumo aqui, trocando a senha de lá pela interna.
     const login = await clienteDeLogin();
-    const { data: sessao, error } = await login.auth.signInWithPassword({ email, password: data.senha ?? "" });
-    await supabaseAdmin.rpc("registrar_tentativa", {
-      p_contaid: null as unknown as number, p_tipo: "senha", p_chave: chave, p_origem: origem, p_sucesso: !error,
-    });
-    if (error || !sessao?.session) throw new Error("E-mail ou senha inválidos.");
+    const { data: sessao, error } = await login.auth.signInWithPassword({ email, password: senha });
+    await fecharTentativa(tentativa, !error);
+    if (error || !sessao?.session || !acesso) throw new Error(ERRO_LOGIN_EMAIL);
 
+    await supabaseAdmin.rpc("definir_senha_gestor", {
+      p_userid: acesso.userid,
+      p_contaid: acesso.contaid as unknown as number,
+      p_hash: await resumoDaSenha(senha),
+    });
+    await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
+      password: await senhaInterna(acesso.userid),
+    });
     return { access_token: sessao.session.access_token, refresh_token: sessao.session.refresh_token };
+  });
+
+/**
+ * Define a senha do gestor depois do convite ou da recuperação por e-mail.
+ * O link do Supabase já abriu a sessão; aqui a senha vira nossa e a do Supabase
+ * volta a ser o valor interno.
+ */
+export const definirSenhaDeGestor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { senha: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const { data: acessoAtual, error: erroAcesso } = await supabase.rpc("meu_acesso");
+    if (erroAcesso) throw new Error("Não foi possível confirmar quem é você.");
+    const tipo = (acessoAtual as { tipo?: string } | null)?.tipo;
+    if (tipo !== "master" && tipo !== "gerente" && tipo !== "admin") {
+      throw new Error("Esta tela é do gestor.");
+    }
+
+    const senha = conferirSegredo(data.senha, 8, null, "senha");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: achado } = await supabaseAdmin
+      .from("contasusuarios")
+      .select("contaid")
+      .eq("userid", userId)
+      .maybeSingle();
+
+    await supabaseAdmin.rpc("definir_senha_gestor", {
+      p_userid: userId,
+      p_contaid: (achado?.contaid ?? null) as unknown as number,
+      p_hash: await resumoDaSenha(senha),
+    });
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password: await senhaInterna(userId),
+    });
+    if (error) throw new Error(`Não foi possível salvar a senha: ${error.message}`);
+    return { ok: true };
   });
 
 // ---------------------------------------------------------------------------
@@ -322,12 +410,22 @@ async function pessoaDoToken(userId: string): Promise<PessoaDoToken> {
 
 export const trocarMinhaSenha = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { senha: string }) => d)
+  .validator((d: { senha: string; senhaatual?: string }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     await colaboradorDoToken(supabase);
     const pessoa = await pessoaDoToken(userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Quem JÁ tem senha precisa digitar a atual: sem isso, uma sessão
+    // emprestada ou esquecida aberta viraria tomada de conta.
+    const { data: atual } = await supabaseAdmin.rpc("senha_app_de", {
+      p_contaid: pessoa.contaid, p_cpf: pessoa.cpf ?? "",
+    });
+    const guardada = (atual as { senhahash: string | null } | null)?.senhahash ?? null;
+    if (guardada && !(await senhaConfere(data.senhaatual ?? "", guardada))) {
+      throw new Error("A senha atual não confere.");
+    }
 
     const senha = conferirSegredo(data.senha, 8, pessoa.cpf, "senha");
     const { error } = await supabaseAdmin.rpc("definir_senha_app", {
@@ -336,6 +434,8 @@ export const trocarMinhaSenha = createServerFn({ method: "POST" })
       p_hash: await resumoDaSenha(senha),
     });
     if (error) throw new Error(`Não foi possível salvar a senha: ${error.message}`);
+    // Trocar a senha derruba as outras sessões (a atual continua).
+    if (guardada) await supabaseAdmin.auth.admin.signOut(userId, "others").catch(() => undefined);
     return { ok: true };
   });
 
@@ -351,11 +451,7 @@ export const definirMeuPin = createServerFn({ method: "POST" })
     // Escolher PIN passa pela trava: sem isto, a resposta "escolha outro
     // número" vira um adivinhador do PIN dos colegas.
     const chave = await embaralhar(`pessoa:${pessoa.contaid}:${pessoa.funcionarioid}`);
-    const origem = origemDaChamada();
-    const { data: travado } = await supabaseAdmin.rpc("acesso_travado", {
-      p_contaid: pessoa.contaid, p_tipo: "pin", p_chave: chave, p_origem: origem,
-    });
-    if (travado === true) throw new Error("Muitas tentativas de PIN. Espere um pouco e tente de novo.");
+    const tentativa = await abrirTentativa(pessoa.contaid, "pin", chave, origemDaChamada());
 
     const pin = conferirSegredo(data.pin, 6, pessoa.cpf, "PIN");
     const { error } = await supabaseAdmin.rpc("definir_pin", {
@@ -364,9 +460,7 @@ export const definirMeuPin = createServerFn({ method: "POST" })
       p_pinhash: await embaralhar(`pin:${pessoa.contaid}:${pin}`),
       p_provisorio: false,
     });
-    await supabaseAdmin.rpc("registrar_tentativa", {
-      p_contaid: pessoa.contaid, p_tipo: "pin", p_chave: chave, p_origem: origem, p_sucesso: !error,
-    });
+    await fecharTentativa(tentativa, !error);
     if (error) throw new Error(error.message.includes("Escolha outro") ? "Escolha outro número." : error.message);
     return { ok: true };
   });
@@ -528,17 +622,34 @@ export const trocarCpfDoColaborador = createServerFn({ method: "POST" })
       .eq("funcionarioid", data.funcionarioid)
       .single();
 
-    const { error } = await supabaseAdmin.rpc("trocar_cpf", {
-      p_contaid: contaid, p_funcionarioid: data.funcionarioid, p_cpf: cpf,
-    });
-    if (error) throw new Error(error.message);
-
+    // O login vai PRIMEIRO: se o e-mail novo já existir (recontratação), nada
+    // muda no cadastro. Se depois o banco recusar, o login volta ao que era —
+    // nunca fica um com o CPF novo e o outro com o antigo.
+    const emailAntigo = acesso ? (await supabaseAdmin.auth.admin.getUserById(acesso.userid)).data.user?.email : null;
     if (acesso) {
       const { error: erroEmail } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
         email: emailDoColaborador(cpf, contaid),
         email_confirm: true,
       });
-      if (erroEmail) throw new Error(`CPF trocado, mas o login não acompanhou: ${erroEmail.message}`);
+      if (erroEmail) {
+        throw new Error(
+          erroEmail.message.toLowerCase().includes("already")
+            ? "Já existe um acesso com esse CPF nesta empresa."
+            : `Não foi possível trocar o CPF: ${erroEmail.message}`,
+        );
+      }
+    }
+
+    const { error } = await supabaseAdmin.rpc("trocar_cpf", {
+      p_contaid: contaid, p_funcionarioid: data.funcionarioid, p_cpf: cpf,
+    });
+    if (error) {
+      if (acesso && emailAntigo) {
+        await supabaseAdmin.auth.admin
+          .updateUserById(acesso.userid, { email: emailAntigo, email_confirm: true })
+          .catch(() => undefined);
+      }
+      throw new Error(error.message);
     }
     return { ok: true };
   });
@@ -609,6 +720,14 @@ export const criarAcessoLoja = createServerFn({ method: "POST" })
       await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
       throw new Error(`Não foi possível criar o acesso: ${erroVinculo.message}`);
     }
+    // A senha do tablet também é conferida por nós: guardamos o resumo e a
+    // senha do Supabase vira a interna. Assim o tablet não é uma porta aberta.
+    await supabaseAdmin.rpc("definir_senha_gestor", {
+      p_userid: criado.user.id, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
+    });
+    await supabaseAdmin.auth.admin.updateUserById(criado.user.id, {
+      password: await senhaInterna(criado.user.id),
+    });
     // A senha aparece UMA vez, como o link da TV.
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
   });
@@ -631,8 +750,13 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
     if (!acesso) throw new Error("Esta loja ainda não tem acesso.");
 
     const senha = senhaSorteada();
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, { password: senha });
+    const { error } = await supabaseAdmin.rpc("definir_senha_gestor", {
+      p_userid: acesso.userid, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
+    });
     if (error) throw new Error(`Não foi possível redefinir: ${error.message}`);
+    await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
+      password: await senhaInterna(acesso.userid),
+    });
     // Derruba os tablets que estavam abertos com a senha antiga.
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };

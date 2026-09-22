@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { definirSenhaDeGestor } from "@/servidor/acesso";
 import { destinoDoUsuario } from "@/integrations/supabase/destino";
 import { Logo } from "@/ui/Logo";
 
@@ -46,10 +47,13 @@ function DefinirSenha() {
       return;
     }
     setSalvando(true);
-    const { error } = await supabase.auth.updateUser({ password: senha });
-    if (error) {
+    // A senha do gestor passa a ser conferida pelo nosso servidor: é ele quem
+    // guarda o resumo e troca a senha do Supabase pela interna.
+    try {
+      await definirSenhaDeGestor({ data: { senha } });
+    } catch (e) {
       setSalvando(false);
-      setErro(error.message);
+      setErro((e as Error).message);
       return;
     }
     const destino = await destinoDoUsuario();

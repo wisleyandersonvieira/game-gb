@@ -74,6 +74,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `fotosexpurgo` | conta | expurgoid | entregas |
 | `tentativasacesso` | conta | tentativaid |  |
 | `codigosacesso` | conta | codigoid | funcionarios |
+| `senhasgestor` | conta (vazia no admin geral) | userid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
 | `tiposevento` | conta | tipoeventoid |  |
@@ -515,6 +516,18 @@ Código de primeiro acesso do colaborador. Nível conta.
 
 **Ninguém lê pelo navegador.** É assim que a pessoa entra da primeira vez: **não existe senha padrão**. Desativar a pessoa cancela o código pendente. Funções: `criar_codigo_acesso` e `usar_codigo_acesso` (só o servidor).
 
+## senhasgestor (Etapa 1.12)
+Resumo da senha do master, do administrador geral e do tablet da loja (o colaborador guarda o dele em `funcionarios.senhahashapp`).
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| userid | uuid | → auth.users; chave primária |
+| contaid | integer | vazio no administrador geral |
+| senhahashapp | text | PBKDF2 com sal por pessoa, calculado no servidor |
+| atualizadoem | timestamptz | |
+
+**Por que existe:** se a senha ficasse só no Supabase, qualquer um poderia tentá-la direto lá, pulando a nossa trava de tentativas. Agora a senha do Supabase é um valor interno que ninguém digita, e quem confere a senha digitada somos nós. Quem ainda não tem resumo guardado entra uma última vez pela senha antiga, e ela é convertida nesse momento.
+
 ## tentativasacesso (Etapa 1.12)
 Tentativas de entrar (senha) e de usar o PIN no tablet. Nível conta (vazio só nas tentativas de senha do master, antes de se saber a conta).
 
@@ -528,7 +541,7 @@ Tentativas de entrar (senha) e de usar o PIN no tablet. Nível conta (vazio só 
 | sucesso | boolean | |
 | em | timestamptz | padrão now() |
 
-**Ninguém lê pelo navegador.** PIN: 5 erros em 1 minuto travam, contados por pessoa e por tablet, **mais um teto de 30 tentativas por dia** (é o que impede usar a tela do PIN como adivinhador). Senha: 5 erros em 15 minutos e teto de 50 por dia, contados pelo CPF/e-mail **e** pela origem, que é definida pelo servidor. O que passa de 7 dias é apagado. Funções: `acesso_travado` e `registrar_tentativa` (só o servidor).
+**Ninguém lê pelo navegador.** Conferir e registrar são **a mesma operação** (`tentativa_abrir`, que tranca a chave): sem isso, uma rajada de pedidos simultâneos passava toda de uma vez. PIN: 5 erros em 1 minuto travam, contados por pessoa e por tablet, **mais um teto de 30 tentativas por dia** (é o que impede usar a tela do PIN como adivinhador). Senha: 5 erros em 15 minutos e teto de 50 por dia, contados pelo CPF/e-mail **e** pela origem, que é definida pelo servidor. O que passa de 7 dias é apagado. Funções: `acesso_travado` e `registrar_tentativa` (só o servidor).
 
 ## fotosexpurgo (Etapa 1.12)
 Fila do que precisa sair do Storage. Nível conta.
