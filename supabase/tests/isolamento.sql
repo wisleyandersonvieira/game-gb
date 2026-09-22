@@ -4523,7 +4523,10 @@ BEGIN
       'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding',
       'rodar_geracao_hoje', 'passar_tarefa_de_folga', 'refazer_fechamento', 'rotinas_resumo_admin',
       'criar_convite_telegram', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'desligar_telegram', 'marcar_aviso_lido',
-      'definir_rotina_mensagem', 'definir_horario_equipe'
+      'definir_rotina_mensagem', 'definir_horario_equipe',
+      -- Etapa 1.12: falam so do proprio login (meu_acesso) ou exigem master
+      -- (publicar_politica_de_uso, situacao_dos_acessos).
+      'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -4620,5 +4623,311 @@ BEGIN
 END $$;
 
 DROP FUNCTION public.teste_burla_saldo();
+
+
+-- ===========================================================================
+-- 42. Visoes LOJA e COLABORADOR (Etapa 1.12, parte A)
+-- ===========================================================================
+RESET ROLE;
+
+DO $$ BEGIN RAISE NOTICE '42. visoes LOJA e COLABORADOR (acesso)'; END $$;
+
+-- Logins novos: um da loja A1 e um do colaborador da conta A; um da conta B.
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+  ('10100000-0000-0000-0000-000000000001', 'loja-a1@lojas.stgame.app',    now()),
+  ('10100000-0000-0000-0000-000000000002', 'colab-a@colab.stgame.app',    now()),
+  ('10100000-0000-0000-0000-000000000003', 'colab-b@colab.stgame.app',    now());
+
+-- CPF: valido, so numeros, unico por conta. O mesmo CPF pode existir em outra
+-- conta (a pessoa pode trabalhar em duas empresas clientes).
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cpf, ativo)
+OVERRIDING SYSTEM VALUE VALUES
+  (8100, 1, 'Carla Colaboradora', '529.982.247-25', true),
+  (8101, 1, 'Caio Colega',        '11144477735',    true),
+  (8200, 2, 'Bia da Conta B',     '52998224725',    true);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 8100, 10), (1, 8101, 10);
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((SELECT cpf FROM public.funcionarios WHERE funcionarioid = 8100) = '52998224725',
+                        'o CPF e guardado so com numeros');
+  PERFORM public.exigir((SELECT cpf FROM public.funcionarios WHERE funcionarioid = 8200) = '52998224725',
+                        'o mesmo CPF pode existir em outra conta');
+
+  BEGIN
+    UPDATE public.funcionarios SET cpf = '52998224725' WHERE funcionarioid = 8101; deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o mesmo CPF nao se repete dentro da conta');
+
+  BEGIN
+    UPDATE public.funcionarios SET cpf = '11111111111' WHERE funcionarioid = 8101; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'CPF com todos os digitos iguais e recusado');
+
+  BEGIN
+    UPDATE public.funcionarios SET cpf = '12345678900' WHERE funcionarioid = 8101; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'CPF com verificador errado e recusado');
+
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                     WHERE table_schema = 'public' AND table_name = 'funcionarios'
+                                       AND column_name IN ('senhahash', 'verificadorcpf', 'nivelacesso')),
+                        'as colunas mortas do sistema antigo sairam');
+END $$;
+
+-- Os acessos entram pelo servidor (contexto confiavel), nunca pelo navegador.
+DO $$
+DECLARE v_compin boolean;
+BEGIN
+  PERFORM public.criar_acesso_loja(1, 10, '10100000-0000-0000-0000-000000000001',
+                                   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  v_compin := public.criar_acesso_colaborador(1, 8100, '10100000-0000-0000-0000-000000000002',
+                                              repeat('a', 64), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir(v_compin, 'o colaborador comeca com o PIN inicial');
+  v_compin := public.criar_acesso_colaborador(2, 8200, '10100000-0000-0000-0000-000000000003',
+                                              repeat('b', 64), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  PERFORM public.exigir(v_compin, 'o colaborador da conta B tambem');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- O acesso da LOJA nao le NADA pelo endereco
+-- ---------------------------------------------------------------------------
+SET ROLE authenticated;
+SET teste.uid = '10100000-0000-0000-0000-000000000001';
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(public.minha_conta() IS NULL, 'o acesso da loja nao tem conta para a RLS');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'o acesso da loja nao le a equipe');
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas) = 0, 'o acesso da loja nao le nem a propria loja');
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefasatribuidas) = 0, 'o acesso da loja nao le tarefas');
+  PERFORM public.exigir((SELECT count(*) FROM public.entregas) = 0, 'o acesso da loja nao le entregas');
+  PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos) = 0, 'o acesso da loja nao le o livro de pontos');
+  PERFORM public.exigir((SELECT count(*) FROM public.documentospessoais) = 0, 'o acesso da loja nao le documento pessoal');
+  PERFORM public.exigir((SELECT count(*) FROM public.denunciasanonimas) = 0, 'o acesso da loja nao le o canal confidencial');
+  PERFORM public.exigir(NOT public.sou_master(), 'o acesso da loja nao e master');
+
+  BEGIN
+    INSERT INTO public.funcionarios (contaid, nomecompleto) VALUES (1, 'Intruso'); deu_erro := false;
+  EXCEPTION WHEN others THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o acesso da loja nao grava nada');
+
+  -- Mas sabe quem e, para o app saber para onde levar.
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'loja', 'meu_acesso diz que e o acesso da loja');
+  PERFORM public.exigir(public.meu_acesso()->>'loja' = 'Loja A1', 'meu_acesso traz a loja certa');
+
+  -- E nao consegue ligar o contexto das visoes por conta propria.
+  BEGIN
+    PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet'); deu_erro := false;
+  EXCEPTION WHEN others THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem esta logado nao liga o contexto das visoes');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- O acesso do COLABORADOR tambem nao le nada
+-- ---------------------------------------------------------------------------
+SET teste.uid = '10100000-0000-0000-0000-000000000002';
+
+DO $$
+BEGIN
+  PERFORM public.exigir(public.minha_conta() IS NULL, 'o colaborador nao tem conta para a RLS');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'o colaborador nao le nem o proprio cadastro');
+  PERFORM public.exigir((SELECT count(*) FROM public.entregas) = 0, 'o colaborador nao le entregas pelo endereco');
+  PERFORM public.exigir((SELECT count(*) FROM public.contasusuarios) = 0, 'o colaborador nao le a lista de acessos');
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'colaborador', 'meu_acesso diz que e colaborador');
+  PERFORM public.exigir(public.meu_acesso()->>'nome' = 'Carla Colaboradora', 'meu_acesso traz o nome da pessoa');
+  PERFORM public.exigir((public.meu_acesso()->>'senhaprovisoria')::boolean, 'a senha comeca provisoria');
+  PERFORM public.exigir((public.meu_acesso()->>'pinprovisorio')::boolean, 'o PIN comeca provisorio');
+END $$;
+
+-- O colaborador da conta B nao enxerga nada da conta A (nem o contrario).
+SET teste.uid = '10100000-0000-0000-0000-000000000003';
+DO $$
+BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'nome' = 'Bia da Conta B', 'cada colaborador so ve o proprio nome');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'colaborador da conta B nao le a conta A');
+END $$;
+
+RESET ROLE;
+
+-- ---------------------------------------------------------------------------
+-- PIN: unico na conta, e o erro nao entrega ninguem
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE deu_erro boolean; v_msg text;
+BEGIN
+  PERFORM public.definir_pin(1, 8100, repeat('1', 64), false);
+  PERFORM public.exigir(NOT (SELECT pinprovisorio FROM public.funcionarios WHERE funcionarioid = 8100),
+                        'quem escolhe o PIN deixa de estar provisorio');
+
+  BEGIN
+    PERFORM public.definir_pin(1, 8101, repeat('1', 64), false); deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; v_msg := SQLERRM; END;
+  PERFORM public.exigir(deu_erro, 'PIN repetido na mesma conta e recusado');
+  PERFORM public.exigir(v_msg = 'Escolha outro número.', 'o erro do PIN repetido nao diz de quem e o numero');
+
+  -- O mesmo PIN pode existir em outra conta.
+  PERFORM public.definir_pin(2, 8200, repeat('1', 64), false);
+  PERFORM public.exigir((SELECT pinhash FROM public.funcionarios WHERE funcionarioid = 8200) = repeat('1', 64),
+                        'o mesmo PIN pode existir em outra conta');
+
+  -- Redefinir acesso: volta tudo para provisorio, com registro.
+  PERFORM public.redefinir_acesso(1, 8100, repeat('9', 64), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir((SELECT senhaprovisoria AND pinprovisorio AND acessoredefinidoem IS NOT NULL
+                           AND acessoredefinidopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                           FROM public.funcionarios WHERE funcionarioid = 8100),
+                        'redefinir acesso volta senha e PIN ao provisorio, com registro de quem e quando');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Trava: 5 erros seguidos
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  DELETE FROM public.tentativasacesso;
+  -- No PIN errado nao ha pessoa identificada: a conta e por tablet.
+  FOR i IN 1..4 LOOP
+    PERFORM public.registrar_tentativa(1, 'pin', repeat('c', 64), 'tablet-1', false);
+  END LOOP;
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-1'),
+                        'quatro erros ainda nao travam');
+  PERFORM public.registrar_tentativa(1, 'pin', repeat('c', 64), 'tablet-1', false);
+  PERFORM public.exigir(public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-1'),
+                        'cinco erros seguidos travam a janela');
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-2'),
+                        'a trava e do tablet que errou, nao da loja inteira');
+  PERFORM public.exigir(NOT public.acesso_travado(2, 'pin', repeat('c', 64), 'tablet-1'),
+                        'a trava de uma conta nao trava outra');
+
+  -- Um acerto zera a conta de erros.
+  PERFORM public.registrar_tentativa(1, 'pin', repeat('c', 64), 'tablet-1', true);
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-1'),
+                        'depois de acertar, a contagem de erros do tablet zera');
+
+  -- Senha: conta tambem pelo CPF, para nao bastar trocar de aparelho.
+  DELETE FROM public.tentativasacesso;
+  FOR i IN 1..5 LOOP
+    PERFORM public.registrar_tentativa(1, 'senha', repeat('d', 64), 'login-' || i, false);
+  END LOOP;
+  PERFORM public.exigir(public.acesso_travado(1, 'senha', repeat('d', 64), 'login-9'),
+                        'cinco erros no mesmo CPF travam, mesmo trocando de aparelho');
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'senha', repeat('e', 64), 'login-9'),
+                        'a trava de um CPF nao trava o CPF do colega');
+
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                     WHERE table_schema = 'public' AND table_name = 'tentativasacesso'
+                                       AND column_name IN ('pin', 'senha', 'valor', 'digitado')),
+                        'o registro de tentativas nao tem onde guardar o que foi digitado');
+  DELETE FROM public.tentativasacesso;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Desligado na hora: pessoa inativa e loja desativada
+-- ---------------------------------------------------------------------------
+UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 8100;
+SET ROLE authenticated;
+SET teste.uid = '10100000-0000-0000-0000-000000000002';
+DO $$ BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'desligado',
+                        'colaborador desativado perde o acesso na hora');
+END $$;
+RESET ROLE;
+UPDATE public.funcionarios SET ativo = true WHERE funcionarioid = 8100;
+
+UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
+SET ROLE authenticated;
+SET teste.uid = '10100000-0000-0000-0000-000000000001';
+DO $$ BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'desligado',
+                        'acesso de loja desativada para na hora');
+END $$;
+RESET ROLE;
+UPDATE public.lojas SET ativa = true WHERE lojaid = 10;
+
+-- ---------------------------------------------------------------------------
+-- Politica de uso: versionada, com ciencia por versao
+-- ---------------------------------------------------------------------------
+CREATE TEMP TABLE politica_ids (versao integer, documentoid integer, assinaturaid integer);
+GRANT ALL ON politica_ids TO authenticated;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_doc integer; v_assin integer;
+BEGIN
+  v_doc := public.publicar_politica_de_uso(repeat('Regras de uso do sistema. ', 20));
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = v_doc) = 0,
+                        'a politica e publicada com 0 ponto de ciencia');
+  SELECT assinaturaid INTO v_assin FROM public.documentosassinaturas
+   WHERE documentoid = v_doc AND funcionarioid = 8100;
+  INSERT INTO politica_ids VALUES (1, v_doc, v_assin);
+END $$;
+RESET ROLE;
+
+DO $$
+DECLARE v_doc integer; v_assin integer;
+BEGIN
+  SELECT documentoid, assinaturaid INTO v_doc, v_assin FROM politica_ids WHERE versao = 1;
+  PERFORM public.exigir(v_assin IS NOT NULL, 'a politica chega a quem trabalha na conta');
+  PERFORM public.exigir(public.politica_pendente(1, 8100), 'quem nao deu ciencia fica pendente');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_assin integer; v_doc2 integer;
+BEGIN
+  SELECT assinaturaid INTO v_assin FROM politica_ids WHERE versao = 1;
+  PERFORM public.registrar_ciencia(v_assin);
+  v_doc2 := public.publicar_politica_de_uso(repeat('Regras novas do sistema. ', 20));
+  INSERT INTO politica_ids VALUES (2, v_doc2, NULL);
+END $$;
+RESET ROLE;
+
+DO $$
+DECLARE v_doc integer; v_doc2 integer; v_assin integer;
+BEGIN
+  SELECT documentoid, assinaturaid INTO v_doc, v_assin FROM politica_ids WHERE versao = 1;
+  SELECT documentoid INTO v_doc2 FROM politica_ids WHERE versao = 2;
+  PERFORM public.exigir(v_doc2 <> v_doc, 'cada versao da politica e um comunicado novo');
+  PERFORM public.exigir((SELECT status FROM public.documentos WHERE documentoid = v_doc) = 'Arquivado',
+                        'a versao anterior fica arquivada');
+  PERFORM public.exigir((SELECT statusassinatura FROM public.documentosassinaturas WHERE assinaturaid = v_assin) = 'Ciente',
+                        'a ciencia antiga continua guardada na versao antiga');
+  PERFORM public.exigir(public.politica_documento(1) = v_doc2, 'a versao em vigor e a nova');
+  PERFORM public.exigir(public.politica_pendente(1, 8100), 'a versao nova volta a pedir ciencia');
+END $$;
+
+DROP TABLE politica_ids;
+
+-- ---------------------------------------------------------------------------
+-- Nada disso fica liberado para o navegador
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY[
+    'public.entrar_na_visao(integer, integer, integer, text)',
+    'public.criar_acesso_loja(integer, integer, uuid, uuid)',
+    'public.criar_acesso_colaborador(integer, integer, uuid, text, uuid)',
+    'public.definir_pin(integer, integer, text, boolean)',
+    'public.redefinir_acesso(integer, integer, text, uuid)',
+    'public.marcar_senha_trocada(integer, integer)',
+    'public.acesso_travado(integer, text, text, text)',
+    'public.registrar_tentativa(integer, text, text, text, boolean)',
+    'public.politica_pendente(integer, integer)',
+    'public.politica_documento(integer)',
+    'public.loja_da_visao()'
+  ] LOOP
+    PERFORM public.exigir(NOT has_function_privilege('authenticated', f, 'EXECUTE')
+                          AND NOT has_function_privilege('anon', f, 'EXECUTE'),
+                          'funcao do acesso nao liberada para o navegador: ' || f);
+  END LOOP;
+  PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.tentativasacesso', 'SELECT')
+                        AND NOT has_table_privilege('anon', 'public.tentativasacesso', 'SELECT'),
+                        'ninguem le o registro de tentativas pelo navegador');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

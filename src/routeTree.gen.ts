@@ -14,6 +14,8 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
+import { Route as MeuAcessoRouteImport } from './routes/meu-acesso'
+import { Route as PrimeiroAcessoRouteImport } from './routes/primeiro-acesso'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedCanalConfidencialRouteImport } from './routes/_authenticated/canal-confidencial'
@@ -39,6 +41,7 @@ import { Route as AuthenticatedSolicitacoesRouteImport } from './routes/_authent
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminPerfilRouteImport } from './routes/admin/perfil'
+import { Route as ECodigoRouteImport } from './routes/e.$codigo'
 import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
 
 const IndexRoute = IndexRouteImport.update({
@@ -63,6 +66,16 @@ const AuthRoute = AuthRouteImport.update({
 const DefinirSenhaRoute = DefinirSenhaRouteImport.update({
   id: '/definir-senha',
   path: '/definir-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeuAcessoRoute = MeuAcessoRouteImport.update({
+  id: '/meu-acesso',
+  path: '/meu-acesso',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrimeiroAcessoRoute = PrimeiroAcessoRouteImport.update({
+  id: '/primeiro-acesso',
+  path: '/primeiro-acesso',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SemAcessoRoute = SemAcessoRouteImport.update({
@@ -198,6 +211,11 @@ const AdminPerfilRoute = AdminPerfilRouteImport.update({
   path: '/perfil',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const ECodigoRoute = ECodigoRouteImport.update({
+  id: '/e/$codigo',
+  path: '/e/$codigo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TvCodigoRoute = TvCodigoRouteImport.update({
   id: '/tv/$codigo',
   path: '/tv/$codigo',
@@ -209,6 +227,8 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/meu-acesso': typeof MeuAcessoRoute
+  '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/sem-acesso': typeof SemAcessoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
@@ -233,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
+  '/e/$codigo': typeof ECodigoRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -240,6 +261,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/meu-acesso': typeof MeuAcessoRoute
+  '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/sem-acesso': typeof SemAcessoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
@@ -264,6 +287,7 @@ export interface FileRoutesByTo {
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
+  '/e/$codigo': typeof ECodigoRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -274,6 +298,8 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/meu-acesso': typeof MeuAcessoRoute
+  '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/sem-acesso': typeof SemAcessoRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
@@ -298,6 +324,7 @@ export interface FileRoutesById {
   '/_authenticated/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
+  '/e/$codigo': typeof ECodigoRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -308,6 +335,8 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/definir-senha'
+    | '/meu-acesso'
+    | '/primeiro-acesso'
     | '/sem-acesso'
     | '/agenda'
     | '/canal-confidencial'
@@ -332,6 +361,7 @@ export interface FileRouteTypes {
     | '/solicitacoes'
     | '/tarefas'
     | '/admin/perfil'
+    | '/e/$codigo'
     | '/tv/$codigo'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -339,6 +369,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/definir-senha'
+    | '/meu-acesso'
+    | '/primeiro-acesso'
     | '/sem-acesso'
     | '/agenda'
     | '/canal-confidencial'
@@ -363,6 +395,7 @@ export interface FileRouteTypes {
     | '/solicitacoes'
     | '/tarefas'
     | '/admin/perfil'
+    | '/e/$codigo'
     | '/tv/$codigo'
     | '/admin'
   id:
@@ -372,6 +405,8 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/definir-senha'
+    | '/meu-acesso'
+    | '/primeiro-acesso'
     | '/sem-acesso'
     | '/_authenticated/agenda'
     | '/_authenticated/canal-confidencial'
@@ -396,6 +431,7 @@ export interface FileRouteTypes {
     | '/_authenticated/solicitacoes'
     | '/_authenticated/tarefas'
     | '/admin/perfil'
+    | '/e/$codigo'
     | '/tv/$codigo'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -406,7 +442,10 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   DefinirSenhaRoute: typeof DefinirSenhaRoute
+  MeuAcessoRoute: typeof MeuAcessoRoute
+  PrimeiroAcessoRoute: typeof PrimeiroAcessoRoute
   SemAcessoRoute: typeof SemAcessoRoute
+  ECodigoRoute: typeof ECodigoRoute
   TvCodigoRoute: typeof TvCodigoRoute
 }
 
@@ -445,6 +484,20 @@ declare module '@tanstack/react-router' {
       path: '/definir-senha'
       fullPath: '/definir-senha'
       preLoaderRoute: typeof DefinirSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/meu-acesso': {
+      id: '/meu-acesso'
+      path: '/meu-acesso'
+      fullPath: '/meu-acesso'
+      preLoaderRoute: typeof MeuAcessoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/primeiro-acesso': {
+      id: '/primeiro-acesso'
+      path: '/primeiro-acesso'
+      fullPath: '/primeiro-acesso'
+      preLoaderRoute: typeof PrimeiroAcessoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sem-acesso': {
@@ -622,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPerfilRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/e/$codigo': {
+      id: '/e/$codigo'
+      path: '/e/$codigo'
+      fullPath: '/e/$codigo'
+      preLoaderRoute: typeof ECodigoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tv/$codigo': {
       id: '/tv/$codigo'
       path: '/tv/$codigo'
@@ -705,7 +765,10 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   DefinirSenhaRoute: DefinirSenhaRoute,
+  MeuAcessoRoute: MeuAcessoRoute,
+  PrimeiroAcessoRoute: PrimeiroAcessoRoute,
   SemAcessoRoute: SemAcessoRoute,
+  ECodigoRoute: ECodigoRoute,
   TvCodigoRoute: TvCodigoRoute,
 }
 export const routeTree = rootRouteImport

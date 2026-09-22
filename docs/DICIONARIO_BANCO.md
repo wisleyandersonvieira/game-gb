@@ -72,6 +72,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `solicitacoesinternas` | **loja** | solicitacaoid | funcionarios |
 | `rotinasexecucoes` | conta | execucaoid |  |
 | `fotosexpurgo` | conta | expurgoid | entregas |
+| `tentativasacesso` | conta | tentativaid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
 | `tiposevento` | conta | tipoeventoid |  |
@@ -409,7 +410,12 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | isgestor | boolean | padrão false |
 | ~~posicaopadraoid~~ | — | removida na Fase 2: o lugar padrão passou a ser por loja, em `funcionarioslojas` |
 | nivelacesso | varchar(50) | padrão 'Funcionario' |
-| cpf | varchar(14) |  |
+| cpf | varchar(14) | guardado só com números (11 dígitos), validado com os verificadores; aceita digitação com pontos. É o login do colaborador. **Único por conta** entre os ativos |
+| pinhash | char(64) | PIN do tablet embaralhado pelo servidor (HMAC com chave fora do banco). Único por conta entre os ativos. O número nunca é guardado |
+| senhaprovisoria | boolean | padrão true. Senha ainda é a inicial (6 primeiros do CPF) |
+| pinprovisorio | boolean | padrão true. PIN ainda é o inicial |
+| primeiroacessoem | timestamptz | vazio = nunca entrou no app |
+| acessoredefinidoem / acessoredefinidopor | timestamptz / uuid | quem redefiniu o acesso e quando |
 | telefonewhatsapp | varchar(20) |  |
 | setor | varchar(50) |  |
 | domingofolgamensal | integer | padrão 0 |
@@ -494,6 +500,21 @@ Dias em que a lista da conta foi gerada (`contaid`, `dia`, `recuperado`). Nunca 
 | erro | text | mensagem do erro (só o master da conta lê) |
 
 Apagado depois de 180 dias pela própria rotina.
+
+## tentativasacesso (Etapa 1.12)
+Tentativas de entrar (senha) e de usar o PIN no tablet. Nível conta (vazio só nas tentativas de senha do master, antes de se saber a conta).
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| tentativaid | bigint | ID automático |
+| contaid | integer | → contas |
+| tipo | varchar(10) | `senha` ou `pin` |
+| chave | char(64) | CPF/e-mail **embaralhado pelo servidor**. O que foi digitado nunca é guardado |
+| origem | varchar(40) | de onde veio (tela de login, tablet) |
+| sucesso | boolean | |
+| em | timestamptz | padrão now() |
+
+**Ninguém lê pelo navegador.** PIN: 5 erros em 1 minuto travam aquele tablet (um acerto zera). Senha: 5 erros em 15 minutos travam, contados pelo CPF/e-mail **e** pela origem. O que passa de 7 dias é apagado. Funções: `acesso_travado` e `registrar_tentativa` (só o servidor).
 
 ## fotosexpurgo (Etapa 1.12)
 Fila do que precisa sair do Storage. Nível conta.
@@ -902,7 +923,10 @@ Liga um login do Supabase Auth a uma conta. **Um login pertence a uma única con
 |---|---|---|
 | contaid | integer | obrigatório; chave primária composta; → contas.contaid |
 | userid | uuid | obrigatório; chave primária composta; → auth.users.id; **único sozinho** |
-| papel | varchar(20) | obrigatório; padrão 'master'. `master` / `gerente` (gerente só na Fase 16) |
+| papel | varchar(20) | obrigatório; padrão 'master'. `master`, `gerente` (Etapa 1.14), `loja` (tablet) ou `colaborador` (celular) |
+| lojaid | integer | só no papel `loja`; → lojas (junto com contaid) |
+| funcionarioid | integer | só no papel `colaborador`; → funcionarios (junto com contaid) |
+| criadopor | uuid | → auth.users. Quem criou o acesso |
 | criadoem | timestamptz | obrigatório; padrão now() |
 
 ## lojas

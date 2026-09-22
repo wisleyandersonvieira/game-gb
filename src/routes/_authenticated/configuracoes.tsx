@@ -6,6 +6,7 @@ import { Carregando } from "@/ui/Estados";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { Rotinas } from "@/configuracoes/Rotinas";
 import { MensagensAutomaticas } from "@/configuracoes/MensagensAutomaticas";
+import { PoliticaDeUso } from "@/configuracoes/PoliticaDeUso";
 import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
@@ -241,6 +242,8 @@ function Configuracoes() {
             })}
           </section>
         ))}
+
+      <PoliticaDeUso podeAlterar={podeAlterar} />
 
       <Rotinas podeRodar={podeAlterar} />
 

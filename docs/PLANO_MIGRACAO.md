@@ -62,7 +62,7 @@ Administrador geral (Wisley)
 | 1.10 | RH (onboarding, comunicados, documentos) | ✅ Concluída (22/09/2026) |
 | 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ✅ Concluída |
 | 1.11 | Rotinas automáticas sem Telegram | ✅ Concluída (22/09/2026) |
-| 1.12 | **Visões LOJA e COLABORADOR** (tablet da loja e celular do colaborador) | 🟨 Proposta em análise (23/09/2026); nada programado |
+| 1.12 | **Visões LOJA e COLABORADOR** (tablet da loja e celular do colaborador) | 🟨 Parte A (acesso) pronta em 23/09/2026 · partes B (tablet), C (celular) e D (extras) a fazer |
 | 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | 🟨 1.13A e 1.13B1 prontas (22/09/2026), aguardando o teste na loja · 1.13B2 e 1.13C a fazer |
 | 1.14 | Segurança final (endurecimento) | ⬜ |
 | **FASE 2** | **Expansão — adiada** | Nada daqui é construído sem pedido explícito do Wisley |
@@ -375,7 +375,18 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 
 **Divisão do trabalho**
 - [x] Texto da política de uso recebido (23/09/2026): `docs/politica-de-uso.md`. Vira comunicado com ciência no primeiro acesso, publicado com **0 pontos**. O arquivo lista o que precisa ser ajustado antes de publicar (ver a frase sobre guardar fotos).
-- [ ] **A — Acesso** (grande, risco alto): CPF na Equipe, os dois acessos novos, papéis, senha provisória, "Redefinir acesso", travas de tentativa, isolamento e teste.
+- [x] **A — Acesso (23/09/2026)** — banco, servidor e telas, com teste de isolamento:
+  - CPF na Equipe: validado (11 dígitos e verificadores), guardado só com números, **único por conta** entre os ativos, mascarado na lista (`***.456.789-**`). Colunas mortas `senhahash`, `verificadorcpf` e `nivelacesso` apagadas.
+  - Papéis `loja` e `colaborador` em `contasusuarios`, cada um com o seu vínculo. **`minha_conta()` responde vazio para eles**: as regras de acesso que já existiam passam a negar tudo, sem serem reescritas.
+  - Contexto das visões (`entrar_na_visao`), no mesmo molde do bot: só vale quando quem chama é o servidor.
+  - Login por CPF + código da empresa (`contas.codigo`, link/QR `/e/<codigo>`); o master continua entrando por e-mail. **Trava de tentativas para os dois** (5 erros), com a mesma mensagem sempre.
+  - Senha e PIN iniciais = 6 primeiros dígitos do CPF, trocados no primeiro acesso. Senha: mínimo 6 (colaborador) e 8 (master); PIN: 6 dígitos. Recusa CPF, sequência e repetição.
+  - **PIN embaralhado pelo servidor** (HMAC com `STGAME_PIN_PEPPER`, fora do banco), único na conta, achado direto pelo índice. Erro genérico "escolha outro número".
+  - "Criar acesso" e "Redefinir acesso" na Equipe (com registro de quem e quando); acesso do tablet por loja em Lojas, com senha mostrada uma vez e "Redefinir senha" que **derruba as sessões**.
+  - Desligado na hora: pessoa inativa, loja desativada ou conta cancelada perdem o acesso na chamada seguinte.
+  - Política de uso versionada: cada versão é um comunicado (0 ponto), ciência no primeiro acesso, ciências antigas guardadas na versão antiga. Responsável em `CONTATO_PRIVACIDADE`.
+  - Teste de isolamento: seção 42 com 60+ provas novas (905 verificações no total, todas passando).
+  - [ ] **Falta cadastrar no Lovable:** `STGAME_PIN_PEPPER` (chave longa e aleatória). Sem ela, criar acesso e PIN não funcionam.
 - [ ] **B — Tablet** (grande): painel, fila do dia, PIN, aceitar, entregar com foto, mural com ciência, feedback, justificativa, solicitação, modo quiosque, pareamento e corte de tablet.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
 - [ ] **D — Extras** (pequeno): checklist de abertura/fechamento e aviso de tarefa parada.
@@ -590,6 +601,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Produto renomeado para STGame; identidade visual aplicada (tokens em `src/styles/stgame-theme.css`). |
 | 23/09/2026 | **Comercialização + Stripe saiu da Fase 1 e virou a Etapa 2.0.** A Etapa 1.12 passa a ser as **Visões LOJA e COLABORADOR**; Telegram continua 1.13 (pausado e desligado por padrão) e Segurança continua 1.14. |
 | 23/09/2026 | **Etapa 1.12:** visão LOJA (tablet, um acesso por loja) e visão COLABORADOR (celular, login por CPF), **sem nenhuma notificação**, para reduzir risco trabalhista. Aceite de tarefa no tablet por PIN de 6 dígitos, único na conta, guardado com HMAC de chave só do servidor (busca direta, sem comparar um a um). Senha e PIN iniciais = 6 primeiros dígitos do CPF. `minha_conta()` responde nulo para os acessos novos, que só leem e gravam por funções em contexto de servidor. |
+| 23/09/2026 | **Etapa 1.12, parte A:** o PIN é embaralhado pelo **servidor** (HMAC com `STGAME_PIN_PEPPER`), não pelo banco: quem tiver só o banco não consegue testar número nenhum. Login por CPF usa e-mail interno montado pelo sistema, que não recebe e-mail. Trava de tentativas também no login do master. Correção de defeito da 1.13B1: aviso depois do fim do expediente esperava virar resumo de folga. |
 | 22/09/2026 | Publicação no Lovable: o build volta a usar `@lovable.dev/vite-tanstack-config` + `nitro`, que empacota o servidor inteiro para o Cloudflare (sem isso, "internal server error": módulo `h3-v2` não encontrado). Só o bun (`bun.lock`); `package-lock.json` (criado por um `npm install` em 19/09) apagado e barrado no `.gitignore` e na verificação do GitHub. Versões fixas (sem `^`) dos pacotes `@tanstack/*`, `vite`, `nitro`, `react` e do Supabase. Removido o `index.html` da raiz, que fazia o nitro tratar o app como site estático. |
 | 22/09/2026 | O Lovable não recebe o `.env` nem aceita Secrets `VITE_`/`SUPABASE_`. URL e chave **pública** do Supabase ficam no código (`src/integrations/supabase/config-publica.ts`), usadas pelo navegador e pelo servidor. A chave secreta fica só no Secret `STGAME_SERVICE_ROLE_KEY` (o `SUPABASE_SERVICE_ROLE_KEY` do `.env` vale só em desenvolvimento, porque o Lovable pode preencher esse nome com a chave de outro projeto). |
 | 22/09/2026 | **Etapa 1.13A:** um bot só (@STGameAppBot). O webhook confere o `secret_token` (tempo constante) e chama só funções `bot_*`, liberadas apenas para a chave de servidor; elas entram num "contexto do bot" que um usuário logado não consegue ativar, e usam as mesmas funções de negócio das telas. Aprovação pelo Telegram só pelo master e por quem é validador da loja. Trava (b): resgate e comanda depois do feedback de ontem. Fotos: janela de 10 min, sem encaminhada, repetida ou arquivo. Convite de 48 h, uso único. Respostas à ação da própria pessoa saem direto do webhook; a fila é só para avisos e rotinas. Divisão: 1.13A base, 1.13B rotinas, 1.13C WhatsApp (API oficial da Meta) e onboarding. |

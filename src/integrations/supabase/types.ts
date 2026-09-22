@@ -631,6 +631,7 @@ export type Database = {
       contas: {
         Row: {
           cidade: string | null
+          codigo: string
           contaid: number
           criadoem: string
           email: string
@@ -642,6 +643,7 @@ export type Database = {
         }
         Insert: {
           cidade?: string | null
+          codigo: string
           contaid?: number
           criadoem?: string
           email: string
@@ -653,6 +655,7 @@ export type Database = {
         }
         Update: {
           cidade?: string | null
+          codigo?: string
           contaid?: number
           criadoem?: string
           email?: string
@@ -668,22 +671,46 @@ export type Database = {
         Row: {
           contaid: number
           criadoem: string
+          criadopor: string | null
+          funcionarioid: number | null
+          lojaid: number | null
           papel: string
           userid: string
         }
         Insert: {
           contaid: number
           criadoem?: string
+          criadopor?: string | null
+          funcionarioid?: number | null
+          lojaid?: number | null
           papel?: string
           userid: string
         }
         Update: {
           contaid?: number
           criadoem?: string
+          criadopor?: string | null
+          funcionarioid?: number | null
+          lojaid?: number | null
           papel?: string
           userid?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contasusuarios_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "contasusuarios_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
       }
       denunciasanonimas: {
         Row: {
@@ -1664,6 +1691,8 @@ export type Database = {
       }
       funcionarios: {
         Row: {
+          acessoredefinidoem: string | null
+          acessoredefinidopor: string | null
           ativo: boolean
           cargo: string | null
           chatidtelegram: string | null
@@ -1677,16 +1706,19 @@ export type Database = {
           horarionotificacao: string | null
           horariosaida: string | null
           isgestor: boolean | null
-          nivelacesso: string | null
           nomecompleto: string
+          pinhash: string | null
+          pinprovisorio: boolean
           pontostotal: number | null
+          primeiroacessoem: string | null
           saldopontos: number
-          senhahash: string | null
+          senhaprovisoria: boolean
           setor: string | null
           telefonewhatsapp: string | null
-          verificadorcpf: string | null
         }
         Insert: {
+          acessoredefinidoem?: string | null
+          acessoredefinidopor?: string | null
           ativo?: boolean
           cargo?: string | null
           chatidtelegram?: string | null
@@ -1700,16 +1732,19 @@ export type Database = {
           horarionotificacao?: string | null
           horariosaida?: string | null
           isgestor?: boolean | null
-          nivelacesso?: string | null
           nomecompleto: string
+          pinhash?: string | null
+          pinprovisorio?: boolean
           pontostotal?: number | null
+          primeiroacessoem?: string | null
           saldopontos?: number
-          senhahash?: string | null
+          senhaprovisoria?: boolean
           setor?: string | null
           telefonewhatsapp?: string | null
-          verificadorcpf?: string | null
         }
         Update: {
+          acessoredefinidoem?: string | null
+          acessoredefinidopor?: string | null
           ativo?: boolean
           cargo?: string | null
           chatidtelegram?: string | null
@@ -1723,14 +1758,15 @@ export type Database = {
           horarionotificacao?: string | null
           horariosaida?: string | null
           isgestor?: boolean | null
-          nivelacesso?: string | null
           nomecompleto?: string
+          pinhash?: string | null
+          pinprovisorio?: boolean
           pontostotal?: number | null
+          primeiroacessoem?: string | null
           saldopontos?: number
-          senhahash?: string | null
+          senhaprovisoria?: boolean
           setor?: string | null
           telefonewhatsapp?: string | null
-          verificadorcpf?: string | null
         }
         Relationships: [
           {
@@ -4284,6 +4320,44 @@ export type Database = {
           },
         ]
       }
+      tentativasacesso: {
+        Row: {
+          chave: string
+          contaid: number | null
+          em: string
+          origem: string
+          sucesso: boolean
+          tentativaid: number
+          tipo: string
+        }
+        Insert: {
+          chave: string
+          contaid?: number | null
+          em?: string
+          origem: string
+          sucesso: boolean
+          tentativaid?: number
+          tipo: string
+        }
+        Update: {
+          chave?: string
+          contaid?: number | null
+          em?: string
+          origem?: string
+          sucesso?: boolean
+          tentativaid?: number
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tentativasacesso_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       tiposevento: {
         Row: {
           ativo: boolean
@@ -4374,6 +4448,15 @@ export type Database = {
           p_unidade?: string
         }
         Returns: number
+      }
+      acesso_travado: {
+        Args: {
+          p_chave: string
+          p_contaid: number
+          p_origem: string
+          p_tipo: string
+        }
+        Returns: boolean
       }
       agenda_para_painel: {
         Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
@@ -4741,6 +4824,8 @@ export type Database = {
         Returns: Json
       }
       conta_do_bot: { Args: never; Returns: number }
+      conta_por_codigo: { Args: { p_codigo: string }; Returns: Json }
+      cpf_valido: { Args: { p_cpf: string }; Returns: boolean }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
@@ -4759,6 +4844,25 @@ export type Database = {
       }
       cria_tipos_evento_padrao: {
         Args: { p_contaid: number }
+        Returns: undefined
+      }
+      criar_acesso_colaborador: {
+        Args: {
+          p_contaid: number
+          p_funcionarioid: number
+          p_pinhash: string
+          p_quem: string
+          p_userid: string
+        }
+        Returns: boolean
+      }
+      criar_acesso_loja: {
+        Args: {
+          p_contaid: number
+          p_lojaid: number
+          p_quem: string
+          p_userid: string
+        }
         Returns: undefined
       }
       criar_agendamento: {
@@ -4816,6 +4920,15 @@ export type Database = {
         Args: { p_entrada: string; p_funcionarios: number[]; p_saida: string }
         Returns: number
       }
+      definir_pin: {
+        Args: {
+          p_contaid: number
+          p_funcionarioid: number
+          p_pinhash: string
+          p_provisorio?: boolean
+        }
+        Returns: undefined
+      }
       definir_rotina_mensagem: {
         Args: { p_ativo: boolean; p_lojaid: number; p_rotina: string }
         Returns: undefined
@@ -4872,6 +4985,15 @@ export type Database = {
         Returns: undefined
       }
       eh_admin_geral: { Args: never; Returns: boolean }
+      entrar_na_visao: {
+        Args: {
+          p_canal: string
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+        }
+        Returns: undefined
+      }
       equipe_da_meta: {
         Args: { p_contaid: number; p_dia: string; p_lojaid: number }
         Returns: number[]
@@ -4979,6 +5101,7 @@ export type Database = {
         Returns: Json
       }
       listar_trocas: { Args: { p_limite?: number }; Returns: Json }
+      loja_da_visao: { Args: never; Returns: number }
       maior_sequencia: {
         Args: {
           p_diadefolga: number
@@ -5004,6 +5127,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      marcar_senha_trocada: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: undefined
+      }
       meta_do_dia: {
         Args: { p_dia: string; p_lojaid: number }
         Returns: {
@@ -5018,8 +5145,10 @@ export type Database = {
         Returns: Json
       }
       metas_do_mes: { Args: { p_lojaid: number; p_mes: string }; Returns: Json }
+      meu_acesso: { Args: never; Returns: Json }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
+      minha_politica_de_uso: { Args: never; Returns: Json }
       minha_taxa: { Args: never; Returns: number }
       montar_painel: {
         Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
@@ -5083,6 +5212,19 @@ export type Database = {
         }
         Returns: boolean
       }
+      politica_dar_ciencia: {
+        Args: {
+          p_assinaturaid: number
+          p_contaid: number
+          p_funcionarioid: number
+        }
+        Returns: boolean
+      }
+      politica_documento: { Args: { p_contaid: number }; Returns: number }
+      politica_pendente: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: boolean
+      }
       preparar_envio_documento: {
         Args: { p_funcionarioid: number; p_nomearquivo: string }
         Returns: string
@@ -5097,6 +5239,10 @@ export type Database = {
           p_pontos: number
           p_titulo: string
         }
+        Returns: number
+      }
+      publicar_politica_de_uso: {
+        Args: { p_conteudo: string }
         Returns: number
       }
       quem_trabalha_hoje: { Args: { p_lojaid: number }; Returns: Json }
@@ -5159,6 +5305,15 @@ export type Database = {
       recusar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined
+      }
+      redefinir_acesso: {
+        Args: {
+          p_contaid: number
+          p_funcionarioid: number
+          p_pinhash: string
+          p_quem: string
+        }
+        Returns: boolean
       }
       refazer_fechamento: {
         Args: { p_ano: number; p_mes: number; p_motivo: string }
@@ -5235,6 +5390,16 @@ export type Database = {
       registrar_relato: {
         Args: { p_contaid: number; p_mensagem: string }
         Returns: string
+      }
+      registrar_tentativa: {
+        Args: {
+          p_chave: string
+          p_contaid: number
+          p_origem: string
+          p_sucesso: boolean
+          p_tipo: string
+        }
+        Returns: undefined
       }
       registrar_troca: {
         Args: {
@@ -5346,6 +5511,18 @@ export type Database = {
           p_valor: number
         }
         Returns: number
+      }
+      situacao_dos_acessos: {
+        Args: never
+        Returns: {
+          funcionarioid: number
+          nuncaentrou: boolean
+          pinprovisorio: boolean
+          redefinidoem: string
+          sempin: boolean
+          senhaprovisoria: boolean
+          temacesso: boolean
+        }[]
       }
       so_digitos: { Args: { p_texto: string }; Returns: string }
       sou_master: { Args: never; Returns: boolean }

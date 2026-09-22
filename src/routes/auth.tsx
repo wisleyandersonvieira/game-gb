@@ -1,8 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { destinoDoUsuario } from "@/integrations/supabase/destino";
+import { entrarColaborador, entrarMaster } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
+
+/** O codigo da empresa fica guardado no aparelho: quem le o QR uma vez nao digita mais. */
+const CHAVE_EMPRESA = "stgame.empresa";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -23,32 +27,56 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const [aba, setAba] = useState<"colaborador" | "gestor">("colaborador");
+  const [empresa, setEmpresa] = useState("");
+  const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
+  useEffect(() => {
+    try {
+      const guardada = localStorage.getItem(CHAVE_EMPRESA);
+      if (guardada) setEmpresa(guardada);
+    } catch {
+      // Navegador sem armazenamento: e so digitar o codigo.
+    }
+  }, []);
+
+  /** Quem entra pelo servidor recebe a sessao e a guarda aqui. */
+  async function usarSessao(sessao: { access_token: string; refresh_token: string }) {
+    const { error } = await supabase.auth.setSession(sessao);
+    if (error) throw new Error("Não foi possível abrir a sessão. Tente de novo.");
+    const destino = await destinoDoUsuario();
+    navigate({ to: destino });
+  }
+
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
     setAviso(null);
     setCarregando(true);
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
-    if (error) {
+    try {
+      if (aba === "colaborador") {
+        const codigo = empresa.trim().toLowerCase();
+        const sessao = await entrarColaborador({ data: { codigo, cpf, senha, origem: "login" } });
+        try {
+          localStorage.setItem(CHAVE_EMPRESA, codigo);
+        } catch {
+          // Sem armazenamento: o codigo e digitado da proxima vez.
+        }
+        await usarSessao(sessao);
+      } else {
+        const sessao = await entrarMaster({ data: { email, senha, origem: "login" } });
+        await usarSessao(sessao);
+      }
+    } catch (erroEntrada) {
+      setErro((erroEntrada as Error).message);
+    } finally {
       setCarregando(false);
-      setErro(
-        error.message === "Invalid login credentials"
-          ? "E-mail ou senha incorretos."
-          : error.message,
-      );
-      return;
     }
-
-    const destino = await destinoDoUsuario();
-    setCarregando(false);
-    navigate({ to: destino });
   }
 
   async function esqueciSenha() {
@@ -75,19 +103,59 @@ function AuthPage() {
         <div>
           <h1 className="font-display text-2xl font-semibold">Entrar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            O acesso é só por convite. Fale com o administrador se ainda não recebeu o seu.
+            {aba === "colaborador"
+              ? "Use o seu CPF e a sua senha. No primeiro acesso, a senha são os 6 primeiros números do seu CPF."
+              : "Acesso do dono da conta, por e-mail."}
           </p>
         </div>
 
-        <input
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="E-mail"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2"
-        />
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-sm">
+          {(["colaborador", "gestor"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => {
+                setAba(v);
+                setErro(null);
+              }}
+              className={`rounded-md px-3 py-1.5 font-medium ${aba === v ? "bg-card shadow-sm" : "text-muted-foreground"}`}
+            >
+              {v === "colaborador" ? "Sou da equipe" : "Sou o gestor"}
+            </button>
+          ))}
+        </div>
+
+        {aba === "colaborador" ? (
+          <>
+            <input
+              required
+              value={empresa}
+              onChange={(e) => setEmpresa(e.target.value)}
+              placeholder="Código da empresa"
+              autoCapitalize="none"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2"
+            />
+            <input
+              required
+              inputMode="numeric"
+              autoComplete="username"
+              value={cpf}
+              onChange={(e) => setCpf(e.target.value)}
+              placeholder="CPF (só números)"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2"
+            />
+          </>
+        ) : (
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="E-mail"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2"
+          />
+        )}
         <input
           type="password"
           required
@@ -109,13 +177,19 @@ function AuthPage() {
           {carregando ? "Aguarde..." : "Entrar"}
         </button>
 
-        <button
-          type="button"
-          onClick={esqueciSenha}
-          className="w-full text-sm text-muted-foreground underline"
-        >
-          Esqueci minha senha
-        </button>
+        {aba === "gestor" ? (
+          <button
+            type="button"
+            onClick={esqueciSenha}
+            className="w-full text-sm text-muted-foreground underline"
+          >
+            Esqueci minha senha
+          </button>
+        ) : (
+          <p className="text-center text-sm text-muted-foreground">
+            Esqueceu a senha ou o PIN? Peça ao seu gestor para redefinir.
+          </p>
+        )}
       </form>
     </main>
   );

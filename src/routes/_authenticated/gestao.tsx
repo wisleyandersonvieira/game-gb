@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
+import { criarAcessoLoja, redefinirSenhaLoja } from "@/servidor/acesso";
 import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 
@@ -399,6 +400,7 @@ function Gestao() {
           </section>
 
           <ResumoDasLojas />
+          <AcessoDasLojas suspensa={suspensa} />
           <LinksDeTv suspensa={suspensa} />
           <GruposTelegram lojas={ativas} suspensa={suspensa} />
         </>
@@ -500,6 +502,126 @@ function quandoFoi(iso: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   })}`;
+}
+
+/* Acesso do tablet de cada loja (Etapa 1.12, parte A)                 */
+function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
+  const qc = useQueryClient();
+  const { lojas } = useLojaAtiva();
+  const [senhaNova, setSenhaNova] = useState<{ usuario: string; senha: string; loja: string } | null>(null);
+
+  const conta = useQuery({
+    queryKey: ["codigo-da-empresa"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("contas").select("codigo, nome").single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const acessos = useQuery({
+    queryKey: ["acessos-loja"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("contasusuarios").select("lojaid").eq("papel", "loja");
+      if (error) throw error;
+      return new Set((data ?? []).map((a) => a.lojaid));
+    },
+  });
+
+  const criar = useMutation({
+    mutationFn: async (loja: { lojaid: number; nome: string }) => ({
+      ...(await criarAcessoLoja({ data: { lojaid: loja.lojaid } })),
+      loja: loja.nome,
+    }),
+    onSuccess: (r) => {
+      setSenhaNova(r);
+      qc.invalidateQueries({ queryKey: ["acessos-loja"] });
+    },
+  });
+
+  const redefinir = useMutation({
+    mutationFn: async (loja: { lojaid: number; nome: string }) => ({
+      ...(await redefinirSenhaLoja({ data: { lojaid: loja.lojaid } })),
+      loja: loja.nome,
+    }),
+    onSuccess: (r) => setSenhaNova(r),
+  });
+
+  const endereco = conta.data?.codigo ? `${window.location.origin}/e/${conta.data.codigo}` : null;
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold">Acesso da loja (tablet) e da equipe</h2>
+        <p className="text-xs text-muted-foreground">
+          O tablet do balcão entra com um acesso por loja. A senha aparece uma vez só, como o link de TV.
+          Se o tablet sumir, redefina a senha: os aparelhos abertos são desconectados na hora.
+        </p>
+      </div>
+
+      {endereco && (
+        <div className="rounded-lg border border-border bg-card p-3 text-sm">
+          <p className="font-medium">Link da equipe</p>
+          <p className="text-xs text-muted-foreground">
+            Imprima e cole no mural. Quem abrir este link já entra com o código da empresa preenchido:
+            depois é só CPF e senha.
+          </p>
+          <p className="mt-1 break-all font-mono text-xs">{endereco}</p>
+        </div>
+      )}
+
+      {senhaNova && (
+        <div className="space-y-2 rounded-lg border border-primary bg-card p-3 text-sm">
+          <p className="font-semibold">Acesso do tablet — {senhaNova.loja}</p>
+          <p>Usuário: <span className="font-mono">{senhaNova.usuario}</span></p>
+          <p>Senha: <span className="font-mono text-lg">{senhaNova.senha}</span></p>
+          <p className="text-xs text-muted-foreground">
+            Anote agora: esta senha não aparece de novo. Se perder, é só redefinir.
+          </p>
+          <button onClick={() => setSenhaNova(null)} className="rounded-md border border-border px-3 py-1 text-sm">
+            Guardei
+          </button>
+        </div>
+      )}
+      {(criar.isError || redefinir.isError) && (
+        <p className="text-sm text-destructive">{((criar.error ?? redefinir.error) as Error).message}</p>
+      )}
+
+      <ul className="space-y-2">
+        {lojas.map((l) => (
+          <li key={l.lojaid} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3">
+            <div>
+              <p className="font-medium">{l.nome}</p>
+              <p className="text-xs text-muted-foreground">
+                {acessos.data?.has(l.lojaid) ? "Acesso criado" : "Sem acesso de tablet"}
+              </p>
+            </div>
+            {acessos.data?.has(l.lojaid) ? (
+              <button
+                disabled={suspensa || redefinir.isPending}
+                onClick={() => {
+                  if (confirm(`Redefinir a senha do tablet da ${l.nome}? Os tablets abertos são desconectados.`)) {
+                    redefinir.mutate({ lojaid: l.lojaid, nome: l.nome });
+                  }
+                }}
+                className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+              >
+                Redefinir senha
+              </button>
+            ) : (
+              <button
+                disabled={suspensa || criar.isPending}
+                onClick={() => criar.mutate({ lojaid: l.lojaid, nome: l.nome })}
+                className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+              >
+                Criar acesso
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function LinksDeTv({ suspensa }: { suspensa: boolean }) {

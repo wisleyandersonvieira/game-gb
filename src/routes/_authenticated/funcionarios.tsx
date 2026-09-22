@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { criarAcessoColaborador, redefinirAcessoColaborador } from "@/servidor/acesso";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pontos } from "@/ui/Pontos";
 import { IconeTelegram, JanelaConvite, useDesligarTelegram, useVinculosTelegram } from "@/telegram/Telegram";
@@ -26,11 +27,35 @@ const DIAS_FOLGA = [
 
 const FORM_VAZIO = {
   nomecompleto: "",
+  cpf: "",
   cargo: "",
   setor: "",
   telefonewhatsapp: "",
   diadefolga: 0,
 };
+
+type SituacaoAcesso = {
+  temacesso: boolean; nuncaentrou: boolean; senhaprovisoria: boolean;
+  pinprovisorio: boolean; sempin: boolean; redefinidoem: string | null;
+};
+
+/** Frase curta sobre o acesso ao aplicativo, para o gestor saber o que falta. */
+function situacaoDoAcesso(a: SituacaoAcesso | undefined) {
+  if (!a?.temacesso) return "Sem acesso ao app";
+  if (a.nuncaentrou) return "Acesso criado, nunca entrou";
+  const pendentes = [
+    a.senhaprovisoria ? "senha provisória" : null,
+    a.sempin ? "PIN pendente" : a.pinprovisorio ? "PIN provisório" : null,
+  ].filter(Boolean);
+  return pendentes.length > 0 ? `Acesso ativo · ${pendentes.join(" e ")}` : "Acesso ativo";
+}
+
+/** CPF só aparece inteiro para quem edita; na lista fica escondido. */
+function cpfMascarado(cpf: string | null) {
+  const n = (cpf ?? "").replace(/\D/g, "");
+  if (n.length !== 11) return null;
+  return `***.${n.slice(3, 6)}.${n.slice(6, 9)}-**`;
+}
 
 const campo =
   "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
@@ -60,7 +85,7 @@ function Funcionarios() {
       const { data: pessoas, error } = await supabase
         .from("funcionarios")
         .select(
-          "funcionarioid, nomecompleto, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, horarionotificacao, horariosaida",
+          "funcionarioid, nomecompleto, cpf, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, horarionotificacao, horariosaida",
         )
         .order("nomecompleto");
       if (error) throw error;
@@ -128,6 +153,7 @@ function Funcionarios() {
     mutationFn: async () => {
       const dados = {
         nomecompleto: form.nomecompleto.trim(),
+        cpf: form.cpf.trim() || null,
         cargo: form.cargo.trim() || null,
         setor: form.setor.trim() || null,
         telefonewhatsapp: form.telefonewhatsapp.trim() || null,
@@ -173,6 +199,39 @@ function Funcionarios() {
     onSuccess: () => {
       setSelecionados([]);
       qc.invalidateQueries({ queryKey: ["equipe"] });
+    },
+  });
+
+  // Situação do acesso ao app (nunca traz CPF nem PIN: só as marcas).
+  const acessos = useQuery({
+    queryKey: ["acessos-equipe"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("situacao_dos_acessos");
+      if (error) throw error;
+      const mapa = new Map<number, {
+        temacesso: boolean; nuncaentrou: boolean; senhaprovisoria: boolean;
+        pinprovisorio: boolean; sempin: boolean; redefinidoem: string | null;
+      }>();
+      for (const a of data ?? []) mapa.set(a.funcionarioid, a);
+      return mapa;
+    },
+  });
+
+  const [senhaInicial, setSenhaInicial] = useState<{ nome: string; inicial: string; pinPendente: boolean } | null>(null);
+
+  const criarAcesso = useMutation({
+    mutationFn: (funcionarioid: number) => criarAcessoColaborador({ data: { funcionarioid } }),
+    onSuccess: (r) => {
+      setSenhaInicial(r);
+      qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
+    },
+  });
+
+  const redefinirAcesso = useMutation({
+    mutationFn: (funcionarioid: number) => redefinirAcessoColaborador({ data: { funcionarioid } }),
+    onSuccess: (r) => {
+      setSenhaInicial(r);
+      qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
     },
   });
 
@@ -247,6 +306,13 @@ function Funcionarios() {
             placeholder="Cargo"
             value={form.cargo}
             onChange={(e) => setForm({ ...form, cargo: e.target.value })}
+            className={campo}
+          />
+          <input
+            placeholder="CPF (só o gestor vê)"
+            inputMode="numeric"
+            value={form.cpf}
+            onChange={(e) => setForm({ ...form, cpf: e.target.value })}
             className={campo}
           />
           <input
@@ -497,6 +563,10 @@ function Funcionarios() {
                   ? `Jornada: ${hhmm(f.horarionotificacao)} às ${hhmm(f.horariosaida) ?? "(entrada + 8h20)"}`
                   : "Sem horário: não recebe as mensagens da jornada"}
               </p>
+              <p className="text-xs text-muted-foreground">
+                {cpfMascarado(f.cpf) ? `CPF ${cpfMascarado(f.cpf)}` : "Sem CPF cadastrado"} ·{" "}
+                {situacaoDoAcesso(acessos.data?.get(f.funcionarioid))}
+              </p>
               </div>
             </div>
 
@@ -518,6 +588,7 @@ function Funcionarios() {
                   setEditando(f.funcionarioid);
                   setForm({
                     nomecompleto: f.nomecompleto,
+                    cpf: f.cpf ?? "",
                     cargo: f.cargo ?? "",
                     setor: f.setor ?? "",
                     telefonewhatsapp: f.telefonewhatsapp ?? "",
@@ -530,6 +601,28 @@ function Funcionarios() {
               >
                 Editar
               </button>
+              {f.ativo && f.cpf && !acessos.data?.get(f.funcionarioid)?.temacesso && (
+                <button
+                  onClick={() => criarAcesso.mutate(f.funcionarioid)}
+                  disabled={criarAcesso.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm"
+                >
+                  Criar acesso
+                </button>
+              )}
+              {acessos.data?.get(f.funcionarioid)?.temacesso && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Redefinir o acesso de ${f.nomecompleto}? A senha e o PIN voltam para os 6 primeiros números do CPF, e quem estiver usando é desconectado.`)) {
+                      redefinirAcesso.mutate(f.funcionarioid);
+                    }
+                  }}
+                  disabled={redefinirAcesso.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm"
+                >
+                  Redefinir acesso
+                </button>
+              )}
               <button
                 onClick={() =>
                   alternarAtivo.mutate({ funcionarioid: f.funcionarioid, ativo: !f.ativo })
