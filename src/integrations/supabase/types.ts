@@ -3955,6 +3955,7 @@ export type Database = {
       }
       painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
       painel_da_tv: { Args: { p_codigo: string }; Returns: Json }
+      painel_inicio: { Args: { p_lojaid?: number }; Returns: Json }
       pasta_de_agendamento_minha: {
         Args: { p_editavel: boolean; p_nome: string }
         Returns: boolean

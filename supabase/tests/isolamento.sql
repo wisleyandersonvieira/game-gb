@@ -2798,6 +2798,93 @@ END $$;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- ===========================================================================
+-- 37. Tela Inicio (painel_inicio): so a propria conta, sem dado pessoal
+-- ===========================================================================
+
+SET ROLE authenticated;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM set_config('teste.inicio_b', public.painel_inicio(NULL)::text, false);
+  PERFORM set_config('teste.validar_b',
+    (SELECT count(*)::text FROM public.entregas WHERE statusvalidacao = 'Pendente'), false);
+END $$;
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE
+  v_todas jsonb;
+  v_a1    jsonb;
+  v_b     jsonb := current_setting('teste.inicio_b')::jsonb;
+  deu_erro boolean;
+BEGIN
+  RAISE NOTICE '37. tela Inicio';
+  v_todas := public.painel_inicio(NULL);
+  v_a1    := public.painel_inicio(10);
+
+  PERFORM public.exigir(v_todas ? 'cartoes' AND v_todas ? 'vendas' AND v_todas ? 'pontos' AND v_todas ? 'guia',
+                        'painel_inicio devolve cartoes, graficos e guia');
+  PERFORM public.exigir((v_todas->'cartoes'->>'validar')::integer
+                          = (SELECT count(*) FROM public.entregas WHERE statusvalidacao = 'Pendente'),
+                        'Inicio: "aguardando validacao" = entregas pendentes da propria conta');
+  PERFORM public.exigir((v_a1->'cartoes'->>'validar')::integer
+                          = (SELECT count(*) FROM public.entregas WHERE statusvalidacao = 'Pendente' AND lojaid = 10),
+                        'Inicio por loja conta so a loja escolhida');
+  PERFORM public.exigir((v_b->'cartoes'->>'validar')::integer = current_setting('teste.validar_b')::integer,
+                        'Inicio de B conta so as entregas de B');
+  PERFORM public.exigir((v_todas->'cartoes'->>'justificativas')::integer
+                          = (SELECT count(*) FROM public.justificativas WHERE status = 'Pendente'),
+                        'Inicio: justificativas pendentes da propria conta');
+  PERFORM public.exigir(jsonb_array_length(v_todas->'vendas') BETWEEN 28 AND 31, 'Inicio: um ponto por dia do mes');
+  PERFORM public.exigir(jsonb_array_length(v_todas->'pontos') = 8, 'Inicio: 8 semanas de pontos');
+
+  -- Nada de outra conta: nem nome de loja, nem de pessoa.
+  PERFORM public.exigir(v_todas::text NOT LIKE '%Loja B1%' AND v_todas::text NOT LIKE '%Bruno%'
+                        AND v_todas::text NOT LIKE '%conta B%',
+                        'Inicio de A nao mostra loja nem pessoa de B');
+  PERFORM public.exigir(v_b::text NOT LIKE '%Loja A%' AND v_b::text NOT LIKE '%Ana da conta A%',
+                        'Inicio de B nao mostra loja nem pessoa de A');
+
+  -- Nada de CPF, telefone ou cliente final.
+  PERFORM public.exigir(v_todas::text !~* '(cpf|telefone|cliente|whatsapp|caminho)',
+                        'Inicio nao traz CPF, telefone, cliente nem caminho de arquivo');
+  PERFORM public.exigir(NOT EXISTS (
+      SELECT 1 FROM public.funcionarios f
+       WHERE f.cpf IS NOT NULL AND length(f.cpf) > 3 AND v_todas::text LIKE '%' || f.cpf || '%'),
+    'Inicio nao contem o CPF de ninguem');
+  PERFORM public.exigir(v_todas::text NOT LIKE '%12345678909%' AND v_todas::text NOT LIKE '%988887777%',
+                        'Inicio nao contem CPF nem telefone do cliente da agenda');
+
+  -- Loja de outra conta: some, como se nao existisse.
+  BEGIN PERFORM public.painel_inicio(20); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'A nao abre o Inicio da loja de B');
+END $$;
+
+RESET ROLE;
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.painel_inicio(integer)'::regprocedure),
+                        'painel_inicio roda com a permissao de quem chama (a RLS vale)');
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.painel_inicio(integer)', 'EXECUTE'),
+                        'visitante sem login nao chama painel_inicio');
+  PERFORM public.exigir(has_function_privilege('authenticated', 'public.painel_inicio(integer)', 'EXECUTE'),
+                        'usuario logado chama painel_inicio');
+END $$;
+
+-- Login sem conta: nao ve nada.
+SET ROLE authenticated;
+SET teste.uid = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.painel_inicio(NULL); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'login sem conta nao abre o Inicio');
+END $$;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -2877,6 +2964,18 @@ BEGIN
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
     || coalesce(' (sobrou: ' || liberadas || ')', ''));
+
+  -- Nome e tema ficam no user_metadata, que o proprio usuario altera:
+  -- nenhuma policy nem funcao pode usar isso para decidir acesso.
+  SELECT string_agg(schemaname || '.' || tablename || '.' || policyname, ', ') INTO liberadas
+  FROM pg_policies
+  WHERE coalesce(qual, '') || coalesce(with_check, '') ~* '(user_meta|raw_user_meta)';
+  PERFORM public.exigir(liberadas IS NULL, 'nenhuma policy usa user_metadata' || coalesce(' (sobrou: ' || liberadas || ')', ''));
+  SELECT string_agg(p.proname, ', ') INTO liberadas
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname IN ('public', 'storage') AND p.prosrc ~* '(user_meta|raw_user_meta)';
+  PERFORM public.exigir(liberadas IS NULL, 'nenhuma funcao usa user_metadata' || coalesce(' (sobrou: ' || liberadas || ')', ''));
 
   -- Visitante sem login: so painel_da_tv, e nenhuma tabela.
   SELECT string_agg(p.proname, ', ') INTO liberadas

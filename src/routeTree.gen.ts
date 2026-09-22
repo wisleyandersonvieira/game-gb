@@ -25,6 +25,7 @@ import { Route as AuthenticatedExtratoRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedFeedbacksRouteImport } from './routes/_authenticated/feedbacks'
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
+import { Route as AuthenticatedInicioRouteImport } from './routes/_authenticated/inicio'
 import { Route as AuthenticatedJustificativasRouteImport } from './routes/_authenticated/justificativas'
 import { Route as AuthenticatedMetasRouteImport } from './routes/_authenticated/metas'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
@@ -124,6 +125,11 @@ const AuthenticatedGestaoRoute = AuthenticatedGestaoRouteImport.update({
   path: '/gestao',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedInicioRoute = AuthenticatedInicioRouteImport.update({
+  id: '/inicio',
+  path: '/inicio',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedJustificativasRoute =
   AuthenticatedJustificativasRouteImport.update({
     id: '/justificativas',
@@ -214,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
+  '/inicio': typeof AuthenticatedInicioRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
   '/metas': typeof AuthenticatedMetasRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -244,6 +251,7 @@ export interface FileRoutesByTo {
   '/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
+  '/inicio': typeof AuthenticatedInicioRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
   '/metas': typeof AuthenticatedMetasRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -277,6 +285,7 @@ export interface FileRoutesById {
   '/_authenticated/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
+  '/_authenticated/inicio': typeof AuthenticatedInicioRoute
   '/_authenticated/justificativas': typeof AuthenticatedJustificativasRoute
   '/_authenticated/metas': typeof AuthenticatedMetasRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
@@ -310,6 +319,7 @@ export interface FileRouteTypes {
     | '/feedbacks'
     | '/funcionarios'
     | '/gestao'
+    | '/inicio'
     | '/justificativas'
     | '/metas'
     | '/onboarding'
@@ -340,6 +350,7 @@ export interface FileRouteTypes {
     | '/feedbacks'
     | '/funcionarios'
     | '/gestao'
+    | '/inicio'
     | '/justificativas'
     | '/metas'
     | '/onboarding'
@@ -372,6 +383,7 @@ export interface FileRouteTypes {
     | '/_authenticated/feedbacks'
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
+    | '/_authenticated/inicio'
     | '/_authenticated/justificativas'
     | '/_authenticated/metas'
     | '/_authenticated/onboarding'
@@ -512,6 +524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedGestaoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/inicio': {
+      id: '/_authenticated/inicio'
+      path: '/inicio'
+      fullPath: '/inicio'
+      preLoaderRoute: typeof AuthenticatedInicioRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/justificativas': {
       id: '/_authenticated/justificativas'
       path: '/justificativas'
@@ -624,6 +643,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFeedbacksRoute: typeof AuthenticatedFeedbacksRoute
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
+  AuthenticatedInicioRoute: typeof AuthenticatedInicioRoute
   AuthenticatedJustificativasRoute: typeof AuthenticatedJustificativasRoute
   AuthenticatedMetasRoute: typeof AuthenticatedMetasRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
@@ -648,6 +668,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFeedbacksRoute: AuthenticatedFeedbacksRoute,
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
+  AuthenticatedInicioRoute: AuthenticatedInicioRoute,
   AuthenticatedJustificativasRoute: AuthenticatedJustificativasRoute,
   AuthenticatedMetasRoute: AuthenticatedMetasRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,

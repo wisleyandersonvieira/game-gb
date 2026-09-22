@@ -1,6 +1,6 @@
 import { supabase } from "./client";
 
-export type Destino = "/admin" | "/gestao" | "/sem-acesso" | "/auth";
+export type Destino = "/admin" | "/inicio" | "/sem-acesso" | "/auth";
 
 /**
  * Para onde mandar quem acabou de entrar.
@@ -16,7 +16,7 @@ export async function destinoDoUsuario(): Promise<Destino> {
   if (admin === true) return "/admin";
 
   const { data: conta } = await supabase.rpc("minha_conta");
-  if (conta !== null && conta !== undefined) return "/gestao";
+  if (conta !== null && conta !== undefined) return "/inicio";
 
   return "/sem-acesso";
 }
