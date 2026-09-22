@@ -641,7 +641,7 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
                 {k.revogadoem ? (
                   "revogado"
                 ) : (
-                  <span className={quandoFoi(k.ultimouso) === "no ar agora" ? "text-primary" : undefined}>
+                  <span className={quandoFoi(k.ultimouso) === "no ar agora" ? "text-sucesso" : undefined}>
                     {quandoFoi(k.ultimouso)}
                   </span>
                 )}

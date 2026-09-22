@@ -250,7 +250,7 @@ function Conteudo() {
             </button>
           </form>
 
-          {aviso && <p className={`text-sm ${aviso.grave ? "text-destructive" : "text-primary"}`}>{aviso.texto}</p>}
+          {aviso && <p className={`text-sm ${aviso.grave ? "text-destructive" : "text-sucesso"}`}>{aviso.texto}</p>}
 
           <div className="flex gap-1">
             {(

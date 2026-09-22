@@ -156,7 +156,7 @@ function Extrato() {
                       {m.descricao}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{m.loja ?? "—"}</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${m.pontos > 0 ? "text-primary" : "text-destructive"}`}>
+                    <td className={`px-3 py-2 text-right font-semibold ${m.pontos > 0 ? "text-sucesso" : "text-destructive"}`}>
                       {m.pontos > 0 ? `+${m.pontos}` : m.pontos}
                     </td>
                     <td className={`px-3 py-2 text-right ${m.saldoapos < 0 ? "text-destructive" : ""}`}>{m.saldoapos}</td>

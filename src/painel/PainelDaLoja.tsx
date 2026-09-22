@@ -135,8 +135,8 @@ export function BarraDoDia({
     <div className="space-y-2">
       <div className={`overflow-hidden rounded-full bg-muted ${tv ? "h-10" : compacta ? "h-3" : "h-6"}`}>
         <div className="flex h-full">
-          <div className="h-full bg-primary transition-all duration-700" style={{ width: `${pAprovado}%` }} />
-          <div className="h-full bg-primary/35 transition-all duration-700" style={{ width: `${pValidacao}%` }} />
+          <div className="h-full bg-sucesso transition-all duration-700" style={{ width: `${pAprovado}%` }} />
+          <div className="h-full bg-sucesso/35 transition-all duration-700" style={{ width: `${pValidacao}%` }} />
         </div>
       </div>
       {!compacta && (

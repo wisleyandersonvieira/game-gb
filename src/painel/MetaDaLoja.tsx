@@ -42,7 +42,7 @@ function Barra({ percentual, bateu, alta }: { percentual: number; bateu: boolean
   return (
     <div className={`overflow-hidden rounded-full bg-muted ${alta}`}>
       <div
-        className={`h-full transition-all duration-700 ${bateu ? "bg-primary" : "bg-accent"}`}
+        className={`h-full transition-all duration-700 ${bateu ? "bg-sucesso" : "bg-accent"}`}
         style={{ width: `${Math.min(100, Math.max(0, percentual))}%` }}
       />
     </div>
@@ -96,7 +96,7 @@ export function MetaCartao({ meta, tv = false }: { meta: MetaPainel; tv?: boolea
       {meta.dia ? (
         <div className="space-y-1">
           <div className="flex items-baseline justify-between">
-            <strong className={`${tam.grande} ${meta.dia.bateu ? "text-primary" : ""}`}>
+            <strong className={`${tam.grande} ${meta.dia.bateu ? "text-sucesso" : ""}`}>
               {meta.dia.bateu ? "🎉 " : ""}
               {pct(meta.dia.percentual)}
             </strong>
@@ -141,7 +141,7 @@ export function TelaDaMeta({ meta }: { meta: NonNullable<MetaPainel> }) {
           <p className="text-2xl font-semibold text-muted-foreground sm:text-4xl">
             Meta do dia{meta.dia.especial ? ` · ${meta.dia.especial}` : ""}
           </p>
-          <p className={`text-6xl font-bold sm:text-9xl ${meta.dia.bateu ? "text-primary" : ""}`}>
+          <p className={`text-6xl font-bold sm:text-9xl ${meta.dia.bateu ? "text-sucesso" : ""}`}>
             {meta.dia.bateu ? "🎉 " : ""}
             {pct(meta.dia.percentual)}
           </p>
@@ -151,7 +151,7 @@ export function TelaDaMeta({ meta }: { meta: NonNullable<MetaPainel> }) {
               {reais(meta.dia.vendido)} de {reais(meta.dia.meta)}
             </p>
           )}
-          {meta.dia.bateu && <p className="text-2xl font-bold text-primary sm:text-4xl">Meta do dia batida! Parabéns, equipe!</p>}
+          {meta.dia.bateu && <p className="text-2xl font-bold text-sucesso sm:text-4xl">Meta do dia batida! Parabéns, equipe!</p>}
         </section>
       )}
       {meta.mes && (

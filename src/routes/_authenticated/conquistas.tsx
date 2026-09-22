@@ -305,7 +305,7 @@ function Cadastro() {
         >
           {criar.isPending ? "Criando..." : "Criar conquista"}
         </button>
-        {recado && <p className="text-sm text-primary">{recado}</p>}
+        {recado && <p className="text-sm text-sucesso">{recado}</p>}
         {criar.isError && <p className="text-sm text-destructive">{(criar.error as Error).message}</p>}
       </form>
 

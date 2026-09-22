@@ -190,7 +190,7 @@ function Abrir({ lojaid }: { lojaid: number }) {
       >
         {abrir.isPending ? "Abrindo..." : "Abrir solicitação"}
       </button>
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {abrir.isError && <p className="text-sm text-destructive">{(abrir.error as Error).message}</p>}
     </form>
   );

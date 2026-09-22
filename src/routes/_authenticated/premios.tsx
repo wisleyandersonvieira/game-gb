@@ -291,7 +291,7 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
       </button>
       <p className="text-xs text-muted-foreground">Retirado na loja {loja?.nome}.</p>
 
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {registrar.isError && <p className="text-sm text-destructive">{(registrar.error as Error).message}</p>}
     </form>
   );
@@ -303,7 +303,7 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
 
 const COR_STATUS: Record<string, string> = {
   Pendente: "border-accent text-accent",
-  Entregue: "border-primary text-primary",
+  Entregue: "border-sucesso text-sucesso",
   Cancelado: "border-border text-muted-foreground",
   Estornado: "border-destructive text-destructive",
 };

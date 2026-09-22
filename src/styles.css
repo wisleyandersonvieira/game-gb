@@ -1,8 +1,57 @@
 @import "tailwindcss";
 
+/* Variantes "dark:" seguem a classe no <html>, não o sistema operacional. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   Cores do sistema: UM lugar só.
+   - primary  = azul cobalto: ações (botões, links, item ativo do menu)
+   - sucesso  = verde: deu certo, meta batida, aprovado
+   - accent   = amarelo: pendente, atenção
+   - destructive = vermelho: erro, recusa, estorno
+   Tema claro é o padrão; o escuro sobrescreve em html.dark.
+   ========================================================================== */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #475569;
+  --color-border: #e2e8f0;
+  --color-primary: #1d4ed8;
+  --color-primary-foreground: #ffffff;
+  --color-sucesso: #15803d;
+  --color-sucesso-foreground: #ffffff;
+  --color-accent: #a16207;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #b91c1c;
+  --color-destructive-foreground: #ffffff;
+}
+
+html.dark {
+  --color-background: #0b1220;
+  --color-foreground: #e5e7eb;
+  --color-card: #111a2e;
+  --color-card-foreground: #e5e7eb;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #1f2a44;
+  --color-primary: #60a5fa;
+  --color-primary-foreground: #0b1220;
+  --color-sucesso: #4ade80;
+  --color-sucesso-foreground: #0b1220;
+  --color-accent: #facc15;
+  --color-accent-foreground: #0b1220;
+  --color-destructive: #f87171;
+  --color-destructive-foreground: #0b1220;
+  color-scheme: dark;
+}
+
+/* Modo TV: continua exatamente como era (escuro, verde de destaque). */
+html.tema-tv {
   --color-background: oklch(0.18 0.02 260);
   --color-foreground: oklch(0.97 0.01 260);
   --color-card: oklch(0.23 0.025 260);
@@ -12,13 +61,35 @@
   --color-border: oklch(0.32 0.02 260);
   --color-primary: oklch(0.72 0.17 145);
   --color-primary-foreground: oklch(0.18 0.02 260);
+  --color-sucesso: oklch(0.72 0.17 145);
+  --color-sucesso-foreground: oklch(0.18 0.02 260);
   --color-accent: oklch(0.78 0.16 85);
   --color-accent-foreground: oklch(0.18 0.02 260);
   --color-destructive: oklch(0.63 0.2 25);
   --color-destructive-foreground: oklch(0.97 0.01 260);
+  color-scheme: dark;
 }
 
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
+}
+
+/* Celular: área de toque grande e nada de rolagem para o lado. */
+html,
+body {
+  overflow-x: hidden;
+}
+@media (max-width: 639px) {
+  button,
+  select,
+  textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+    min-height: 44px;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 20px;
+    height: 20px;
+  }
 }

@@ -168,7 +168,7 @@ function CartaoRelato({ relato }: { relato: Relato }) {
           Marcar como tratado
         </button>
       </div>
-      {ok && <p className="text-xs text-primary">{ok}</p>}
+      {ok && <p className="text-xs text-sucesso">{ok}</p>}
       {tratar.isError && <p className="text-xs text-destructive">{(tratar.error as Error).message}</p>}
     </div>
   );

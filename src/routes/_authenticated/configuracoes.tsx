@@ -295,7 +295,7 @@ function Linha({
           100 pontos = {reais(100 * taxaPrevia)} · 1.000 pontos = {reais(1000 * taxaPrevia)}
         </p>
       )}
-      {ok && <p className="text-xs text-primary">Salvo.</p>}
+      {ok && <p className="text-xs text-sucesso">Salvo.</p>}
       {salvar.isError && <p className="text-xs text-destructive">{(salvar.error as Error).message}</p>}
     </form>
   );

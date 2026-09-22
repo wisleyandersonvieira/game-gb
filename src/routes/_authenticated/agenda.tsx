@@ -783,7 +783,7 @@ function Detalhe({ a, pessoas }: { a: Agendamento; pessoas: { funcionarioid: num
         </form>
       )}
 
-      {aviso && <p className={`text-sm ${aviso.grave ? "text-destructive" : "text-primary"}`}>{aviso.texto}</p>}
+      {aviso && <p className={`text-sm ${aviso.grave ? "text-destructive" : "text-sucesso"}`}>{aviso.texto}</p>}
 
       <Anexos a={a} />
       <Historico agendamentoid={a.agendamentoid} />

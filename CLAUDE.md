@@ -22,6 +22,7 @@
 - A chave `service_role` só existe em variável de servidor (nunca `VITE_`) e só é usada em funções de servidor para tarefas de admin (convites).
 - **Funções SQL nascem sem permissão para ninguém** (negadas por padrão desde a Etapa 1.6). Toda função nova precisa de `GRANT EXECUTE ... TO authenticated` explícito na própria migração. Função `security definer` que recebe `contaid` ou `lojaid` como parâmetro **nunca** é liberada: ela é interna, chamada só por outra função que confere quem pediu. O teste de isolamento reprova qualquer exceção.
 - O visitante sem login (`anon`) só chama `painel_da_tv` e não lê nenhuma tabela.
+- **`user_metadata` do Supabase Auth (tema, nome de exibição) é editável pelo próprio usuário.** Serve só para preferências de exibição. **Nunca** use esses dados em policies, funções de permissão ou qualquer decisão de acesso. O teste de isolamento reprova policy ou função que os leia.
 - O canal confidencial só pode ser lido pelo master da conta. Nenhum papel futuro (gerente, líder) terá acesso. A entrada é só pelo servidor, sem identificar quem envia, e nenhum log pode guardar o texto junto com quem mandou.
 
 ## Stack

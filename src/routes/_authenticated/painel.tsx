@@ -209,7 +209,7 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
         {registrar.isPending ? "Registrando..." : "Registrar"}
       </button>
 
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {registrar.isError && (
         <p className="text-sm text-destructive">{(registrar.error as Error).message}</p>
       )}
@@ -371,7 +371,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
           {aprovadas.map((e) => (
             <Cartao key={e.entregaid} e={e}>
               <p className="text-xs text-muted-foreground">
-                Aprovada em {dataHora(e.dataaprovacao)} · <strong className="text-primary">+{e.pontosganhos}</strong>
+                Aprovada em {dataHora(e.dataaprovacao)} · <strong className="text-sucesso">+{e.pontosganhos}</strong>
               </p>
               <BotaoComMotivo
                 rotulo="Estornar"

@@ -23,7 +23,7 @@ function menosUmDia(iso: string) {
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 function corDaNota(n: number) {
-  if (n >= 8) return "text-primary";
+  if (n >= 8) return "text-sucesso";
   if (n >= 5) return "text-accent";
   return "text-destructive";
 }
@@ -170,7 +170,7 @@ function Registrar() {
       <p className="text-xs text-muted-foreground">
         Só hoje ou ontem. A nota não se altera depois; se foi lançada errado, anule com motivo (o bônus é estornado).
       </p>
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {registrar.isError && <p className="text-sm text-destructive">{(registrar.error as Error).message}</p>}
     </form>
   );

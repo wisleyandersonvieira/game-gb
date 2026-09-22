@@ -7,6 +7,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import appCss from "@/styles.css?url";
+import { SCRIPT_TEMA } from "@/ui/tema";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -22,9 +23,10 @@ export const Route = createRootRoute({
 function RootLayout() {
   const [queryClient] = useState(() => new QueryClient());
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }} />
       </head>
       <body>
         <QueryClientProvider client={queryClient}>

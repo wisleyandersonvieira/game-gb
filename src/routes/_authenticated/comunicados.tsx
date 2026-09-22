@@ -135,7 +135,7 @@ function Comunicados() {
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium">{c.titulo}</p>
                     <p className="text-sm text-muted-foreground">
-                      <strong className={cientes === destes.length ? "text-primary" : "text-accent"}>
+                      <strong className={cientes === destes.length ? "text-sucesso" : "text-accent"}>
                         {cientes} de {destes.length}
                       </strong>{" "}
                       cientes · {dataHoraBr(c.datacriacao)}
@@ -417,7 +417,7 @@ function Detalhe({ c, ciencias }: { c: Comunicado; ciencias: Ciencia[] }) {
         </div>
       )}
 
-      {aviso && <p className={`text-sm ${aviso.grave ? "text-destructive" : "text-primary"}`}>{aviso.texto}</p>}
+      {aviso && <p className={`text-sm ${aviso.grave ? "text-destructive" : "text-sucesso"}`}>{aviso.texto}</p>}
 
       <div className="space-y-1">
         {ordenadas.map((s) => (
@@ -425,7 +425,7 @@ function Detalhe({ c, ciencias }: { c: Comunicado; ciencias: Ciencia[] }) {
             <span>
               {nome.get(s.funcionarioid) ?? "—"}
               {s.statusassinatura === "Ciente" ? (
-                <span className="ml-2 text-xs text-primary">
+                <span className="ml-2 text-xs text-sucesso">
                   ✓ ciente em {dataHoraBr(s.dataciencia!)} {s.origem === "gestor" ? "(registrado pelo gestor)" : ""}
                   {s.pontospagos > 0 && ` · +${s.pontospagos} pontos`}
                 </span>

@@ -17,7 +17,7 @@ const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 
 const COR: Record<string, string> = {
   Pendente: "border-accent text-accent",
-  Aceita: "border-primary text-primary",
+  Aceita: "border-sucesso text-sucesso",
   Recusada: "border-destructive text-destructive",
 };
 
@@ -295,7 +295,7 @@ function Nova() {
           }}
         />
       )}
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
     </div>
   );
 }

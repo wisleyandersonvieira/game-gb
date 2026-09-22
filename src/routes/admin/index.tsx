@@ -25,7 +25,7 @@ const campo =
   "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
 
 const CORES_STATUS: Record<string, string> = {
-  ativa: "text-primary",
+  ativa: "text-sucesso",
   suspensa: "text-accent",
   cancelada: "text-destructive",
 };

@@ -59,7 +59,7 @@ type TarefaAnalise = {
 
 const COR_STATUS: Record<string, string> = {
   Pendente: "border-accent text-accent",
-  Aprovada: "border-primary text-primary",
+  Aprovada: "border-sucesso text-sucesso",
   Recusada: "border-destructive text-destructive",
   Estornada: "border-destructive text-destructive",
 };
@@ -234,7 +234,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
             </p>
             {pendencias.isLoading && <p className="text-muted-foreground">Carregando...</p>}
             {pendencias.isError && <p className="text-sm text-destructive">{(pendencias.error as Error).message}</p>}
-            {recado && <p className="text-sm text-primary">{recado}</p>}
+            {recado && <p className="text-sm text-sucesso">{recado}</p>}
             {listaPendencias.length > 0 && (
               <p className="text-sm">
                 <strong>{listaPendencias.length}</strong> {listaPendencias.length === 1 ? "tarefa" : "tarefas"} sem
@@ -416,7 +416,7 @@ function PorTarefa({ de, ate }: { de: string; ate: string }) {
             {lista.map((t) => (
               <tr key={t.titulo} className="border-t border-border">
                 <td className="px-3 py-2">{t.titulo}</td>
-                <td className="px-3 py-2 text-right text-primary">{t.aprovadas}</td>
+                <td className="px-3 py-2 text-right text-sucesso">{t.aprovadas}</td>
                 <td className={`px-3 py-2 text-right ${t.recusadas > 0 ? "text-destructive" : ""}`}>{t.recusadas}</td>
                 <td className={`px-3 py-2 text-right ${t.estornadas > 0 ? "text-destructive" : ""}`}>{t.estornadas}</td>
                 <td className="px-3 py-2 text-right">{t.naoseaplica}</td>

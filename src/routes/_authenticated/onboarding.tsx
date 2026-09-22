@@ -132,7 +132,7 @@ function Pessoas() {
                   {!p.ativo && <span className="ml-2 text-xs text-muted-foreground">(desativado)</span>}
                 </button>
                 {st ? (
-                  <span className={`text-sm ${st.statusworkflow === "Concluído" ? "text-primary" : "text-accent"}`}>
+                  <span className={`text-sm ${st.statusworkflow === "Concluído" ? "text-sucesso" : "text-accent"}`}>
                     {st.statusworkflow === "Concluído" ? `✓ Concluído em ${dataHoraBr(st.concluidoem!)}` : `${feitos} de ${itens.length} etapas`}
                   </span>
                 ) : (

@@ -45,6 +45,18 @@ function TelaTv() {
     },
   });
 
+  // A TV tem paleta própria (escura), independente do tema de quem usa o app.
+  useEffect(() => {
+    const html = document.documentElement;
+    const eraEscuro = html.classList.contains("dark");
+    html.classList.add("tema-tv");
+    html.classList.remove("dark");
+    return () => {
+      html.classList.remove("tema-tv");
+      if (eraEscuro) html.classList.add("dark");
+    };
+  }, []);
+
   // Mantém a tela acesa (celulares e TVs com navegador que suportam).
   useEffect(() => {
     let trava: { release: () => Promise<void> } | null = null;

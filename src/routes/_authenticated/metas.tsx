@@ -233,7 +233,7 @@ function Lancar({ lojaid }: { lojaid: number }) {
           de bater, os pontos são estornados de quem recebeu; se voltar a bater, são pagos de novo. Só o mês atual e o
           anterior podem ser lançados ou corrigidos.
         </p>
-        {recado && <p className="text-sm text-primary">{recado}</p>}
+        {recado && <p className="text-sm text-sucesso">{recado}</p>}
         {lancar.isError && <p className="text-sm text-destructive">{(lancar.error as Error).message}</p>}
       </form>
 
@@ -280,7 +280,7 @@ function Lancar({ lojaid }: { lojaid: number }) {
                     </td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{d.meta ? reais(d.meta) : "—"}</td>
                     <td className="px-3 py-2 text-right">{d.vendido != null ? reais(d.vendido) : "—"}</td>
-                    <td className={`px-3 py-2 text-right ${d.bateu ? "font-semibold text-primary" : ""}`}>{percentual(d)}</td>
+                    <td className={`px-3 py-2 text-right ${d.bateu ? "font-semibold text-sucesso" : ""}`}>{percentual(d)}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {d.bateu && d.premiados > 0
                         ? `🎉 +${d.pontos} para ${d.premiados} ${d.premiados === 1 ? "pessoa" : "pessoas"}`
@@ -303,7 +303,7 @@ function Cartao({ titulo, valor, destaque }: { titulo: string; valor: string; de
     <div className="rounded-xl border border-border bg-card p-4">
       <p className="text-xs text-muted-foreground">{titulo}</p>
       <p className="text-lg font-bold">{valor}</p>
-      {destaque && <p className="text-xs text-primary">{destaque}</p>}
+      {destaque && <p className="text-xs text-sucesso">{destaque}</p>}
     </div>
   );
 }
@@ -414,7 +414,7 @@ function MetaDoMes({ lojaid }: { lojaid: number }) {
       >
         {r?.mes ? "Salvar alterações" : "Cadastrar meta do mês"}
       </button>
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {salvar.isError && <p className="text-sm text-destructive">{(salvar.error as Error).message}</p>}
     </form>
   );
@@ -514,7 +514,7 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
         Salvar
       </button>
       <p className="text-xs text-muted-foreground">Mudar aqui não muda os dias já lançados: cada lançamento guarda a meta daquele dia.</p>
-      {recado && <p className="text-sm text-primary">{recado}</p>}
+      {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {salvar.isError && <p className="text-sm text-destructive">{(salvar.error as Error).message}</p>}
     </form>
   );
