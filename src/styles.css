@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Fontes da marca STGame (só os pesos usados; o navegador baixa só o alfabeto
+   que a página precisa). */
+@import "@fontsource/sora/600.css";
+@import "@fontsource/sora/700.css";
+@import "@fontsource/sora/800.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
 /* Variantes "dark:" seguem a classe no <html>, não o sistema operacional. */
 @custom-variant dark (&:where(.dark, .dark *));
 
