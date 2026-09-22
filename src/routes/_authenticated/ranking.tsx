@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { MesesFechados } from "@/ranking/MesesFechados";
 import { Pontos } from "@/ui/Pontos";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/ranking")({
   component: Ranking,
@@ -51,18 +52,17 @@ function Ranking() {
 
   if (carregando) {
     return (
-      <div className="mx-auto max-w-3xl space-y-6">
+      <Pagina>
         <p className="text-muted-foreground">Carregando...</p>
-      </div>
+      </Pagina>
     );
   }
 
   if (lojas.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl space-y-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Ranking</h1>
+      <Pagina titulo="Ranking">
         <AvisoSemLoja />
-      </div>
+      </Pagina>
     );
   }
 
@@ -71,8 +71,7 @@ function Ranking() {
     `rounded-lg px-3 py-1.5 text-sm ${ativo ? "bg-card font-semibold text-foreground" : "text-muted-foreground"}`;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Ranking</h1>
+    <Pagina titulo="Ranking">
 
       <div className="flex flex-wrap gap-3 sm:gap-6">
         <div className="flex flex-wrap gap-1 rounded-lg border border-border p-1">
@@ -112,7 +111,7 @@ function Ranking() {
           linhas={linhas}
         />
       )}
-    </div>
+    </Pagina>
   );
 }
 

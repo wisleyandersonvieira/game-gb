@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { FolgaDeHoje } from "@/painel/FolgaDeHoje";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/painel")({
   component: Quadro,
@@ -49,33 +50,33 @@ function Quadro() {
 
   if (carregando) {
     return (
-      <div className="mx-auto max-w-6xl space-y-6">
+      <Pagina>
         <p className="text-muted-foreground">Carregando...</p>
-      </div>
+      </Pagina>
     );
   }
 
   if (lojas.length === 0 || lojaAtiva === null) {
     return (
-      <div className="mx-auto max-w-6xl space-y-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Quadro</h1>
+      <Pagina titulo="Quadro">
         <AvisoSemLoja />
-      </div>
+      </Pagina>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Quadro</h1>
+    <Pagina
+      titulo="Quadro"
+      acoes={
         <p className="text-sm text-muted-foreground">
           Loja <strong className="text-foreground">{loja?.nome}</strong>
         </p>
-      </div>
+      }
+    >
       <RegistrarEntrega lojaid={lojaAtiva} />
       <FolgaDeHoje lojaid={lojaAtiva} />
       <Validacao lojaid={lojaAtiva} />
-    </div>
+    </Pagina>
   );
 }
 

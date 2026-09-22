@@ -2,10 +2,10 @@
 // (o Supabase Auth só deixa o usuário mexer nos próprios dados).
 import { useEffect, useState } from "react";
 import { Botao } from "@/ui/Botao";
-import { CabecalhoPagina } from "@/ui/CabecalhoPagina";
 import { escolherTema, temaAtual, type Tema } from "@/ui/tema";
 import { salvarNome, useUsuario } from "@/ui/usuario";
 import { MeuTelegram } from "@/telegram/Telegram";
+import { Pagina } from "@/ui/Pagina";
 
 const campo = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
 
@@ -37,8 +37,7 @@ export function MeuPerfil({ telegram = false }: { telegram?: boolean }) {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <CabecalhoPagina titulo="Meu perfil" descricao="Como você aparece no sistema. Vale só para o seu login." />
+    <Pagina titulo="Meu perfil" descricao="Como você aparece no sistema. Vale só para o seu login." leitura>
 
       <form onSubmit={salvar} className="space-y-3 rounded-xl border border-border bg-card p-4">
         <div className="space-y-1">
@@ -96,6 +95,6 @@ export function MeuPerfil({ telegram = false }: { telegram?: boolean }) {
       </section>
 
       {telegram && <MeuTelegram />}
-    </div>
+    </Pagina>
   );
 }

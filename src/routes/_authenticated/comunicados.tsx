@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { dataHoraBr, pdfComunicado, pdfReciboCiencia } from "@/rh/pdf";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/comunicados")({
   component: Comunicados,
@@ -91,8 +92,7 @@ function Comunicados() {
   const lista = (comunicados.data ?? []).filter((c) => (aba === "arquivados" ? c.status === "Arquivado" : c.status === "Publicado"));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Comunicados</h1>
+    <Pagina titulo="Comunicados">
       <p className="text-sm text-muted-foreground">
         Avisos para a equipe, com registro de quem leu e deu ciência. Por enquanto o gestor registra a ciência de cada
         pessoa (com data e hora); quando houver o portal ou o bot, o próprio funcionário confirma.
@@ -151,7 +151,7 @@ function Comunicados() {
           {!comunicados.isLoading && lista.length === 0 && <p className="text-sm text-muted-foreground">Nenhum comunicado aqui.</p>}
         </div>
       )}
-    </div>
+    </Pagina>
   );
 }
 

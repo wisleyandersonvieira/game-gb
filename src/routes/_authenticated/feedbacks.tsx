@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/feedbacks")({
   component: Feedbacks,
@@ -43,15 +44,14 @@ function usePessoas() {
 
 function Feedbacks() {
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Feedbacks</h1>
+    <Pagina titulo="Feedbacks">
       <p className="text-sm text-muted-foreground">
         A nota que cada pessoa dá para o próprio dia, de 0 a 10. Enquanto o bot não chega, o gestor registra (fica marcado
         como "registrado pelo gestor"). Um por pessoa por dia; o bônus entra no saldo e aparece no extrato.
       </p>
       <Registrar />
       <Lista />
-    </div>
+    </Pagina>
   );
 }
 

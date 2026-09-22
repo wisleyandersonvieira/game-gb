@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { hora, PainelDaLoja, type DadosPainel } from "@/painel/PainelDaLoja";
 import { soltarFogosUmaVezPorDia } from "@/painel/fogos";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/operacional")({
   component: Operacional,
@@ -15,18 +16,17 @@ function Operacional() {
 
   if (carregando) {
     return (
-      <div className="mx-auto max-w-7xl space-y-6">
+      <Pagina>
         <p className="text-muted-foreground">Carregando...</p>
-      </div>
+      </Pagina>
     );
   }
 
   if (lojas.length === 0 || lojaAtiva === null) {
     return (
-      <div className="mx-auto max-w-7xl space-y-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Painel</h1>
+      <Pagina titulo="Painel">
         <AvisoSemLoja />
-      </div>
+      </Pagina>
     );
   }
 
@@ -80,9 +80,9 @@ function PainelLogado({ lojaid }: { lojaid: number }) {
   }, [dados, lojaid]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Painel {dados ? `· ${dados.loja}` : ""}</h1>
+    <Pagina
+      titulo={<>Painel {dados ? `· ${dados.loja}` : ""}</>}
+      acoes={
         <p className={`text-sm ${painel.isError ? "text-destructive" : "text-muted-foreground"}`}>
           {painel.isError
             ? "Erro ao atualizar. Tentando de novo..."
@@ -90,8 +90,9 @@ function PainelLogado({ lojaid }: { lojaid: number }) {
               ? `Atualizado às ${hora(dados.atualizadoem)} · ao vivo`
               : "Carregando..."}
         </p>
-      </div>
+      }
+    >
       {dados && <PainelDaLoja dados={dados} />}
-    </div>
+    </Pagina>
   );
 }

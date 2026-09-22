@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { pdfReciboResgate } from "@/rh/pdf";
 import { Pontos } from "@/ui/Pontos";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/premios")({
   component: Premios,
@@ -34,24 +35,22 @@ function Premios() {
 
   if (carregando) {
     return (
-      <div className="mx-auto max-w-5xl space-y-6">
+      <Pagina>
         <p className="text-muted-foreground">Carregando...</p>
-      </div>
+      </Pagina>
     );
   }
 
   if (lojas.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl space-y-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Prêmios</h1>
+      <Pagina titulo="Prêmios">
         <AvisoSemLoja />
-      </div>
+      </Pagina>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Prêmios</h1>
+    <Pagina titulo="Prêmios">
 
       <div className="flex gap-2 border-b border-border">
         {(
@@ -76,7 +75,7 @@ function Premios() {
       {aba === "resgatar" && <RegistrarResgate aoRegistrar={() => setAba("resgates")} />}
       {aba === "resgates" && <ListaDeResgates />}
       {aba === "catalogo" && <Catalogo />}
-    </div>
+    </Pagina>
   );
 }
 

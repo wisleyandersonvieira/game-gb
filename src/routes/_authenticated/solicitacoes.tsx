@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/solicitacoes")({
   component: Solicitacoes,
@@ -40,8 +41,7 @@ function Solicitacoes() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Solicitações</h1>
+    <Pagina titulo="Solicitações">
       {carregando ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : lojas.length === 0 || lojaAtiva === null ? (
@@ -56,7 +56,7 @@ function Solicitacoes() {
           <Lista lojaid={lojaAtiva} />
         </>
       )}
-    </div>
+    </Pagina>
   );
 }
 

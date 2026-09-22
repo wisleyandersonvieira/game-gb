@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { validarArquivo } from "@/rh/arquivos";
 import { dataHoraBr } from "@/rh/pdf";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/documentos-pessoais")({
   component: DocumentosPessoais,
@@ -51,8 +52,7 @@ function DocumentosPessoais() {
   });
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Documentos pessoais</h1>
+    <Pagina titulo="Documentos pessoais">
       <p className="text-sm text-muted-foreground">
         Holerites, recibos, contratos, atestados e outros documentos de cada pessoa. Só o responsável pela conta vê esta
         tela, e cada vez que um documento é aberto fica registrado quem abriu e quando. Documentos com ciência ou com
@@ -65,7 +65,7 @@ function DocumentosPessoais() {
         </p>
       )}
       {master.data && <Conteudo />}
-    </div>
+    </Pagina>
   );
 }
 

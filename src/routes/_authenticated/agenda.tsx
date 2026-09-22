@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { validarArquivo } from "@/rh/arquivos";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/agenda")({
   component: Agenda,
@@ -125,8 +126,7 @@ function Agenda() {
   const [aba, setAba] = useState<"lista" | "novo" | "tipos">("lista");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Agenda {loja ? `· ${loja.nome}` : ""}</h1>
+    <Pagina titulo={<>Agenda {loja ? `· ${loja.nome}` : ""}</>}>
       {carregando ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : lojas.length === 0 || lojaAtiva === null ? (
@@ -163,7 +163,7 @@ function Agenda() {
           {aba === "tipos" && <Tipos />}
         </>
       )}
-    </div>
+    </Pagina>
   );
 }
 

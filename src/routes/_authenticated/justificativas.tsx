@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Justificar, aposJustificar } from "@/pessoas/justificar";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/justificativas")({
   component: Justificativas,
@@ -74,8 +75,7 @@ function Justificativas() {
   const pendentes = (lista.data ?? []).filter((j) => j.status === "Pendente");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Justificativas</h1>
+    <Pagina titulo="Justificativas">
       <p className="text-sm text-muted-foreground">
         "Não se aplica": a tarefa caía no dia, mas não fazia sentido fazer. Aceita, ela sai das pendências, não conta nos
         pontos possíveis da nota do mês e vira dia neutro na sequência de dias (como a folga). Pendente ou recusada, conta
@@ -106,7 +106,7 @@ function Justificativas() {
       {aba === "pendentes" && <ParaDecidir linhas={pendentes} carregando={lista.isLoading} />}
       {aba === "nova" && <Nova />}
       {aba === "todas" && <Todas linhas={lista.data ?? []} carregando={lista.isLoading} />}
-    </div>
+    </Pagina>
   );
 }
 

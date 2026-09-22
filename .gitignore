@@ -22,3 +22,6 @@ pnpm-lock.yaml
 # Gerado pelo build (nitro/Cloudflare) e pelo wrangler.
 .wrangler/
 .dev.vars
+
+# Prints de conferência (ficam só na máquina)
+prints/

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { dataHoraBr } from "@/rh/pdf";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   component: Onboarding,
@@ -35,8 +36,7 @@ function useEtapas() {
 function Onboarding() {
   const [aba, setAba] = useState<"pessoas" | "etapas">("pessoas");
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Onboarding</h1>
+    <Pagina titulo="Onboarding">
       <p className="text-sm text-muted-foreground">
         O checklist de admissão de cada pessoa. As etapas são da sua conta: você cria, renomeia, ordena e desativa
         (desativar nunca apaga o que já foi marcado).
@@ -58,7 +58,7 @@ function Onboarding() {
         ))}
       </div>
       {aba === "pessoas" ? <Pessoas /> : <Etapas />}
-    </div>
+    </Pagina>
   );
 }
 

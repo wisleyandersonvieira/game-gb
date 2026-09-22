@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/canal-confidencial")({
   component: CanalConfidencial,
@@ -55,8 +56,7 @@ function CanalConfidencial() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Canal confidencial</h1>
+    <Pagina titulo="Canal confidencial">
 
       <div className="space-y-1 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
         <p>
@@ -108,7 +108,7 @@ function CanalConfidencial() {
           </div>
         </>
       )}
-    </div>
+    </Pagina>
   );
 }
 

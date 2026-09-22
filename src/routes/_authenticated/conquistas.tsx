@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Pontos } from "@/ui/Pontos";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/conquistas")({
   component: Conquistas,
@@ -49,8 +50,7 @@ function Conquistas() {
   const [aba, setAba] = useState<"cadastro" | "ganhadores">("cadastro");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Conquistas</h1>
+    <Pagina titulo="Conquistas">
 
       <div className="flex gap-2 border-b border-border">
         {(
@@ -72,7 +72,7 @@ function Conquistas() {
       </div>
 
       {aba === "cadastro" ? <Cadastro /> : <Ganhadores />}
-    </div>
+    </Pagina>
   );
 }
 

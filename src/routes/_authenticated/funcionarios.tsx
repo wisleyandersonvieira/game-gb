@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pontos } from "@/ui/Pontos";
 import { IconeTelegram, JanelaConvite, useDesligarTelegram, useVinculosTelegram } from "@/telegram/Telegram";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/funcionarios")({
   component: Funcionarios,
@@ -188,18 +189,17 @@ function Funcionarios() {
 
   if (carregandoLojas) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
+      <Pagina>
         <p className="text-muted-foreground">Carregando...</p>
-      </div>
+      </Pagina>
     );
   }
 
   if (lojas.length === 0) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Equipe</h1>
+      <Pagina titulo="Equipe">
         <AvisoSemLoja />
-      </div>
+      </Pagina>
     );
   }
 
@@ -214,15 +214,15 @@ function Funcionarios() {
   const hhmm = (h: string | null) => (h ? h.slice(0, 5) : null);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Equipe</h1>
+    <Pagina
+      titulo="Equipe"
+      acoes={
         <p className="text-sm text-muted-foreground">
           {porLoja.filter((f) => f.ativo).length} ativos
           {inativos > 0 && ` · ${inativos} inativos`}
         </p>
-      </div>
+      }
+    >
 
       <form
         onSubmit={(e) => {
@@ -500,7 +500,7 @@ function Funcionarios() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end">
               {f.saldopontos < 0 ? (
                 <span
                   className="rounded-md border border-destructive px-2 py-0.5 text-sm font-semibold text-destructive"
@@ -587,7 +587,7 @@ function Funcionarios() {
           aoFechar={() => setConvite(null)}
         />
       )}
-    </div>
+    </Pagina>
   );
 }
 

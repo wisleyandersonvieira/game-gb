@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { CabecalhoPagina } from "@/ui/CabecalhoPagina";
 import {
   criarContaEConvidar,
   reenviarConvite,
   situacaoDosLogins,
 } from "@/servidor/contas";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/admin/")({
   component: PainelAdmin,
@@ -138,11 +138,10 @@ function PainelAdmin() {
   const lista = contas.data ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <CabecalhoPagina
-        titulo="Clientes"
-        descricao="Clientes da plataforma. Você não vê os dados operacionais de nenhum deles."
-      />
+    <Pagina
+      titulo="Clientes"
+      descricao="Clientes da plataforma. Você não vê os dados operacionais de nenhum deles."
+    >
 
       {recado && (
         <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">{recado}</p>
@@ -341,7 +340,7 @@ function PainelAdmin() {
           <p className="text-sm text-destructive">{(mudarStatus.error as Error).message}</p>
         )}
       </div>
-    </div>
+    </Pagina>
   );
 }
 

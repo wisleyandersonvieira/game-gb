@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/extrato")({
   component: Extrato,
@@ -81,8 +82,7 @@ function Extrato() {
   const emReais = (pontos: number) => (x?.taxa ? ` (${reais(pontos * x.taxa)})` : "");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Extrato de pontos</h1>
+    <Pagina titulo="Extrato de pontos">
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
         <select
@@ -171,7 +171,7 @@ function Extrato() {
           />
         </>
       )}
-    </div>
+    </Pagina>
   );
 }
 

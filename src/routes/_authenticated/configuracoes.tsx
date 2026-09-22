@@ -6,6 +6,7 @@ import { Carregando } from "@/ui/Estados";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { Rotinas } from "@/configuracoes/Rotinas";
 import { MensagensAutomaticas } from "@/configuracoes/MensagensAutomaticas";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   component: Configuracoes,
@@ -186,8 +187,7 @@ function Configuracoes() {
   const podeAlterar = eu.data?.master ?? false;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Configurações</h1>
+    <Pagina titulo="Configurações">
 
       {eu.data && !podeAlterar && (
         <p className="rounded-lg border border-azul/40 bg-azul-soft px-4 py-3 text-sm text-azul">
@@ -251,7 +251,7 @@ function Configuracoes() {
           />
         )}
       </section>
-    </div>
+    </Pagina>
   );
 }
 

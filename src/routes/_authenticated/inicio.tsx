@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
-import { CabecalhoPagina } from "@/ui/CabecalhoPagina";
 import { CartaoNumero } from "@/ui/CartaoNumero";
 import { Carregando, ErroTela } from "@/ui/Estados";
 import { CaixaGrafico, GraficoEntregas, GraficoPontos, GraficoVendas } from "@/inicio/Graficos";
@@ -12,6 +11,7 @@ import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, type PainelInicio } from "@/inicio/tipos";
 import { Pontos } from "@/ui/Pontos";
 import { AvisosDoSistema } from "@/telegram/Telegram";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/inicio")({
   component: Inicio,
@@ -74,38 +74,37 @@ function Inicio() {
   const mostrarGuia = !!p && !guiaCompleto(p.guia) && !(guiaFechado && podeFecharGuia);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <CabecalhoPagina
-        titulo="Início"
-        descricao={
-          p
-            ? `Resumo de hoje, ${new Date(`${p.hoje}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "long", day: "2-digit", month: "long" })}. Atualiza sozinho a cada minuto.`
-            : "Resumo de hoje."
-        }
-        acoes={
-          lojas.length > 1 && (
-            <div className="flex w-fit gap-1 rounded-lg border border-border bg-card p-1" role="group" aria-label="Quais lojas">
-              {(
-                [
-                  ["todas", "Todas as lojas"],
-                  ["loja", loja?.nome ?? "Loja ativa"],
-                ] as const
-              ).map(([id, rotulo]) => (
-                <button
-                  key={id}
-                  onClick={() => escolher(id)}
-                  aria-pressed={alcance === id}
-                  className={`rounded-md px-3 py-1.5 text-sm ${
-                    alcance === id ? "bg-azul-soft font-semibold text-azul" : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {rotulo}
-                </button>
-              ))}
-            </div>
-          )
-        }
-      />
+    <Pagina
+      titulo="Início"
+      descricao={
+        p
+          ? `Resumo de hoje, ${new Date(`${p.hoje}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "long", day: "2-digit", month: "long" })}. Atualiza sozinho a cada minuto.`
+          : "Resumo de hoje."
+      }
+      acoes={
+        lojas.length > 1 && (
+          <div className="flex w-fit gap-1 rounded-lg border border-border bg-card p-1" role="group" aria-label="Quais lojas">
+            {(
+              [
+                ["todas", "Todas as lojas"],
+                ["loja", loja?.nome ?? "Loja ativa"],
+              ] as const
+            ).map(([id, rotulo]) => (
+              <button
+                key={id}
+                onClick={() => escolher(id)}
+                aria-pressed={alcance === id}
+                className={`rounded-md px-3 py-1.5 text-sm ${
+                  alcance === id ? "bg-azul-soft font-semibold text-azul" : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+        )
+      }
+    >
 
       <AvisosDoSistema />
       {painel.isLoading && <Carregando />}
@@ -143,7 +142,7 @@ function Inicio() {
           <Listas p={p} />
         </>
       )}
-    </div>
+    </Pagina>
   );
 }
 

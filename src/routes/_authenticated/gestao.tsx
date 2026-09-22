@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { GruposTelegram } from "@/telegram/Telegram";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
@@ -152,21 +153,21 @@ function Gestao() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-
+    <Pagina
+      titulo={conta.data?.nome ?? "Lojas e links da TV"}
+      acoes={
+        conta.data ? (
+          <p className="text-sm text-muted-foreground">
+            <strong className={noLimite ? "text-azul" : "text-foreground"}>{ativas.length}</strong> de {limite} lojas
+            usadas
+          </p>
+        ) : undefined
+      }
+    >
       {conta.isLoading && <p className="text-muted-foreground">Carregando...</p>}
 
       {conta.data && (
         <>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{conta.data.nome}</h1>
-            <p className="text-sm text-muted-foreground">
-              <strong className={noLimite ? "text-azul" : "text-foreground"}>
-                {ativas.length}
-              </strong>{" "}
-              de {limite} lojas usadas
-            </p>
-          </div>
 
           <p className="text-sm text-muted-foreground">
             {conta.data.email}
@@ -408,7 +409,7 @@ function Gestao() {
           Não foi possível carregar: {(conta.error as Error).message}
         </p>
       )}
-    </div>
+    </Pagina>
   );
 }
 

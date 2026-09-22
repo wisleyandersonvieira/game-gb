@@ -6,6 +6,7 @@ import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { Justificar } from "@/pessoas/justificar";
 import { Pontos } from "@/ui/Pontos";
+import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/relatorios")({
   component: Relatorios,
@@ -71,8 +72,7 @@ function Relatorios() {
   const [ate, setAte] = useState(hoje());
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Relatórios</h1>
+    <Pagina titulo="Relatórios">
 
       <div className="flex gap-2 border-b border-border">
         {(
@@ -105,7 +105,7 @@ function Relatorios() {
       </div>
 
       {aba === "pessoa" ? <PorPessoa de={de} ate={ate} /> : <PorTarefa de={de} ate={ate} />}
-    </div>
+    </Pagina>
   );
 }
 
