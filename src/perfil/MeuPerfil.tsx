@@ -5,10 +5,12 @@ import { Botao } from "@/ui/Botao";
 import { CabecalhoPagina } from "@/ui/CabecalhoPagina";
 import { escolherTema, temaAtual, type Tema } from "@/ui/tema";
 import { salvarNome, useUsuario } from "@/ui/usuario";
+import { MeuTelegram } from "@/telegram/Telegram";
 
 const campo = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
 
-export function MeuPerfil() {
+/** `telegram`: só no app do master (o administrador geral não tem conta). */
+export function MeuPerfil({ telegram = false }: { telegram?: boolean }) {
   const usuario = useUsuario();
   const [nome, setNome] = useState("");
   const [tema, setTema] = useState<Tema>("claro");
@@ -92,6 +94,8 @@ export function MeuPerfil() {
         </div>
         <p className="text-xs text-muted-foreground">A escolha fica guardada no seu login e vale no próximo acesso. A TV continua escura.</p>
       </section>
+
+      {telegram && <MeuTelegram />}
     </div>
   );
 }

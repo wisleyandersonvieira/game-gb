@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
+import { GruposTelegram } from "@/telegram/Telegram";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
@@ -398,6 +399,7 @@ function Gestao() {
 
           <ResumoDasLojas />
           <LinksDeTv suspensa={suspensa} />
+          <GruposTelegram lojas={ativas} suspensa={suspensa} />
         </>
       )}
 

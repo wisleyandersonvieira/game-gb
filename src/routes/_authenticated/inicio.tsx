@@ -11,6 +11,7 @@ import { Guia, guiaCompleto } from "@/inicio/Guia";
 import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, type PainelInicio } from "@/inicio/tipos";
 import { Pontos } from "@/ui/Pontos";
+import { AvisosDoSistema } from "@/telegram/Telegram";
 
 export const Route = createFileRoute("/_authenticated/inicio")({
   component: Inicio,
@@ -106,6 +107,7 @@ function Inicio() {
         }
       />
 
+      <AvisosDoSistema />
       {painel.isLoading && <Carregando />}
       {painel.isError && <ErroTela erro={painel.error} />}
 
