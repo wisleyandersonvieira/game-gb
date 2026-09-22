@@ -404,6 +404,7 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
     - Menores: cada troca de senha confere o resultado (antes uma falha deixava a porta antiga aberta em silêncio); definir a senha do gestor pede a senha atual e derruba as outras sessões; o expurgo marca todas as entregas que apontam para o arquivo apagado.
   - [ ] **Falta cadastrar no Lovable:** `STGAME_PIN_PEPPER` (chave longa e aleatória). Sem ela, criar acesso, entrar e escolher PIN não funcionam. **Trocar essa chave depois obriga a refazer os acessos de todo mundo.**
 - [ ] **B — Tablet** (grande): painel, fila do dia, PIN, aceitar, entregar com foto, mural com ciência, feedback, justificativa, solicitação, modo quiosque, pareamento e corte de tablet.
+  - **Ritmo de atualização (decisão de 23/09/2026):** a fila do tablet atualiza a cada **15 segundos** (não 30) **e na hora, logo depois de qualquer ação feita nele** — assim a tarefa aceita some rápido da lista dos outros. No celular do colaborador, **30 segundos** está bom.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
 - [ ] **D — Extras** (pequeno): checklist de abertura/fechamento e aviso de tarefa parada.
 
