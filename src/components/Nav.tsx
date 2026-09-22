@@ -14,6 +14,7 @@ const grupos: Grupo[] = [
       { to: "/operacional", label: "Painel" },
       { to: "/painel", label: "Quadro" },
       { to: "/tarefas", label: "Tarefas" },
+      { to: "/metas", label: "Metas" },
     ],
   },
   {

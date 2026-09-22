@@ -78,6 +78,8 @@ function PainelLogado({ lojaid }: { lojaid: number }) {
     if (!dados) return;
     const { total, aprovadas } = dados.progresso;
     if (total > 0 && aprovadas >= total) soltarFogosUmaVezPorDia(`loja-${lojaid}`, dados.hoje);
+    // E ao bater a meta do dia (uma vez por dia, separado dos fogos das tarefas).
+    if (dados.meta?.dia?.bateu) soltarFogosUmaVezPorDia(`loja-${lojaid}-meta`, dados.hoje);
   }, [dados, lojaid]);
 
   return (

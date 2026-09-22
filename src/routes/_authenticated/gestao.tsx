@@ -49,7 +49,7 @@ function Gestao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lojas")
-        .select("lojaid, nome, cidade, endereco, ativa, gestorid, responsavelagendamentosid")
+        .select("lojaid, nome, cidade, endereco, ativa, gestorid, responsavelagendamentosid, mostrarvalorestv")
         .order("nome");
       if (error) throw error;
       return data ?? [];
@@ -132,6 +132,15 @@ function Gestao() {
       fechar();
       atualizarListas();
     },
+  });
+
+  // Na TV, por padrão, a meta aparece só em porcentagem (os clientes veem a TV).
+  const alternarValoresTv = useMutation({
+    mutationFn: async ({ lojaid, mostrar }: { lojaid: number; mostrar: boolean }) => {
+      const { error } = await supabase.from("lojas").update({ mostrarvalorestv: mostrar }).eq("lojaid", lojaid);
+      if (error) throw error;
+    },
+    onSuccess: atualizarListas,
   });
 
   const alternarAtiva = useMutation({
@@ -331,6 +340,15 @@ function Gestao() {
                       ? (nomes.data?.get(l.responsavelagendamentosid) ?? "—")
                       : "não definido"}
                   </p>
+                  <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={l.mostrarvalorestv}
+                      disabled={suspensa || alternarValoresTv.isPending}
+                      onChange={(e) => alternarValoresTv.mutate({ lojaid: l.lojaid, mostrar: e.target.checked })}
+                    />
+                    Mostrar valores em R$ da meta na TV (desligado: a TV mostra só a porcentagem)
+                  </label>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -367,6 +385,9 @@ function Gestao() {
               </div>
             ))}
 
+            {alternarValoresTv.isError && (
+              <p className="text-sm text-destructive">{(alternarValoresTv.error as Error).message}</p>
+            )}
             {alternarAtiva.isError && (
               <p className="text-sm text-destructive">{(alternarAtiva.error as Error).message}</p>
             )}

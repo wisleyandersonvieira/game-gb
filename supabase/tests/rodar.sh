@@ -117,6 +117,27 @@ if [ "$ok_f" != "1" ] || [ "$duplicados" != "1" ]; then
 $saida_f"
 fi
 
+echo "==> dois lancamentos da meta do dia ao mesmo tempo"
+rodar "$RAIZ/supabase/tests/concorrencia_meta_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_meta_sessao.sql" "$CONTAINER:/sessao_m.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -v valor=1500 -f /sessao_m.sql >/tmp/gamegb-sessao7.txt 2>&1 &
+p7=$!
+docker exec "$CONTAINER" psql -U postgres -q -v valor=1600 -f /sessao_m.sql >/tmp/gamegb-sessao8.txt 2>&1 &
+p8=$!
+wait "$p7" "$p8" || true
+erros_m=$(cat /tmp/gamegb-sessao7.txt /tmp/gamegb-sessao8.txt | grep -c "ERROR" || true)
+grep -h ERROR /tmp/gamegb-sessao7.txt /tmp/gamegb-sessao8.txt || true
+rm -f /tmp/gamegb-sessao7.txt /tmp/gamegb-sessao8.txt
+echo "    conexoes com erro: $erros_m de 2"
+
+saida_m="$(rodar "$RAIZ/supabase/tests/concorrencia_meta_confere.sql" 2>&1)" && ok_m=1 || ok_m=0
+echo "$saida_m" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_m" != "1" ] || [ "$erros_m" != "0" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_m"
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"

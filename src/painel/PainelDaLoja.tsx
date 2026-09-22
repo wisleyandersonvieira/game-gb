@@ -2,6 +2,7 @@
 // O mesmo componente serve o painel logado e a TV; na TV tudo fica maior.
 // Os dados vêm prontos do banco (montar_painel), sem nenhum id, foto,
 // observação, telefone ou CPF.
+import { MetaCartao, type MetaPainel } from "./MetaDaLoja";
 
 export type DadosPainel = {
   loja: string;
@@ -13,6 +14,7 @@ export type DadosPainel = {
   pendentes: number;
   podio: { pessoa: string; pontos: number }[];
   atividade: { titulo: string; pessoa: string; pontos: number; aprovadaem: string }[];
+  meta: MetaPainel;
 };
 
 const MEDALHAS = ["🥇", "🥈", "🥉"];
@@ -105,7 +107,7 @@ export function PainelDaLoja({ dados, tv = false }: { dados: DadosPainel; tv?: b
 
       {/* Espaços que as próximas fases preenchem */}
       <div className={`grid gap-4 ${tv ? "lg:grid-cols-3" : "md:grid-cols-3"}`}>
-        <Reservado tv={tv} titulo="Meta do dia" fase="Fase 8" />
+        <MetaCartao meta={dados.meta} tv={tv} />
         <Reservado tv={tv} titulo="Resgates recentes" fase="Fase 7" />
         <Reservado tv={tv} titulo="Próximos agendamentos" fase="Fase 9" />
       </div>

@@ -2003,6 +2003,239 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- 33. Metas de faturamento (Loja A2 = 11)
+-- ===========================================================================
+
+RESET ROLE;
+-- Equipe da Loja A2: Duda (120) e Edu (121) trabalham todo dia; Fabi (122)
+-- esta de folga no dia da semana de ONTEM; Gil (123) esta inativo;
+-- Hugo (124) e so da Loja A1.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, ativo) OVERRIDING SYSTEM VALUE VALUES
+  (122, 1, 'Fabi da conta A', extract(dow FROM public.dia_em_sao_paulo(now()) - 1)::integer + 1, true),
+  (123, 1, 'Gil da conta A', 0, false),
+  (124, 1, 'Hugo da conta A', 0, true);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 122, 11), (1, 123, 11), (1, 124, 10);
+UPDATE public.funcionarios SET diadefolga = 0, domingofolgamensal = 0, datainicioafastamento = NULL, datafimafastamento = NULL
+ WHERE funcionarioid IN (120, 121);
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+INSERT INTO public.metasdiariasmodelos (lojaid, diasemanaid, nomedia, valormeta, pontospremio)
+SELECT 11, d, 'Dia ' || d, 1000, 10 FROM generate_series(1, 7) d;
+INSERT INTO public.metasespeciais (lojaid, data, descricao, valormeta, pontospremio)
+VALUES (11, public.dia_em_sao_paulo(now()) - 2, 'Dia especial', 5000, 50);
+
+DO $$
+DECLARE
+  hoje date := public.dia_em_sao_paulo(now());
+  ontem date := public.dia_em_sao_paulo(now()) - 1;
+  anteontem date := public.dia_em_sao_paulo(now()) - 2;
+  a1 integer; a2 integer; p1 integer; p2 integer; deu_erro boolean; quem text; n integer;
+BEGIN
+  RAISE NOTICE '33. metas de faturamento';
+
+  PERFORM public.exigir((SELECT origem = 'especial' AND valormeta = 5000 FROM public.meta_do_dia(11, anteontem)),
+                        'a meta especial substitui o modelo do dia da semana naquela data');
+  PERFORM public.exigir((SELECT origem = 'semana' AND valormeta = 1000 FROM public.meta_do_dia(11, ontem)),
+                        'nos outros dias vale o modelo do dia da semana');
+
+  -- Lancamento de ontem feito hoje: paga quem trabalhou ONTEM.
+  a1 := public.lancar_venda_do_dia(11, ontem, 1200);
+  SELECT premiacaoid INTO p1 FROM public.metaspremiacoes WHERE apuracaoid = a1 AND estornadoem IS NULL;
+  SELECT string_agg(funcionarioid::text, ',' ORDER BY funcionarioid) INTO quem
+    FROM public.movimentospontos WHERE premiacaoid = p1 AND tipo = 'bonus';
+  PERFORM public.exigir(quem = '120,121',
+                        'lancamento de ontem feito hoje paga quem trabalhou ontem (' || coalesce(quem, '-') || ')');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.movimentospontos WHERE premiacaoid = p1 AND funcionarioid IN (122, 123, 124)),
+                        'nao recebe quem estava de folga no dia da venda, quem esta inativo nem quem e de outra loja');
+  PERFORM public.exigir((SELECT pontos FROM public.movimentospontos WHERE premiacaoid = p1 AND funcionarioid = 120) = 10,
+                        'cada um recebe os pontos da meta do dia (10)');
+
+  -- Correcao.
+  BEGIN PERFORM public.lancar_venda_do_dia(11, ontem, 1500); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'correcao sem motivo e recusada');
+
+  PERFORM public.lancar_venda_do_dia(11, ontem, 1500, 'Faltou somar o cartao');
+  PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE apuracaoid = a1) = 1
+                        AND NOT EXISTS (SELECT 1 FROM public.movimentospontos WHERE premiacaoid = p1 AND tipo = 'estorno_bonus'),
+                        'sobe e continua batida: nada muda');
+  PERFORM public.lancar_venda_do_dia(11, ontem, 1100, 'Ajuste');
+  PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE apuracaoid = a1) = 1,
+                        'desce e continua batida: nada muda');
+
+  PERFORM public.lancar_venda_do_dia(11, ontem, 800, 'Devolucao');
+  PERFORM public.exigir((SELECT estornadoem IS NOT NULL FROM public.metaspremiacoes WHERE premiacaoid = p1)
+                        AND (SELECT sum(pontos) FROM public.movimentospontos WHERE premiacaoid = p1) = 0
+                        AND (SELECT count(*) FROM public.movimentospontos WHERE premiacaoid = p1 AND tipo = 'estorno_bonus') = 2,
+                        'deixou de bater: estorna, pelo livro, de quem recebeu');
+
+  PERFORM public.lancar_venda_do_dia(11, ontem, 1300, 'Venda achada');
+  SELECT premiacaoid INTO p2 FROM public.metaspremiacoes WHERE apuracaoid = a1 AND estornadoem IS NULL;
+  PERFORM public.exigir(p2 IS NOT NULL AND p2 <> p1
+                        AND (SELECT count(*) FROM public.movimentospontos WHERE premiacaoid = p2 AND tipo = 'bonus') = 2,
+                        'voltou a bater: paga de novo');
+  PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE apuracaoid = a1 AND estornadoem IS NULL) = 1,
+                        'nunca ha dois premios valendo no mesmo dia');
+
+  PERFORM public.lancar_venda_do_dia(11, ontem, 1300);
+  PERFORM public.exigir((SELECT count(*) FROM public.metashistorico WHERE apuracaoid = a1) = 5,
+                        'historico: 1 lancamento + 4 correcoes (repetir o mesmo valor nao conta)');
+  PERFORM public.exigir((SELECT valoranterior = 800 AND valornovo = 1300 AND motivo = 'Venda achada'
+                                AND alteradopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                           FROM public.metashistorico WHERE apuracaoid = a1 ORDER BY historicoid DESC LIMIT 1),
+                        'historico guarda quem, quando, valor antigo, valor novo e motivo');
+
+  -- Meta especial (anteontem: 5.000 e 50 pontos).
+  a2 := public.lancar_venda_do_dia(11, anteontem, 4000);
+  PERFORM public.exigir((SELECT valormetadia = 5000 AND origemmeta = 'especial' FROM public.metasdiariasapuracoes WHERE apuracaoid = a2)
+                        AND NOT EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE apuracaoid = a2),
+                        'com a meta especial, 4.000 nao bate (o modelo de 1.000 bateria)');
+  PERFORM public.lancar_venda_do_dia(11, anteontem, 5200, 'Conferido');
+  SELECT string_agg(funcionarioid::text, ',' ORDER BY funcionarioid) INTO quem
+    FROM public.movimentospontos mv JOIN public.metaspremiacoes p USING (premiacaoid)
+   WHERE p.apuracaoid = a2 AND p.estornadoem IS NULL AND mv.tipo = 'bonus' AND mv.pontos = 50;
+  PERFORM public.exigir(quem = '120,121,122', 'a meta especial paga os pontos dela (50) a quem trabalhou naquele dia (' || coalesce(quem, '-') || ')');
+  UPDATE public.metasespeciais SET valormeta = 9000 WHERE lojaid = 11 AND data = anteontem;
+  PERFORM public.lancar_venda_do_dia(11, anteontem, 5300, 'Mais uma venda');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE apuracaoid = a2 AND estornadoem IS NULL),
+                        'mudar a meta especial depois nao muda o dia ja lancado');
+
+  -- So o mes atual e o anterior.
+  BEGIN PERFORM public.lancar_venda_do_dia(11, (date_trunc('month', hoje) - interval '2 months')::date + 4, 100, 'x'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'lancamento ou correcao de dois meses atras e recusado');
+  BEGIN PERFORM public.lancar_venda_do_dia(11, hoje + 1, 100); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'dia futuro e recusado');
+  BEGIN PERFORM public.lancar_venda_do_dia(11, hoje, -1); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'valor negativo e recusado');
+
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_pontos(anteontem, hoje, 11) WHERE funcionarioid = 121),
+                        'bonus de meta fica fora do ranking');
+
+  -- Nada muda por fora das funcoes.
+  BEGIN INSERT INTO public.metasdiariasapuracoes (lojaid, dataapuracao, valordia) VALUES (11, hoje - 3, 1); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'lancamento so pela funcao (que registra no historico)');
+  BEGIN UPDATE public.metaspremiacoes SET estornadoem = now(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'premio nao se mexe na mao');
+  BEGIN UPDATE public.metashistorico SET motivo = 'x'; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'historico nao se altera pelo navegador');
+  BEGIN INSERT INTO public.metasprincipais (lojaid, nomemeta, valormetatotal, datainicio, datafim, pontospremio)
+        VALUES (11, 'x', 1, date_trunc('month', hoje)::date, (date_trunc('month', hoje) + interval '1 month - 1 day')::date, 1);
+        deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'meta do mes so pela funcao');
+  PERFORM set_config('teste.a1', a1::text, false);
+END $$;
+
+-- Meta do mes (mes de ontem): ligado e ativo quando bateu.
+DO $$
+DECLARE
+  ontem date := public.dia_em_sao_paulo(now()) - 1;
+  mes date := date_trunc('month', public.dia_em_sao_paulo(now()) - 1)::date;
+  v_total numeric; m integer; quem text; deu_erro boolean;
+BEGIN
+  SELECT coalesce(sum(valordia), 0) INTO v_total FROM public.metasdiariasapuracoes
+   WHERE lojaid = 11 AND dataapuracao BETWEEN mes AND (mes + interval '1 month - 1 day')::date;
+  m := public.salvar_meta_do_mes(11, mes, 'Meta do mes', v_total + 100, 30);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE metaprincipalid = m),
+                        'meta do mes ainda nao batida: sem premio');
+
+  PERFORM public.lancar_venda_do_dia(11, ontem, 1500, 'Mais vendas');   -- +200 no mes
+  SELECT string_agg(funcionarioid::text, ',' ORDER BY funcionarioid) INTO quem
+    FROM public.movimentospontos mv JOIN public.metaspremiacoes p USING (premiacaoid)
+   WHERE p.metaprincipalid = m AND p.estornadoem IS NULL AND mv.tipo = 'bonus';
+  PERFORM public.exigir(quem = '120,121,122',
+                        'meta do mes batida: paga quem esta ligado e ativo, mesmo de folga (' || coalesce(quem, '-') || ')');
+
+  PERFORM public.lancar_venda_do_dia(11, ontem, 1350, 'Ajuste fino');   -- mes fica 50 acima do antes, abaixo da meta
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE metaprincipalid = m AND estornadoem IS NULL)
+                        AND EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE apuracaoid = current_setting('teste.a1')::integer
+                                                                         AND estornadoem IS NULL),
+                        'o mes deixou de bater e foi estornado; o dia continua batido');
+
+  PERFORM public.salvar_meta_do_mes(11, mes, 'Meta do mes', v_total, 30);
+  PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE metaprincipalid = m AND estornadoem IS NULL) = 1,
+                        'baixar a meta do mes para o que ja foi vendido paga de novo, uma vez');
+
+  BEGIN PERFORM public.salvar_meta_do_mes(11, (date_trunc('month', ontem) - interval '3 months')::date, 'x', 10, 1); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'meta de meses atras nao se mexe');
+END $$;
+
+-- TV: sem a opcao da loja, nenhum valor em reais sai do banco.
+DO $$
+BEGIN
+  PERFORM public.lancar_venda_do_dia(11, public.dia_em_sao_paulo(now()), 700);
+  PERFORM set_config('teste.tv_meta', public.criar_link_tv(11, 'TV da meta'), false);
+  PERFORM public.exigir((public.painel_da_loja(11)->'meta'->'dia'->>'vendido')::numeric = 700,
+                        'no painel (logado) o gestor ve os valores');
+END $$;
+
+SET ROLE anon;
+DO $$ BEGIN PERFORM set_config('teste.tv_sem', public.painel_da_tv(current_setting('teste.tv_meta'))::text, false); END $$;
+RESET ROLE;
+UPDATE public.lojas SET mostrarvalorestv = true WHERE lojaid = 11;
+SET ROLE anon;
+DO $$ BEGIN PERFORM set_config('teste.tv_com', public.painel_da_tv(current_setting('teste.tv_meta'))::text, false); END $$;
+RESET ROLE;
+UPDATE public.lojas SET mostrarvalorestv = false WHERE lojaid = 11;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE sem jsonb := current_setting('teste.tv_sem')::jsonb; com jsonb := current_setting('teste.tv_com')::jsonb;
+BEGIN
+  PERFORM public.exigir((sem->'meta'->'dia'->>'percentual')::numeric = 70, 'TV mostra a porcentagem da meta do dia (70%)');
+  PERFORM public.exigir(NOT (sem->'meta'->'dia' ? 'vendido') AND NOT (sem->'meta'->'dia' ? 'meta')
+                        AND NOT coalesce(sem->'meta'->'mes' ?| ARRAY['vendido', 'meta', 'projecao'], false)
+                        AND sem::text NOT LIKE '%"vendido"%' AND sem::text NOT LIKE '%"projecao"%',
+                        'TV sem a opcao ligada nao recebe nenhum valor em reais');
+  PERFORM public.exigir((com->'meta'->'dia'->>'vendido')::numeric = 700 AND (com->'meta'->'dia'->>'meta')::numeric = 1000,
+                        'com a opcao ligada, a TV recebe os valores');
+  PERFORM public.exigir((sem->'meta'->'dia'->>'bateu')::boolean = false, 'a TV sabe se a meta bateu (para os fogos)');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean; hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.metasdiariasapuracoes) = 0
+                        AND (SELECT count(*) FROM public.metasprincipais) = 0
+                        AND (SELECT count(*) FROM public.metaspremiacoes) = 0
+                        AND (SELECT count(*) FROM public.metashistorico) = 0
+                        AND (SELECT count(*) FROM public.metasespeciais) = 0
+                        AND (SELECT count(*) FROM public.metasdiariasmodelos) = 0,
+                        'B nao ve nada das metas de A');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.meta_do_dia(11, hoje)), 'B nao ve a meta do dia de A');
+  PERFORM public.exigir((public.metas_do_mes(11, hoje)->>'vendido')::numeric = 0 AND public.metas_do_mes(11, hoje)->'mes' = 'null'::jsonb,
+                        'B nao ve o resumo do mes de A');
+  BEGIN PERFORM public.lancar_venda_do_dia(11, hoje, 1); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao lanca venda em loja de A');
+  BEGIN PERFORM public.salvar_meta_do_mes(11, hoje, 'x', 1, 0); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao mexe na meta do mes de A');
+  BEGIN INSERT INTO public.metasespeciais (lojaid, data, descricao, valormeta) VALUES (11, hoje, 'invasao', 1); deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao cria meta especial em loja de A');
+END $$;
+
+SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.lancar_venda_do_dia(11, public.dia_em_sao_paulo(now()), 1); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao lanca venda');
+END $$;
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -2069,7 +2302,8 @@ BEGIN
       'registrar_troca', 'registrar_troca_por_valor', 'concluir_troca', 'cancelar_troca', 'estornar_troca',
       'criar_conquista', 'alterar_configuracao',
       'registrar_feedback', 'anular_feedback', 'registrar_justificativa', 'decidir_justificativa',
-      'sou_master', 'tratar_relato', 'abrir_solicitacao', 'mudar_situacao_solicitacao'
+      'sou_master', 'tratar_relato', 'abrir_solicitacao', 'mudar_situacao_solicitacao',
+      'lancar_venda_do_dia', 'salvar_meta_do_mes'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'

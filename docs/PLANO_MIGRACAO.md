@@ -57,7 +57,7 @@ Administrador geral (Wisley)
 | 1.5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
 | 1.6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
 | 1.7 | Gestão de pessoas e gamificação | ✅ Concluída (22/09/2026) — partes 1, 2 e 3 |
-| 1.8 | Metas de faturamento | ⬜ |
+| 1.8 | Metas de faturamento | ✅ Concluída (22/09/2026) |
 | 1.9 | Agenda (agendamentos) | ⬜ |
 | 1.10 | RH (onboarding, comunicados, documentos) | ⬜ |
 | 1.11 | Rotinas automáticas sem Telegram | ⬜ |
@@ -203,7 +203,7 @@ Substitui a aba Operacional do `painel.html`. É também o **dashboard por loja*
 
 O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acesso a nenhuma tabela**. Antes a RLS já impedia a leitura, mas o acesso existia. Conferido de fora, pela internet, em produção.
 
-- [ ] **Rodízio de telas no Modo TV**: painel da loja, meta do dia (Etapa 1.8) e agenda (Etapa 1.9), quando existirem. O mapa entra só na Etapa 2.1.
+- [ ] **Rodízio de telas no Modo TV**: painel da loja, meta do dia (Etapa 1.8) e agenda (Etapa 1.9), quando existirem. O mapa entra só na Etapa 2.1. *(painel ↔ meta feito na 1.8, 30 s cada; falta a agenda, na 1.9)*
 
 ### Etapa 1.7 — Gestão de pessoas e gamificação (abas do `main.py`)
 > Dividida em partes: **parte 1** prêmios, resgates, comanda e extrato · **parte 2** conquistas, nota do ranking mensal, relatórios e configurações · **parte 3** feedbacks, canal confidencial, solicitações e justificativas. Os **grupos** foram para a Etapa 1.13, junto com o Telegram.
@@ -256,12 +256,28 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 
 ### Etapa 1.8 — Metas de faturamento (por loja)
 Só o faturamento. Meta de lucro, histórico de lucro e relatórios financeiros foram para a Etapa 2.3.
-- [ ] Meta de faturamento mensal.
-- [ ] Metas diárias (modelos de meta diária por dia da semana).
-- [ ] Lançamento do valor vendido no dia (apuração diária; substitui o `/lancar` do bot).
-- [ ] Mostrar/ocultar valores do dia.
-- [ ] Pontos automáticos para a equipe da loja ao bater a meta diária (pelo livro de movimentos).
-- [ ] Meta do dia no painel da loja e na TV (o espaço já está reservado na Etapa 1.6), com os fogos ao bater a meta, como no sistema antigo.
+- [x] Meta de faturamento mensal. *(22/09/2026)*
+- [x] Metas diárias (modelos de meta diária por dia da semana) e **metas especiais** por data.
+- [x] Lançamento do valor vendido no dia (apuração diária; substitui o `/lancar` do bot).
+- [x] Mostrar/ocultar valores do dia.
+- [x] Pontos automáticos para a equipe da loja ao bater a meta diária (pelo livro de movimentos).
+- [x] Meta do dia no painel da loja e na TV (o espaço já está reservado na Etapa 1.6), com os fogos ao bater a meta, como no sistema antigo.
+
+**Feito em 22/09/2026.**
+
+- **Tela Metas** (Operação → Metas, por loja), com as abas Lançar venda, Meta do mês, Por dia da semana, Metas especiais e Histórico.
+- **Meta do dia:** valor fixo por dia da semana, por loja, com R$ e pontos. Uma **meta especial** para uma data (feriado, data comemorativa) substitui o modelo naquela data. A meta fica **guardada no lançamento**: mudar o modelo ou a especial depois não muda os dias já lançados.
+- **Meta do mês:** uma por loja por mês do calendário, com valor e pontos de prêmio (0 = sem prêmio). A tela mostra a soma das metas diárias do mês ao lado da meta do mês, e a projeção (média dos dias lançados × dias do mês).
+- **Lançamento:** o total vendido no dia, que substitui o anterior. Um por loja por dia. Hoje ou dias passados, **só do mês atual e do anterior**; mais antigo, o banco recusa. **Correção exige motivo**. Nada se apaga: para zerar, corrige para R$ 0. Todo lançamento e toda correção vão para `metashistorico` (quem, quando, valor antigo, valor novo, motivo), que nunca muda.
+- **Pontos pelo livro**, um movimento por pessoa ligado ao prêmio (`metaspremiacoes`). **No máximo um prêmio valendo por dia por loja** e um por mês, garantido por índice único e provado com dois lançamentos ao mesmo tempo. Ganha a meta do dia quem está ligado à loja, ativo e, **no dia da venda** (não no dia em que o valor foi lançado), não está de folga semanal, de domingo de folga nem afastado. Ganha a meta do mês quem está ligado e ativo quando ela bateu.
+- **Correção:** subiu ou desceu e continua batida, nada muda. Passou a bater, paga. Deixou de bater, **estorno automático, pelo livro, de exatamente quem recebeu** (o saldo pode ficar negativo). Voltou a bater, paga de novo. Vale também para a meta do mês.
+- **Bônus de meta fora do ranking e da nota do mês.**
+- **Painel da loja:** o cartão "Meta do dia" mostra % do dia e do mês, os valores em R$, a projeção e o botão 👁️ para ocultar os valores (lembrado em cada aparelho).
+- **TV:** só porcentagem por padrão. Em Gestão → Lojas, cada loja tem **"Mostrar valores em R$ da meta na TV"** (desligado). Com a opção desligada, **o banco não envia nenhum valor em reais** para a TV, e o teste confere o conteúdo devolvido. **Rodízio:** a TV alterna painel ↔ tela da meta a cada 30 segundos (só quando a loja tem meta). Conferido no celular (390 px, sem rolar para os lados).
+- **Fogos na TV e no painel** ao bater a meta do dia, uma vez por dia por loja em cada tela, separados dos fogos de 100% das tarefas.
+- **Bloqueadores:** 90 endereços do app, 8 listas, nenhum barrado.
+
+**Problemas do sistema antigo corrigidos:** quem ganhava era quem tinha o texto do "setor" no cargo, mesmo de folga ou inativo; o prêmio podia sair duas vezes e o saldo era somado por fora do histórico; o estorno tirava pontos de quem **hoje** tem o cargo, não de quem recebeu; excluir um lançamento não devolvia os pontos; "quem lançou" era sempre o funcionário nº 2; não havia histórico de correções; o prêmio do mês dependia de o gestor abrir a tela e confirmar; e a trava de modelos era "um por dia da semana por conta" (só uma loja do cliente teria meta de segunda-feira) — agora é por loja.
 
 ### Etapa 1.9 — Agenda (por loja)
 - [ ] Calendário (mês/semana).
@@ -423,6 +439,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | **Canal confidencial:** só o dia (sem hora), protocolo aleatório, sem loja, **só o master lê** — nenhum papel futuro (gerente, líder) terá acesso. Entrada só pelo servidor, sem identificar quem envia; nenhum log guarda o texto junto com quem mandou. Regra permanente no `CLAUDE.md`. |
 | 22/09/2026 | Justificativa: dois botões ("Registrar e aceitar" / "Registrar para decidir depois"). Aceita sai das pendências e dos pontos possíveis e é **dia neutro** na sequência de dias (como a folga). |
 | 22/09/2026 | Foto da manutenção fica para a 1.13 (vem pelo bot). Menu agrupado em Operação, Pessoas, Gamificação, Relatórios e Gestão. |
+| 22/09/2026 | **Metas (1.8):** meta do dia fixa por dia da semana, com **meta especial** por data que substitui o modelo. Ganha quem está ligado à loja, ativo e no **dia da venda** sem folga nem afastamento; meta do mês: ligado e ativo quando bateu. Correção: deixou de bater → estorno automático de quem recebeu; voltou a bater → paga de novo. Lançar ou corrigir **só no mês atual e no anterior**. Bônus de meta fora do ranking e da nota. TV só em %, com a opção por loja "mostrar valores". Rodízio painel ↔ meta, 30 s. Tela "Metas" em Operação. |
 | 22/09/2026 | Funções da loja de prêmios com **nomes neutros** (`*_troca`), por causa de bloqueadores de anúncio. Endereços novos passam pelas listas de bloqueio antes de entrar. |
 | 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
 

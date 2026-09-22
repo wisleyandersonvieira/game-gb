@@ -47,6 +47,9 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `metasdiariasapuracoes` | **loja** | apuracaoid | funcionarios, metasprincipais |
 | `metasdiariasinstancias` | **loja** | metainstanciaid |  |
 | `metasdiariasmodelos` | **loja** | diasemanaid |  |
+| `metasespeciais` | **loja** | metaespecialid |  |
+| `metashistorico` | **loja** | historicoid | metasdiariasapuracoes |
+| `metaspremiacoes` | **loja** | premiacaoid | metasdiariasapuracoes, metasprincipais |
 | `metasprincipais` | **loja** | metaprincipalid |  |
 | `notasfiscais` | **loja** | notafiscalid | funcionarios |
 | `notasfiscaisentrada` | **loja** | notaid | fornecedores |
@@ -363,8 +366,16 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | metaprincipalid | integer | → metasprincipais.metaprincipalid |
 | dataapuracao | date | obrigatório |
 | valordia | numeric(18,2) | obrigatório |
-| funcionarioid_lancamento | integer | → funcionarios.funcionarioid |
-| pontosmetadiariaganhos | integer | padrão 0 |
+| funcionarioid_lancamento | integer | → funcionarios.funcionarioid. Sem uso (o antigo gravava sempre o nº 2); quem lançou está em `lancadopor` |
+| pontosmetadiariaganhos | integer | padrão 0. Sem uso; os prêmios estão em `metaspremiacoes` |
+| valormetadia | numeric(18,2) | a meta daquele dia, **guardada no primeiro lançamento** (especial ou modelo) |
+| pontosmetadia | integer | obrigatório; os pontos daquela meta, guardados junto |
+| origemmeta | varchar(10) | `especial` ou `semana` |
+| descricaometa | text | nome da meta especial ou do dia da semana |
+| lancadopor / lancadoem | uuid / timestamptz | quem e quando lançou |
+| atualizadopor / atualizadoem | uuid / timestamptz | última correção |
+
+**Um por loja por dia** (`UNIQUE (lojaid, dataapuracao)`). O valor é o total do dia (substitui). Entra e muda só por `lancar_venda_do_dia`: hoje ou dias passados, só do mês atual e do anterior; correção exige motivo; nada se apaga. `metaprincipalid` liga o dia à meta do mês, quando existe.
 
 ## metasdiariasinstancias
 | Coluna | Tipo | Obs |
@@ -376,13 +387,63 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | valoratingido | numeric(10,2) |  |
 | status | varchar(20) | padrão 'Pendente' |
 
+**Sem uso** (o sistema antigo também nunca gravou nela). Fica sem tela.
+
 ## metasdiariasmodelos
 | Coluna | Tipo | Obs |
 |---|---|---|
 | diasemanaid | integer | obrigatório; chave primária **(lojaid, diasemanaid)** |
 | nomedia | varchar(50) | obrigatório |
-| valormeta | numeric(18,2) | obrigatório |
-| pontospremio | integer | obrigatório |
+| valormeta | numeric(18,2) | obrigatório; 0 ou mais (0 = sem meta nesse dia) |
+| pontospremio | integer | obrigatório; 0 a 10.000 |
+
+`diasemanaid` 1 = domingo … 7 = sábado. Único por loja (a trava antiga era por conta e impedia duas lojas de terem meta no mesmo dia da semana). O navegador grava direto (RLS da conta).
+
+## metasespeciais
+Tabela **nova** (Etapa 1.8), **nível loja**. Meta de uma data específica (feriado, data comemorativa), que substitui o modelo do dia da semana naquela data.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| metaespecialid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| data | date | obrigatório; **única por loja** |
+| descricao | varchar(100) | obrigatório (ex.: "Dia das Mães") |
+| valormeta | numeric(18,2) | obrigatório; 0 ou mais |
+| pontospremio | integer | obrigatório; 0 a 10.000 |
+| criadoem | timestamptz | obrigatório; padrão now() |
+
+## metashistorico
+Tabela **nova** (Etapa 1.8), **nível loja**. Cada lançamento e correção de venda. **Nunca muda nem se apaga**, nem para o dono.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| historicoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| apuracaoid | integer | obrigatório; → metasdiariasapuracoes (junto com contaid) |
+| dataapuracao | date | obrigatório; o dia da venda |
+| valoranterior | numeric(18,2) | vazio no primeiro lançamento |
+| valornovo | numeric(18,2) | obrigatório |
+| motivo | text | obrigatório nas correções |
+| alteradopor / alteradoem | uuid / timestamptz | quem e quando |
+
+## metaspremiacoes
+Tabela **nova** (Etapa 1.8), **nível loja**. Cada prêmio de meta pago. Quem recebeu está no livro (`movimentospontos.premiacaoid`).
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| premiacaoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| tipo | varchar(3) | `dia` ou `mes` |
+| apuracaoid | integer | no prêmio do dia; → metasdiariasapuracoes |
+| metaprincipalid | integer | no prêmio do mês; → metasprincipais |
+| pontos | integer | obrigatório; por pessoa |
+| pagoem | timestamptz | obrigatório; padrão now() |
+| estornadoem | timestamptz | preenchido quando a correção faz a meta deixar de bater |
+
+**No máximo um prêmio valendo** (sem estorno) por lançamento do dia e por meta do mês: índices únicos parciais. O navegador só lê.
 
 ## metasprincipais
 | Coluna | Tipo | Obs |
@@ -394,8 +455,12 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | datainicio | date | obrigatório |
 | datafim | date | obrigatório |
 | pontospremio | integer | obrigatório |
-| setoralvo | varchar(100) |  |
+| setoralvo | varchar(100) | Sem uso: quem ganha segue a regra da loja, não o texto do cargo |
 | status | varchar(50) | padrão 'Ativa' |
+| criadopor | uuid | → auth.users |
+| atualizadoem | timestamptz | obrigatório; padrão now() |
+
+**A meta do mês**: uma por loja por mês do calendário (`datainicio` = dia 1, `datafim` = último dia; `UNIQUE (lojaid, datainicio)`). Valor > 0; pontos 0 a 100.000 (0 = sem prêmio). Entra e muda só por `salvar_meta_do_mes` (do mês anterior em diante).
 
 ## notasfiscais
 | Coluna | Tipo | Obs |
@@ -656,6 +721,7 @@ Liga um login do Supabase Auth a uma conta. **Um login pertence a uma única con
 | criadoem | timestamptz | obrigatório; padrão now() |
 | gestorid | integer | Gestor da loja. → funcionarioslojas (junto com lojaid): tem de trabalhar nela |
 | responsavelagendamentosid | integer | Quem recebe as tarefas de agendamento da loja. → funcionarioslojas (junto com lojaid) |
+| mostrarvalorestv | boolean | obrigatório; padrão **false**. Se a TV mostra os valores em R$ da meta. Desligado, o banco só envia porcentagens para a TV |
 
 ## funcionarioslojas
 Em quais lojas cada funcionário trabalha. Tirar alguém de uma loja = `ativo = false`; **nunca apagar**, para não perder o histórico.
@@ -736,6 +802,15 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `tratar_relato(relato, situacao, resposta)` | Só o master: em análise, tratado, resposta |
 | `abrir_solicitacao(loja, pessoa, tipo, categoria, descricao, quantidade, unidade)` | Quem pediu precisa trabalhar na loja; nasce Aberta |
 | `mudar_situacao_solicitacao(solicitacao, situacao, observacao)` | Só as transições permitidas; recusar exige motivo |
+| `meta_do_dia(loja, dia)` | A meta de uma data: a especial, se houver; senão, o modelo do dia da semana |
+| `primeiro_dia_editavel_meta()` | O dia 1 do mês anterior: antes dele, nada se lança nem se corrige |
+| `lancar_venda_do_dia(loja, dia, valor, motivo)` | Lança ou corrige o total vendido; paga ou estorna a meta do dia e a do mês. Um de cada vez por loja e dia |
+| `salvar_meta_do_mes(loja, mes, nome, valor, pontos, descricao)` | Cria ou altera a meta do mês e reavalia o prêmio |
+| `metas_do_mes(loja, mes)` | Resumo do mês dia a dia para a tela Metas |
+| `equipe_da_meta(conta, loja, dia)` | **Interna.** Quem ganha: ligado à loja, ativo e, no dia da venda, sem folga nem afastamento |
+| `pagar_premio_meta(...)` / `estornar_premio_meta(premio, motivo)` | **Internas.** Pagam pelo livro e estornam exatamente de quem recebeu |
+| `reavaliar_meta_do_dia(lancamento)` / `reavaliar_meta_do_mes(conta, loja, mes)` | **Internas.** Aplicam a regra de correção |
+| `meta_para_painel(conta, loja, tv)` | **Interna.** Bloco da meta do painel; na TV sem a opção da loja, só porcentagens |
 | `alterar_configuracao(chave, valor)` | Só o master; recusa os `TAREFA_*`; o gatilho valida e registra no histórico |
 
 Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos`, `atribuicoes_para_entregar`, `ranking_mensal`, `listar_trocas` e os relatórios rodam com a RLS de quem chamou.
@@ -774,6 +849,7 @@ O livro de pontos (**nível conta**; a loja é opcional). Cada entrada e saída 
 | resgateid | integer | → resgates (junto com contaid), quando veio de um resgate |
 | conquistafuncionarioid | integer | → conquistasfuncionarios (junto com contaid), quando é bônus de conquista |
 | feedbackid | integer | → feedbacks (junto com contaid), quando é bônus de feedback ou o estorno dele |
+| premiacaoid | integer | → metaspremiacoes (junto com contaid), quando é prêmio de meta ou o estorno dele |
 | criadopor | uuid | → auth.users |
 
 O navegador só lê. Os tipos `aprovacao`, `estorno_entrega`, `bonus` e `estorno_bonus` também somam em `pontostotal`.

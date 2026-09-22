@@ -1652,6 +1652,7 @@ export type Database = {
           endereco: string | null
           gestorid: number | null
           lojaid: number
+          mostrarvalorestv: boolean
           nome: string
           responsavelagendamentosid: number | null
         }
@@ -1663,6 +1664,7 @@ export type Database = {
           endereco?: string | null
           gestorid?: number | null
           lojaid?: number
+          mostrarvalorestv?: boolean
           nome: string
           responsavelagendamentosid?: number | null
         }
@@ -1674,6 +1676,7 @@ export type Database = {
           endereco?: string | null
           gestorid?: number | null
           lojaid?: number
+          mostrarvalorestv?: boolean
           nome?: string
           responsavelagendamentosid?: number | null
         }
@@ -1742,33 +1745,57 @@ export type Database = {
       metasdiariasapuracoes: {
         Row: {
           apuracaoid: number
+          atualizadoem: string
+          atualizadopor: string | null
           contaid: number
           dataapuracao: string
+          descricaometa: string | null
           funcionarioid_lancamento: number | null
+          lancadoem: string
+          lancadopor: string | null
           lojaid: number
           metaprincipalid: number | null
+          origemmeta: string | null
+          pontosmetadia: number
           pontosmetadiariaganhos: number | null
           valordia: number
+          valormetadia: number | null
         }
         Insert: {
           apuracaoid?: number
+          atualizadoem?: string
+          atualizadopor?: string | null
           contaid?: number
           dataapuracao: string
+          descricaometa?: string | null
           funcionarioid_lancamento?: number | null
+          lancadoem?: string
+          lancadopor?: string | null
           lojaid: number
           metaprincipalid?: number | null
+          origemmeta?: string | null
+          pontosmetadia?: number
           pontosmetadiariaganhos?: number | null
           valordia: number
+          valormetadia?: number | null
         }
         Update: {
           apuracaoid?: number
+          atualizadoem?: string
+          atualizadopor?: string | null
           contaid?: number
           dataapuracao?: string
+          descricaometa?: string | null
           funcionarioid_lancamento?: number | null
+          lancadoem?: string
+          lancadopor?: string | null
           lojaid?: number
           metaprincipalid?: number | null
+          origemmeta?: string | null
+          pontosmetadia?: number
           pontosmetadiariaganhos?: number | null
           valordia?: number
+          valormetadia?: number | null
         }
         Relationships: [
           {
@@ -1891,9 +1918,185 @@ export type Database = {
           },
         ]
       }
-      metasprincipais: {
+      metasespeciais: {
         Row: {
           contaid: number
+          criadoem: string
+          data: string
+          descricao: string
+          lojaid: number
+          metaespecialid: number
+          pontospremio: number
+          valormeta: number
+        }
+        Insert: {
+          contaid?: number
+          criadoem?: string
+          data: string
+          descricao: string
+          lojaid: number
+          metaespecialid?: number
+          pontospremio?: number
+          valormeta: number
+        }
+        Update: {
+          contaid?: number
+          criadoem?: string
+          data?: string
+          descricao?: string
+          lojaid?: number
+          metaespecialid?: number
+          pontospremio?: number
+          valormeta?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metasespeciais_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metasespeciais_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      metashistorico: {
+        Row: {
+          alteradoem: string
+          alteradopor: string | null
+          apuracaoid: number
+          contaid: number
+          dataapuracao: string
+          historicoid: number
+          lojaid: number
+          motivo: string | null
+          valoranterior: number | null
+          valornovo: number
+        }
+        Insert: {
+          alteradoem?: string
+          alteradopor?: string | null
+          apuracaoid: number
+          contaid?: number
+          dataapuracao: string
+          historicoid?: number
+          lojaid: number
+          motivo?: string | null
+          valoranterior?: number | null
+          valornovo: number
+        }
+        Update: {
+          alteradoem?: string
+          alteradopor?: string | null
+          apuracaoid?: number
+          contaid?: number
+          dataapuracao?: string
+          historicoid?: number
+          lojaid?: number
+          motivo?: string | null
+          valoranterior?: number | null
+          valornovo?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metashistorico_apuracao_fk"
+            columns: ["contaid", "apuracaoid"]
+            isOneToOne: false
+            referencedRelation: "metasdiariasapuracoes"
+            referencedColumns: ["contaid", "apuracaoid"]
+          },
+          {
+            foreignKeyName: "metashistorico_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metashistorico_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      metaspremiacoes: {
+        Row: {
+          apuracaoid: number | null
+          contaid: number
+          estornadoem: string | null
+          lojaid: number
+          metaprincipalid: number | null
+          pagoem: string
+          pontos: number
+          premiacaoid: number
+          tipo: string
+        }
+        Insert: {
+          apuracaoid?: number | null
+          contaid?: number
+          estornadoem?: string | null
+          lojaid: number
+          metaprincipalid?: number | null
+          pagoem?: string
+          pontos: number
+          premiacaoid?: number
+          tipo: string
+        }
+        Update: {
+          apuracaoid?: number | null
+          contaid?: number
+          estornadoem?: string | null
+          lojaid?: number
+          metaprincipalid?: number | null
+          pagoem?: string
+          pontos?: number
+          premiacaoid?: number
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metaspremiacoes_apuracao_fk"
+            columns: ["contaid", "apuracaoid"]
+            isOneToOne: false
+            referencedRelation: "metasdiariasapuracoes"
+            referencedColumns: ["contaid", "apuracaoid"]
+          },
+          {
+            foreignKeyName: "metaspremiacoes_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metaspremiacoes_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "metaspremiacoes_meta_fk"
+            columns: ["contaid", "metaprincipalid"]
+            isOneToOne: false
+            referencedRelation: "metasprincipais"
+            referencedColumns: ["contaid", "metaprincipalid"]
+          },
+        ]
+      }
+      metasprincipais: {
+        Row: {
+          atualizadoem: string
+          contaid: number
+          criadopor: string | null
           datafim: string
           datainicio: string
           descricao: string | null
@@ -1906,7 +2109,9 @@ export type Database = {
           valormetatotal: number
         }
         Insert: {
+          atualizadoem?: string
           contaid?: number
+          criadopor?: string | null
           datafim: string
           datainicio: string
           descricao?: string | null
@@ -1919,7 +2124,9 @@ export type Database = {
           valormetatotal: number
         }
         Update: {
+          atualizadoem?: string
           contaid?: number
+          criadopor?: string | null
           datafim?: string
           datainicio?: string
           descricao?: string | null
@@ -1961,6 +2168,7 @@ export type Database = {
           lojaid: number | null
           movimentoid: number
           pontos: number
+          premiacaoid: number | null
           resgateid: number | null
           tipo: string
         }
@@ -1976,6 +2184,7 @@ export type Database = {
           lojaid?: number | null
           movimentoid?: number
           pontos: number
+          premiacaoid?: number | null
           resgateid?: number | null
           tipo: string
         }
@@ -1991,6 +2200,7 @@ export type Database = {
           lojaid?: number | null
           movimentoid?: number
           pontos?: number
+          premiacaoid?: number | null
           resgateid?: number | null
           tipo?: string
         }
@@ -2036,6 +2246,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lojas"
             referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "movimentospontos_premiacao_fk"
+            columns: ["contaid", "premiacaoid"]
+            isOneToOne: false
+            referencedRelation: "metaspremiacoes"
+            referencedColumns: ["contaid", "premiacaoid"]
           },
           {
             foreignKeyName: "movimentospontos_resgate_fk"
@@ -3034,9 +3251,17 @@ export type Database = {
       }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
       eh_admin_geral: { Args: never; Returns: boolean }
+      equipe_da_meta: {
+        Args: { p_contaid: number; p_dia: string; p_lojaid: number }
+        Returns: number[]
+      }
       estornar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: number
+      }
+      estornar_premio_meta: {
+        Args: { p_motivo: string; p_premiacaoid: number }
+        Returns: undefined
       }
       estornar_troca: {
         Args: { p_motivo: string; p_resgateid: number }
@@ -3054,6 +3279,15 @@ export type Database = {
         Args: { p_dia: string; p_funcionarioid: number }
         Returns: Json
       }
+      lancar_venda_do_dia: {
+        Args: {
+          p_dia: string
+          p_lojaid: number
+          p_motivo?: string
+          p_valor: number
+        }
+        Returns: number
+      }
       listar_trocas: { Args: { p_limite?: number }; Returns: Json }
       maior_sequencia: {
         Args: {
@@ -3066,6 +3300,20 @@ export type Database = {
         }
         Returns: number
       }
+      meta_do_dia: {
+        Args: { p_dia: string; p_lojaid: number }
+        Returns: {
+          descricao: string
+          origem: string
+          pontospremio: number
+          valormeta: number
+        }[]
+      }
+      meta_para_painel: {
+        Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
+        Returns: Json
+      }
+      metas_do_mes: { Args: { p_lojaid: number; p_mes: string }; Returns: Json }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
       minha_taxa: { Args: never; Returns: number }
@@ -3082,6 +3330,19 @@ export type Database = {
         Returns: undefined
       }
       nome_curto: { Args: { p_nome: string }; Returns: string }
+      pagar_premio_meta: {
+        Args: {
+          p_apuracaoid: number
+          p_contaid: number
+          p_descricao: string
+          p_dia: string
+          p_lojaid: number
+          p_metaprincipalid: number
+          p_pontos: number
+          p_tipo: string
+        }
+        Returns: number
+      }
       painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
       painel_da_tv: { Args: { p_codigo: string }; Returns: Json }
       pendencias_da_pessoa: {
@@ -3096,6 +3357,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      primeiro_dia_editavel_meta: { Args: never; Returns: string }
       ranking_mensal: {
         Args: { p_ano: number; p_lojaid?: number; p_mes: number }
         Returns: {
@@ -3119,6 +3381,14 @@ export type Database = {
         }[]
       }
       reais: { Args: { p_valor: number }; Returns: string }
+      reavaliar_meta_do_dia: {
+        Args: { p_apuracaoid: number }
+        Returns: undefined
+      }
+      reavaliar_meta_do_mes: {
+        Args: { p_contaid: number; p_lojaid: number; p_mes: string }
+        Returns: undefined
+      }
       recusar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined
@@ -3174,6 +3444,17 @@ export type Database = {
       }
       resumo_das_lojas: { Args: never; Returns: Json }
       revogar_link_tv: { Args: { p_linktvid: number }; Returns: undefined }
+      salvar_meta_do_mes: {
+        Args: {
+          p_descricao?: string
+          p_lojaid: number
+          p_mes: string
+          p_nome: string
+          p_pontos: number
+          p_valor: number
+        }
+        Returns: number
+      }
       sou_master: { Args: never; Returns: boolean }
       tarefa_cai_no_dia: {
         Args: {

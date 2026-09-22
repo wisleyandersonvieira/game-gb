@@ -23,6 +23,7 @@ import { Route as AuthenticatedFeedbacksRouteImport } from './routes/_authentica
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
 import { Route as AuthenticatedJustificativasRouteImport } from './routes/_authenticated/justificativas'
+import { Route as AuthenticatedMetasRouteImport } from './routes/_authenticated/metas'
 import { Route as AuthenticatedOperacionalRouteImport } from './routes/_authenticated/operacional'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
 import { Route as AuthenticatedPremiosRouteImport } from './routes/_authenticated/premios'
@@ -106,6 +107,11 @@ const AuthenticatedJustificativasRoute =
     path: '/justificativas',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMetasRoute = AuthenticatedMetasRouteImport.update({
+  id: '/metas',
+  path: '/metas',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedOperacionalRoute =
   AuthenticatedOperacionalRouteImport.update({
     id: '/operacional',
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
+  '/metas': typeof AuthenticatedMetasRoute
   '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/premios': typeof AuthenticatedPremiosRoute
@@ -191,6 +198,7 @@ export interface FileRoutesByTo {
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
+  '/metas': typeof AuthenticatedMetasRoute
   '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/premios': typeof AuthenticatedPremiosRoute
@@ -217,6 +225,7 @@ export interface FileRoutesById {
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
   '/_authenticated/justificativas': typeof AuthenticatedJustificativasRoute
+  '/_authenticated/metas': typeof AuthenticatedMetasRoute
   '/_authenticated/operacional': typeof AuthenticatedOperacionalRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/premios': typeof AuthenticatedPremiosRoute
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/funcionarios'
     | '/gestao'
     | '/justificativas'
+    | '/metas'
     | '/operacional'
     | '/painel'
     | '/premios'
@@ -266,6 +276,7 @@ export interface FileRouteTypes {
     | '/funcionarios'
     | '/gestao'
     | '/justificativas'
+    | '/metas'
     | '/operacional'
     | '/painel'
     | '/premios'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
     | '/_authenticated/justificativas'
+    | '/_authenticated/metas'
     | '/_authenticated/operacional'
     | '/_authenticated/painel'
     | '/_authenticated/premios'
@@ -412,6 +424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedJustificativasRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/metas': {
+      id: '/_authenticated/metas'
+      path: '/metas'
+      fullPath: '/metas'
+      preLoaderRoute: typeof AuthenticatedMetasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/operacional': {
       id: '/_authenticated/operacional'
       path: '/operacional'
@@ -487,6 +506,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
   AuthenticatedJustificativasRoute: typeof AuthenticatedJustificativasRoute
+  AuthenticatedMetasRoute: typeof AuthenticatedMetasRoute
   AuthenticatedOperacionalRoute: typeof AuthenticatedOperacionalRoute
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedPremiosRoute: typeof AuthenticatedPremiosRoute
@@ -505,6 +525,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
   AuthenticatedJustificativasRoute: AuthenticatedJustificativasRoute,
+  AuthenticatedMetasRoute: AuthenticatedMetasRoute,
   AuthenticatedOperacionalRoute: AuthenticatedOperacionalRoute,
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedPremiosRoute: AuthenticatedPremiosRoute,
