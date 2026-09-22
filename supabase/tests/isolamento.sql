@@ -2663,6 +2663,8 @@ BEGIN
                                 AND excluidopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
                            FROM public.documentospessoais WHERE documentoid = d1),
                         'o registro fica: quem, quando, motivo, nome e tipo do arquivo');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.documentosacessos WHERE documentoid = d1 AND acao = 'exclusao'),
+                        'a exclusao tambem fica no registro de acessos');
   DELETE FROM storage.objects WHERE bucket_id = 'documentos-rh' AND name = cam;
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM storage.objects WHERE name = cam), 'o arquivo sai do Storage');
   BEGIN PERFORM public.liberar_documento_pessoal(d1); deu_erro := false;
