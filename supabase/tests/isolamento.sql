@@ -2885,6 +2885,593 @@ END $$;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- ===========================================================================
+-- 38. Rotinas automáticas (Etapa 1.11)
+--     Datas simuladas no futuro: 28/12/2026 a 22/01/2027 (virada de ano e de
+--     mês, paradas de 3 e de 10 dias). "Passar tarefa" usa o dia de hoje.
+-- ===========================================================================
+
+RESET ROLE;
+
+CREATE OR REPLACE FUNCTION public.teste_agora(p_dia date, p_hora text)
+RETURNS timestamptz LANGUAGE sql IMMUTABLE AS $$
+  SELECT (p_dia::text || ' ' || p_hora)::timestamp AT TIME ZONE 'America/Sao_Paulo'
+$$;
+
+UPDATE public.contas SET status = 'ativa'    WHERE contaid IN (1, 2);
+UPDATE public.contas SET status = 'suspensa' WHERE contaid = 3;
+
+-- Pessoas e tarefas desta seção (conta A: lojas 10 e 11; conta B: loja 20).
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, datainicioafastamento, datafimafastamento)
+OVERRIDING SYSTEM VALUE VALUES
+  (7001, 1, 'Ana Rotina',       0,    NULL, NULL),
+  (7002, 1, 'Beto Folga Terca', 3,    NULL, NULL),          -- 3 = terça
+  (7003, 1, 'Caio Afastado',    0,    '2026-12-28', '2026-12-30'),
+  (7005, 1, 'Duda Lista',       0,    NULL, NULL),
+  (7006, 1, 'Eva Duas Lojas',   0,    NULL, NULL),
+  (7101, 2, 'Rui da conta B',   0,    NULL, NULL);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+  (1, 7001, 10), (1, 7002, 10), (1, 7003, 10), (1, 7005, 10), (1, 7006, 10), (1, 7006, 11), (2, 7101, 20);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (7201, 1, 'Rotina diaria', 10), (7202, 1, 'Rotina extra', 5), (7301, 2, 'Rotina de B', 8);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES
+  (1, 7201, 10), (1, 7201, 11), (1, 7202, 10), (2, 7301, 20);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao)
+OVERRIDING SYSTEM VALUE VALUES
+  (7401, 1, 7201, 7001, 10, 'Diaria', '2026-12-01 09:00-03'),
+  (7402, 1, 7201, 7002, 10, 'Diaria', '2026-12-01 09:00-03'),
+  (7403, 1, 7201, 7003, 10, 'Diaria', '2026-12-01 09:00-03'),
+  (7405, 1, 7201, 7005, 10, 'Diaria', '2026-12-28 00:01-03'),
+  (7406, 1, 7201, 7006, 10, 'Diaria', '2026-12-28 00:01-03'),
+  (7407, 1, 7201, 7006, 11, 'Diaria', '2026-12-28 00:01-03'),
+  (7501, 2, 7301, 7101, 20, 'Diaria', '2026-12-01 09:00-03');
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  RAISE NOTICE '38. rotinas automaticas';
+
+  -- Horário de verão (histórico de São Paulo): em 04/11/2018 o relógio pulou
+  -- de 00:00 para 01:00; em 16/02/2019 as 23h se repetiram.
+  PERFORM public.exigir((SELECT dia = '2018-11-04' AND hora = '01:05'
+                           FROM public.rotina_hora_local('2018-11-04 03:05+00')),
+                        'horario de verao: 01:05 local no dia em que o relogio pulou');
+  PERFORM public.exigir((SELECT hora >= '00:30' FROM public.rotina_hora_local('2018-11-04 03:05+00')),
+                        'horario de verao: hora que nao existiu (00:30) conta como passada');
+  PERFORM public.exigir((SELECT dia FROM public.rotina_hora_local('2019-02-17 01:30+00'))
+                        = (SELECT dia FROM public.rotina_hora_local('2019-02-17 02:30+00')),
+                        'horario de verao: a hora repetida cai no mesmo dia (nao gera dia novo)');
+
+  -- Antes do horário (00:05): nada.
+  r := public.rotinas_despachar(public.teste_agora('2026-12-28', '00:02'));
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 1 AND dia = '2026-12-28'),
+                        'antes do horario da conta, a lista do dia nao e gerada');
+
+  r := public.rotinas_despachar(public.teste_agora('2026-12-28', '00:10'));
+  PERFORM public.exigir((r->>'erros')::integer = 0, 'despachante rodou sem erro');
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-28') = 'devida',
+                        'lista gerada: tarefa de quem trabalha fica devida');
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7403 AND dia = '2026-12-28') = 'afastamento',
+                        'lista gerada: quem esta afastado fica com a situacao afastamento');
+  PERFORM public.exigir((SELECT pontos FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-28') = 10,
+                        'lista gerada com os pontos do dia');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.rotinasexecucoes
+                                 WHERE contaid = 1 AND rotina = 'lista_do_dia' AND referencia = '2026-12-28'
+                                   AND resultado = 'ok' AND NOT recuperado),
+                        'geracao registrada no registro de execucoes');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasdodia WHERE contaid = 2 AND atribuicaoid = 7501 AND dia = '2026-12-28'),
+                        'todas as contas ativas rodam (conta B tambem)');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 3),
+                        'conta suspensa fica de fora');
+END $$;
+
+-- Dia 29/12 (terça): folga do Beto, reconciliação durante o dia.
+DO $$
+DECLARE n integer; r jsonb;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2026-12-29', '00:10'));
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7402 AND dia = '2026-12-29') = 'folga',
+                        'dia de folga do cadastro: item fica como folga (nao e obrigacao)');
+
+  -- Rodar de novo não duplica nem registra de novo.
+  SELECT count(*) INTO n FROM public.tarefasdodia WHERE contaid = 1 AND dia = '2026-12-29';
+  r := public.rotinas_despachar(public.teste_agora('2026-12-29', '00:15'));
+  r := public.rotinas_despachar(public.teste_agora('2026-12-29', '00:15'));
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefasdodia WHERE contaid = 1 AND dia = '2026-12-29') = n,
+                        'rodar duas vezes nao duplica a lista');
+  PERFORM public.exigir((SELECT count(*) FROM public.rotinasexecucoes
+                          WHERE contaid = 1 AND rotina = 'lista_do_dia' AND referencia = '2026-12-29') = 1,
+                        'rodada sem mudanca nao enche o registro');
+END $$;
+
+-- Mudanças de hoje no cadastro.
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao)
+OVERRIDING SYSTEM VALUE VALUES (7404, 1, 7202, 7001, 10, 'Diaria', '2026-12-01 09:00-03');
+UPDATE public.tarefas SET pontos = 20 WHERE tarefaid = 7201;
+UPDATE public.funcionarios SET diadefolga = 0 WHERE funcionarioid = 7002;     -- a folga de hoje foi desfeita
+UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 7003;      -- desativado hoje
+-- A Ana entregou hoje (a entrega segura o item mesmo que a atribuição acabe).
+INSERT INTO public.entregas (contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio, statusvalidacao)
+VALUES (1, 7201, 7001, 10, 7401, '2026-12-29 10:00-03', 'Pendente');
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2026-12-29', '14:05'));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasdodia WHERE atribuicaoid = 7404 AND dia = '2026-12-29' AND situacao = 'devida'),
+                        'reconciliacao: tarefa atribuida hoje entra na lista de hoje');
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7402 AND dia = '2026-12-29') = 'devida',
+                        'reconciliacao: folga desfeita hoje volta a ser devida');
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7403 AND dia = '2026-12-29') = 'cancelada',
+                        'reconciliacao: pessoa desativada hoje tem o item cancelado');
+  PERFORM public.exigir((SELECT pontos FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-29') = 10,
+                        'pontos mudados hoje nao mudam o item de hoje');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.rotinasexecucoes
+                                 WHERE contaid = 1 AND rotina = 'lista_do_dia' AND referencia = '2026-12-29'
+                                   AND (detalhe->>'ajuste')::boolean),
+                        'ajuste do dia aparece no registro de execucoes');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefasdodia WHERE atribuicaoid = 7404 AND dia = '2026-12-28'),
+                        'dia que ja passou nao ganha itens novos');
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7403 AND dia = '2026-12-28') = 'afastamento',
+                        'dia que ja passou nao muda (desativacao nao cancela ontem)');
+END $$;
+
+-- A atribuição da Ana acaba hoje, mas ela já entregou: o item fica.
+UPDATE public.tarefasatribuidas SET datafimvigencia = '2026-12-29' WHERE atribuicaoid IN (7401, 7404);
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2026-12-29', '15:05'));
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-29') = 'devida',
+                        'reconciliacao nunca mexe em item ja entregue');
+  PERFORM public.exigir((SELECT situacao FROM public.tarefasdodia WHERE atribuicaoid = 7404 AND dia = '2026-12-29') = 'cancelada',
+                        'reconciliacao cancela o que deixou de valer (atribuicao encerrada)');
+END $$;
+UPDATE public.tarefasatribuidas SET datafimvigencia = NULL WHERE atribuicaoid = 7401;
+
+-- Dia passado não muda por nenhum caminho (nem pelo dono do banco).
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  -- (as datas simuladas estão no futuro; o gatilho usa o dia real)
+  BEGIN
+    INSERT INTO public.tarefasdodia (contaid, lojaid, dia, atribuicaoid, funcionarioid, tarefaid, tipofrequencia, pontos, situacao)
+    VALUES (1, 10, '2020-01-01', 7401, 7001, 7201, 'Diaria', 10, 'devida');
+    UPDATE public.tarefasdodia SET situacao = 'cancelada' WHERE dia = '2020-01-01' AND atribuicaoid = 7401;
+    deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'item de dia que ja passou nao se altera');
+  BEGIN
+    DELETE FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-29'; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'item da lista nunca se apaga');
+  BEGIN
+    UPDATE public.tarefasdodia SET pontos = 99 WHERE atribuicaoid = 7401 AND dia = '2026-12-29'; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'pontos de um item nao mudam depois de gerado');
+END $$;
+
+-- Parada de 3 dias (30/12, 31/12 e 01/01): na volta, recupera sem duplicar.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2027-01-02', '00:10'));
+  PERFORM public.exigir((SELECT count(*) FROM public.diasgerados
+                          WHERE contaid = 1 AND dia IN ('2026-12-30', '2026-12-31', '2027-01-01') AND recuperado) = 3,
+                        'parada de 3 dias: os 3 dias sao recuperados (virada de ano no meio)');
+  PERFORM public.exigir((SELECT NOT recuperado FROM public.diasgerados WHERE contaid = 1 AND dia = '2027-01-02'),
+                        'o dia de hoje nao e marcado como recuperado');
+  PERFORM public.exigir((SELECT count(*) FROM public.rotinasexecucoes
+                          WHERE contaid = 1 AND rotina = 'lista_do_dia' AND recuperado
+                            AND referencia BETWEEN '2026-12-30' AND '2027-01-01') = 3,
+                        'dias recuperados aparecem no registro de execucoes');
+  PERFORM public.exigir((SELECT bool_and(recuperado) FROM public.tarefasdodia WHERE contaid = 1 AND dia = '2026-12-31'),
+                        'itens de dia recuperado ficam marcados como recuperado');
+  PERFORM public.exigir((SELECT pontos FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-30') = 20,
+                        'pontos novos valem do dia seguinte em diante');
+  r := public.rotinas_despachar(public.teste_agora('2027-01-02', '00:20'));
+  PERFORM public.exigir((SELECT count(*) FROM public.diasgerados WHERE contaid = 1 AND dia BETWEEN '2026-12-28' AND '2027-01-02') = 6,
+                        'recuperar de novo nao duplica');
+END $$;
+
+-- Entregas aprovadas da Eva, uma em cada loja (para o ranking por loja).
+INSERT INTO public.entregas (contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio, statusvalidacao, pontosganhos, dataaprovacao)
+VALUES
+  (1, 7201, 7006, 10, 7406, '2026-12-28 10:00-03', 'Aprovada', 10, '2026-12-28 11:00-03'),
+  (1, 7201, 7006, 11, 7407, '2026-12-28 10:00-03', 'Aprovada', 10, '2026-12-28 11:00-03'),
+  (1, 7201, 7006, 11, 7407, '2026-12-29 10:00-03', 'Aprovada', 10, '2026-12-29 11:00-03');
+
+-- Fechamento de dezembro/2026.
+DO $$
+DECLARE r jsonb; f integer;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2027-01-02', '00:30'));
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fechamentosmensais WHERE contaid = 1 AND ano = 2026 AND mes = 12),
+                        'fechamento espera o horario da conta (08:00)');
+  r := public.rotinas_despachar(public.teste_agora('2027-01-02', '08:10'));
+  SELECT fechamentoid INTO f FROM public.fechamentosmensais
+   WHERE contaid = 1 AND ano = 2026 AND mes = 12 AND situacao = 'provisorio';
+  PERFORM public.exigir(f IS NOT NULL, 'fechamento de dezembro criado provisorio (dia 2)');
+  -- Duda: 28 e 29 com 10 pontos (lista), 30 e 31 com 20. Pelo cadastro de hoje seriam 4 x 20 = 80.
+  PERFORM public.exigir((SELECT pontospossiveis FROM public.historicoranking
+                          WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7005) = 60,
+                        'fechamento usa a lista congelada (60, nao os 80 do cadastro de hoje)');
+  PERFORM public.exigir((SELECT pontosganhos FROM public.historicoranking WHERE fechamentoid = f AND lojaid = 10 AND funcionarioid = 7006) = 10
+                        AND (SELECT pontosganhos FROM public.historicoranking WHERE fechamentoid = f AND lojaid = 11 AND funcionarioid = 7006) = 20
+                        AND (SELECT pontosganhos FROM public.historicoranking WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7006) = 30,
+                        'quem trabalha em duas lojas: cada ponto conta na loja da tarefa, e o geral soma');
+  PERFORM public.exigir((SELECT min(posicao) FROM public.historicoranking WHERE fechamentoid = f AND lojaid IS NULL) = 1,
+                        'fechamento grava a posicao');
+  PERFORM public.exigir((SELECT nota FROM public.historicoranking WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7006)
+                        = (SELECT nota FROM public.ranking_mensal_da_conta(1, 2026, 12, NULL, '2026-12-31') WHERE funcionarioid = 7006),
+                        'a nota do fechamento e a mesma do ranking ao vivo');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.historicoranking WHERE contaid = 1 AND funcionarioid = 7101),
+                        'fechamento da conta A nao tem ninguem da conta B');
+END $$;
+
+-- Dia 3: uma entrega de 31/12 aprovada depois muda o provisório.
+INSERT INTO public.entregas (contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio, statusvalidacao, pontosganhos, dataaprovacao)
+VALUES (1, 7201, 7005, 10, 7405, '2026-12-31 18:00-03', 'Aprovada', 20, '2027-01-03 09:00-03');
+DO $$
+DECLARE r jsonb; f integer;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2027-01-03', '08:10'));
+  SELECT fechamentoid INTO f FROM public.fechamentosmensais WHERE contaid = 1 AND ano = 2026 AND mes = 12 AND situacao <> 'substituido';
+  PERFORM public.exigir((SELECT pontosregulares FROM public.historicoranking WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7005) = 20,
+                        'provisorio e refeito no dia seguinte (entrega aprovada depois entrou)');
+  PERFORM public.exigir((SELECT versao FROM public.fechamentosmensais WHERE fechamentoid = f) = 1,
+                        'refazer o provisorio nao cria versao nova');
+  r := public.rotinas_despachar(public.teste_agora('2027-01-08', '08:10'));
+  PERFORM public.exigir((SELECT situacao FROM public.fechamentosmensais WHERE fechamentoid = f) = 'definitivo',
+                        'no dia 8 o fechamento vira definitivo');
+END $$;
+
+-- Depois de definitivo, nada muda sozinho.
+INSERT INTO public.entregas (contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio, statusvalidacao, pontosganhos, dataaprovacao)
+VALUES (1, 7201, 7005, 10, 7405, '2026-12-30 18:00-03', 'Aprovada', 20, '2027-01-09 09:00-03');
+DO $$
+DECLARE r jsonb; f integer; deu_erro boolean;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2027-01-09', '08:10'));
+  SELECT fechamentoid INTO f FROM public.fechamentosmensais WHERE contaid = 1 AND ano = 2026 AND mes = 12 AND situacao <> 'substituido';
+  PERFORM public.exigir((SELECT pontosregulares FROM public.historicoranking WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7005) = 20,
+                        'fechamento definitivo nao muda com dados novos');
+  BEGIN
+    UPDATE public.historicoranking SET nota = 100 WHERE fechamentoid = f; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'linha de fechamento definitivo nao se altera (nem pelo dono do banco)');
+  BEGIN
+    UPDATE public.fechamentosmensais SET situacao = 'provisorio' WHERE fechamentoid = f; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'definitivo nao volta a provisorio');
+END $$;
+
+-- Refazer fechamento: só o master, com motivo, guardando a versão anterior.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean; v integer; antigo integer;
+BEGIN
+  SELECT fechamentoid INTO antigo FROM public.fechamentosmensais WHERE ano = 2026 AND mes = 12 AND situacao <> 'substituido';
+  BEGIN PERFORM public.refazer_fechamento(2026, 12, '  '); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'refazer fechamento exige motivo');
+  BEGIN INSERT INTO public.historicoranking (contaid, fechamentoid, ano, mes, funcionarioid) VALUES (1, antigo, 2026, 12, 7005); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem grava no historico do ranking direto pela tela');
+
+  v := public.refazer_fechamento(2026, 12, 'Entrega de 30/12 aprovada depois do fechamento');
+  PERFORM public.exigir((SELECT situacao = 'definitivo' AND versao = 2 AND origem = 'master' FROM public.fechamentosmensais WHERE fechamentoid = v),
+                        'refazer cria a versao 2, definitiva, pelo master');
+  PERFORM public.exigir((SELECT pontosregulares FROM public.historicoranking WHERE fechamentoid = v AND lojaid IS NULL AND funcionarioid = 7005) = 40,
+                        'a versao nova tem os numeros atualizados');
+  PERFORM public.exigir((SELECT situacao FROM public.fechamentosmensais WHERE fechamentoid = antigo) = 'substituido'
+                        AND (SELECT pontosregulares FROM public.historicoranking WHERE fechamentoid = antigo AND lojaid IS NULL AND funcionarioid = 7005) = 20,
+                        'a versao anterior fica guardada, com os numeros dela');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fechamentosmensais WHERE contaid = 1)
+                        AND NOT EXISTS (SELECT 1 FROM public.historicoranking WHERE contaid = 1),
+                        'B nao le os fechamentos de A');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefasdodia WHERE contaid = 1)
+                        AND NOT EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 1)
+                        AND NOT EXISTS (SELECT 1 FROM public.rotinasexecucoes WHERE contaid = 1),
+                        'B nao le a lista do dia nem o registro de rotinas de A');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.lista_candidatos(1, '2026-12-29'))
+                        AND NOT EXISTS (SELECT 1 FROM public.ranking_mensal_da_conta(1, 2026, 12, NULL, '2026-12-31')),
+                        'B nao le a lista nem o ranking de A passando a conta de A');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.fechamentosmensais WHERE ano = 2026 AND mes = 12),
+                        'B tem o proprio fechamento');
+  BEGIN PERFORM public.rotinas_despachar(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama o despachante');
+  BEGIN PERFORM public.lista_do_dia_gerar(1, '2026-12-29', '2026-12-29', false); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama a geracao interna');
+  BEGIN PERFORM public.rotina_lista_do_dia(1, now(), 'manual'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama a rotina de outra conta');
+  BEGIN PERFORM public.fechamento_calcular(1, 1); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama o calculo interno do fechamento');
+  BEGIN PERFORM * FROM public.rotinas_resumo_admin(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'master nao ve o resumo do admin');
+END $$;
+RESET ROLE;
+
+-- Parada de 10 dias: só os últimos 7 são recuperados; os outros 3 seguem
+-- pela regra do cadastro na nota do mês.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2027-01-20', '00:10'));
+  PERFORM public.exigir((SELECT count(*) FROM public.diasgerados WHERE contaid = 1 AND dia BETWEEN '2027-01-13' AND '2027-01-19' AND recuperado) = 7,
+                        'parada de 10 dias: recupera no maximo 7 dias');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 1 AND dia BETWEEN '2027-01-10' AND '2027-01-12'),
+                        'dias alem do limite de 7 nao sao gerados');
+END $$;
+UPDATE public.tarefas SET pontos = 30 WHERE tarefaid = 7201;
+DO $$
+BEGIN
+  -- Duda em janeiro até 19/01: 16 dias com lista (20 pontos) + 3 dias pela regra (30 de hoje).
+  PERFORM public.exigir((SELECT pontospossiveis FROM public.ranking_mensal_da_conta(1, 2027, 1, NULL, '2027-01-19') WHERE funcionarioid = 7005)
+                        = 16 * 20 + 3 * 30,
+                        'nota do mes: dias com lista usam a lista, dias sem lista usam a regra');
+END $$;
+
+-- Uma conta com erro não trava as outras.
+ALTER TABLE public.configuracoes DISABLE TRIGGER USER;
+INSERT INTO public.configuracoes (contaid, chave, valor) VALUES (2, 'HORARIO_GERACAO_TAREFAS', 'quebrado')
+ON CONFLICT (contaid, chave) DO UPDATE SET valor = 'quebrado';
+ALTER TABLE public.configuracoes ENABLE TRIGGER USER;
+UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.rotinas_despachar(public.teste_agora('2027-01-21', '00:10'));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 1 AND dia = '2027-01-21'),
+                        'conta A rodou mesmo com erro na conta B');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.rotinasexecucoes
+                                 WHERE contaid = 2 AND rotina = 'lista_do_dia' AND referencia = '2027-01-21' AND resultado = 'erro'),
+                        'o erro da conta B fica registrado');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 2 AND dia = '2027-01-21'),
+                        'a conta com erro nao gera lista pela metade');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefasdodia WHERE lojaid = 11 AND dia = '2027-01-21'),
+                        'loja desativada fica de fora');
+  r := public.rotinas_despachar(public.teste_agora('2027-01-21', '00:15'));
+  PERFORM public.exigir((SELECT count(*) FROM public.rotinasexecucoes
+                          WHERE contaid = 2 AND rotina = 'lista_do_dia' AND referencia = '2027-01-21' AND resultado = 'erro') = 1,
+                        'o mesmo erro nao e registrado de novo a cada 5 minutos');
+END $$;
+DELETE FROM public.configuracoes WHERE contaid = 2 AND chave = 'HORARIO_GERACAO_TAREFAS';
+UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+
+-- Isolamento: gerar a lista da conta A não toca em nada da conta B.
+DO $$
+DECLARE antes text; depois text;
+BEGIN
+  SELECT md5(string_agg(t::text, '' ORDER BY itemid)) INTO antes FROM public.tarefasdodia t WHERE contaid = 2;
+  PERFORM public.lista_do_dia_gerar(1, '2027-01-22', '2027-01-22', false);
+  PERFORM public.rotina_lista_do_dia(1, public.teste_agora('2027-01-22', '09:00'), 'agendada');
+  SELECT md5(string_agg(t::text, '' ORDER BY itemid)) INTO depois FROM public.tarefasdodia t WHERE contaid = 2;
+  PERFORM public.exigir(antes = depois, 'a rotina da conta A nao cria nem altera nada da conta B');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.diasgerados WHERE contaid = 2 AND dia = '2027-01-22'),
+                        'a rotina da conta A nao gera dia para a conta B');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefasdodia i JOIN public.tarefasatribuidas ta ON ta.atribuicaoid = i.atribuicaoid
+                                     WHERE i.contaid <> ta.contaid),
+                        'todo item da lista pertence a conta da atribuicao');
+END $$;
+
+-- Conferência do livro: nunca corrige, só registra.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.rotina_conferencia_livro(1, public.teste_agora('2027-01-21', '03:10'));
+  PERFORM public.exigir(r->>'acao' = 'ok', 'conferencia do livro: saldos batem');
+END $$;
+SET session_replication_role = replica;      -- simula um saldo mexido por fora
+UPDATE public.funcionarios SET saldopontos = saldopontos + 5 WHERE funcionarioid = 7001;
+SET session_replication_role = origin;
+DO $$
+DECLARE r jsonb; saldo integer;
+BEGIN
+  SELECT saldopontos INTO saldo FROM public.funcionarios WHERE funcionarioid = 7001;
+  r := public.rotina_conferencia_livro(1, public.teste_agora('2027-01-22', '03:10'));
+  PERFORM public.exigir(r->>'acao' = 'diferenca', 'conferencia encontra a diferenca');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 7001) = saldo,
+                        'conferencia nao corrige o saldo sozinha');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.rotinasexecucoes
+                                 WHERE contaid = 1 AND rotina = 'conferencia_livro' AND referencia = '2027-01-22'
+                                   AND resultado = 'erro' AND detalhe->'diferencas' @> '[{"funcionarioid": 7001}]'),
+                        'diferenca registrada com a pessoa');
+  r := public.rotina_conferencia_livro(1, public.teste_agora('2027-01-22', '04:00'));
+  PERFORM public.exigir(r->>'acao' = 'ja rodou hoje', 'conferencia roda uma vez por dia');
+END $$;
+SET session_replication_role = replica;
+UPDATE public.funcionarios SET saldopontos = saldopontos - 5 WHERE funcionarioid = 7001;
+SET session_replication_role = origin;
+
+-- Admin geral: vê a situação por conta, sem texto nem dados.
+SET ROLE authenticated;
+SET teste.uid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT situacao FROM public.rotinas_resumo_admin() WHERE contaid = 1 AND rotina = 'conferencia_livro') = 'diferenca',
+                        'admin geral ve a diferenca na lista de contas');
+  PERFORM public.exigir((SELECT situacao FROM public.rotinas_resumo_admin() WHERE contaid = 2 AND rotina = 'lista_do_dia') = 'erro',
+                        'admin geral ve o erro da conta B');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.rotinasexecucoes),
+                        'admin geral nao le o registro detalhado das contas');
+END $$;
+RESET ROLE;
+
+-- Limpeza: só o registro de rotinas com mais de 180 dias.
+INSERT INTO public.rotinasexecucoes (contaid, rotina, iniciadoem, resultado) VALUES
+  (1, 'lista_do_dia', now() - interval '200 days', 'ok'),
+  (1, 'lista_do_dia', now() - interval '181 days', 'ok'),
+  (2, 'lista_do_dia', now() - interval '200 days', 'ok');
+DO $$
+DECLARE mov integer; acessos integer; recentes integer; r jsonb;
+BEGIN
+  SELECT count(*) INTO mov FROM public.movimentospontos;
+  SELECT count(*) INTO acessos FROM public.documentosacessos;
+  SELECT count(*) INTO recentes FROM public.rotinasexecucoes WHERE contaid = 1 AND iniciadoem > now() - interval '180 days';
+  r := public.rotina_limpeza(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  PERFORM public.exigir((r->>'apagados')::integer = 2, 'limpeza apaga o registro de rotinas com mais de 180 dias');
+  PERFORM public.exigir((SELECT count(*) FROM public.rotinasexecucoes WHERE contaid = 1 AND iniciadoem > now() - interval '180 days') = recentes + 1,
+                        'limpeza mantem o registro recente');
+  PERFORM public.exigir((SELECT count(*) FROM public.rotinasexecucoes WHERE contaid = 2 AND iniciadoem < now() - interval '180 days') = 1,
+                        'limpeza da conta A nao apaga nada da conta B');
+  PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos) = mov, 'limpeza nao toca no livro de pontos');
+  PERFORM public.exigir((SELECT count(*) FROM public.documentosacessos) = acessos,
+                        'limpeza nao toca no registro de acesso a documentos pessoais');
+END $$;
+DELETE FROM public.rotinasexecucoes WHERE contaid = 2 AND iniciadoem < now() - interval '180 days';
+
+-- ---------------------------------------------------------------------------
+-- Passar tarefa de quem está de folga HOJE (data real).
+-- ---------------------------------------------------------------------------
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, ativo, datainicioafastamento, datafimafastamento)
+OVERRIDING SYSTEM VALUE VALUES
+  (7010, 1, 'Fabi Folga',      extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1, true, NULL, NULL),
+  (7011, 1, 'Gabi Trabalha',   0, true,  NULL, NULL),
+  (7012, 1, 'Hugo Outra Loja', 0, true,  NULL, NULL),
+  (7013, 1, 'Ivo Inativo',     0, true,  NULL, NULL),
+  (7014, 1, 'Juca Afastado',   0, true,  public.dia_em_sao_paulo(now()), public.dia_em_sao_paulo(now()));
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+  (1, 7010, 10), (1, 7011, 10), (1, 7012, 11), (1, 7013, 10), (1, 7014, 10);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (7203, 1, 'Limpar vitrine', 7);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 7203, 10);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao)
+OVERRIDING SYSTEM VALUE VALUES
+  (7410, 1, 7203, 7010, 10, 'Diaria', now()),
+  (7411, 1, 7203, 7011, 10, 'Diaria', now()),
+  (7414, 1, 7203, 7014, 10, 'Diaria', now());
+UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 7013;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean; lista jsonb; gente jsonb; nova integer; saldo integer; ultimo integer; r jsonb;
+BEGIN
+  lista := public.tarefas_de_folga_hoje(10);
+  PERFORM public.exigir(lista @> '[{"atribuicaoid": 7410, "motivo": "folga"}]' AND lista @> '[{"atribuicaoid": 7414, "motivo": "afastamento"}]'
+                        AND NOT lista @> '[{"atribuicaoid": 7411}]',
+                        'bloco de folga lista folga e afastamento, e nao quem trabalha');
+  gente := public.quem_trabalha_hoje(10);
+  PERFORM public.exigir(gente @> '[{"funcionarioid": 7011}]' AND NOT gente @> '[{"funcionarioid": 7010}]'
+                        AND NOT gente @> '[{"funcionarioid": 7012}]' AND NOT gente @> '[{"funcionarioid": 7013}]'
+                        AND NOT gente @> '[{"funcionarioid": 7014}]',
+                        '"Passar para" so mostra ativos da mesma loja que trabalham hoje');
+
+  BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7012); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao passa para quem e de outra loja');
+  BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7013); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao passa para funcionario inativo');
+  BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7014); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao passa para quem esta afastado');
+  BEGIN PERFORM public.passar_tarefa_de_folga(7411, 7010); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'tarefa de quem trabalha hoje nao se passa');
+
+  nova := public.passar_tarefa_de_folga(7410, 7011);
+  PERFORM public.exigir((SELECT tipofrequencia = 'Unica' AND funcionarioid = 7011 AND origematribuicaoid = 7410 AND tarefaid = 7203
+                           FROM public.tarefasatribuidas WHERE atribuicaoid = nova),
+                        'passar cria a tarefa unica de hoje, da mesma tarefa (mesmos pontos)');
+  PERFORM public.exigir((SELECT passadapara = 7011 FROM public.tarefasdodia
+                          WHERE atribuicaoid = 7410 AND dia = public.dia_em_sao_paulo(now())),
+                        'na lista do dia, o item original fica "passada para"');
+  PERFORM public.exigir(public.tarefas_de_folga_hoje(10) @> '[{"atribuicaoid": 7410, "passadapara": "Gabi Trabalha"}]',
+                        'o bloco mostra para quem foi passada');
+  BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7011); deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'uma tarefa nao e passada duas vezes no mesmo dia');
+  BEGIN PERFORM public.registrar_entrega(7410); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a original passada nao recebe entrega');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = 7410)
+                        AND EXISTS (SELECT 1 FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = nova),
+                        'no quadro sai a original e entra a de quem recebeu');
+  PERFORM public.exigir(public.painel_da_loja(10)::text NOT LIKE '%Fabi Folga%',
+                        'painel da loja (e TV) nao mostra mais a tarefa passada de quem esta de folga');
+
+  SELECT saldopontos INTO saldo FROM public.funcionarios WHERE funcionarioid = 7011;
+  SELECT coalesce(max(movimentoid), 0) INTO ultimo FROM public.movimentospontos;
+  PERFORM public.registrar_entrega(nova, NULL, NULL, true);
+  -- (a aprovação pode destravar uma conquista: o bônus também entra pelo livro)
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 7011)
+                          = saldo + (SELECT sum(pontos) FROM public.movimentospontos WHERE funcionarioid = 7011 AND movimentoid > ultimo)
+                        AND EXISTS (SELECT 1 FROM public.movimentospontos m JOIN public.entregas e ON e.entregaid = m.entregaid
+                                     WHERE e.atribuicaoid = nova AND m.tipo = 'aprovacao' AND m.pontos = 7),
+                        'os pontos da tarefa recebida entram pelo livro, na aprovacao');
+  PERFORM public.exigir((SELECT pontospossiveis = 7 AND pontosregulares = 0 AND pontosganhos = 7
+                           FROM public.ranking_mensal_da_conta(1, extract(year FROM public.dia_em_sao_paulo(now()))::integer,
+                                                               extract(month FROM public.dia_em_sao_paulo(now()))::integer,
+                                                               NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 7011),
+                        'tarefa recebida e esforco extra: conta nos ganhos, nao nos possiveis nem na confiabilidade');
+
+  -- "Rodar agora" e o Início.
+  r := public.rodar_geracao_hoje();
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.rotinasexecucoes
+                                 WHERE rotina = 'lista_do_dia' AND origem = 'manual' AND referencia = public.dia_em_sao_paulo(now())),
+                        '"Rodar agora" roda a geracao de hoje e registra como manual');
+  PERFORM public.exigir(public.painel_inicio(NULL) ? 'avisos' AND public.painel_inicio(NULL)->'rotina'->>'resultado' = 'ok',
+                        'Inicio mostra os avisos e a situacao da rotina de hoje');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(public.tarefas_de_folga_hoje(10) = '[]'::jsonb AND public.quem_trabalha_hoje(10) = '[]'::jsonb,
+                        'B nao ve as folgas nem a equipe da loja de A');
+  BEGIN PERFORM public.passar_tarefa_de_folga(7414, 7011); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao passa tarefa de A');
+END $$;
+
+SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.rodar_geracao_hoje(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao roda a rotina');
+END $$;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+RESET ROLE;
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao, dataagendamento, origematribuicaoid)
+    VALUES (1, 7203, 7011, 10, 'Unica', now(), now(), 7410);
+    deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o banco impede passar a mesma tarefa duas vezes no mesmo dia, por qualquer caminho');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.rotinas_despachar(timestamptz)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.rotinas_despachar(timestamptz)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.lista_do_dia_gerar(integer, date, date, boolean)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.rotina_fechamento_mensal(integer, timestamptz)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.rotina_conferencia_livro(integer, timestamptz)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.rotina_limpeza(integer, timestamptz)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.rotina_registrar(integer, text, date, text, timestamptz, text, jsonb, text, boolean)', 'EXECUTE'),
+                        'funcoes da rotina nao ficam liberadas para o navegador');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -2959,7 +3546,8 @@ BEGIN
       'incluir_destinatarios', 'publicar_comunicado', 'editar_comunicado', 'arquivar_comunicado', 'fora_do_comunicado',
       'registrar_ciencia', 'desfazer_ciencia', 'preparar_envio_documento', 'documento_rh_liberado',
       'registrar_documento_pessoal', 'registrar_ciencia_documento', 'excluir_documento_por_engano',
-      'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding'
+      'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding',
+      'rodar_geracao_hoje', 'passar_tarefa_de_folga', 'refazer_fechamento', 'rotinas_resumo_admin'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'

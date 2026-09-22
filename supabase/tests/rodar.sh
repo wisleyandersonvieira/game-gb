@@ -158,6 +158,28 @@ if [ "$ok_ci" != "1" ] || [ "$erros_ci" != "0" ]; then
 $saida_ci"
 fi
 
+echo "==> rotinas ao mesmo tempo (duas rodadas e o mesmo repasse de folga)"
+rodar "$RAIZ/supabase/tests/concorrencia_rotina_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_rotina_sessao.sql" "$CONTAINER:/sessao_r.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -v pessoa=1202 -f /sessao_r.sql >/tmp/gamegb-sessao11.txt 2>&1 &
+p11=$!
+docker exec "$CONTAINER" psql -U postgres -q -v pessoa=1203 -f /sessao_r.sql >/tmp/gamegb-sessao12.txt 2>&1 &
+p12=$!
+wait "$p11" "$p12" || true
+repasse=$(cat /tmp/gamegb-sessao11.txt /tmp/gamegb-sessao12.txt | grep -c "já foi passada" || true)
+erros_r=$(cat /tmp/gamegb-sessao11.txt /tmp/gamegb-sessao12.txt | grep "ERROR" | grep -vc "já foi passada" || true)
+grep -h ERROR /tmp/gamegb-sessao11.txt /tmp/gamegb-sessao12.txt | grep -v "já foi passada" || true
+rm -f /tmp/gamegb-sessao11.txt /tmp/gamegb-sessao12.txt
+echo "    conexao recusada por repasse duplicado: $repasse de 2; outros erros: $erros_r"
+
+saida_r="$(rodar "$RAIZ/supabase/tests/concorrencia_rotina_confere.sql" 2>&1)" && ok_r=1 || ok_r=0
+echo "$saida_r" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_r" != "1" ] || [ "$repasse" != "1" ] || [ "$erros_r" != "0" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_r"
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"

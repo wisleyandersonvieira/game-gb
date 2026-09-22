@@ -697,6 +697,35 @@ export type Database = {
           },
         ]
       }
+      diasgerados: {
+        Row: {
+          contaid: number
+          dia: string
+          geradoem: string
+          recuperado: boolean
+        }
+        Insert: {
+          contaid?: number
+          dia: string
+          geradoem?: string
+          recuperado?: boolean
+        }
+        Update: {
+          contaid?: number
+          dia?: string
+          geradoem?: string
+          recuperado?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diasgerados_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       documentos: {
         Row: {
           alvo: string
@@ -1281,6 +1310,62 @@ export type Database = {
           },
         ]
       }
+      fechamentosmensais: {
+        Row: {
+          ano: number
+          atualizadoem: string | null
+          contaid: number
+          definitivoem: string | null
+          fechadoem: string
+          fechadopor: string | null
+          fechamentoid: number
+          mes: number
+          motivo: string | null
+          origem: string
+          situacao: string
+          substituidoem: string | null
+          versao: number
+        }
+        Insert: {
+          ano: number
+          atualizadoem?: string | null
+          contaid?: number
+          definitivoem?: string | null
+          fechadoem?: string
+          fechadopor?: string | null
+          fechamentoid?: number
+          mes: number
+          motivo?: string | null
+          origem: string
+          situacao: string
+          substituidoem?: string | null
+          versao?: number
+        }
+        Update: {
+          ano?: number
+          atualizadoem?: string | null
+          contaid?: number
+          definitivoem?: string | null
+          fechadoem?: string
+          fechadopor?: string | null
+          fechamentoid?: number
+          mes?: number
+          motivo?: string | null
+          origem?: string
+          situacao?: string
+          substituidoem?: string | null
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fechamentosmensais_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       feedbacks: {
         Row: {
           anuladoem: string | null
@@ -1678,41 +1763,56 @@ export type Database = {
       historicoranking: {
         Row: {
           ano: number
+          confiabilidade: number
           contaid: number
+          esforco: number
+          fechamentoid: number
           funcionarioid: number
           historicoid: number
-          lojaid: number
+          lojaid: number | null
           mes: number
           nomefuncionario: string
+          nota: number
           percentualdesempenho: number
           pontosganhos: number
           pontospossiveis: number
+          pontosregulares: number
           posicao: number
         }
         Insert: {
           ano: number
+          confiabilidade?: number
           contaid?: number
+          esforco?: number
+          fechamentoid: number
           funcionarioid: number
           historicoid?: number
-          lojaid: number
+          lojaid?: number | null
           mes: number
           nomefuncionario: string
+          nota?: number
           percentualdesempenho: number
           pontosganhos: number
           pontospossiveis: number
+          pontosregulares?: number
           posicao: number
         }
         Update: {
           ano?: number
+          confiabilidade?: number
           contaid?: number
+          esforco?: number
+          fechamentoid?: number
           funcionarioid?: number
           historicoid?: number
-          lojaid?: number
+          lojaid?: number | null
           mes?: number
           nomefuncionario?: string
+          nota?: number
           percentualdesempenho?: number
           pontosganhos?: number
           pontospossiveis?: number
+          pontosregulares?: number
           posicao?: number
         }
         Relationships: [
@@ -1722,6 +1822,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contas"
             referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "historicoranking_fechamento_fk"
+            columns: ["contaid", "fechamentoid"]
+            isOneToOne: false
+            referencedRelation: "fechamentosmensais"
+            referencedColumns: ["contaid", "fechamentoid"]
           },
           {
             foreignKeyName: "historicoranking_funcionarioid_fk"
@@ -3201,6 +3308,56 @@ export type Database = {
           },
         ]
       }
+      rotinasexecucoes: {
+        Row: {
+          contaid: number
+          detalhe: Json | null
+          erro: string | null
+          execucaoid: number
+          iniciadoem: string
+          origem: string
+          recuperado: boolean
+          referencia: string | null
+          resultado: string
+          rotina: string
+          terminadoem: string | null
+        }
+        Insert: {
+          contaid?: number
+          detalhe?: Json | null
+          erro?: string | null
+          execucaoid?: number
+          iniciadoem?: string
+          origem?: string
+          recuperado?: boolean
+          referencia?: string | null
+          resultado: string
+          rotina: string
+          terminadoem?: string | null
+        }
+        Update: {
+          contaid?: number
+          detalhe?: Json | null
+          erro?: string | null
+          execucaoid?: number
+          iniciadoem?: string
+          origem?: string
+          recuperado?: boolean
+          referencia?: string | null
+          resultado?: string
+          rotina?: string
+          terminadoem?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rotinasexecucoes_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       solicitacoeshistorico: {
         Row: {
           alteradoem: string
@@ -3512,6 +3669,116 @@ export type Database = {
           },
           {
             foreignKeyName: "tarefasatribuidas_tarefaid_fk"
+            columns: ["contaid", "tarefaid"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["contaid", "tarefaid"]
+          },
+        ]
+      }
+      tarefasdodia: {
+        Row: {
+          atribuicaoid: number
+          atualizadoem: string | null
+          contaid: number
+          dia: string
+          funcionarioid: number
+          geradoem: string
+          itemid: number
+          lojaid: number
+          passadaatribuicaoid: number | null
+          passadaem: string | null
+          passadapara: number | null
+          passadapor: string | null
+          pontos: number
+          recuperado: boolean
+          situacao: string
+          tarefaid: number
+          tipofrequencia: string
+        }
+        Insert: {
+          atribuicaoid: number
+          atualizadoem?: string | null
+          contaid?: number
+          dia: string
+          funcionarioid: number
+          geradoem?: string
+          itemid?: number
+          lojaid: number
+          passadaatribuicaoid?: number | null
+          passadaem?: string | null
+          passadapara?: number | null
+          passadapor?: string | null
+          pontos: number
+          recuperado?: boolean
+          situacao: string
+          tarefaid: number
+          tipofrequencia: string
+        }
+        Update: {
+          atribuicaoid?: number
+          atualizadoem?: string | null
+          contaid?: number
+          dia?: string
+          funcionarioid?: number
+          geradoem?: string
+          itemid?: number
+          lojaid?: number
+          passadaatribuicaoid?: number | null
+          passadaem?: string | null
+          passadapara?: number | null
+          passadapor?: string | null
+          pontos?: number
+          recuperado?: boolean
+          situacao?: string
+          tarefaid?: number
+          tipofrequencia?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefasdodia_atribuicao_fk"
+            columns: ["contaid", "atribuicaoid"]
+            isOneToOne: false
+            referencedRelation: "tarefasatribuidas"
+            referencedColumns: ["contaid", "atribuicaoid"]
+          },
+          {
+            foreignKeyName: "tarefasdodia_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "tarefasdodia_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "tarefasdodia_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "tarefasdodia_passadaatribuicao_fk"
+            columns: ["contaid", "passadaatribuicaoid"]
+            isOneToOne: false
+            referencedRelation: "tarefasatribuidas"
+            referencedColumns: ["contaid", "atribuicaoid"]
+          },
+          {
+            foreignKeyName: "tarefasdodia_passadapara_fk"
+            columns: ["contaid", "passadapara"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "tarefasdodia_tarefa_fk"
             columns: ["contaid", "tarefaid"]
             isOneToOne: false
             referencedRelation: "tarefas"
@@ -3858,6 +4125,10 @@ export type Database = {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }
         Returns: Json
       }
+      fechamento_calcular: {
+        Args: { p_contaid: number; p_fechamentoid: number }
+        Returns: number
+      }
       fora_do_comunicado: { Args: { p_documentoid: number }; Returns: Json }
       historico_da_pessoa: {
         Args: { p_funcionarioid: number; p_limite?: number }
@@ -3868,6 +4139,15 @@ export type Database = {
         Returns: number
       }
       iniciar_onboarding: { Args: { p_funcionarioid: number }; Returns: number }
+      item_tratado: {
+        Args: {
+          p_atribuicaoid: number
+          p_dia: string
+          p_passadapara: number
+          p_tipo: string
+        }
+        Returns: boolean
+      }
       justificaveis: {
         Args: { p_dia: string; p_funcionarioid: number }
         Returns: Json
@@ -3884,6 +4164,27 @@ export type Database = {
       liberar_documento_pessoal: {
         Args: { p_documentoid: number }
         Returns: string
+      }
+      lista_candidatos: {
+        Args: { p_contaid: number; p_dia: string }
+        Returns: {
+          atribuicaoid: number
+          funcionarioid: number
+          lojaid: number
+          pontos: number
+          situacao: string
+          tarefaid: number
+          tipofrequencia: string
+        }[]
+      }
+      lista_do_dia_gerar: {
+        Args: {
+          p_contaid: number
+          p_dia: string
+          p_hoje: string
+          p_recuperado: boolean
+        }
+        Returns: Json
       }
       listar_trocas: { Args: { p_limite?: number }; Returns: Json }
       maior_sequencia: {
@@ -3956,6 +4257,14 @@ export type Database = {
       painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
       painel_da_tv: { Args: { p_codigo: string }; Returns: Json }
       painel_inicio: { Args: { p_lojaid?: number }; Returns: Json }
+      passada_hoje: {
+        Args: { p_atribuicaoid: number; p_dia: string }
+        Returns: boolean
+      }
+      passar_tarefa_de_folga: {
+        Args: { p_atribuicaoid: number; p_funcionarioid: number }
+        Returns: number
+      }
       pasta_de_agendamento_minha: {
         Args: { p_editavel: boolean; p_nome: string }
         Returns: boolean
@@ -3988,8 +4297,28 @@ export type Database = {
         }
         Returns: number
       }
+      quem_trabalha_hoje: { Args: { p_lojaid: number }; Returns: Json }
       ranking_mensal: {
         Args: { p_ano: number; p_lojaid?: number; p_mes: number }
+        Returns: {
+          confiabilidade: number
+          esforco: number
+          funcionarioid: number
+          nomecompleto: string
+          nota: number
+          pontosganhos: number
+          pontospossiveis: number
+          pontosregulares: number
+        }[]
+      }
+      ranking_mensal_da_conta: {
+        Args: {
+          p_ano: number
+          p_contaid: number
+          p_fim: string
+          p_lojaid: number
+          p_mes: number
+        }
         Returns: {
           confiabilidade: number
           esforco: number
@@ -4028,6 +4357,10 @@ export type Database = {
       recusar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined
+      }
+      refazer_fechamento: {
+        Args: { p_ano: number; p_mes: number; p_motivo: string }
+        Returns: number
       }
       registra_agenda: {
         Args: {
@@ -4133,6 +4466,58 @@ export type Database = {
       }
       resumo_das_lojas: { Args: never; Returns: Json }
       revogar_link_tv: { Args: { p_linktvid: number }; Returns: undefined }
+      rodar_geracao_hoje: { Args: never; Returns: Json }
+      rotina_conferencia_livro: {
+        Args: { p_agora: string; p_contaid: number }
+        Returns: Json
+      }
+      rotina_fechamento_mensal: {
+        Args: { p_agora: string; p_contaid: number }
+        Returns: Json
+      }
+      rotina_hora_local: {
+        Args: { p_agora: string; p_fuso?: string }
+        Returns: {
+          dia: string
+          hora: string
+        }[]
+      }
+      rotina_horario: {
+        Args: { p_chave: string; p_contaid: number; p_padrao: string }
+        Returns: string
+      }
+      rotina_limpeza: {
+        Args: { p_agora: string; p_contaid: number }
+        Returns: Json
+      }
+      rotina_lista_do_dia: {
+        Args: { p_agora: string; p_contaid: number; p_origem: string }
+        Returns: Json
+      }
+      rotina_registrar: {
+        Args: {
+          p_contaid: number
+          p_detalhe: Json
+          p_erro: string
+          p_inicio: string
+          p_origem: string
+          p_recuperado?: boolean
+          p_referencia: string
+          p_resultado: string
+          p_rotina: string
+        }
+        Returns: undefined
+      }
+      rotinas_despachar: { Args: { p_agora?: string }; Returns: Json }
+      rotinas_resumo_admin: {
+        Args: never
+        Returns: {
+          contaid: number
+          rotina: string
+          situacao: string
+          ultimaem: string
+        }[]
+      }
       salvar_meta_do_mes: {
         Args: {
           p_descricao?: string
@@ -4159,6 +4544,7 @@ export type Database = {
         Args: { p_atribuicaoid: number }
         Returns: boolean
       }
+      tarefas_de_folga_hoje: { Args: { p_lojaid: number }; Returns: Json }
       taxa_da_conta: { Args: { p_contaid: number }; Returns: number }
       tem_justificativa: {
         Args: {
