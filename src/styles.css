@@ -87,6 +87,12 @@ body {
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
     min-height: 44px;
   }
+  /* Nenhum campo passa da largura da tela. */
+  select,
+  textarea,
+  input {
+    max-width: 100%;
+  }
   input[type="checkbox"],
   input[type="radio"] {
     width: 20px;

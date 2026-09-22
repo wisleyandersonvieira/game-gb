@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/metas")({
@@ -251,46 +252,42 @@ function Lancar({ lojaid }: { lojaid: number }) {
       {resumo.isError && <p className="text-sm text-destructive">{(resumo.error as Error).message}</p>}
 
       {r && (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-card text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Dia</th>
-                <th className="px-3 py-2 text-right font-medium">Meta</th>
-                <th className="px-3 py-2 text-right font-medium">Vendido</th>
-                <th className="px-3 py-2 text-right font-medium">%</th>
-                <th className="px-3 py-2 font-medium">Pontos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.dias
-                .filter((d) => d.dia <= h)
-                .reverse()
-                .map((d) => (
-                  <tr
-                    key={d.dia}
-                    onClick={() => d.dia >= r.primeirodiaeditavel && setData(d.dia)}
-                    className={`cursor-pointer border-t border-border hover:bg-card ${d.dia === data ? "bg-card" : ""}`}
-                  >
-                    <td className="whitespace-nowrap px-3 py-2">
-                      {dia(d.dia)} <span className="text-xs text-muted-foreground">{DIAS_SEMANA[new Date(`${d.dia}T12:00:00Z`).getUTCDay()]}</span>
-                      {d.origem === "especial" && <span className="ml-1 text-xs text-accent">★ {d.descricao}</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{d.meta ? reais(d.meta) : "—"}</td>
-                    <td className="px-3 py-2 text-right">{d.vendido != null ? reais(d.vendido) : "—"}</td>
-                    <td className={`px-3 py-2 text-right ${d.bateu ? "font-semibold text-sucesso" : ""}`}>{percentual(d)}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {d.bateu && d.premiados > 0
-                        ? `🎉 +${d.pontos} para ${d.premiados} ${d.premiados === 1 ? "pessoa" : "pessoas"}`
-                        : d.vendido == null
-                          ? "não lançado"
-                          : ""}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+        <TabelaResponsiva
+          linhas={r.dias.filter((d) => d.dia <= h).reverse()}
+          chave={(d) => d.dia}
+          aoClicar={(d) => d.dia >= r.primeirodiaeditavel && setData(d.dia)}
+          destacar={(d) => d.dia === data}
+          vazio="Nenhum dia neste mês ainda."
+          colunas={[
+            {
+              titulo: "Dia",
+              principal: true,
+              valor: (d) => (
+                <>
+                  {dia(d.dia)}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {DIAS_SEMANA[new Date(`${d.dia}T12:00:00Z`).getUTCDay()]}
+                  </span>
+                  {d.origem === "especial" && <span className="ml-1 text-xs text-accent">★ {d.descricao}</span>}
+                </>
+              ),
+              classe: () => "whitespace-nowrap",
+            },
+            { titulo: "Meta", alinhar: "direita", valor: (d) => (d.meta ? reais(d.meta) : "—"), classe: () => "text-muted-foreground" },
+            { titulo: "Vendido", alinhar: "direita", valor: (d) => (d.vendido != null ? reais(d.vendido) : "—") },
+            { titulo: "%", alinhar: "direita", valor: (d) => percentual(d), classe: (d) => (d.bateu ? "font-semibold text-sucesso" : "") },
+            {
+              titulo: "Pontos",
+              valor: (d) =>
+                d.bateu && d.premiados > 0
+                  ? `🎉 +${d.pontos} para ${d.premiados} ${d.premiados === 1 ? "pessoa" : "pessoas"}`
+                  : d.vendido == null
+                    ? "não lançado"
+                    : "—",
+              classe: () => "text-xs text-muted-foreground",
+            },
+          ]}
+        />
       )}
     </div>
   );
@@ -679,42 +676,27 @@ function Historico({ lojaid }: { lojaid: number }) {
   });
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border">
-      <table className="w-full text-sm">
-        <thead className="bg-card text-left text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Quando</th>
-            <th className="px-3 py-2 font-medium">Dia da venda</th>
-            <th className="px-3 py-2 text-right font-medium">De</th>
-            <th className="px-3 py-2 text-right font-medium">Para</th>
-            <th className="px-3 py-2 font-medium">Motivo</th>
-            <th className="px-3 py-2 font-medium">Quem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(historico.data ?? []).map((h) => (
-            <tr key={h.historicoid} className="border-t border-border">
-              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{dataHora(h.alteradoem)}</td>
-              <td className="whitespace-nowrap px-3 py-2">{dia(h.dataapuracao)}</td>
-              <td className="px-3 py-2 text-right text-muted-foreground">
-                {h.valoranterior === null ? "lançamento" : reais(h.valoranterior)}
-              </td>
-              <td className="px-3 py-2 text-right font-medium">{reais(h.valornovo)}</td>
-              <td className="px-3 py-2 text-muted-foreground">{h.motivo ?? "—"}</td>
-              <td className="px-3 py-2 text-muted-foreground">
-                {h.alteradopor && h.alteradopor === eu.data ? "Você" : h.alteradopor ? "Outro usuário" : "—"}
-              </td>
-            </tr>
-          ))}
-          {!historico.isLoading && (historico.data ?? []).length === 0 && (
-            <tr>
-              <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
-                Nenhum lançamento ainda.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+    <TabelaResponsiva
+      linhas={historico.data ?? []}
+      chave={(h) => h.historicoid}
+      vazio={historico.isLoading ? "Carregando..." : "Nenhum lançamento ainda."}
+      colunas={[
+        { titulo: "Quando", valor: (h) => dataHora(h.alteradoem), classe: () => "whitespace-nowrap text-muted-foreground" },
+        { titulo: "Dia da venda", principal: true, valor: (h) => `Venda de ${dia(h.dataapuracao)}`, classe: () => "whitespace-nowrap" },
+        {
+          titulo: "De",
+          alinhar: "direita",
+          valor: (h) => (h.valoranterior === null ? "lançamento" : reais(h.valoranterior)),
+          classe: () => "text-muted-foreground",
+        },
+        { titulo: "Para", alinhar: "direita", valor: (h) => reais(h.valornovo), classe: () => "font-medium" },
+        { titulo: "Motivo", valor: (h) => h.motivo ?? "—", classe: () => "text-muted-foreground" },
+        {
+          titulo: "Quem",
+          valor: (h) => (h.alteradopor && h.alteradopor === eu.data ? "Você" : h.alteradopor ? "Outro usuário" : "—"),
+          classe: () => "text-muted-foreground",
+        },
+      ]}
+    />
   );
 }

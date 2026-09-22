@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { Justificar } from "@/pessoas/justificar";
 
@@ -239,70 +240,63 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                 entrega, <strong className="text-destructive">{pontosPerdidos}</strong> pontos que deixaram de entrar.
               </p>
             )}
-            <div className="overflow-x-auto rounded-xl border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-card text-left text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Dia</th>
-                    <th className="px-3 py-2 font-medium">Tarefa</th>
-                    <th className="px-3 py-2 font-medium">Loja</th>
-                    <th className="px-3 py-2 text-right font-medium">Pontos</th>
-                    <th className="px-3 py-2 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {listaPendencias.map((p) => {
+            <TabelaResponsiva
+              linhas={listaPendencias}
+              chave={(p) => `${p.atribuicaoid}-${p.dia}`}
+              vazio={pendencias.isLoading ? "Carregando..." : "Nada ficou para trás neste período. 👏"}
+              colunas={[
+                { titulo: "Dia", valor: (p) => dia(p.dia), classe: () => "whitespace-nowrap text-muted-foreground" },
+                {
+                  titulo: "Tarefa",
+                  principal: true,
+                  valor: (p) => {
                     const chave = `${p.atribuicaoid}-${p.dia}`;
                     return (
-                      <tr key={chave} className="border-t border-border align-top">
-                        <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{dia(p.dia)}</td>
-                        <td className="px-3 py-2">
-                          {p.titulo}
-                          {justificando === chave && (
-                            <div className="mt-2">
-                              <Justificar
-                                atribuicaoid={p.atribuicaoid}
-                                dia={p.dia.slice(0, 10)}
-                                aoTerminar={(texto) => {
-                                  setJustificando(null);
-                                  setRecado(`${p.titulo} (${dia(p.dia)}): ${texto}`);
-                                }}
-                              />
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-muted-foreground">{p.loja ?? "—"}</td>
-                        <td className="px-3 py-2 text-right">{p.pontos}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right">
-                          {p.justificativa === "Pendente" ? (
-                            <span className="text-xs text-accent">justificativa a decidir</span>
-                          ) : (
-                            <>
-                              {p.justificativa === "Recusada" && (
-                                <span className="mr-2 text-xs text-destructive">justificativa recusada</span>
-                              )}
-                              <button
-                                onClick={() => setJustificando(justificando === chave ? null : chave)}
-                                className="rounded-md border border-border px-2 py-1 text-xs"
-                              >
-                                {justificando === chave ? "Cancelar" : "Não se aplica"}
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
+                      <>
+                        {p.titulo}
+                        {justificando === chave && (
+                          <div className="mt-2 font-normal">
+                            <Justificar
+                              atribuicaoid={p.atribuicaoid}
+                              dia={p.dia.slice(0, 10)}
+                              aoTerminar={(texto) => {
+                                setJustificando(null);
+                                setRecado(`${p.titulo} (${dia(p.dia)}): ${texto}`);
+                              }}
+                            />
+                          </div>
+                        )}
+                      </>
                     );
-                  })}
-                  {!pendencias.isLoading && listaPendencias.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
-                        Nada ficou para trás neste período. 👏
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  },
+                },
+                { titulo: "Loja", valor: (p) => p.loja ?? "—", classe: () => "text-muted-foreground" },
+                { titulo: "Pontos", alinhar: "direita", valor: (p) => p.pontos },
+                {
+                  titulo: "Ação",
+                  alinhar: "direita",
+                  valor: (p) => {
+                    const chave = `${p.atribuicaoid}-${p.dia}`;
+                    return p.justificativa === "Pendente" ? (
+                      <span className="text-xs text-accent">justificativa a decidir</span>
+                    ) : (
+                      <>
+                        {p.justificativa === "Recusada" && (
+                          <span className="mr-2 text-xs text-destructive">justificativa recusada</span>
+                        )}
+                        <button
+                          onClick={() => setJustificando(justificando === chave ? null : chave)}
+                          className="rounded-md border border-border px-2 py-1 text-xs"
+                        >
+                          {justificando === chave ? "Cancelar" : "Não se aplica"}
+                        </button>
+                      </>
+                    );
+                  },
+                  classe: () => "whitespace-nowrap",
+                },
+              ]}
+            />
           </section>
 
           <section className="space-y-2">
@@ -398,39 +392,19 @@ function PorTarefa({ de, ate }: { de: string; ate: string }) {
       {analise.isLoading && <p className="text-muted-foreground">Carregando...</p>}
       {analise.isError && <p className="text-sm text-destructive">{(analise.error as Error).message}</p>}
 
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-card text-left text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">Tarefa</th>
-              <th className="px-3 py-2 text-right font-medium">Aprovadas</th>
-              <th className="px-3 py-2 text-right font-medium">Recusadas</th>
-              <th className="px-3 py-2 text-right font-medium">Estornadas</th>
-              <th className="px-3 py-2 text-right font-medium">Não se aplica</th>
-              <th className="px-3 py-2 text-right font-medium">Aguardando</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((t) => (
-              <tr key={t.titulo} className="border-t border-border">
-                <td className="px-3 py-2">{t.titulo}</td>
-                <td className="px-3 py-2 text-right text-sucesso">{t.aprovadas}</td>
-                <td className={`px-3 py-2 text-right ${t.recusadas > 0 ? "text-destructive" : ""}`}>{t.recusadas}</td>
-                <td className={`px-3 py-2 text-right ${t.estornadas > 0 ? "text-destructive" : ""}`}>{t.estornadas}</td>
-                <td className="px-3 py-2 text-right">{t.naoseaplica}</td>
-                <td className="px-3 py-2 text-right text-muted-foreground">{t.pendentes}</td>
-              </tr>
-            ))}
-            {!analise.isLoading && lista.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
-                  Nenhuma entrega neste período.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <TabelaResponsiva
+        linhas={lista}
+        chave={(t) => t.titulo}
+        vazio={analise.isLoading ? "Carregando..." : "Nenhuma entrega neste período."}
+        colunas={[
+          { titulo: "Tarefa", principal: true, valor: (t) => t.titulo },
+          { titulo: "Aprovadas", alinhar: "direita", valor: (t) => t.aprovadas, classe: () => "text-sucesso" },
+          { titulo: "Recusadas", alinhar: "direita", valor: (t) => t.recusadas, classe: (t) => (t.recusadas > 0 ? "text-destructive" : "") },
+          { titulo: "Estornadas", alinhar: "direita", valor: (t) => t.estornadas, classe: (t) => (t.estornadas > 0 ? "text-destructive" : "") },
+          { titulo: "Não se aplica", alinhar: "direita", valor: (t) => t.naoseaplica },
+          { titulo: "Aguardando", alinhar: "direita", valor: (t) => t.pendentes, classe: () => "text-muted-foreground" },
+        ]}
+      />
     </div>
   );
 }

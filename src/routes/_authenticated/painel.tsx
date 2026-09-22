@@ -157,7 +157,7 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <select
           required
           value={atribuicaoid}
@@ -174,13 +174,13 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
           ))}
         </select>
 
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+        <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
           Foto (opcional):
           <input
             type="file"
             accept="image/*"
             onChange={(e) => setFoto(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className="min-w-0 max-w-full text-sm"
           />
         </label>
 

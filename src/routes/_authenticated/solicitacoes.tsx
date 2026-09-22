@@ -136,7 +136,7 @@ function Abrir({ lojaid }: { lojaid: number }) {
           </label>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <select
           required
           value={funcionarioid}
@@ -169,14 +169,14 @@ function Abrir({ lojaid }: { lojaid: number }) {
               placeholder="Quantidade"
               value={quantidade}
               onChange={(e) => setQuantidade(e.target.value)}
-              className={`${campo} w-32`}
+              className={`${campo} w-28 shrink-0`}
             />
             <input
               placeholder="Unidade (ex.: litros, caixas)"
               maxLength={20}
               value={unidade}
               onChange={(e) => setUnidade(e.target.value)}
-              className={`${campo} flex-1`}
+              className={`${campo} min-w-0 flex-1`}
             />
           </div>
         )}

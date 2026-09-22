@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Carregando } from "@/ui/Estados";
+import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   component: Configuracoes,
@@ -172,39 +174,27 @@ function Configuracoes() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Histórico de mudanças</h2>
         {historico.isError && <p className="text-sm text-destructive">{(historico.error as Error).message}</p>}
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-card text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Quando</th>
-                <th className="px-3 py-2 font-medium">O quê</th>
-                <th className="px-3 py-2 font-medium">De</th>
-                <th className="px-3 py-2 font-medium">Para</th>
-                <th className="px-3 py-2 font-medium">Quem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(historico.data ?? []).map((h) => (
-                <tr key={h.historicoid} className="border-t border-border">
-                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{dataHora(h.alteradoem)}</td>
-                  <td className="px-3 py-2">{ROTULO.get(h.chave) ?? h.chave}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{mostrar(h.chave, h.valoranterior)}</td>
-                  <td className="px-3 py-2 font-medium">{mostrar(h.chave, h.valornovo)}</td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {h.alteradopor && h.alteradopor === eu.data?.uid ? "Você" : h.alteradopor ? "Outro usuário" : "Sistema"}
-                  </td>
-                </tr>
-              ))}
-              {!historico.isLoading && (historico.data ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
-                    Nenhuma mudança ainda.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {historico.isLoading ? (
+          <Carregando />
+        ) : (
+          <TabelaResponsiva
+            linhas={historico.data ?? []}
+            chave={(h) => h.historicoid}
+            vazio="Nenhuma mudança ainda."
+            colunas={[
+              { titulo: "O quê", principal: true, valor: (h) => ROTULO.get(h.chave) ?? h.chave },
+              { titulo: "Quando", valor: (h) => dataHora(h.alteradoem), classe: () => "whitespace-nowrap text-muted-foreground" },
+              { titulo: "De", valor: (h) => mostrar(h.chave, h.valoranterior), classe: () => "text-muted-foreground" },
+              { titulo: "Para", valor: (h) => mostrar(h.chave, h.valornovo), classe: () => "font-medium" },
+              {
+                titulo: "Quem",
+                valor: (h) =>
+                  h.alteradopor && h.alteradopor === eu.data?.uid ? "Você" : h.alteradopor ? "Outro usuário" : "Sistema",
+                classe: () => "text-muted-foreground",
+              },
+            ]}
+          />
+        )}
       </section>
     </div>
   );
@@ -258,7 +248,7 @@ function Linha({
       }}
       className="space-y-1 border-t border-border pt-3 first-of-type:border-t-0 first-of-type:pt-0"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <label htmlFor={item.chave} className="font-medium">
           {item.rotulo}
         </label>

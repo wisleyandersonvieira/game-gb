@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 
 export const Route = createFileRoute("/_authenticated/extrato")({
   component: Extrato,
@@ -87,7 +88,7 @@ function Extrato() {
         <select
           value={funcionarioid}
           onChange={(e) => setFuncionarioid(e.target.value === "" ? "" : Number(e.target.value))}
-          className={campo}
+          className={`${campo} w-full sm:w-auto`}
         >
           <option value="">Escolha a pessoa...</option>
           {(pessoas.data ?? []).map((p) => (
@@ -125,51 +126,49 @@ function Extrato() {
             {x.taxa ? ` Valores em R$ pela taxa atual: 1 ponto = ${reais(x.taxa)}.` : ""}
           </p>
 
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-card text-left text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Data</th>
-                  <th className="px-3 py-2 font-medium">Movimento</th>
-                  <th className="px-3 py-2 font-medium">Loja</th>
-                  <th className="px-3 py-2 text-right font-medium">Pontos</th>
-                  <th className="px-3 py-2 text-right font-medium">Saldo após</th>
-                </tr>
-              </thead>
-              <tbody>
-                {x.movimentos.map((m, i) => (
-                  <tr key={i} className="border-t border-border">
-                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                      {new Date(m.data).toLocaleString("pt-BR", {
-                        timeZone: "America/Sao_Paulo",
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="mr-2 text-xs text-muted-foreground">{ROTULO_TIPO[m.tipo] ?? m.tipo}</span>
-                      {m.descricao}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{m.loja ?? "—"}</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${m.pontos > 0 ? "text-sucesso" : "text-destructive"}`}>
-                      {m.pontos > 0 ? `+${m.pontos}` : m.pontos}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${m.saldoapos < 0 ? "text-destructive" : ""}`}>{m.saldoapos}</td>
-                  </tr>
-                ))}
-                {x.movimentos.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
-                      Nenhum movimento neste período.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <TabelaResponsiva
+            linhas={x.movimentos}
+            chave={(_m, i) => i}
+            vazio="Nenhum movimento neste período."
+            colunas={[
+              {
+                titulo: "Data",
+                valor: (m) =>
+                  new Date(m.data).toLocaleString("pt-BR", {
+                    timeZone: "America/Sao_Paulo",
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                classe: () => "whitespace-nowrap text-muted-foreground",
+              },
+              {
+                titulo: "Movimento",
+                principal: true,
+                valor: (m) => (
+                  <>
+                    <span className="mr-2 text-xs font-normal text-muted-foreground">{ROTULO_TIPO[m.tipo] ?? m.tipo}</span>
+                    {m.descricao}
+                  </>
+                ),
+              },
+              { titulo: "Loja", valor: (m) => m.loja ?? "—", classe: () => "text-muted-foreground" },
+              {
+                titulo: "Pontos",
+                alinhar: "direita",
+                valor: (m) => (m.pontos > 0 ? `+${m.pontos}` : m.pontos),
+                classe: (m) => `font-semibold ${m.pontos > 0 ? "text-sucesso" : "text-destructive"}`,
+              },
+              {
+                titulo: "Saldo após",
+                alinhar: "direita",
+                valor: (m) => m.saldoapos,
+                classe: (m) => (m.saldoapos < 0 ? "text-destructive" : ""),
+              },
+            ]}
+          />
         </>
       )}
     </div>
