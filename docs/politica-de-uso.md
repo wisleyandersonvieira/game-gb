@@ -16,7 +16,7 @@ No primeiro acesso você troca os dois. Se esquecer, peça ao gestor para redefi
 
 3. **Uso do seu celular é opcional**
 Usar o seu aparelho é uma escolha sua. Tudo o que é obrigação do trabalho pode ser feito no tablet da loja, dentro do expediente.
-O sistema não envia mensagens, avisos nem notificações para o seu celular. Você abre quando quiser.
+O sistema não envia mensagens, avisos nem notificações para o seu celular. Você abre quando quiser. Se algum dia a empresa passar a enviar mensagens por aplicativo, esta política será atualizada e comunicada antes.
 
 4. **Fora do expediente**
 A [EMPRESA] não espera que você use o sistema fora do seu horário de trabalho, em folgas, férias ou afastamentos. Se abrir nesses momentos, é por sua conta e não é tempo de trabalho.
@@ -25,7 +25,7 @@ A [EMPRESA] não espera que você use o sistema fora do seu horário de trabalho
 O STGame não controla jornada. Os horários cadastrados servem apenas para organizar as tarefas do dia. O registro de ponto continua sendo feito da forma oficial da empresa.
 
 6. **Fotos das tarefas**
-A foto serve só para comprovar o serviço feito. Fotografe o serviço, não as pessoas. As fotos são guardadas por tempo limitado e vistas apenas pela gestão.
+A foto serve só para comprovar o serviço feito. Fotografe o serviço, não as pessoas. As fotos são guardadas por tempo limitado e depois apagadas automaticamente; o registro da tarefa e os pontos permanecem. Elas são vistas pela gestão e por você, nas suas próprias entregas.
 
 7. **Seus documentos**
 Holerites e outros documentos ficam disponíveis só para você e para a gestão, por links que expiram em poucos minutos. Cada abertura é registrada.
@@ -38,7 +38,7 @@ Pontos lançados por engano podem ser estornados, sempre com registro do motivo.
 Você pode enviar um relato sem se identificar. O sistema não guarda quem enviou nem o horário exato, só o dia. Você recebe um protocolo para acompanhar.
 
 10. **Seus dados**
-A [EMPRESA] trata seus dados (nome, CPF, cargo, loja, tarefas, pontos e documentos) para gerenciar o trabalho e cumprir obrigações legais. Você pode pedir acesso, correção ou informações sobre esses dados pelo contato abaixo.
+A [EMPRESA] trata seus dados (nome, CPF, telefone, cargo, loja, tarefas, pontos e documentos) para gerenciar o trabalho e cumprir obrigações legais. Você pode pedir acesso, correção ou informações sobre esses dados pelo contato abaixo.
 
 11. **Bom senso**
 Não use o sistema para ofender colegas, registrar tarefa que não foi feita ou acessar dados de outra pessoa. Isso pode gerar medidas disciplinares.
@@ -50,19 +50,24 @@ Ao dar ciência neste comunicado, você confirma que leu e entendeu estas regras
 
 ---
 
-## Pendências antes de publicar (conferência contra o que o sistema faz hoje)
+## Estado da conferência (contra o que o sistema faz)
 
-| Item | Situação | O que fazer |
-|---|---|---|
-| 6 — "guardadas por tempo limitado" | ❌ **Não é verdade hoje.** Não existe nenhum expurgo: a foto de entrega fica no Storage para sempre. | Criar a limpeza automática (rotina diária, prazo em `configuracoes`, ex.: 180 dias) **ou** tirar a frase. |
-| 6 — "vistas apenas pela gestão" | ⚠️ Fica incompleto quando o colaborador vir as próprias entregas no celular. | Acrescentar "e por você, nas suas entregas". |
-| 3 — "não envia mensagens nem notificações" | ⚠️ Verdade só com o Telegram desligado (padrão da 1.12). Se a conta ligar o bot, a frase deixa de valer. | O sistema deve recusar ligar o bot sem publicar uma versão nova da política. |
-| 10 — lista de dados | ⚠️ Falta o telefone (`funcionarios.telefonewhatsapp`) e, se o bot for ligado, o Telegram. | Acrescentar "telefone". |
-| 7 — links de poucos minutos, cada abertura registrada | ✅ Confere (5 minutos + registro obrigatório em `documentosacessos`). | — |
-| 9 — só o dia, sem quem enviou | ✅ Confere (`denunciasanonimas` não tem coluna de autor e guarda só a data). | — |
-| 8 — estorno com motivo registrado | ✅ Confere (livro `movimentospontos`, motivo obrigatório). | — |
-| 2 — troca de senha e PIN no primeiro acesso | ✅ É o que a Etapa 1.12 parte A vai fazer. | — |
-| 12 — responsável | Campo por conta. | Guardar em `configuracoes` (ex.: `CONTATO_PRIVACIDADE`). |
+| Item | Situação |
+|---|---|
+| 6 — fotos apagadas automaticamente | 🟨 Em construção na Etapa 1.12: prazo por conta (`DIAS_GUARDAR_FOTO_ENTREGA`, padrão 180, mínimo 90), rotina diária que apaga só o arquivo; entrega passa a mostrar "foto removida por tempo". **A política só pode ser publicada depois que isso estiver no ar.** |
+| 3 — nenhuma mensagem enviada | 🟨 Verdade com o Telegram desligado (padrão). Trava aprovada: ligar o bot exige publicar uma versão nova desta política e colher ciência de novo; sem 100% de ciência, o bot fica desligado. |
+| 6 — quem vê a foto | ✅ Texto corrigido: gestão e a própria pessoa, nas entregas dela. |
+| 10 — lista de dados | ✅ Telefone incluído. |
+| 7 — links de poucos minutos, cada abertura registrada | ✅ Confere (5 minutos + registro obrigatório em `documentosacessos`). Documento de RH **não** entra no expurgo de fotos: tem regra própria. |
+| 9 — só o dia, sem quem enviou | ✅ Confere (`denunciasanonimas` não tem coluna de autor e guarda só a data). |
+| 8 — estorno com motivo registrado | ✅ Confere (livro `movimentospontos`, motivo obrigatório). |
+| 2 — troca de senha e PIN no primeiro acesso | 🟨 Etapa 1.12, parte A. |
+| 12 — responsável | 🟨 Campo `CONTATO_PRIVACIDADE` em Configurações, preenchido pelo master. |
+
+## Versões
+Cada mudança neste texto gera uma **versão nova**, publicada como comunicado. As ciências
+antigas continuam guardadas, ligadas à versão que valia na época. A tela Equipe mostra quem
+já deu ciência **na versão atual**.
 
 **Revisão jurídica:** este texto não foi revisado por advogado. Antes de vender para outras
 empresas (Etapa 2.0), ele deve passar por revisão trabalhista e de LGPD, junto com os termos

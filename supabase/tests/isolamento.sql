@@ -4066,6 +4066,13 @@ DECLARE
   r public.mensagensfila%ROWTYPE;
 BEGIN
   DELETE FROM public.mensagensfila WHERE contaid = 1;
+  -- O teste nao pode depender da hora em que roda: poe a Diana DENTRO do
+  -- turno agora (entrada 1 h atras, saida daqui a 1 h). O horario fixo dela
+  -- volta no fim do bloco.
+  UPDATE public.funcionarios
+     SET horarionotificacao = ((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time,
+         horariosaida       = ((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time
+   WHERE funcionarioid = 7510;
 
   -- Lembrete sem nada em aberto: some na hora de enviar.
   INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao, dataenvio)
@@ -4091,6 +4098,8 @@ BEGIN
                           WHERE contaid = 1 AND status = 'descartada' AND erro = 'juntada') = 1,
                         'a segunda mensagem nao e enviada de novo');
 
+  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00'
+   WHERE funcionarioid = 7510;
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
@@ -4111,6 +4120,47 @@ BEGIN
                         'aviso fora do turno espera a proxima entrada');
   PERFORM public.exigir(jsonb_array_length(v_saida) = 0, 'nada e enviado fora do turno');
   UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00' WHERE funcionarioid = 7510;
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+END $$;
+
+-- Depois do FIM do expediente: espera a proxima entrada, nao vira "folga".
+-- (Defeito da 1.13B1 corrigido em 23/09/2026: o aviso das 18:00 de quem
+-- trabalha ate as 17:00 era guardado como se a pessoa estivesse de folga, e
+-- voltava so como resumo — ou sumia depois de 7 dias.)
+DO $$
+DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE; v_hora time; j jsonb;
+BEGIN
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  v_hora := (now() AT TIME ZONE 'America/Sao_Paulo')::time;
+  -- Turno que COMECOU ha 3 horas e TERMINOU ha 1 hora: expediente encerrado.
+  UPDATE public.funcionarios SET horarionotificacao = (v_hora - interval '3 hours')::time,
+                                 horariosaida       = (v_hora - interval '1 hour')::time
+   WHERE funcionarioid = 7510;
+  j := public.bot_janela(1, 7510, now());
+  PERFORM public.exigir((j->>'motivo') = 'fora_do_turno',
+                        'depois do expediente o motivo e fora_do_turno, nao folga');
+  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'entrega_aprovada',
+            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
+  v_saida := public.bot_fila_pegar(10);
+  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
+  PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
+                        'aviso depois do expediente espera a proxima entrada');
+  PERFORM public.exigir(r.status <> 'guardada', 'aviso depois do expediente nao vira resumo de ausencia');
+  PERFORM public.exigir(jsonb_array_length(v_saida) = 0, 'nada e enviado depois do expediente');
+
+  -- Quem esta de folga hoje continua no caminho do resumo (guardada).
+  UPDATE public.funcionarios
+     SET diadefolga = (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1)
+   WHERE funcionarioid = 7510;
+  DELETE FROM public.mensagensfila WHERE contaid = 1;
+  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'entrega_aprovada',
+            jsonb_build_object('metodo', 'sendMessage', 'texto', 'y'), NULL, NULL, NULL, false, now());
+  PERFORM public.bot_fila_pegar(10);
+  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
+  PERFORM public.exigir(r.status = 'guardada', 'na folga o aviso continua sendo guardado para o resumo');
+
+  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00', diadefolga = 0
+   WHERE funcionarioid = 7510;
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
@@ -4190,6 +4240,12 @@ DO $$
 DECLARE v_id bigint; v_saida jsonb;
 BEGIN
   DELETE FROM public.mensagensfila WHERE contaid = 1;
+  -- Independente da hora em que o teste roda: a Diana precisa estar DENTRO do
+  -- turno para a mensagem sair da fila. O horario fixo dela volta no fim.
+  UPDATE public.funcionarios
+     SET horarionotificacao = ((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time,
+         horariosaida       = ((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time
+   WHERE funcionarioid = 7510;
   v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
             jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
   v_saida := public.bot_fila_pegar(10);
@@ -4205,6 +4261,8 @@ BEGIN
   PERFORM public.bot_visto(5010);
   PERFORM public.exigir((SELECT bloqueadoem IS NULL FROM public.telegramvinculos WHERE chatid = 5010 AND ativo),
                         'quando a pessoa volta a usar o bot, o bloqueio some sozinho');
+  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00'
+   WHERE funcionarioid = 7510;
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
