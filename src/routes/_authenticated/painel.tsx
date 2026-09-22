@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { FolgaDeHoje } from "@/painel/FolgaDeHoje";
 
 export const Route = createFileRoute("/_authenticated/painel")({
   component: Quadro,
@@ -72,6 +73,7 @@ function Quadro() {
         </p>
       </div>
       <RegistrarEntrega lojaid={lojaAtiva} />
+      <FolgaDeHoje lojaid={lojaAtiva} />
       <Validacao lojaid={lojaAtiva} />
     </div>
   );
@@ -136,6 +138,7 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
       qc.invalidateQueries({ queryKey: ["para-entregar", lojaid] });
       qc.invalidateQueries({ queryKey: ["quadro", lojaid] });
       qc.invalidateQueries({ queryKey: ["equipe"] });
+      qc.invalidateQueries({ queryKey: ["folga-hoje", lojaid] });
     },
   });
 
