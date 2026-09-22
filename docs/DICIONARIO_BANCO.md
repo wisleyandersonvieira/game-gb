@@ -29,6 +29,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `contagensestoque` | **loja** | contagemid | funcionarios |
 | `denunciasanonimas` | conta | denunciaid |  |
 | `documentos` | conta | documentoid | funcionarios |
+| `documentosacessos` | conta | acessoid | documentospessoais |
+| `documentoslojas` | **loja** | (documentoid, lojaid) | documentos, lojas |
 | `documentosassinaturas` | conta | assinaturaid | documentos, funcionarios |
 | `documentospessoais` | conta | documentoid | funcionarios |
 | `documentospessoaisciencia` | conta | cienciaid | documentospessoais, funcionarios |
@@ -55,6 +57,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `metasprincipais` | **loja** | metaprincipalid |  |
 | `notasfiscais` | **loja** | notafiscalid | funcionarios |
 | `notasfiscaisentrada` | **loja** | notaid | fornecedores |
+| `onboardingetapas` | conta | etapaid |  |
+| `onboardingitens` | conta | itemid | onboardingstatus, onboardingetapas, documentospessoais |
 | `onboardingstatus` | conta | funcionarioid | funcionarios |
 | `picodiario` | **loja** | diasemanaid |  |
 | `posicoesloja` | **loja** | posicaoid |  |
@@ -208,45 +212,95 @@ Tabela **nova** (Etapa 1.9), **nível loja**. Arquivos do bucket privado `agenda
 **Canal confidencial (anonimato real).** Nível conta, **sem loja**. Nenhuma coluna aponta para quem enviou. **Só o master lê** (policy `contaid = minha_conta() AND sou_master()`); gerente e qualquer papel futuro não. Ninguém grava pelo navegador: a entrada é `registrar_relato`, só do servidor. Texto, dia e protocolo nunca mudam; nada se apaga. O teste de isolamento confere a lista exata de colunas, gatilhos, chaves e funções que tocam esta tabela.
 
 ## documentos
+Os **comunicados** (Etapa 1.10). Nível conta.
+
 | Coluna | Tipo | Obs |
 |---|---|---|
 | documentoid | integer | ID automático; obrigatório |
 | titulo | varchar(255) | obrigatório |
 | conteudo | text | obrigatório |
-| pontosporciencia | integer | obrigatório; padrão 0 |
-| datacriacao | timestamptz | padrão now() |
-| funcionariocriadorid | integer | → funcionarios.funcionarioid |
-| telegramfileidfoto | varchar(255) |  |
+| pontosporciencia | integer | obrigatório; 0 a 10.000. Padrão sugerido: os pontos da tarefa do sistema "Leitura de comunicado" |
+| datacriacao | timestamptz | quando foi publicado |
+| funcionariocriadorid | integer | sem uso (quem publicou está em `criadopor`) |
+| telegramfileidfoto | varchar(255) | sem uso (imagem via Telegram, Etapa 1.13) |
+| status | varchar(10) | obrigatório; `Publicado` ou `Arquivado` (final) |
+| alvo | varchar(12) | obrigatório; `conta`, `lojas` (ver `documentoslojas`) ou `funcionarios` |
+| criadopor | uuid | quem publicou |
+| atualizadoem | timestamptz | |
+| primeiracienciaem | timestamptz | preenchido na primeira ciência: a partir daí **título, texto e pontos travam** (gatilho) |
+| arquivadoem / arquivadopor | timestamptz / uuid | |
+
+Nunca se apaga. Entra e muda só pelas funções (`publicar_comunicado`, `editar_comunicado`, `arquivar_comunicado`). Arquivado não aceita ciência nova nem destinatário novo, e guarda o histórico e os recibos.
+
+## documentoslojas
+Tabela **nova** (Etapa 1.10), **nível loja**. As lojas escolhidas quando o alvo do comunicado é `lojas`. Chave (documentoid, lojaid); FKs compostas com documentos e lojas. O navegador só lê.
 
 ## documentosassinaturas
+As **ciências** dos comunicados (um destinatário por linha). Nível conta.
+
 | Coluna | Tipo | Obs |
 |---|---|---|
 | assinaturaid | integer | ID automático; obrigatório |
-| documentoid | integer | obrigatório; → documentos.documentoid |
-| funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
-| statusassinatura | varchar(50) | obrigatório; padrão 'Pendente' |
-| dataenvio | timestamptz | padrão now() |
-| dataciencia | timestamptz |  |
+| documentoid | integer | obrigatório; → documentos (junto com contaid) |
+| funcionarioid | integer | obrigatório; → funcionarios (junto com contaid) |
+| statusassinatura | varchar(50) | obrigatório; `Pendente` ou `Ciente` |
+| dataenvio | timestamptz | quando entrou como destinatário |
+| dataciencia | timestamptz | data e hora da ciência |
+| origem | varchar(12) | `gestor` (hoje) ou `funcionario` (portal/bot no futuro) |
+| registradopor | uuid | quem registrou |
+| pontospagos | integer | obrigatório; pontos pagos pela ciência que vale |
+| desfeitaem / desfeitapor / motivodesfazer | timestamptz / uuid / text | última vez que a ciência foi desfeita (só o master) |
+
+**Única (documentoid, funcionarioid).** Só funcionário ativo da mesma conta entra. Ciência por `registrar_ciencia` (atômica: trava a linha, paga pelo livro uma vez; segundo clique não faz nada). Desfazer por `desfazer_ciencia` (estorno pelo livro). Não muda de comunicado nem de pessoa; não se apaga.
 
 ## documentospessoais
+Holerites, recibos, contratos, atestados etc. Nível conta (é da pessoa). **Só o master lê.**
+
 | Coluna | Tipo | Obs |
 |---|---|---|
 | documentoid | integer | ID automático; obrigatório |
-| funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
-| tipodocumento | varchar(100) | obrigatório |
-| mesano | date | obrigatório |
-| caminhoarquivo | varchar(500) | obrigatório |
-| dataupload | timestamptz | padrão now() |
+| funcionarioid | integer | obrigatório; → funcionarios (junto com contaid) |
+| tipodocumento | varchar(100) | obrigatório; `Holerite`, `Recibo`, `Contrato`, `Atestado`, `Advertência`, `Cartão de ponto`, `Documento de admissão` ou `Outro` |
+| mesano | date | referência (mês), opcional |
+| caminhoarquivo | varchar(500) | obrigatório; único. `<contaid>/funcionarios/<funcionarioid>/<arquivo>` no bucket privado `documentos-rh` |
+| dataupload | timestamptz | quando foi enviado |
+| descricao | varchar(200) | |
+| nomearquivo / tipoarquivo / tamanho | | nome original; `application/pdf`, `image/jpeg` ou `image/png`; até 10 MB |
+| enviadopor | uuid | |
+| situacao | varchar(12) | obrigatório; `Ativo`, `Substituido`, `Arquivado` ou `Excluido` |
+| substituidopor / substituidoem | integer / timestamptz | a nova versão (→ documentospessoais) |
+| arquivadoem / arquivadopor | | |
+| excluidoem / excluidopor / motivoexclusao | | exclusão "por engano" |
+
+**Nunca se apaga.** Excluir "por engano" só sem ciência e até 7 dias do envio (o arquivo sai do Storage; o registro fica). Fora disso: nova versão (a anterior fica guardada como substituída e acessível) ou arquivar (sai das listas). Pessoa desativada: os documentos continuam guardados. Entra e muda só pelas funções.
 
 ## documentospessoaisciencia
+Ciência de recebimento de um documento pessoal. **Única por documento.** Só o master lê.
+
 | Coluna | Tipo | Obs |
 |---|---|---|
-| cienciaid | integer | ID automático; obrigatório |
-| documentoid | integer | obrigatório; → documentospessoais.documentoid |
-| funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
-| status | varchar(50) | obrigatório; padrão 'Pendente' |
-| dataenvio | timestamptz |  |
-| dataciencia | timestamptz |  |
+| cienciaid | integer | ID automático |
+| documentoid | integer | obrigatório; → documentospessoais |
+| funcionarioid | integer | obrigatório |
+| status | varchar(50) | `Pendente` ou `Ciente` |
+| dataenvio / dataciencia | timestamptz | |
+| origem | varchar(12) | `gestor` ou `funcionario` (futuro) |
+| registradopor | uuid | |
+
+## documentosacessos
+Tabela **nova** (Etapa 1.10). Registro de acesso aos documentos pessoais (LGPD): cada envio, cada link gerado e cada exclusão. **Só o master lê; nunca muda nem se apaga.**
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| acessoid | integer | ID automático |
+| contaid | integer | obrigatório |
+| documentoid | integer | → documentospessoais (vazio no envio, antes de registrar) |
+| caminho | text | obrigatório |
+| acao | varchar(12) | `envio`, `visualizacao` ou `exclusao` |
+| usuario | uuid | quem |
+| acessadoem | timestamptz | quando |
+
+O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver um registro desses, do mesmo usuário, há menos de 2 minutos (função `documento_rh_liberado`). Assim ninguém abre um documento sem deixar rastro.
 
 ## entregas
 | Coluna | Tipo | Obs |
@@ -534,24 +588,40 @@ Tabela **nova** (Etapa 1.8), **nível loja**. Cada prêmio de meta pago. Quem re
 | dataimportacao | timestamptz | padrão now() |
 
 ## onboardingstatus
+Resumo do onboarding de cada pessoa. Nível conta; uma linha por funcionário.
+
 | Coluna | Tipo | Obs |
 |---|---|---|
-| funcionarioid | integer | obrigatório; chave primária; → funcionarios.funcionarioid |
-| statusworkflow | varchar(50) | obrigatório; padrão 'Pendente' |
-| ultimaetapa | varchar(100) |  |
-| escolaridade | varchar(50) |  |
-| estadocivil | varchar(50) |  |
-| qtdfilhos | integer | padrão 0 |
-| dadosfilhos | text |  |
-| rg_fileid | varchar(255) |  |
-| cpf_fileid | varchar(255) |  |
-| ctps_fileid | varchar(255) |  |
-| tituloeleitor_fileid | varchar(255) |  |
-| datacasamento | varchar(10) |  |
-| nomeconjugue | varchar(100) |  |
-| cpfconjugue | varchar(14) |  |
-| dataadmissional | timestamptz |  |
-| statusadmissional | varchar(50) | obrigatório; padrão 'Pendente' |
+| funcionarioid | integer | obrigatório; chave primária; → funcionarios (junto com contaid) |
+| statusworkflow | varchar(50) | obrigatório; `Em andamento` ou `Concluído` |
+| iniciadoem / iniciadopor | timestamptz / uuid | |
+| concluidoem | timestamptz | quando todas as etapas foram feitas |
+
+As colunas de dados pessoais do questionário antigo (escolaridade, estado civil, cônjuge, filhos, arquivos do Telegram, admissional) foram **removidas** na Etapa 1.10 (LGPD). O navegador só lê.
+
+## onboardingetapas
+Tabela **nova** (Etapa 1.10), **nível conta**. As etapas do checklist da conta. Conta nova começa com: Documentos pessoais recebidos, Exame admissional, Contrato assinado, Cadastro no sistema, Treinamento inicial, Apresentação à equipe.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| etapaid | integer | ID automático |
+| contaid | integer | obrigatório |
+| nome | varchar(120) | obrigatório; único na conta |
+| ordem | integer | obrigatório |
+| ativo | boolean | obrigatório; padrão true. **Desativar, nunca apagar** (os itens já marcados ficam) |
+| criadoem | timestamptz | |
+
+## onboardingitens
+Tabela **nova** (Etapa 1.10), **nível conta**. O checklist de cada pessoa. **Único (funcionarioid, etapaid).**
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| itemid | integer | ID automático |
+| contaid / funcionarioid / etapaid | integer | → onboardingstatus e onboardingetapas (junto com contaid) |
+| concluidoem / concluidopor | timestamptz / uuid | |
+| observacao | text | |
+| documentoid | integer | documento pessoal ligado à etapa (da mesma pessoa) |
+| criadoem | timestamptz | |
 
 ## picodiario
 | Coluna | Tipo | Obs |
@@ -871,6 +941,17 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `registrar_anexo_agendamento(...)` / `remover_anexo_agendamento(anexo)` | Anexos do Storage, com histórico |
 | `pasta_de_agendamento_minha(caminho, editavel)` | Usada nas regras do Storage: a pasta tem de ser de um agendamento da conta e da loja |
 | `agenda_para_painel(conta, loja, tv)` | **Interna.** Próximos agendamentos; na TV só hora e tipo |
+| `publicar_comunicado(titulo, texto, pontos, alvo, lojas, pessoas)` | Publica e fixa os destinatários (só ativos da conta) |
+| `editar_comunicado` / `arquivar_comunicado` / `incluir_destinatarios` / `fora_do_comunicado` | Editar só antes da primeira ciência; arquivar é final; acréscimo manual; quem o alvo alcança e ainda não está |
+| `registrar_ciencia(ciencia)` / `desfazer_ciencia(ciencia, motivo)` | Atômicas; pontos e estorno pelo livro; desfazer só o master |
+| `recibo_ciencia(ciencia)` / `recibo_resgate(resgate)` | Dados dos PDFs (o de resgate sai do livro de pontos) |
+| `alcance_do_comunicado(comunicado)` / `exige_master_editavel()` | **Internas** |
+| `preparar_envio_documento(pessoa, arquivo)` / `registrar_documento_pessoal(...)` | Envio de documento pessoal (só o master), com registro de acesso |
+| `liberar_documento_pessoal(doc)` | Registra o acesso e libera o arquivo para gerar o link de 5 minutos |
+| `registrar_ciencia_documento` / `arquivar_documento_pessoal` / `excluir_documento_por_engano` | Ciência, arquivar, excluir (só sem ciência e até 7 dias) |
+| `documento_rh_liberado(caminho, acao)` | Usada nas regras do Storage `documentos-rh` |
+| `cria_etapas_onboarding_padrao(conta)` | **Só o servidor.** As 6 etapas genéricas |
+| `iniciar_onboarding(pessoa)` / `marcar_etapa_onboarding(item, feito, observacao, documento)` | Checklist do onboarding |
 | `alterar_configuracao(chave, valor)` | Só o master; recusa os `TAREFA_*`; o gatilho valida e registra no histórico |
 
 Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos`, `atribuicoes_para_entregar`, `ranking_mensal`, `listar_trocas` e os relatórios rodam com a RLS de quem chamou.
@@ -909,6 +990,7 @@ O livro de pontos (**nível conta**; a loja é opcional). Cada entrada e saída 
 | resgateid | integer | → resgates (junto com contaid), quando veio de um resgate |
 | conquistafuncionarioid | integer | → conquistasfuncionarios (junto com contaid), quando é bônus de conquista |
 | feedbackid | integer | → feedbacks (junto com contaid), quando é bônus de feedback ou o estorno dele |
+| assinaturaid | integer | → documentosassinaturas (junto com contaid), quando é bônus de ciência ou o estorno dele |
 | premiacaoid | integer | → metaspremiacoes (junto com contaid), quando é prêmio de meta ou o estorno dele |
 | criadopor | uuid | → auth.users |
 

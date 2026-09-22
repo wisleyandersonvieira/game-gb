@@ -59,7 +59,7 @@ Administrador geral (Wisley)
 | 1.7 | Gestão de pessoas e gamificação | ✅ Concluída (22/09/2026) — partes 1, 2 e 3 |
 | 1.8 | Metas de faturamento | ✅ Concluída (22/09/2026) |
 | 1.9 | Agenda (agendamentos) | ✅ Concluída (22/09/2026) |
-| 1.10 | RH (onboarding, comunicados, documentos) | ⬜ |
+| 1.10 | RH (onboarding, comunicados, documentos) | ✅ Concluída (22/09/2026) |
 | 1.11 | Rotinas automáticas sem Telegram | ⬜ |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
 | 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
@@ -302,10 +302,23 @@ Só o faturamento. Meta de lucro, histórico de lucro e relatórios financeiros 
 **Problemas do sistema antigo corrigidos:** remarcar e excluir chamavam funções que não existiam (a tarefa ficava na data antiga ou órfã); cancelar era apagar; a tarefa ia sempre para um responsável fixo e levava nome, telefone e observações do cliente; o painel da loja mostrava nome e telefone; as rotas de agendamento não pediam login (qualquer um na rede listava CPF e telefone); "quem cadastrou" ficava no lugar do responsável.
 
 ### Etapa 1.10 — RH
-- [ ] Onboarding / admissional.
-- [ ] Comunicados com destinatários e confirmação de leitura.
-- [ ] Documentos pessoais com ciência/assinatura.
-- [ ] PDFs de recibo e comunicado.
+- [x] Onboarding / admissional. *(22/09/2026)*
+- [x] Comunicados com destinatários e confirmação de leitura.
+- [x] Documentos pessoais com ciência (assinatura com validade jurídica fica para depois).
+- [x] PDFs de recibo e comunicado.
+
+**Feito em 22/09/2026.**
+
+- **Menu RH:** Comunicados, Documentos pessoais e Onboarding. Ainda não há portal do funcionário: o gestor faz tudo, e o banco guarda a **origem** (`gestor` ou `funcionario`) para o portal ou o bot no futuro, sem refazer tabelas.
+- **Comunicados:** alvo toda a conta, lojas escolhidas ou pessoas escolhidas. Destinatários fixados na publicação (só ativos da conta); acréscimo manual depois, com o aviso "X funcionários ativos entraram depois" e botão para incluir. Título, texto e pontos editáveis só até a primeira ciência. Nunca se apaga; **arquivado** não aceita ciência nem destinatário novo, mas guarda histórico e recibos.
+- **Ciência:** o gestor registra com data e hora. Pontos pelo livro (**uma vez**, provado com duas conexões ao mesmo tempo), padrão sugerido pelos pontos da tarefa do sistema "Leitura de comunicado" (ID em `configuracoes`), fora do ranking e da nota. **Desfazer só o master**, com motivo, estorno pelo livro; a conquista fica. A conquista **"comunicados lidos"** passou a valer.
+- **Documentos pessoais (só o master):** bucket privado `documentos-rh`, pasta `<conta>/funcionarios/<pessoa>/`, PDF/JPG/PNG até 10 MB com o **tipo real conferido pelos primeiros bytes** (também nos anexos da agenda). Link temporário de 5 minutos. **Cada envio, cada link gerado e cada exclusão ficam registrados** (`documentosacessos`, só o master lê); o Storage só libera o arquivo com esse registro feito há menos de 2 minutos. Excluir "enviado por engano" só sem ciência e até 7 dias (o arquivo sai; o registro fica). Fora disso: **nova versão** (a anterior fica guardada e acessível) ou **arquivar**. Pessoa desativada: documentos guardados, com filtro para ver.
+- **Onboarding:** 6 etapas genéricas por conta (a de teste recebeu as mesmas), editáveis (renomear, ordenar, desativar — nunca apagar); checklist por pessoa com observação e documento ligado; concluído quando todas as etapas estão feitas. Os dados pessoais do questionário antigo foram removidos da tabela (LGPD).
+- **PDFs** gerados na hora, no navegador (não ficam guardados): comunicado, recibo de ciência e **recibo de resgate a partir do livro de pontos** (botão na tela Prêmios). Cabeçalho com o nome da conta (e da loja no recibo de resgate), rodapé "Gerado em dd/mm/aaaa hh:mm por <usuário>". Nenhum leva CPF.
+- **Não trazido agora:** assinatura com validade jurídica, envio por Telegram/WhatsApp, bloqueio do bot até o admissional, questionário de dados pessoais, lembretes automáticos de ciência pendente, imagem no comunicado.
+- **Bloqueadores:** 137 endereços do app, 8 listas, nenhum barrado.
+
+**Problemas do sistema antigo corrigidos:** ciência com dois toques podia pagar duas vezes; o mesmo comunicado podia ir duas vezes para a mesma pessoa; excluir comunicado apagava as provas de leitura; o ID da tarefa de leitura era fixo no código; o download de documento pessoal **não pedia login** e aceitava trocar o número no endereço; um segundo arquivo do mesmo mês sobrescrevia o primeiro; o onboarding guardava cônjuge, filhos e CPFs sem necessidade.
 
 ### Etapa 1.11 — Rotinas automáticas sem Telegram
 Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**, cada uma com seus horários em `configuracoes`:
@@ -335,6 +348,7 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - **Medição de uso:** todo envio (Telegram/WhatsApp) é registrado em `usomensagens` (conta, loja, canal, tipo, data). O total do mês vai para o Stripe como **cobrança por uso** ou como franquia incluída no plano, com excedente.
 - **WhatsApp (Z-API):** decidir entre um número da plataforma para todos ou um número por cliente (custo por instância repassado).
 - ⚠️ **Canal confidencial no bot:** a entrada chama só `registrar_relato(conta, texto)` pelo servidor, sem nenhum dado de quem envia. O bot **não pode logar mensagem + `chat_id`** nesse fluxo (nem em nível DEBUG da biblioteca do Telegram), não guarda o texto no estado da conversa depois de enviar e **não avisa o gestor na hora** (aviso agrupado, uma vez por dia, sem horário), para ninguém cruzar horários. O protocolo vai só para quem enviou; a consulta usa `consultar_relato`.
+- **RH no bot:** ciência de comunicado e de documento pessoal pelo próprio funcionário (`origem = 'funcionario'`), entrega do holerite com link temporário (sempre com registro de acesso), lembrete de ciência pendente.
 - Entradas que já existem no banco e esperam o bot: feedback (`origem = 'bot'`), justificativa (`origem = 'bot'`, fica pendente), solicitações dos líderes (com a foto da manutenção, em `<contaid>/<lojaid>/...`) e a trava "feedback de ontem antes da comanda".
 - Funções a portar: comandos (/start, /tarefas, /ranking, /meuhistorico, /meusaldo, /loja, /documentos, /conquistas, /ajuda, /pendencias, /status_meta, /lancar), recebimento da foto da entrega com validação EXIF (a foto de nota fiscal fica na Etapa 2.2), canal confidencial, solicitações, abate de comanda, notificações de jornada, lembretes, recusa com motivo, meta batida, confirmação e pós-venda por WhatsApp.
 - Desligar os serviços antigos (`systemctl`) e o SQL Server.
@@ -458,6 +472,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Foto da manutenção fica para a 1.13 (vem pelo bot). Menu agrupado em Operação, Pessoas, Gamificação, Relatórios e Gestão. |
 | 22/09/2026 | **Metas (1.8):** meta do dia fixa por dia da semana, com **meta especial** por data que substitui o modelo. Ganha quem está ligado à loja, ativo e no **dia da venda** sem folga nem afastamento; meta do mês: ligado e ativo quando bateu. Correção: deixou de bater → estorno automático de quem recebeu; voltou a bater → paga de novo. Lançar ou corrigir **só no mês atual e no anterior**. Bônus de meta fora do ranking e da nota. TV só em %, com a opção por loja "mostrar valores". Rodízio painel ↔ meta, 30 s. Tela "Metas" em Operação. |
 | 22/09/2026 | **Agenda (1.9):** mesmo horário só avisa (2 h), sem bloquear; tipos de evento por conta, editáveis — conta nova começa com "Evento", os 3 antigos só na conta de teste; pagamento Pendente / Sinal pago / Pago com valor opcional; Realizado à mão, podendo voltar para Confirmado com motivo; Cancelado final; remarcar e cancelar só em Confirmado; painel logado com o primeiro nome, TV só hora e tipo; "Agenda" em Operação. |
+| 22/09/2026 | **RH (1.10):** pontos de ciência fora do ranking e da nota; colunas de dados pessoais do `onboardingstatus` removidas; 6 etapas genéricas de onboarding (também na conta de teste); tipos de documento pessoal fixos e genéricos (lista editável por conta fica para a Fase 2); documento pessoal só se exclui "por engano" sem ciência e até 7 dias — senão nova versão ou arquivar (provas trabalhistas); 10 MB, só PDF/JPG/PNG com tipo real conferido; destinatários fixados na publicação, com aviso e botão para incluir quem entrou depois; arquivado não aceita ciência nem destinatário novo; título, texto e pontos travam na primeira ciência; desativar etapa nunca apaga itens; registro de cada acesso a documento pessoal (só o master lê); rodapé "Gerado em … por …" nos PDFs; desfazer ciência só o master. |
 | 22/09/2026 | Funções da loja de prêmios com **nomes neutros** (`*_troca`), por causa de bloqueadores de anúncio. Endereços novos passam pelas listas de bloqueio antes de entrar. |
 | 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
 
