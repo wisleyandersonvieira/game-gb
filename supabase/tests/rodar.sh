@@ -138,6 +138,26 @@ if [ "$ok_m" != "1" ] || [ "$erros_m" != "0" ]; then
 $saida_m"
 fi
 
+echo "==> duas ciencias do mesmo comunicado ao mesmo tempo"
+rodar "$RAIZ/supabase/tests/concorrencia_ciencia_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_ciencia_sessao.sql" "$CONTAINER:/sessao_ci.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -f /sessao_ci.sql >/tmp/gamegb-sessao9.txt 2>&1 &
+p9=$!
+docker exec "$CONTAINER" psql -U postgres -q -f /sessao_ci.sql >/tmp/gamegb-sessao10.txt 2>&1 &
+p10=$!
+wait "$p9" "$p10" || true
+erros_ci=$(cat /tmp/gamegb-sessao9.txt /tmp/gamegb-sessao10.txt | grep -c "ERROR" || true)
+rm -f /tmp/gamegb-sessao9.txt /tmp/gamegb-sessao10.txt
+echo "    conexoes com erro: $erros_ci de 2"
+
+saida_ci="$(rodar "$RAIZ/supabase/tests/concorrencia_ciencia_confere.sql" 2>&1)" && ok_ci=1 || ok_ci=0
+echo "$saida_ci" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_ci" != "1" ] || [ "$erros_ci" != "0" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_ci"
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"

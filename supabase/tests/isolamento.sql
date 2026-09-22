@@ -2481,6 +2481,321 @@ SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- ===========================================================================
+-- 36. RH: comunicados, ciencias, documentos pessoais e onboarding
+-- ===========================================================================
+
+RESET ROLE;
+SELECT public.cria_etapas_onboarding_padrao(1);
+-- A tarefa do sistema "Leitura de comunicado" sugere 3 pontos por ciencia.
+UPDATE public.tarefas SET pontos = 3 WHERE contaid = 1 AND sistema = 'leitura';
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE
+  c1 integer; c2 integer; s integer; deu_erro boolean; quem text; x jsonb; k integer; r integer; ativos integer;
+BEGIN
+  RAISE NOTICE '36. RH: comunicados';
+  c1 := public.publicar_comunicado('Nova regra do caixa', 'Texto 1', NULL, 'lojas', ARRAY[11]);
+  SELECT string_agg(funcionarioid::text, ',' ORDER BY funcionarioid) INTO quem FROM public.documentosassinaturas WHERE documentoid = c1;
+  PERFORM public.exigir(quem = '120,121,122', 'alvo "Loja A2": so os ativos da loja (' || coalesce(quem, '-') || ')');
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = c1) = 3,
+                        'os pontos sugeridos vem da tarefa do sistema "Leitura de comunicado"');
+
+  BEGIN PERFORM public.publicar_comunicado('X', 'Y', 1, 'funcionarios', NULL, ARRAY[200]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'funcionario de outra conta nao pode ser destinatario');
+  BEGIN PERFORM public.publicar_comunicado('X', 'Y', 1, 'funcionarios', NULL, ARRAY[123]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'funcionario inativo nao pode ser destinatario');
+
+  c2 := public.publicar_comunicado('Aviso geral', 'Texto geral', 5, 'conta');
+  SELECT count(*) INTO ativos FROM public.funcionarios WHERE ativo;
+  PERFORM public.exigir((SELECT count(*) FROM public.documentosassinaturas WHERE documentoid = c2) = ativos,
+                        'alvo "toda a conta": todos os ativos');
+  PERFORM set_config('teste.c2', c2::text, false);
+
+  PERFORM public.editar_comunicado(c1, 'Nova regra do caixa (v2)', 'Texto 1 revisto', 4);
+  PERFORM public.exigir((SELECT pontosporciencia = 4 AND conteudo = 'Texto 1 revisto' FROM public.documentos WHERE documentoid = c1),
+                        'antes da primeira ciencia, titulo, texto e pontos podem mudar');
+
+  -- Ciencia: pontos pelo livro, uma vez so.
+  s := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c1 AND funcionarioid = 120);
+  PERFORM public.exigir(public.registrar_ciencia(s), 'ciencia registrada pelo gestor');
+  PERFORM public.exigir(NOT public.registrar_ciencia(s), 'a segunda ciencia nao faz nada');
+  PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos WHERE assinaturaid = s) = 1
+                        AND (SELECT pontos FROM public.movimentospontos WHERE assinaturaid = s) = 4,
+                        'ciencia dupla nao gera pontos duas vezes');
+  PERFORM public.exigir((SELECT origem = 'gestor' AND dataciencia IS NOT NULL AND registradopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                           FROM public.documentosassinaturas WHERE assinaturaid = s),
+                        'ciencia guarda data e hora, quem registrou e a origem (gestor)');
+  x := public.extrato_pontos(120, public.dia_em_sao_paulo(now()), public.dia_em_sao_paulo(now()));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x->'movimentos') m WHERE m->>'descricao' LIKE 'Ciência do comunicado%'),
+                        'o bonus da ciencia aparece no extrato');
+
+  BEGIN PERFORM public.editar_comunicado(c1, 'Outro', 'Outro texto', 4); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'comunicado com ciencia nao tem o texto editado');
+  BEGIN PERFORM public.editar_comunicado(c1, 'Nova regra do caixa (v2)', 'Texto 1 revisto', 10); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem os pontos, depois da primeira ciencia');
+
+  k := (public.criar_conquista('Leitor', NULL, NULL, 'total_comunicados_cientes', 1, NULL, 0, true))->>'conquistaid';
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 120 AND conquistaid = k),
+                        'a ciencia conta na conquista "comunicados lidos"');
+  PERFORM set_config('teste.s', s::text, false);
+  PERFORM set_config('teste.c1', c1::text, false);
+  PERFORM set_config('teste.kleitor', k::text, false);
+
+  BEGIN PERFORM public.incluir_destinatarios(c1, ARRAY[200]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem acrescentado depois');
+  PERFORM public.exigir(public.incluir_destinatarios(c1, ARRAY[124, 120]) = 1, 'acrescimo manual depois (ignora quem ja esta)');
+
+  BEGIN INSERT INTO public.documentosassinaturas (documentoid, funcionarioid) VALUES (c1, 110); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'destinatario so entra pelas funcoes');
+
+  r := (SELECT min(resgateid) FROM public.resgates WHERE funcionarioid = 100);
+  x := public.recibo_resgate(r);
+  PERFORM public.exigir(x->>'pessoa' = 'Ana da conta A' AND x->>'conta' = 'Empresa A'
+                        AND jsonb_array_length(x->'movimentos') >= 1 AND x->>'protocolo' = 'R-' || r,
+                        'o recibo de resgate sai do livro de pontos, com o nome da conta');
+END $$;
+
+-- Desfazer: so o master; estorno pelo livro.
+SET teste.uid = '12121212-1212-1212-1212-121212121212';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.desfazer_ciencia(current_setting('teste.s')::integer, 'x'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'gerente nao desfaz ciencia (so o master)');
+  PERFORM public.exigir((SELECT count(*) FROM public.documentospessoais) = 0, 'gerente nao ve documentos pessoais');
+END $$;
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE s integer := current_setting('teste.s')::integer; deu_erro boolean; c1 integer := current_setting('teste.c1')::integer;
+        outra integer;
+BEGIN
+  BEGIN PERFORM public.desfazer_ciencia(s, ' '); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'desfazer exige motivo');
+  PERFORM public.desfazer_ciencia(s, 'Marquei a pessoa errada');
+  PERFORM public.exigir((SELECT statusassinatura = 'Pendente' FROM public.documentosassinaturas WHERE assinaturaid = s)
+                        AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE assinaturaid = s AND tipo = 'estorno_bonus' AND pontos = -4),
+                        'desfazer estorna os pontos pelo livro');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 120
+                                                                           AND conquistaid = current_setting('teste.kleitor')::integer),
+                        'a conquista fica');
+  PERFORM public.registrar_ciencia(s);
+  PERFORM public.exigir((SELECT sum(pontos) FROM public.movimentospontos WHERE assinaturaid = s) = 4,
+                        'ciencia registrada de novo paga de novo, uma vez (nunca dois pagamentos valendo)');
+
+  -- Arquivado: mantem historico e recibo, recusa ciencia e destinatario novos.
+  PERFORM public.arquivar_comunicado(c1);
+  outra := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c1 AND funcionarioid = 121);
+  BEGIN PERFORM public.registrar_ciencia(outra); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'comunicado arquivado recusa ciencia nova');
+  BEGIN PERFORM public.incluir_destinatarios(c1, ARRAY[110]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'e recusa destinatario novo');
+  PERFORM public.exigir((public.recibo_ciencia(s)->>'protocolo') = 'C-' || s, 'o recibo de ciencia continua disponivel');
+  PERFORM public.exigir(public.fora_do_comunicado(current_setting('teste.c2')::integer) = '[]'::jsonb,
+                        'ninguem ficou de fora do comunicado geral');
+END $$;
+
+RESET ROLE;
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (125, 1, 'Iara nova da conta A');
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN UPDATE public.documentos SET pontosporciencia = 99 WHERE documentoid = current_setting('teste.c1')::integer; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco muda os pontos depois da ciencia');
+  BEGIN DELETE FROM public.documentos WHERE documentoid = current_setting('teste.c2')::integer; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'comunicado nao se apaga');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.fora_do_comunicado(current_setting('teste.c2')::integer)) f
+                                 WHERE (f->>'funcionarioid')::integer = 125),
+                        'quem entrou depois aparece como "fora do comunicado", para incluir');
+END $$;
+
+-- Documentos pessoais
+DO $$
+DECLARE
+  deu_erro boolean; cam text; d1 integer; d2 integer; d3 integer; d4 integer;
+BEGIN
+  RAISE NOTICE '36b. RH: documentos pessoais';
+  BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', '1/funcionarios/100/solto.pdf'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o Storage recusa envio sem preparar (e registrar) antes');
+
+  cam := public.preparar_envio_documento(100, 'holerite set.pdf');
+  PERFORM public.exigir(cam LIKE '1/funcionarios/100/%', 'caminho privado <conta>/funcionarios/<pessoa>/');
+  INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', cam);
+  d1 := public.registrar_documento_pessoal(100, 'Holerite', date '2026-08-01', NULL, cam, 'holerite set.pdf', 'application/pdf', 5000);
+  PERFORM set_config('teste.d1', d1::text, false);
+
+  BEGIN PERFORM public.registrar_documento_pessoal(100, 'Holerite', NULL, NULL, cam || 'x', 'a.exe', 'application/x-msdownload', 10);
+        deu_erro := false;
+  EXCEPTION WHEN no_data_found OR check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'arquivo que nao e PDF, JPG ou PNG e recusado');
+
+  PERFORM public.exigir(public.liberar_documento_pessoal(d1) = cam, 'o master gera o link do documento');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.documentosacessos WHERE documentoid = d1 AND acao = 'visualizacao'
+                                                                          AND usuario = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+                        'gerar o link registra quem, quando e qual documento');
+  PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'documentos-rh') = 1,
+                        'com o acesso liberado, o master abre o arquivo');
+
+  -- Exclusao por engano: sem ciencia e ate 7 dias.
+  PERFORM public.exigir(public.excluir_documento_por_engano(d1, 'Pessoa errada') = cam, 'exclusao por engano devolve o arquivo para apagar');
+  PERFORM public.exigir((SELECT situacao = 'Excluido' AND motivoexclusao = 'Pessoa errada' AND nomearquivo = 'holerite set.pdf'
+                                AND excluidopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                           FROM public.documentospessoais WHERE documentoid = d1),
+                        'o registro fica: quem, quando, motivo, nome e tipo do arquivo');
+  DELETE FROM storage.objects WHERE bucket_id = 'documentos-rh' AND name = cam;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM storage.objects WHERE name = cam), 'o arquivo sai do Storage');
+  BEGIN PERFORM public.liberar_documento_pessoal(d1); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'documento excluido nao abre mais');
+
+  cam := public.preparar_envio_documento(100, 'advertencia.pdf');
+  INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', cam);
+  d2 := public.registrar_documento_pessoal(100, 'Advertência', NULL, NULL, cam, 'advertencia.pdf', 'application/pdf', 3000);
+  PERFORM public.registrar_ciencia_documento(d2);
+  BEGIN PERFORM public.excluir_documento_por_engano(d2, 'x'); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'exclusao por engano recusada quando ha ciencia');
+
+  cam := public.preparar_envio_documento(100, 'nova.pdf');
+  INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', cam);
+  d4 := public.registrar_documento_pessoal(100, 'Advertência', NULL, NULL, cam, 'nova.pdf', 'application/pdf', 3100, d2);
+  PERFORM public.exigir((SELECT situacao = 'Substituido' AND substituidopor = d4 FROM public.documentospessoais WHERE documentoid = d2),
+                        'substituir por nova versao: a anterior fica guardada e marcada');
+  PERFORM public.exigir(public.liberar_documento_pessoal(d2) IS NOT NULL, 'versao substituida continua acessivel ao master');
+  PERFORM public.arquivar_documento_pessoal(d4);
+  PERFORM public.exigir((SELECT situacao FROM public.documentospessoais WHERE documentoid = d4) = 'Arquivado'
+                        AND public.liberar_documento_pessoal(d4) IS NOT NULL,
+                        'arquivado sai das listas, mas continua guardado');
+  DELETE FROM storage.objects WHERE bucket_id = 'documentos-rh' AND name = cam;
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM storage.objects WHERE name = cam), 'o Storage nao apaga arquivo de documento que vale');
+
+  cam := public.preparar_envio_documento(110, 'contrato.pdf');
+  INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', cam);
+  d3 := public.registrar_documento_pessoal(110, 'Contrato', NULL, NULL, cam, 'contrato.pdf', 'application/pdf', 3000);
+  PERFORM set_config('teste.d3', d3::text, false);
+END $$;
+
+RESET ROLE;
+ALTER TABLE public.documentospessoais DISABLE TRIGGER documentospessoais_protege;
+UPDATE public.documentospessoais SET dataupload = now() - interval '8 days' WHERE documentoid = current_setting('teste.d3')::integer;
+ALTER TABLE public.documentospessoais ENABLE TRIGGER documentospessoais_protege;
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN DELETE FROM public.documentospessoais WHERE documentoid = current_setting('teste.d3')::integer; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco apaga documento pessoal');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.excluir_documento_por_engano(current_setting('teste.d3')::integer, 'x'); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'exclusao por engano recusada depois de 7 dias');
+END $$;
+
+SET teste.uid = '12121212-1212-1212-1212-121212121212';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.liberar_documento_pessoal(current_setting('teste.d3')::integer); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'gerente nao abre documento pessoal');
+  PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'documentos-rh') = 0
+                        AND (SELECT count(*) FROM public.documentosacessos) = 0,
+                        'gerente nao ve os arquivos nem o registro de acessos');
+END $$;
+
+-- Onboarding
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE i record; deu_erro boolean;
+BEGIN
+  RAISE NOTICE '36c. RH: onboarding';
+  PERFORM public.exigir((SELECT string_agg(nome, ' | ' ORDER BY ordem) FROM public.onboardingetapas)
+                        = 'Documentos pessoais recebidos | Exame admissional | Contrato assinado | Cadastro no sistema | Treinamento inicial | Apresentação à equipe',
+                        'conta nova recebe as 6 etapas genericas');
+  PERFORM public.exigir(public.iniciar_onboarding(125) = 6, 'iniciar cria o checklist com as etapas ativas');
+  FOR i IN SELECT itemid FROM public.onboardingitens WHERE funcionarioid = 125 LOOP
+    PERFORM public.marcar_etapa_onboarding(i.itemid, true);
+  END LOOP;
+  PERFORM public.exigir((SELECT statusworkflow = 'Concluído' AND concluidoem IS NOT NULL FROM public.onboardingstatus WHERE funcionarioid = 125),
+                        'todas as etapas feitas: onboarding concluido');
+  UPDATE public.onboardingetapas SET ativo = false WHERE nome = 'Treinamento inicial';
+  PERFORM public.exigir((SELECT count(*) FROM public.onboardingitens WHERE funcionarioid = 125) = 6,
+                        'desativar uma etapa nao apaga o que ja foi marcado');
+  BEGIN PERFORM public.iniciar_onboarding(123); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'onboarding so para funcionario ativo');
+  BEGIN DELETE FROM public.onboardingetapas; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'etapa nao se apaga (desativa)');
+END $$;
+
+-- Outro cliente
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  RAISE NOTICE '36d. RH de outro cliente';
+  PERFORM public.exigir((SELECT count(*) FROM public.documentos) = 0 AND (SELECT count(*) FROM public.documentosassinaturas) = 0
+                        AND (SELECT count(*) FROM public.documentoslojas) = 0,
+                        'B nao le comunicados nem ciencias de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.onboardingstatus) = 0 AND (SELECT count(*) FROM public.onboardingitens) = 0
+                        AND (SELECT count(*) FROM public.onboardingetapas) = 0,
+                        'B nao le o onboarding de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.documentospessoais) = 0 AND (SELECT count(*) FROM public.documentosacessos) = 0,
+                        'B nao le documentos pessoais nem acessos de A');
+  PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'documentos-rh') = 0,
+                        'B nao abre arquivo de documentos-rh de A, nem pelo caminho direto do Storage');
+  BEGIN PERFORM public.liberar_documento_pessoal(current_setting('teste.d3')::integer); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao libera documento de A');
+  BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', '1/funcionarios/100/invasao.pdf'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao grava na pasta de A');
+  BEGIN PERFORM public.preparar_envio_documento(100, 'x.pdf'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao prepara envio para funcionario de A');
+  BEGIN PERFORM public.registrar_ciencia(current_setting('teste.s')::integer); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao registra ciencia em comunicado de A');
+  BEGIN PERFORM public.iniciar_onboarding(100); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao mexe no onboarding de A');
+  BEGIN PERFORM public.publicar_comunicado('X', 'Y', 0, 'lojas', ARRAY[10]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao publica para loja de A');
+  PERFORM public.exigir(public.recibo_ciencia(current_setting('teste.s')::integer) IS NULL, 'B nao gera recibo de ciencia de A');
+END $$;
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -2551,7 +2866,11 @@ BEGIN
       'lancar_venda_do_dia', 'salvar_meta_do_mes',
       'criar_agendamento', 'remarcar_agendamento', 'trocar_responsavel_agendamento', 'alterar_pagamento_agendamento',
       'editar_agendamento', 'marcar_agendamento_realizado', 'reabrir_agendamento', 'cancelar_agendamento',
-      'registrar_anexo_agendamento', 'remover_anexo_agendamento', 'pasta_de_agendamento_minha'
+      'registrar_anexo_agendamento', 'remover_anexo_agendamento', 'pasta_de_agendamento_minha',
+      'incluir_destinatarios', 'publicar_comunicado', 'editar_comunicado', 'arquivar_comunicado', 'fora_do_comunicado',
+      'registrar_ciencia', 'desfazer_ciencia', 'preparar_envio_documento', 'documento_rh_liberado',
+      'registrar_documento_pessoal', 'registrar_ciencia_documento', 'excluir_documento_por_engano',
+      'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
