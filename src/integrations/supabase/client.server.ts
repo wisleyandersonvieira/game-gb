@@ -3,6 +3,7 @@
 // For user-authenticated queries (with RLS), use the auth middleware instead.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { SUPABASE_URL } from './config-publica';
 
 function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
@@ -29,15 +30,19 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env['SUPABASE_URL'];
-  const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'];
+  // STGAME_SERVICE_ROLE_KEY: nome cadastrado nos Secrets do Lovable (ele não
+  // aceita nomes começando com SUPABASE_). O endereço é o mesmo do navegador
+  // (config-publica.ts), então a chave precisa ser do projeto
+  // asgdynxdcdnjglgyyaek. SUPABASE_SERVICE_ROLE_KEY vale só em
+  // desenvolvimento (.env antigo): na publicação o Lovable pode preencher
+  // esse nome com a chave de outro projeto, então ali ele é ignorado.
+  const SUPABASE_SERVICE_ROLE_KEY =
+    process.env['STGAME_SERVICE_ROLE_KEY'] ||
+    (import.meta.env.DEV ? process.env['SUPABASE_SERVICE_ROLE_KEY'] : undefined);
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
-    ];
-    const message = `Faltando variável de ambiente do Supabase: ${missing.join(', ')}. Preencha no arquivo .env (modelo em .env.example).`;
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    const message =
+      'Falta a chave STGAME_SERVICE_ROLE_KEY (Secrets do Lovable; no desenvolvimento, arquivo .env).';
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
   }

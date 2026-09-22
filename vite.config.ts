@@ -10,13 +10,12 @@
 import { loadEnv } from "vite";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// O codigo de servidor le variaveis sem o prefixo VITE_ (SUPABASE_URL,
-// SUPABASE_SERVICE_ROLE_KEY, SITE_URL) em process.env. Em desenvolvimento,
-// o Vite nao repassa o .env para process.env; isto faz esse repasse.
-// NAO vaza segredo para o navegador: o pacote do cliente so recebe
-// import.meta.env.VITE_*. Em producao as variaveis vem do ambiente
-// de verdade (painel do Lovable), nao daqui, e o build nunca le o .env
-// aqui (assim nenhuma chave secreta vai parar no pacote publicado).
+// O codigo de servidor le variaveis em process.env (STGAME_SERVICE_ROLE_KEY,
+// SITE_URL). Em desenvolvimento, o Vite nao repassa o .env para process.env;
+// isto faz esse repasse. NAO vaza segredo para o navegador: o pacote do
+// cliente nao recebe process.env. Em producao as variaveis vem dos Secrets
+// do Lovable, nao daqui, e o build nunca le o .env (assim nenhuma chave
+// secreta vai parar no pacote publicado).
 export default defineConfig(({ command, mode }) => {
   if (command === "serve") {
     Object.assign(process.env, loadEnv(mode, process.cwd(), ""));
