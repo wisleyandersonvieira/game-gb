@@ -24,6 +24,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `configuracoessetores` | conta | setor |  |
 | `configuracoes` | conta | (contaid, chave) |  |
 | `configuracoeshistorico` | conta | historicoid | configuracoes |
+| `diasgerados` | conta | (contaid, dia) |  |
+| `fechamentosmensais` | conta | fechamentoid |  |
 | `conquistas` | conta | conquistaid |  |
 | `conquistasfuncionarios` | conta | conquistafuncionarioid | conquistas, funcionarios |
 | `contagensestoque` | **loja** | contagemid | funcionarios |
@@ -43,7 +45,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `funcionarios` | conta | funcionarioid | posicoesloja |
 | `funcionariosgrupos` | **loja** | funcionarioid + grupoid | funcionarios, grupos |
 | `grupos` | **loja** | grupoid |  |
-| `historicoranking` | **loja** | historicoid | funcionarios |
+| `historicoranking` | **loja** (vazio = geral da conta) | historicoid | fechamentosmensais, funcionarios |
 | `itenscontagemestoque` | **loja** | itemcontagemid | contagensestoque, produtosestoque |
 | `itensnotafiscalentrada` | **loja** | itemnotaid | notasfiscaisentrada, produtosfornecedor |
 | `justificativas` | **loja** | justificativaid | tarefasatribuidas, funcionarios |
@@ -68,6 +70,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `resgates` | conta | resgateid | funcionarios, produtosloja |
 | `solicitacoeshistorico` | **loja** | historicoid | solicitacoesinternas |
 | `solicitacoesinternas` | **loja** | solicitacaoid | funcionarios |
+| `rotinasexecucoes` | conta | execucaoid |  |
+| `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
 | `tiposevento` | conta | tipoeventoid |  |
 | `tarefasatribuidas` | **loja** | atribuicaoid | funcionarios, grupos, tarefas, tarefasatribuidas |
@@ -435,6 +439,58 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | pontosganhos | integer | obrigatório |
 | pontospossiveis | integer | obrigatório |
 | percentualdesempenho | numeric(5,2) | obrigatório |
+| lojaid | integer | → lojas; **vazio = ranking geral da conta** (Etapa 1.11) |
+| fechamentoid | integer | obrigatório; → fechamentosmensais (a versão do fechamento) |
+| pontosregulares | integer | pontos das tarefas regulares (confiabilidade) |
+| confiabilidade | numeric(6,2) | % |
+| esforco | numeric(6,2) | % |
+| nota | numeric(6,2) | metade confiabilidade + metade esforço |
+
+Só as funções da rotina gravam aqui (a tela só lê). Linha de fechamento definitivo ou substituído não muda nem se apaga.
+
+## fechamentosmensais (Etapa 1.11)
+| Coluna | Tipo | Obs |
+|---|---|---|
+| fechamentoid | integer | ID automático |
+| ano, mes | integer | o mês fechado |
+| versao | integer | 1 = rotina; +1 a cada "Refazer" |
+| situacao | varchar | provisorio (dias 1 a 7), definitivo (dia 8), substituido |
+| origem | varchar | rotina ou master |
+| motivo | text | obrigatório quando o master refaz |
+| fechadopor, fechadoem, definitivoem, substituidoem | | quem e quando |
+
+Um fechamento valendo por mês (índice único fora os substituídos).
+
+## tarefasdodia (Etapa 1.11) — lista do dia congelada
+| Coluna | Tipo | Obs |
+|---|---|---|
+| itemid | integer | ID automático |
+| lojaid, dia, atribuicaoid, funcionarioid, tarefaid | | o que a pessoa devia fazer no dia (único por conta, dia e atribuição) |
+| tipofrequencia | varchar | copiado da atribuição |
+| pontos | integer | **os do dia em que foi gerado** (não muda) |
+| situacao | varchar | devida, folga, afastamento, cancelada |
+| passadapara, passadaatribuicaoid, passadaem, passadapor | | repasse de quem estava de folga (uma vez por dia) |
+| recuperado | boolean | gerado depois, numa volta de parada |
+
+Só a situação (hoje) e o repasse mudam; dia passado nunca muda; item nunca se apaga.
+
+## diasgerados (Etapa 1.11)
+Dias em que a lista da conta foi gerada (`contaid`, `dia`, `recuperado`). Nunca é limpo: diz de onde vêm os números da nota (lista ou regra do cadastro).
+
+## rotinasexecucoes (Etapa 1.11)
+| Coluna | Tipo | Obs |
+|---|---|---|
+| execucaoid | integer | ID automático |
+| rotina | varchar | lista_do_dia, fechamento_mensal, conferencia_livro, limpeza |
+| referencia | date | o dia a que se refere |
+| origem | varchar | agendada ou manual ("Rodar agora") |
+| recuperado | boolean | dia recuperado depois de parada |
+| iniciadoem, terminadoem | timestamptz | |
+| resultado | varchar | ok ou erro |
+| detalhe | jsonb | contagens (sem dados pessoais) |
+| erro | text | mensagem do erro (só o master da conta lê) |
+
+Apagado depois de 180 dias pela própria rotina.
 
 ## itenscontagemestoque
 | Coluna | Tipo | Obs |
@@ -890,6 +946,16 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `painel_da_loja(loja)` | O painel para quem está logado; só lojas da própria conta |
 | `resumo_das_lojas()` | Um cartão por loja ativa: progresso, pendentes e líder do dia |
 | `painel_inicio(loja?)` | Tela Início (Etapa 1.10B). **Security invoker** (a RLS filtra a conta). Sem loja = todas as lojas ativas. Devolve cartões (metas do dia/mês, tarefas de hoje, aguardando validação, agenda de hoje, comunicados sem ciência, onboarding, solicitações, justificativas), vendas do mês dia a dia, pontos por semana (8 semanas, pelo livro), aprovadas × recusadas por semana, top 5 do mês, próximos agendamentos (hora, tipo, 1º nome do responsável), últimas entregas a validar e o guia de primeiros passos. Nada de CPF, telefone ou cliente final. Fuso America/Sao_Paulo |
+| `rotinas_despachar(agora)` | **Interna, só o pg_cron.** A cada 5 min, para cada conta ativa: lista do dia, fechamento, conferência do livro e limpeza |
+| `lista_do_dia_gerar(conta, dia, hoje, recuperado)` / `rotina_lista_do_dia` | **Internas.** Geram e ajustam a lista do dia; recuperam até 7 dias |
+| `rotina_fechamento_mensal` / `fechamento_calcular` | **Internas.** Fechamento do mês anterior |
+| `rotina_conferencia_livro` / `rotina_limpeza` | **Internas.** Conferência do livro (nunca corrige) e limpeza do registro |
+| `ranking_mensal_da_conta(conta, ano, mes, loja, fim)` | Nota do mês (security invoker, filtra a conta): dias com lista usam a lista; os outros, a regra. `ranking_mensal` chama com a conta de quem está logado |
+| `rodar_geracao_hoje()` | "Rodar agora" do master: gera ou ajusta a lista de hoje |
+| `tarefas_de_folga_hoje(loja)` / `quem_trabalha_hoje(loja)` | Bloco de folga do Quadro |
+| `passar_tarefa_de_folga(atribuicao, pessoa)` | Passa a tarefa de quem está de folga para quem trabalha hoje na mesma loja: tarefa única de hoje (`origematribuicaoid`), uma vez por dia |
+| `refazer_fechamento(ano, mes, motivo)` | Só o master; nova versão, a anterior fica guardada |
+| `rotinas_resumo_admin()` | Só o admin geral: ok/erro/diferença por conta e rotina, sem texto |
 | `criar_link_tv(loja, nome)` | Cria um link de TV e devolve o código **uma única vez** |
 | `revogar_link_tv(link)` | Desliga um link de TV |
 | `painel_da_tv(codigo)` | **A única função que um visitante sem login pode chamar.** Devolve o painel da loja do link com nomes curtos, ou `{"disponivel": false}` |

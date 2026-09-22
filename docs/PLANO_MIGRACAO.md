@@ -61,7 +61,7 @@ Administrador geral (Wisley)
 | 1.9 | Agenda (agendamentos) | ✅ Concluída (22/09/2026) |
 | 1.10 | RH (onboarding, comunicados, documentos) | ✅ Concluída (22/09/2026) |
 | 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ✅ Concluída |
-| 1.11 | Rotinas automáticas sem Telegram | ⬜ |
+| 1.11 | Rotinas automáticas sem Telegram | ✅ Concluída (22/09/2026) |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
 | 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
 | 1.14 | Segurança final (endurecimento) | ⬜ |
@@ -333,10 +333,14 @@ Só visual e navegação: não muda regras de negócio, tabelas nem permissões 
 - [x] Todas as telas conferidas a 360 px: nada passa da borda.
 
 ### Etapa 1.11 — Rotinas automáticas sem Telegram
-Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**, cada uma com seus horários em `configuracoes`:
-- [ ] Geração diária das tarefas recorrentes.
-- [ ] Fechamento mensal e histórico do ranking.
-- [ ] Delegação de tarefas de folga.
+Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **rodando para todas as contas ativas**, cada uma no seu horário em `configuracoes`, no fuso de São Paulo. Uma conta com erro não trava as outras; rodar duas vezes não duplica.
+- [x] **Lista do dia congelada** (`tarefasdodia`), gerada no `HORARIO_GERACAO_TAREFAS` e ajustada a cada 5 minutos durante o dia (acrescenta, cancela, atualiza folga), sem mexer em item entregue, justificado ou passado. Dias passados nunca mudam. Pontos do dia em que foi gerado. Parada: recupera até 7 dias, marcados como "recuperado". A nota do mês, as pendências e as justificativas usam a lista a partir do primeiro dia gerado. "Rodar agora" em Configurações.
+- [x] **Fechamento mensal** (`fechamentosmensais` + `historicoranking`): dia 1 no `HORARIO_FECHAMENTO_MENSAL`, provisório até o dia 7 (refeito todo dia), definitivo no dia 8. Por loja e geral. "Refazer fechamento" só pelo master, com motivo, guardando a versão anterior. Sem pontos automáticos. Tela: Ranking → Meses fechados.
+- [x] **Tarefas de quem está de folga hoje** no Quadro: o gestor passa para quem trabalha hoje na mesma loja (tarefa única de hoje, mesmos pontos, esforço extra). O repasse automático com "o primeiro que clicar" fica para a 1.13.
+- [x] **Conferência diária do livro de pontos** (`HORARIO_CONFERENCIA_LIVRO`): nunca corrige, só registra a diferença (master vê; admin vê "diferença" na lista de contas).
+- [x] **Limpeza** do registro de execuções com mais de 180 dias (nunca toca em `documentosacessos` nem em `movimentospontos`).
+- [x] **Registro de execuções** (`rotinasexecucoes`): master vê o da própria conta (Configurações e Início); admin geral vê só ok/erro/diferença por conta.
+- [x] Avisos no Início: agendamentos que já passaram e continuam Confirmados; comunicados sem ciência há mais de 24 h.
 
 ### Etapa 1.12 — Comercialização: publicação online + Stripe
 - [ ] **Configurar SMTP próprio (ex.: Resend) antes de vender.** O e-mail embutido do Supabase só serve para teste: tem limite baixo de envios e não usa o nosso domínio. Sem isso, convite e recuperação de senha não são confiáveis para clientes de verdade.
@@ -360,6 +364,7 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - **Medição de uso:** todo envio (Telegram/WhatsApp) é registrado em `usomensagens` (conta, loja, canal, tipo, data). O total do mês vai para o Stripe como **cobrança por uso** ou como franquia incluída no plano, com excedente.
 - **WhatsApp (Z-API):** decidir entre um número da plataforma para todos ou um número por cliente (custo por instância repassado).
 - ⚠️ **Canal confidencial no bot:** a entrada chama só `registrar_relato(conta, texto)` pelo servidor, sem nenhum dado de quem envia. O bot **não pode logar mensagem + `chat_id`** nesse fluxo (nem em nível DEBUG da biblioteca do Telegram), não guarda o texto no estado da conversa depois de enviar e **não avisa o gestor na hora** (aviso agrupado, uma vez por dia, sem horário), para ninguém cruzar horários. O protocolo vai só para quem enviou; a consulta usa `consultar_relato`.
+- **Repasse automático das tarefas de folga ("drop"):** no `HORARIO_DELEGACAO_FOLGA`, o bot publica no grupo da loja as tarefas de quem está de folga (a lista do dia já diz quais são) e o primeiro que aceitar recebe, usando a mesma função do Quadro (`passar_tarefa_de_folga`: uma vez por dia, esforço extra). Veio da Etapa 1.11.
 - **RH no bot:** ciência de comunicado e de documento pessoal pelo próprio funcionário (`origem = 'funcionario'`), entrega do holerite com link temporário (sempre com registro de acesso), lembrete de ciência pendente.
 - Entradas que já existem no banco e esperam o bot: feedback (`origem = 'bot'`), justificativa (`origem = 'bot'`, fica pendente), solicitações dos líderes (com a foto da manutenção, em `<contaid>/<lojaid>/...`) e a trava "feedback de ontem antes da comanda".
 - Funções a portar: comandos (/start, /tarefas, /ranking, /meuhistorico, /meusaldo, /loja, /documentos, /conquistas, /ajuda, /pendencias, /status_meta, /lancar), recebimento da foto da entrega com validação EXIF (a foto de nota fiscal fica na Etapa 2.2), canal confidencial, solicitações, abate de comanda, notificações de jornada, lembretes, recusa com motivo, meta batida, confirmação e pós-venda por WhatsApp.
@@ -493,6 +498,11 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | O master entra pela tela **Início** (antes: Gestão). Números de `painel_inicio` (security invoker, no teste de isolamento); atualiza a cada 1 minuto e ao voltar para a aba. |
 | 22/09/2026 | Nome de exibição e tema ficam no `user_metadata` do Supabase Auth, **só para exibir**. Nenhuma policy ou função usa `user_metadata` (o teste de isolamento reprova). |
 | 22/09/2026 | Pontos por semana: "entraram" = aprovações + bônus, já sem os estornos; "saíram" = resgates, já sem cancelamentos e estornos de resgate. Conta nova vê o guia de primeiros passos no lugar dos gráficos. |
+| 22/09/2026 | **Etapa 1.11:** a delegação de folga fica em duas partes: agora, o repasse manual no Quadro; na 1.13, o repasse automático pelo bot com "o primeiro que clicar" (corrige o conflito com a decisão de 21/09). |
+| 22/09/2026 | Lista do dia congelada: mudanças de hoje ajustam só a lista de hoje; dias passados nunca mudam; pontos do dia da geração; recupera até 7 dias ("recuperado"). A nota ao vivo e o fechamento usam a lista a partir do primeiro dia gerado; dias sem lista usam a regra do cadastro. |
+| 22/09/2026 | Tarefa recebida de quem está de folga é esforço extra: conta nos pontos ganhos (esforço), não nos possíveis nem na confiabilidade. Uma tarefa só é passada uma vez por dia. |
+| 22/09/2026 | Fechamento mensal: provisório nos dias 1 a 7, definitivo no dia 8; "Refazer" só pelo master, com motivo, guardando versões. Por loja, cada ponto conta na loja em que a tarefa foi feita; o geral soma todas. Sem pontos automáticos. |
+| 22/09/2026 | Conferência do livro nunca corrige sozinha. Limpeza só do registro de rotinas (180 dias). O papel do pg_cron ignora a RLS: toda função de rotina filtra a conta em todas as consultas e não é liberada para o navegador. |
 
 ## Referência — arquivo do sistema antigo → etapa
 | Arquivo em `legado/` | Etapa |
