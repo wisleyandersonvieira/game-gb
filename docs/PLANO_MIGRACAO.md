@@ -372,6 +372,7 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - [ ] Revisão completa das policies, do Storage (buckets privados + URLs assinadas) e das funções `security definer`.
 - [ ] Registro de auditoria (quem alterou o quê) nas tabelas sensíveis.
 - [ ] Backups e plano de recuperação.
+- [ ] **Limpeza das contas de teste antes de vender:** apagar a conta de teste (hoje a conta 1, "Premier Lojas", com os 6 passos de onboarding e os 3 tipos de evento criados para ela) e os logins de teste do Supabase Auth. Os prints da Etapa 1.10B ("Sorveteria Exemplo") usaram respostas simuladas no navegador: nada foi gravado no Supabase.
 
 ---
 
