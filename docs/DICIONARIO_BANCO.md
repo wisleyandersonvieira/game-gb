@@ -889,6 +889,7 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `montar_painel(conta, loja, tv)` | **Interna, ninguém chama direto.** Monta o painel de uma loja (barra, pódio, colunas), sem ids, fotos, observações, telefone ou CPF |
 | `painel_da_loja(loja)` | O painel para quem está logado; só lojas da própria conta |
 | `resumo_das_lojas()` | Um cartão por loja ativa: progresso, pendentes e líder do dia |
+| `painel_inicio(loja?)` | Tela Início (Etapa 1.10B). **Security invoker** (a RLS filtra a conta). Sem loja = todas as lojas ativas. Devolve cartões (metas do dia/mês, tarefas de hoje, aguardando validação, agenda de hoje, comunicados sem ciência, onboarding, solicitações, justificativas), vendas do mês dia a dia, pontos por semana (8 semanas, pelo livro), aprovadas × recusadas por semana, top 5 do mês, próximos agendamentos (hora, tipo, 1º nome do responsável), últimas entregas a validar e o guia de primeiros passos. Nada de CPF, telefone ou cliente final. Fuso America/Sao_Paulo |
 | `criar_link_tv(loja, nome)` | Cria um link de TV e devolve o código **uma única vez** |
 | `revogar_link_tv(link)` | Desliga um link de TV |
 | `painel_da_tv(codigo)` | **A única função que um visitante sem login pode chamar.** Devolve o painel da loja do link com nomes curtos, ou `{"disponivel": false}` |

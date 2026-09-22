@@ -63,7 +63,7 @@ export function GraficoVendas({ dados, hoje }: { dados: PainelInicio["vendas"]; 
             <Cell key={l.dia} fill={l.bateu ? COR.sucesso : COR.primario} />
           ))}
         </Bar>
-        <Line dataKey="meta" stroke={COR.pendente} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls />
+        <Line dataKey="meta" stroke={COR.pendente} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );

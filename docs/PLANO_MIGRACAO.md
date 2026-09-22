@@ -60,7 +60,7 @@ Administrador geral (Wisley)
 | 1.8 | Metas de faturamento | ✅ Concluída (22/09/2026) |
 | 1.9 | Agenda (agendamentos) | ✅ Concluída (22/09/2026) |
 | 1.10 | RH (onboarding, comunicados, documentos) | ✅ Concluída (22/09/2026) |
-| 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ⬜ Proposta em aprovação |
+| 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ✅ Concluída |
 | 1.11 | Rotinas automáticas sem Telegram | ⬜ |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
 | 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
@@ -323,12 +323,14 @@ Só o faturamento. Meta de lucro, histórico de lucro e relatórios financeiros 
 
 ### Etapa 1.10B — Reestruturação visual
 Só visual e navegação: não muda regras de negócio, tabelas nem permissões (exceto funções de leitura do dashboard). O Modo TV não muda.
-- [ ] Tema claro por padrão, com botão para o escuro; preferência salva por usuário (vale no próximo login). Cores centralizadas em variáveis de tema: azul principal; verde = sucesso/meta batida; amarelo = pendente; vermelho = erro/recusa/estorno; bom contraste nos dois temas.
-- [ ] Layout único para todas as telas do master (e o mesmo estilo no painel do admin geral): menu lateral fixo e agrupado (Início, Operação, Pessoas, Metas, Agenda, RH, Configurações), item atual destacado, opção de recolher; topo com nome da conta, seletor de loja, botão de tema e usuário/sair.
-- [ ] Celular (a partir de 360 px): barra inferior fixa (Início, Quadro, Equipe, Metas, Mais); tabelas viram cartões; formulários em uma coluna; botões com área de toque grande; nada de rolagem para o lado.
-- [ ] Componentes reutilizáveis: cartão de número, tabela/cartão responsivo, cabeçalho de página, botões, estados vazio/carregando/erro.
-- [ ] Tela **Início** (aberta após o login): cartões de números, gráficos e listas curtas da loja ativa, com opção "Todas as lojas". Números vindos de funções do banco (bloqueadas por padrão, no teste de isolamento). Nada de CPF, telefone ou documentos pessoais.
-- [ ] Prints das telas principais em 1280 px e 375 px, nos dois temas.
+- [x] Tema claro por padrão, com botão para o escuro; preferência salva por usuário (vale no próximo login). Cores centralizadas em variáveis de tema: azul principal; verde = sucesso/meta batida; amarelo = pendente; vermelho = erro/recusa/estorno; bom contraste nos dois temas.
+- [x] Layout único para todas as telas do master (e o mesmo estilo no painel do admin geral): menu lateral fixo e agrupado (Início, Operação, Pessoas, Metas, Agenda, RH, Configurações), item atual destacado, opção de recolher; topo com nome da conta, seletor de loja, botão de tema e usuário/sair.
+- [x] Celular (a partir de 360 px): barra inferior fixa (Início, Quadro, Equipe, Metas, Mais); tabelas viram cartões; formulários em uma coluna; botões com área de toque grande; nada de rolagem para o lado.
+- [x] Componentes reutilizáveis: cartão de número, tabela/cartão responsivo, cabeçalho de página, botões, estados vazio/carregando/erro.
+- [x] Tela **Início** (aberta após o login): cartões de números, gráficos e listas curtas da loja ativa, com opção "Todas as lojas". Números vindos de funções do banco (bloqueadas por padrão, no teste de isolamento). Nada de CPF, telefone ou documentos pessoais.
+- [x] Prints das telas principais em 1280 px e 375 px, nos dois temas (pasta `prints/1.10B/`, fora do Git).
+- [x] **Meu perfil** (master e admin geral): nome de exibição e tema. O nome aparece no topo e nos PDFs.
+- [x] Todas as telas conferidas a 360 px: nada passa da borda.
 
 ### Etapa 1.11 — Rotinas automáticas sem Telegram
 Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**, cada uma com seus horários em `configuracoes`:
@@ -485,6 +487,11 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | **RH (1.10):** pontos de ciência fora do ranking e da nota; colunas de dados pessoais do `onboardingstatus` removidas; 6 etapas genéricas de onboarding (também na conta de teste); tipos de documento pessoal fixos e genéricos (lista editável por conta fica para a Fase 2); documento pessoal só se exclui "por engano" sem ciência e até 7 dias — senão nova versão ou arquivar (provas trabalhistas); 10 MB, só PDF/JPG/PNG com tipo real conferido; destinatários fixados na publicação, com aviso e botão para incluir quem entrou depois; arquivado não aceita ciência nem destinatário novo; título, texto e pontos travam na primeira ciência; desativar etapa nunca apaga itens; registro de cada acesso a documento pessoal (só o master lê); rodapé "Gerado em … por …" nos PDFs; desfazer ciência só o master. |
 | 22/09/2026 | Funções da loja de prêmios com **nomes neutros** (`*_troca`), por causa de bloqueadores de anúncio. Endereços novos passam pelas listas de bloqueio antes de entrar. |
 | 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
+| 22/09/2026 | **Etapa 1.10B:** azul cobalto (#1D4ED8 no claro, #60A5FA no escuro); tema claro padrão, escuro opcional; TV continua escura. Gráficos com Recharts. |
+| 22/09/2026 | Menu: Início · Operação (Painel da loja, Quadro, Tarefas, Solicitações, Relatórios) · Pessoas (Equipe, Feedbacks, Justificativas) · Gamificação (Ranking, Conquistas, Prêmios, Extrato) · Metas · Agenda · RH (Comunicados, Documentos pessoais, Onboarding, Canal confidencial) · Configurações (Lojas e links da TV, Configurações, Meu perfil). No celular: Início, Quadro, Equipe, Metas, Mais. |
+| 22/09/2026 | O master entra pela tela **Início** (antes: Gestão). Números de `painel_inicio` (security invoker, no teste de isolamento); atualiza a cada 1 minuto e ao voltar para a aba. |
+| 22/09/2026 | Nome de exibição e tema ficam no `user_metadata` do Supabase Auth, **só para exibir**. Nenhuma policy ou função usa `user_metadata` (o teste de isolamento reprova). |
+| 22/09/2026 | Pontos por semana: "entraram" = aprovações + bônus, já sem os estornos; "saíram" = resgates, já sem cancelamentos e estornos de resgate. Conta nova vê o guia de primeiros passos no lugar dos gráficos. |
 
 ## Referência — arquivo do sistema antigo → etapa
 | Arquivo em `legado/` | Etapa |
