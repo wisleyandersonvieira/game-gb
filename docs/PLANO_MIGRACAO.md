@@ -345,7 +345,7 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 ### Etapa 1.12 — Comercialização: publicação online + Stripe
 - [ ] **Configurar SMTP próprio (ex.: Resend) antes de vender.** O e-mail embutido do Supabase só serve para teste: tem limite baixo de envios e não usa o nosso domínio. Sem isso, convite e recuperação de senha não são confiáveis para clientes de verdade.
 - [ ] Publicar o app (hospedagem + domínio próprio), com ambientes de teste e produção separados.
-- [ ] Nome e identidade do produto (hoje "Game GB", ligado à Gela Boca).
+- [x] Nome e identidade do produto: **STGame** (22/09/2026). Marca aplicada no app; material em `docs/marca/`.
 - [ ] Termos de uso e política de privacidade (LGPD: o app guarda CPF e telefone de funcionários dos clientes).
 - [ ] **Stripe:** assinatura por quantidade de lojas (preço por loja). O webhook do Stripe atualiza `contas.limitelojas` e `contas.status` sozinho.
 - [ ] Período de teste; portal do cliente Stripe (cartão, faturas, cancelamento).
@@ -503,6 +503,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Tarefa recebida de quem está de folga é esforço extra: conta nos pontos ganhos (esforço), não nos possíveis nem na confiabilidade. Uma tarefa só é passada uma vez por dia. |
 | 22/09/2026 | Fechamento mensal: provisório nos dias 1 a 7, definitivo no dia 8; "Refazer" só pelo master, com motivo, guardando versões. Por loja, cada ponto conta na loja em que a tarefa foi feita; o geral soma todas. Sem pontos automáticos. |
 | 22/09/2026 | Conferência do livro nunca corrige sozinha. Limpeza só do registro de rotinas (180 dias). O papel do pg_cron ignora a RLS: toda função de rotina filtra a conta em todas as consultas e não é liberada para o navegador. |
+| 22/09/2026 | Produto renomeado para STGame; identidade visual aplicada (tokens em `src/styles/stgame-theme.css`). |
 
 ## Referência — arquivo do sistema antigo → etapa
 | Arquivo em `legado/` | Etapa |

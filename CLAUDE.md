@@ -1,6 +1,6 @@
-# Game GB: instruções para o Claude Code
+# STGame: instruções para o Claude Code
 
-**Produto multi-empresa (SaaS)** de gamificação e gestão de lojas: tarefas com pontos, validação de entregas, ranking, loja de recompensas, metas, agenda, escala, RH e estoque. Ele nasceu do sistema da loja Gela Boca (Python + SQL Server + Tkinter + bot do Telegram) e está sendo reconstruído como aplicação web vendida para várias empresas.
+**Produto multi-empresa (SaaS)**, chamado **STGame** (antes "Game GB"), de gamificação e gestão de lojas: tarefas com pontos, validação de entregas, ranking, loja de recompensas, metas, agenda, escala, RH e estoque. Ele nasceu do sistema da loja Gela Boca (Python + SQL Server + Tkinter + bot do Telegram) e está sendo reconstruído como aplicação web vendida para várias empresas.
 
 **Sempre leia `docs/PLANO_MIGRACAO.md` antes de começar.** Ele define as fases, a ordem e o que já foi feito. Ao terminar um item, marque o checkbox, atualize a tabela "Status geral" e registre decisões novas em "Registro de decisões".
 
