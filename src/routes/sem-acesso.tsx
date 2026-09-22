@@ -13,7 +13,7 @@ function SemAcesso() {
     <main className="flex min-h-screen flex-col items-center justify-center gap-2 p-6">
       <Logo altura={40} />
       <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6 text-center">
-        <h1 className="text-2xl font-bold">Sem acesso</h1>
+        <h1 className="font-display text-2xl font-semibold">Sem acesso</h1>
         <p className="text-muted-foreground">
           Seu login existe, mas ainda não está ligado a nenhuma empresa. Fale com o
           administrador para liberar o seu acesso.

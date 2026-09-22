@@ -92,7 +92,7 @@ function Comunicados() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Comunicados</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Comunicados</h1>
       <p className="text-sm text-muted-foreground">
         Avisos para a equipe, com registro de quem leu e deu ciência. Por enquanto o gestor registra a ciência de cada
         pessoa (com data e hora); quando houver o portal ou o bot, o próprio funcionário confirma.

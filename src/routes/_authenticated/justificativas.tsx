@@ -75,7 +75,7 @@ function Justificativas() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Justificativas</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Justificativas</h1>
       <p className="text-sm text-muted-foreground">
         "Não se aplica": a tarefa caía no dia, mas não fazia sentido fazer. Aceita, ela sai das pendências, não conta nos
         pontos possíveis da nota do mês e vira dia neutro na sequência de dias (como a folga). Pendente ou recusada, conta

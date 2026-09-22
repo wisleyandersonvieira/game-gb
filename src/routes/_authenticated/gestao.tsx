@@ -158,7 +158,7 @@ function Gestao() {
       {conta.data && (
         <>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{conta.data.nome}</h1>
+            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{conta.data.nome}</h1>
             <p className="text-sm text-muted-foreground">
               <strong className={noLimite ? "text-azul" : "text-foreground"}>
                 {ativas.length}

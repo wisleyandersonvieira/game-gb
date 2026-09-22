@@ -165,7 +165,7 @@ export function MesesFechados({ lojaid, master }: { lojaid: number | null; maste
         chave={(l) => l.historicoid}
         vazio={linhas.isLoading ? "Carregando..." : "Ninguém pontuou nesse mês, nesta loja."}
         colunas={[
-          { titulo: "Posição", valor: (l) => MEDALHAS[(l.posicao ?? 0) - 1] ?? `${l.posicao}º`, classe: () => "w-16" },
+          { titulo: "Posição", valor: (l) => MEDALHAS[(l.posicao ?? 0) - 1] ?? `${l.posicao}º`, classe: () => "w-16 font-mono tabular-nums" },
           { titulo: "Pessoa", principal: true, valor: (l) => l.nomefuncionario ?? "—" },
           { titulo: "Nota", alinhar: "direita", valor: (l) => num(l.nota), classe: () => "font-semibold" },
           { titulo: "Confiabilidade", alinhar: "direita", valor: (l) => `${num(l.confiabilidade)}%` },

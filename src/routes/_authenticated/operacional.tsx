@@ -24,7 +24,7 @@ function Operacional() {
   if (lojas.length === 0 || lojaAtiva === null) {
     return (
       <div className="mx-auto max-w-7xl space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Painel</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Painel</h1>
         <AvisoSemLoja />
       </div>
     );
@@ -82,7 +82,7 @@ function PainelLogado({ lojaid }: { lojaid: number }) {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Painel {dados ? `· ${dados.loja}` : ""}</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Painel {dados ? `· ${dados.loja}` : ""}</h1>
         <p className={`text-sm ${painel.isError ? "text-destructive" : "text-muted-foreground"}`}>
           {painel.isError
             ? "Erro ao atualizar. Tentando de novo..."

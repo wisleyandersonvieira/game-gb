@@ -56,7 +56,7 @@ function CanalConfidencial() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Canal confidencial</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Canal confidencial</h1>
 
       <div className="space-y-1 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
         <p>

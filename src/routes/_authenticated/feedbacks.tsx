@@ -44,7 +44,7 @@ function usePessoas() {
 function Feedbacks() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Feedbacks</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Feedbacks</h1>
       <p className="text-sm text-muted-foreground">
         A nota que cada pessoa dá para o próprio dia, de 0 a 10. Enquanto o bot não chega, o gestor registra (fica marcado
         como "registrado pelo gestor"). Um por pessoa por dia; o bônus entra no saldo e aparece no extrato.

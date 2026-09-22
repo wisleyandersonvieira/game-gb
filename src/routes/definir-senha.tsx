@@ -73,7 +73,7 @@ function DefinirSenha() {
         className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6"
       >
         <div>
-          <h1 className="text-2xl font-bold">Definir senha</h1>
+          <h1 className="font-display text-2xl font-semibold">Definir senha</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Escolha a senha que você vai usar para entrar.
           </p>

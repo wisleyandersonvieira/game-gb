@@ -52,7 +52,7 @@ function DocumentosPessoais() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Documentos pessoais</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Documentos pessoais</h1>
       <p className="text-sm text-muted-foreground">
         Holerites, recibos, contratos, atestados e outros documentos de cada pessoa. Só o responsável pela conta vê esta
         tela, e cada vez que um documento é aberto fica registrado quem abriu e quando. Documentos com ciência ou com

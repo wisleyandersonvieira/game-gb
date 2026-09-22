@@ -58,7 +58,7 @@ function Quadro() {
   if (lojas.length === 0 || lojaAtiva === null) {
     return (
       <div className="mx-auto max-w-6xl space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Quadro</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Quadro</h1>
         <AvisoSemLoja />
       </div>
     );
@@ -67,7 +67,7 @@ function Quadro() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Quadro</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Quadro</h1>
         <p className="text-sm text-muted-foreground">
           Loja <strong className="text-foreground">{loja?.nome}</strong>
         </p>

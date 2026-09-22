@@ -36,7 +36,7 @@ export function CartaoNumero({
         <p className="text-xs font-medium text-muted-foreground">{titulo}</p>
         {etiqueta && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{etiqueta}</span>}
       </div>
-      <p className={`mt-1 text-2xl font-bold tabular-nums sm:text-3xl ${COR[tom]}`}>{valor}</p>
+      <p className={`mt-1 font-mono text-2xl font-medium tabular-nums sm:text-3xl ${COR[tom]}`}>{valor}</p>
       {progresso !== undefined && (
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
           <div

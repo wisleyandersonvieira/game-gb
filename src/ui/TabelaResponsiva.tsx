@@ -52,7 +52,7 @@ export function TabelaResponsiva<T>({
                 className={`border-t border-border bg-card ${aoClicar ? "cursor-pointer hover:bg-muted/60" : ""} ${destacar?.(l) ? "bg-primary/5" : ""}`}
               >
                 {colunas.map((c) => (
-                  <td key={c.titulo} className={`px-3 py-2 ${c.alinhar === "direita" ? "text-right tabular-nums" : ""} ${c.classe?.(l) ?? ""}`}>
+                  <td key={c.titulo} className={`px-3 py-2 ${c.alinhar === "direita" ? "text-right font-mono tabular-nums" : ""} ${c.classe?.(l) ?? ""}`}>
                     {c.valor(l)}
                   </td>
                 ))}
@@ -73,7 +73,7 @@ export function TabelaResponsiva<T>({
               {demais.map((c) => (
                 <div key={c.titulo} className="contents">
                   <dt className="text-muted-foreground">{c.titulo}</dt>
-                  <dd className={`break-words text-right ${c.classe?.(l) ?? ""}`}>{c.valor(l)}</dd>
+                  <dd className={`break-words text-right ${c.alinhar === "direita" ? "font-mono tabular-nums" : ""} ${c.classe?.(l) ?? ""}`}>{c.valor(l)}</dd>
                 </div>
               ))}
             </dl>

@@ -73,7 +73,7 @@ function AuthPage() {
         className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6"
       >
         <div>
-          <h1 className="text-2xl font-bold">Entrar</h1>
+          <h1 className="font-display text-2xl font-semibold">Entrar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             O acesso é só por convite. Fale com o administrador se ainda não recebeu o seu.
           </p>

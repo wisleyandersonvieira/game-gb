@@ -250,7 +250,7 @@ function Listas({ p }: { p: PainelInicio }) {
       <Lista titulo="Top 5 do mês" para="/ranking" vazio="Ninguém pontuou neste mês ainda." n={p.ranking.length}>
         {p.ranking.map((r, i) => (
           <li key={r.nome + i} className="flex items-center gap-3 py-2 text-sm">
-            <span className={`w-6 text-center font-bold ${i === 0 ? "text-azul" : "text-muted-foreground"}`}>{i + 1}º</span>
+            <span className={`w-6 text-center font-mono font-medium tabular-nums ${i === 0 ? "text-azul" : "text-muted-foreground"}`}>{i + 1}º</span>
             <span className="min-w-0 flex-1 truncate">{r.nome}</span>
             <span className="font-semibold tabular-nums">{r.pontos} pts</span>
           </li>

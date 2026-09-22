@@ -71,7 +71,7 @@ function Relatorios() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Relatórios</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Relatórios</h1>
 
       <div className="flex gap-2 border-b border-border">
         {(

@@ -75,6 +75,15 @@ body {
   color: var(--color-foreground);
 }
 
+/* Tipografia da marca: títulos em Sora (font-display), o resto em IBM Plex
+   Sans (font-sans, padrão do Tailwind). Pontos, posições e colunas numéricas
+   usam font-mono com tabular-nums. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
 /* Celular: área de toque grande e nada de rolagem para o lado. */
 html,
 body {

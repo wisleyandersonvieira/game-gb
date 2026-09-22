@@ -82,7 +82,7 @@ function Extrato() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Extrato de pontos</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Extrato de pontos</h1>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
         <select

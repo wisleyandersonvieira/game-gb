@@ -126,7 +126,7 @@ function Agenda() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Agenda {loja ? `· ${loja.nome}` : ""}</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Agenda {loja ? `· ${loja.nome}` : ""}</h1>
       {carregando ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : lojas.length === 0 || lojaAtiva === null ? (

@@ -40,7 +40,7 @@ function Tarefas() {
   if (lojas.length === 0) {
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Tarefas</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Tarefas</h1>
         <AvisoSemLoja />
       </div>
     );
@@ -48,7 +48,7 @@ function Tarefas() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Tarefas</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Tarefas</h1>
 
       <div className="flex gap-2 border-b border-border">
         {(

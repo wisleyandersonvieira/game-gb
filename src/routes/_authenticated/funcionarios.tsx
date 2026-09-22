@@ -163,7 +163,7 @@ function Funcionarios() {
   if (lojas.length === 0) {
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Equipe</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Equipe</h1>
         <AvisoSemLoja />
       </div>
     );
@@ -180,7 +180,7 @@ function Funcionarios() {
     <div className="mx-auto max-w-4xl space-y-6">
 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Equipe</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Equipe</h1>
         <p className="text-sm text-muted-foreground">
           {porLoja.filter((f) => f.ativo).length} ativos
           {inativos > 0 && ` · ${inativos} inativos`}
