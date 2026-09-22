@@ -8,6 +8,7 @@ import { CartaoNumero } from "@/ui/CartaoNumero";
 import { Carregando, ErroTela } from "@/ui/Estados";
 import { CaixaGrafico, GraficoEntregas, GraficoPontos, GraficoVendas } from "@/inicio/Graficos";
 import { Guia, guiaCompleto } from "@/inicio/Guia";
+import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, type PainelInicio } from "@/inicio/tipos";
 
 export const Route = createFileRoute("/_authenticated/inicio")({
@@ -109,6 +110,10 @@ function Inicio() {
 
       {p && (
         <>
+          <div className="-mt-3">
+            <SituacaoRotina rotina={p.rotina ?? null} />
+          </div>
+          <Avisos avisos={p.avisos} />
           {mostrarGuia && (
             <Guia
               guia={p.guia}

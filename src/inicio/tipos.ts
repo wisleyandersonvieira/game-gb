@@ -22,6 +22,12 @@ export type PainelInicio = {
   agenda: { quando: string; tipo: string; responsavel: string | null; loja: string }[];
   validar: { titulo: string; pessoa: string; pontos: number; enviadaem: string; loja: string }[];
   guia: { loja: boolean; equipe: boolean; tarefas: boolean; meta: boolean; tv: boolean };
+  avisos?: {
+    agendamentospassados: number;
+    comunicados24h: { comunicados: number; pessoas: number };
+    livro: "ok" | "diferenca" | "erro" | null;
+  };
+  rotina?: { quando: string; resultado: "ok" | "erro"; origem: string } | null;
 };
 
 export const FUSO = "America/Sao_Paulo";

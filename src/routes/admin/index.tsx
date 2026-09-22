@@ -49,6 +49,19 @@ function PainelAdmin() {
     },
   });
 
+  // Situação das rotinas automáticas de cada cliente (só ok/erro, sem detalhes).
+  const rotinas = useQuery({
+    queryKey: ["rotinas-resumo-admin"],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rotinas_resumo_admin");
+      if (error) throw error;
+      const porConta = new Map<number, { rotina: string; ultimaem: string; situacao: string }[]>();
+      for (const r of data ?? []) porConta.set(r.contaid, [...(porConta.get(r.contaid) ?? []), r]);
+      return porConta;
+    },
+  });
+
   // Quantas lojas cada cliente já usa, para comparar com o limite contratado.
   const lojas = useQuery({
     queryKey: ["lojas-por-conta"],
@@ -262,6 +275,7 @@ function PainelAdmin() {
                   {c.cidade && ` · ${c.cidade}`}
                   {c.telefone && ` · ${c.telefone}`}
                 </p>
+                <SituacaoRotinas itens={rotinas.data?.get(c.contaid)} />
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -328,5 +342,35 @@ function PainelAdmin() {
         )}
       </div>
     </div>
+  );
+}
+
+const NOME_ROTINA: Record<string, string> = {
+  lista_do_dia: "lista do dia",
+  fechamento_mensal: "fechamento",
+  conferencia_livro: "livro de pontos",
+  limpeza: "limpeza",
+};
+
+function SituacaoRotinas({ itens }: { itens?: { rotina: string; ultimaem: string; situacao: string }[] }) {
+  if (!itens || itens.length === 0) {
+    return <p className="text-xs text-muted-foreground">Rotinas: ainda não rodaram.</p>;
+  }
+  const problemas = itens.filter((i) => i.situacao !== "ok");
+  const ultima = itens.reduce((a, b) => (a.ultimaem > b.ultimaem ? a : b));
+  const quando = new Date(ultima.ultimaem).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return problemas.length === 0 ? (
+    <p className="text-xs text-sucesso">Rotinas ok · última {quando}</p>
+  ) : (
+    <p className="text-xs text-destructive">
+      Rotinas com problema:{" "}
+      {problemas.map((p) => `${NOME_ROTINA[p.rotina] ?? p.rotina} (${p.situacao === "diferenca" ? "diferença" : "erro"})`).join(", ")}
+    </p>
   );
 }
