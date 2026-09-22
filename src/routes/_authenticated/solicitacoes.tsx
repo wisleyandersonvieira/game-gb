@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/solicitacoes")({
@@ -41,9 +40,8 @@ function Solicitacoes() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-4 sm:p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Solicitações</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Solicitações</h1>
       {carregando ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : lojas.length === 0 || lojaAtiva === null ? (
@@ -58,7 +56,7 @@ function Solicitacoes() {
           <Lista lojaid={lojaAtiva} />
         </>
       )}
-    </main>
+    </div>
   );
 }
 

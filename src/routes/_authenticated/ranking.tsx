@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/ranking")({
@@ -41,20 +40,18 @@ function Ranking() {
 
   if (carregando) {
     return (
-      <main className="mx-auto min-h-screen max-w-3xl space-y-6 p-6">
-        <Nav />
+      <div className="mx-auto max-w-3xl space-y-6">
         <p className="text-muted-foreground">Carregando...</p>
-      </main>
+      </div>
     );
   }
 
   if (lojas.length === 0) {
     return (
-      <main className="mx-auto min-h-screen max-w-3xl space-y-6 p-6">
-        <Nav />
-        <h1 className="text-3xl font-bold">Ranking</h1>
+      <div className="mx-auto max-w-3xl space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ranking</h1>
         <AvisoSemLoja />
-      </main>
+      </div>
     );
   }
 
@@ -63,9 +60,8 @@ function Ranking() {
     `rounded-lg px-3 py-1.5 text-sm ${ativo ? "bg-card font-semibold text-foreground" : "text-muted-foreground"}`;
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl space-y-6 p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Ranking</h1>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ranking</h1>
 
       <div className="flex flex-wrap gap-6">
         <div className="flex gap-1 rounded-lg border border-border p-1">
@@ -100,7 +96,7 @@ function Ranking() {
           linhas={linhas}
         />
       )}
-    </main>
+    </div>
   );
 }
 

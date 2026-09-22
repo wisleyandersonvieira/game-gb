@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { dataHoraBr } from "@/rh/pdf";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
@@ -36,9 +35,8 @@ function useEtapas() {
 function Onboarding() {
   const [aba, setAba] = useState<"pessoas" | "etapas">("pessoas");
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-4 sm:p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Onboarding</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Onboarding</h1>
       <p className="text-sm text-muted-foreground">
         O checklist de admissão de cada pessoa. As etapas são da sua conta: você cria, renomeia, ordena e desativa
         (desativar nunca apaga o que já foi marcado).
@@ -60,7 +58,7 @@ function Onboarding() {
         ))}
       </div>
       {aba === "pessoas" ? <Pessoas /> : <Etapas />}
-    </main>
+    </div>
   );
 }
 

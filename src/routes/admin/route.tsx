@@ -1,5 +1,7 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { Layout } from "@/ui/Layout";
+import { BARRA_CELULAR_ADMIN, MENU_ADMIN } from "@/ui/menu";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
@@ -12,5 +14,9 @@ export const Route = createFileRoute("/admin")({
     const { data: admin } = await supabase.rpc("eh_admin_geral");
     if (admin !== true) throw redirect({ to: "/sem-acesso" });
   },
-  component: () => <Outlet />,
+  component: () => (
+    <Layout menu={MENU_ADMIN} barra={BARRA_CELULAR_ADMIN} comLoja={false} titulo="Administração">
+      <Outlet />
+    </Layout>
+  ),
 });

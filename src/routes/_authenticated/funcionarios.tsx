@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/funcionarios")({
@@ -155,20 +154,18 @@ function Funcionarios() {
 
   if (carregandoLojas) {
     return (
-      <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
-        <Nav />
+      <div className="mx-auto max-w-4xl space-y-6">
         <p className="text-muted-foreground">Carregando...</p>
-      </main>
+      </div>
     );
   }
 
   if (lojas.length === 0) {
     return (
-      <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
-        <Nav />
-        <h1 className="text-3xl font-bold">Equipe</h1>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Equipe</h1>
         <AvisoSemLoja />
-      </main>
+      </div>
     );
   }
 
@@ -180,11 +177,10 @@ function Funcionarios() {
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
 
   return (
-    <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
-      <Nav />
+    <div className="mx-auto max-w-4xl space-y-6">
 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-3xl font-bold">Equipe</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Equipe</h1>
         <p className="text-sm text-muted-foreground">
           {porLoja.filter((f) => f.ativo).length} ativos
           {inativos > 0 && ` · ${inativos} inativos`}
@@ -412,6 +408,6 @@ function Funcionarios() {
           </p>
         )}
       </div>
-    </main>
+    </div>
   );
 }

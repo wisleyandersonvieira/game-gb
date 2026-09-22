@@ -24,7 +24,8 @@ const reais = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency",
 export async function usuarioAtual() {
   const { data } = await supabase.auth.getUser();
   const u = data.user;
-  return (u?.user_metadata?.nome as string | undefined) || (u?.user_metadata?.full_name as string | undefined) || u?.email || "usuário";
+  const nome = typeof u?.user_metadata?.nome === "string" ? u.user_metadata.nome.trim() : "";
+  return nome || u?.email || "usuário";
 }
 
 /** Nome da conta de quem está logado. */

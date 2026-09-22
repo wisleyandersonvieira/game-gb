@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { Justificar, aposJustificar } from "@/pessoas/justificar";
 
 export const Route = createFileRoute("/_authenticated/justificativas")({
@@ -75,16 +74,15 @@ function Justificativas() {
   const pendentes = (lista.data ?? []).filter((j) => j.status === "Pendente");
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-4 sm:p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Justificativas</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Justificativas</h1>
       <p className="text-sm text-muted-foreground">
         "Não se aplica": a tarefa caía no dia, mas não fazia sentido fazer. Aceita, ela sai das pendências, não conta nos
         pontos possíveis da nota do mês e vira dia neutro na sequência de dias (como a folga). Pendente ou recusada, conta
         normalmente.
       </p>
 
-      <div className="flex gap-2 overflow-x-auto border-b border-border">
+      <div className="flex flex-wrap gap-x-2 border-b border-border">
         {(
           [
             ["pendentes", `Para decidir${pendentes.length ? ` (${pendentes.length})` : ""}`],
@@ -108,7 +106,7 @@ function Justificativas() {
       {aba === "pendentes" && <ParaDecidir linhas={pendentes} carregando={lista.isLoading} />}
       {aba === "nova" && <Nova />}
       {aba === "todas" && <Todas linhas={lista.data ?? []} carregando={lista.isLoading} />}
-    </main>
+    </div>
   );
 }
 

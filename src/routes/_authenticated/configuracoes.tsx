@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   component: Configuracoes,
@@ -134,9 +133,8 @@ function Configuracoes() {
   const podeAlterar = eu.data?.master ?? false;
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl space-y-6 p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Configurações</h1>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Configurações</h1>
 
       {eu.data && !podeAlterar && (
         <p className="rounded-lg border border-accent bg-card px-4 py-3 text-sm text-accent">
@@ -208,7 +206,7 @@ function Configuracoes() {
           </table>
         </div>
       </section>
-    </main>
+    </div>
   );
 }
 

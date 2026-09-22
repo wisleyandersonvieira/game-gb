@@ -1,7 +1,8 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { CabecalhoPagina } from "@/ui/CabecalhoPagina";
 import {
   criarContaEConvidar,
   reenviarConvite,
@@ -32,7 +33,6 @@ const CORES_STATUS: Record<string, string> = {
 
 function PainelAdmin() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [form, setForm] = useState(FORM_VAZIO);
   const [editando, setEditando] = useState<number | null>(null);
   const [recado, setRecado] = useState<string | null>(null);
@@ -125,24 +125,11 @@ function PainelAdmin() {
   const lista = contas.data ?? [];
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-bold">Administração</h1>
-          <p className="text-sm text-muted-foreground">
-            Clientes da plataforma. Você não vê os dados operacionais de nenhum deles.
-          </p>
-        </div>
-        <button
-          onClick={async () => {
-            await supabase.auth.signOut();
-            navigate({ to: "/auth" });
-          }}
-          className="rounded-lg border border-border px-4 py-2 text-sm"
-        >
-          Sair
-        </button>
-      </header>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <CabecalhoPagina
+        titulo="Clientes"
+        descricao="Clientes da plataforma. Você não vê os dados operacionais de nenhum deles."
+      />
 
       {recado && (
         <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">{recado}</p>
@@ -340,6 +327,6 @@ function PainelAdmin() {
           <p className="text-sm text-destructive">{(mudarStatus.error as Error).message}</p>
         )}
       </div>
-    </main>
+    </div>
   );
 }

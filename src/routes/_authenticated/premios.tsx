@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { pdfReciboResgate } from "@/rh/pdf";
 
@@ -34,27 +33,24 @@ function Premios() {
 
   if (carregando) {
     return (
-      <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
-        <Nav />
+      <div className="mx-auto max-w-5xl space-y-6">
         <p className="text-muted-foreground">Carregando...</p>
-      </main>
+      </div>
     );
   }
 
   if (lojas.length === 0) {
     return (
-      <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
-        <Nav />
-        <h1 className="text-3xl font-bold">Prêmios</h1>
+      <div className="mx-auto max-w-5xl space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Prêmios</h1>
         <AvisoSemLoja />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Prêmios</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Prêmios</h1>
 
       <div className="flex gap-2 border-b border-border">
         {(
@@ -79,7 +75,7 @@ function Premios() {
       {aba === "resgatar" && <RegistrarResgate aoRegistrar={() => setAba("resgates")} />}
       {aba === "resgates" && <ListaDeResgates />}
       {aba === "catalogo" && <Catalogo />}
-    </main>
+    </div>
   );
 }
 

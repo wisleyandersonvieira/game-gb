@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { validarArquivo } from "@/rh/arquivos";
 import { dataHoraBr } from "@/rh/pdf";
 
@@ -52,9 +51,8 @@ function DocumentosPessoais() {
   });
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-4 sm:p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Documentos pessoais</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Documentos pessoais</h1>
       <p className="text-sm text-muted-foreground">
         Holerites, recibos, contratos, atestados e outros documentos de cada pessoa. Só o responsável pela conta vê esta
         tela, e cada vez que um documento é aberto fica registrado quem abriu e quando. Documentos com ciência ou com
@@ -67,7 +65,7 @@ function DocumentosPessoais() {
         </p>
       )}
       {master.data && <Conteudo />}
-    </main>
+    </div>
   );
 }
 

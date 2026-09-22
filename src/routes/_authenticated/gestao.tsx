@@ -2,7 +2,6 @@ import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 
@@ -152,15 +151,14 @@ function Gestao() {
   });
 
   return (
-    <main className="mx-auto min-h-screen max-w-4xl space-y-6 p-6">
-      <Nav />
+    <div className="mx-auto max-w-4xl space-y-6">
 
       {conta.isLoading && <p className="text-muted-foreground">Carregando...</p>}
 
       {conta.data && (
         <>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h1 className="text-3xl font-bold">{conta.data.nome}</h1>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{conta.data.nome}</h1>
             <p className="text-sm text-muted-foreground">
               <strong className={noLimite ? "text-accent" : "text-foreground"}>
                 {ativas.length}
@@ -408,7 +406,7 @@ function Gestao() {
           Não foi possível carregar: {(conta.error as Error).message}
         </p>
       )}
-    </main>
+    </div>
   );
 }
 

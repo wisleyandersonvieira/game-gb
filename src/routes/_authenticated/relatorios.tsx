@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { Justificar } from "@/pessoas/justificar";
 
@@ -70,9 +69,8 @@ function Relatorios() {
   const [ate, setAte] = useState(hoje());
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Relatórios</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Relatórios</h1>
 
       <div className="flex gap-2 border-b border-border">
         {(
@@ -105,7 +103,7 @@ function Relatorios() {
       </div>
 
       {aba === "pessoa" ? <PorPessoa de={de} ate={ate} /> : <PorTarefa de={de} ate={ate} />}
-    </main>
+    </div>
   );
 }
 

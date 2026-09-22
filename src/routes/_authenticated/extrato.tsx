@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 
 export const Route = createFileRoute("/_authenticated/extrato")({
   component: Extrato,
@@ -81,9 +80,8 @@ function Extrato() {
   const emReais = (pontos: number) => (x?.taxa ? ` (${reais(pontos * x.taxa)})` : "");
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
-      <Nav />
-      <h1 className="text-3xl font-bold">Extrato de pontos</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Extrato de pontos</h1>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
         <select
@@ -174,7 +172,7 @@ function Extrato() {
           </div>
         </>
       )}
-    </main>
+    </div>
   );
 }
 

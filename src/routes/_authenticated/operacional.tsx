@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { hora, PainelDaLoja, type DadosPainel } from "@/painel/PainelDaLoja";
 import { soltarFogosUmaVezPorDia } from "@/painel/fogos";
@@ -16,20 +15,18 @@ function Operacional() {
 
   if (carregando) {
     return (
-      <main className="mx-auto min-h-screen max-w-7xl space-y-6 p-6">
-        <Nav />
+      <div className="mx-auto max-w-7xl space-y-6">
         <p className="text-muted-foreground">Carregando...</p>
-      </main>
+      </div>
     );
   }
 
   if (lojas.length === 0 || lojaAtiva === null) {
     return (
-      <main className="mx-auto min-h-screen max-w-7xl space-y-6 p-6">
-        <Nav />
-        <h1 className="text-3xl font-bold">Painel</h1>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Painel</h1>
         <AvisoSemLoja />
-      </main>
+      </div>
     );
   }
 
@@ -83,10 +80,9 @@ function PainelLogado({ lojaid }: { lojaid: number }) {
   }, [dados, lojaid]);
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl space-y-6 p-6">
-      <Nav />
+    <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-3xl font-bold">Painel {dados ? `· ${dados.loja}` : ""}</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Painel {dados ? `· ${dados.loja}` : ""}</h1>
         <p className={`text-sm ${painel.isError ? "text-destructive" : "text-muted-foreground"}`}>
           {painel.isError
             ? "Erro ao atualizar. Tentando de novo..."
@@ -96,6 +92,6 @@ function PainelLogado({ lojaid }: { lojaid: number }) {
         </p>
       </div>
       {dados && <PainelDaLoja dados={dados} />}
-    </main>
+    </div>
   );
 }

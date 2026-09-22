@@ -30,12 +30,14 @@ import { Route as AuthenticatedMetasRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedOperacionalRouteImport } from './routes/_authenticated/operacional'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
+import { Route as AuthenticatedPerfilRouteImport } from './routes/_authenticated/perfil'
 import { Route as AuthenticatedPremiosRouteImport } from './routes/_authenticated/premios'
 import { Route as AuthenticatedRankingRouteImport } from './routes/_authenticated/ranking'
 import { Route as AuthenticatedRelatoriosRouteImport } from './routes/_authenticated/relatorios'
 import { Route as AuthenticatedSolicitacoesRouteImport } from './routes/_authenticated/solicitacoes'
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminPerfilRouteImport } from './routes/admin/perfil'
 import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
 
 const IndexRoute = IndexRouteImport.update({
@@ -149,6 +151,11 @@ const AuthenticatedPainelRoute = AuthenticatedPainelRouteImport.update({
   path: '/painel',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPerfilRoute = AuthenticatedPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedPremiosRoute = AuthenticatedPremiosRouteImport.update({
   id: '/premios',
   path: '/premios',
@@ -180,6 +187,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminPerfilRoute = AdminPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const TvCodigoRoute = TvCodigoRouteImport.update({
   id: '/tv/$codigo',
   path: '/tv/$codigo',
@@ -207,11 +219,13 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
+  '/perfil': typeof AuthenticatedPerfilRoute
   '/premios': typeof AuthenticatedPremiosRoute
   '/ranking': typeof AuthenticatedRankingRoute
   '/relatorios': typeof AuthenticatedRelatoriosRoute
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
+  '/admin/perfil': typeof AdminPerfilRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -235,11 +249,13 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
+  '/perfil': typeof AuthenticatedPerfilRoute
   '/premios': typeof AuthenticatedPremiosRoute
   '/ranking': typeof AuthenticatedRankingRoute
   '/relatorios': typeof AuthenticatedRelatoriosRoute
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
+  '/admin/perfil': typeof AdminPerfilRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -266,11 +282,13 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/operacional': typeof AuthenticatedOperacionalRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
+  '/_authenticated/perfil': typeof AuthenticatedPerfilRoute
   '/_authenticated/premios': typeof AuthenticatedPremiosRoute
   '/_authenticated/ranking': typeof AuthenticatedRankingRoute
   '/_authenticated/relatorios': typeof AuthenticatedRelatoriosRoute
   '/_authenticated/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
+  '/admin/perfil': typeof AdminPerfilRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -297,11 +315,13 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/operacional'
     | '/painel'
+    | '/perfil'
     | '/premios'
     | '/ranking'
     | '/relatorios'
     | '/solicitacoes'
     | '/tarefas'
+    | '/admin/perfil'
     | '/tv/$codigo'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -325,11 +345,13 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/operacional'
     | '/painel'
+    | '/perfil'
     | '/premios'
     | '/ranking'
     | '/relatorios'
     | '/solicitacoes'
     | '/tarefas'
+    | '/admin/perfil'
     | '/tv/$codigo'
     | '/admin'
   id:
@@ -355,11 +377,13 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/operacional'
     | '/_authenticated/painel'
+    | '/_authenticated/perfil'
     | '/_authenticated/premios'
     | '/_authenticated/ranking'
     | '/_authenticated/relatorios'
     | '/_authenticated/solicitacoes'
     | '/_authenticated/tarefas'
+    | '/admin/perfil'
     | '/tv/$codigo'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -523,6 +547,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPainelRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/perfil': {
+      id: '/_authenticated/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof AuthenticatedPerfilRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/premios': {
       id: '/_authenticated/premios'
       path: '/premios'
@@ -565,6 +596,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/perfil': {
+      id: '/admin/perfil'
+      path: '/perfil'
+      fullPath: '/admin/perfil'
+      preLoaderRoute: typeof AdminPerfilRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/tv/$codigo': {
       id: '/tv/$codigo'
       path: '/tv/$codigo'
@@ -591,6 +629,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedOperacionalRoute: typeof AuthenticatedOperacionalRoute
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
+  AuthenticatedPerfilRoute: typeof AuthenticatedPerfilRoute
   AuthenticatedPremiosRoute: typeof AuthenticatedPremiosRoute
   AuthenticatedRankingRoute: typeof AuthenticatedRankingRoute
   AuthenticatedRelatoriosRoute: typeof AuthenticatedRelatoriosRoute
@@ -614,6 +653,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedOperacionalRoute: AuthenticatedOperacionalRoute,
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
+  AuthenticatedPerfilRoute: AuthenticatedPerfilRoute,
   AuthenticatedPremiosRoute: AuthenticatedPremiosRoute,
   AuthenticatedRankingRoute: AuthenticatedRankingRoute,
   AuthenticatedRelatoriosRoute: AuthenticatedRelatoriosRoute,
@@ -625,10 +665,12 @@ const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
 interface AdminRouteRouteChildren {
+  AdminPerfilRoute: typeof AdminPerfilRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
+  AdminPerfilRoute: AdminPerfilRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

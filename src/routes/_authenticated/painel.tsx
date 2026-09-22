@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 
 export const Route = createFileRoute("/_authenticated/painel")({
@@ -49,35 +48,32 @@ function Quadro() {
 
   if (carregando) {
     return (
-      <main className="mx-auto min-h-screen max-w-6xl space-y-6 p-6">
-        <Nav />
+      <div className="mx-auto max-w-6xl space-y-6">
         <p className="text-muted-foreground">Carregando...</p>
-      </main>
+      </div>
     );
   }
 
   if (lojas.length === 0 || lojaAtiva === null) {
     return (
-      <main className="mx-auto min-h-screen max-w-6xl space-y-6 p-6">
-        <Nav />
-        <h1 className="text-3xl font-bold">Quadro</h1>
+      <div className="mx-auto max-w-6xl space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Quadro</h1>
         <AvisoSemLoja />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl space-y-6 p-6">
-      <Nav />
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-3xl font-bold">Quadro</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Quadro</h1>
         <p className="text-sm text-muted-foreground">
           Loja <strong className="text-foreground">{loja?.nome}</strong>
         </p>
       </div>
       <RegistrarEntrega lojaid={lojaAtiva} />
       <Validacao lojaid={lojaAtiva} />
-    </main>
+    </div>
   );
 }
 
