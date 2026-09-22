@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { validarArquivo } from "@/rh/arquivos";
 
 export const Route = createFileRoute("/_authenticated/agenda")({
   component: Agenda,
@@ -14,8 +15,6 @@ const campo =
 
 const FUSO = "America/Sao_Paulo";
 const PAGAMENTOS = ["Pendente", "Sinal pago", "Pago"] as const;
-const TIPOS_ARQUIVO = ["application/pdf", "image/jpeg", "image/png"];
-const LIMITE_ARQUIVO = 10 * 1024 * 1024;
 
 const reais = (v: number | null) =>
   v === null ? "" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
@@ -812,17 +811,16 @@ function Anexos({ a }: { a: Agendamento }) {
 
   const enviar = useMutation({
     mutationFn: async (arquivo: File) => {
-      if (!TIPOS_ARQUIVO.includes(arquivo.type)) throw new Error("Só PDF, JPG ou PNG.");
-      if (arquivo.size > LIMITE_ARQUIVO) throw new Error("O arquivo passa de 10 MB.");
+      const tipo = await validarArquivo(arquivo);
       const seguro = arquivo.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
       const caminho = `${a.contaid}/${a.lojaid}/${a.agendamentoid}/${Date.now()}-${seguro}`;
-      const { error: e1 } = await supabase.storage.from("agendamentos").upload(caminho, arquivo, { contentType: arquivo.type });
+      const { error: e1 } = await supabase.storage.from("agendamentos").upload(caminho, arquivo, { contentType: tipo });
       if (e1) throw e1;
       const { error: e2 } = await supabase.rpc("registrar_anexo_agendamento", {
         p_agendamentoid: a.agendamentoid,
         p_caminho: caminho,
         p_nomearquivo: arquivo.name,
-        p_tipo: arquivo.type,
+        p_tipo: tipo,
         p_tamanho: arquivo.size,
       });
       if (e2) {

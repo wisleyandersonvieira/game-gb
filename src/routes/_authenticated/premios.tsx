@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Nav } from "@/components/Nav";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { pdfReciboResgate } from "@/rh/pdf";
 
 export const Route = createFileRoute("/_authenticated/premios")({
   component: Premios,
@@ -417,7 +418,20 @@ function ListaDeResgates() {
             {r.motivocancelamento && <p className="text-xs text-muted-foreground">Cancelado: {r.motivocancelamento}</p>}
             {r.motivoestorno && <p className="text-xs text-destructive">Estornado: {r.motivoestorno}</p>}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                const { data, error } = await supabase.rpc("recibo_resgate", { p_resgateid: r.resgateid });
+                if (error || !data) {
+                  setAviso({ texto: "Não foi possível gerar o recibo.", grave: true });
+                  return;
+                }
+                await pdfReciboResgate(data as never);
+              }}
+              className="rounded-md border border-border px-3 py-1 text-sm"
+            >
+              Recibo (PDF)
+            </button>
             {r.status === "Pendente" && (
               <>
                 <button

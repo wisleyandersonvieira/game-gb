@@ -699,32 +699,53 @@ export type Database = {
       }
       documentos: {
         Row: {
+          alvo: string
+          arquivadoem: string | null
+          arquivadopor: string | null
+          atualizadoem: string
           contaid: number
           conteudo: string
+          criadopor: string | null
           datacriacao: string | null
           documentoid: number
           funcionariocriadorid: number | null
           pontosporciencia: number
+          primeiracienciaem: string | null
+          status: string
           telegramfileidfoto: string | null
           titulo: string
         }
         Insert: {
+          alvo?: string
+          arquivadoem?: string | null
+          arquivadopor?: string | null
+          atualizadoem?: string
           contaid?: number
           conteudo: string
+          criadopor?: string | null
           datacriacao?: string | null
           documentoid?: number
           funcionariocriadorid?: number | null
           pontosporciencia?: number
+          primeiracienciaem?: string | null
+          status?: string
           telegramfileidfoto?: string | null
           titulo: string
         }
         Update: {
+          alvo?: string
+          arquivadoem?: string | null
+          arquivadopor?: string | null
+          atualizadoem?: string
           contaid?: number
           conteudo?: string
+          criadopor?: string | null
           datacriacao?: string | null
           documentoid?: number
           funcionariocriadorid?: number | null
           pontosporciencia?: number
+          primeiracienciaem?: string | null
+          status?: string
           telegramfileidfoto?: string | null
           titulo?: string
         }
@@ -745,14 +766,65 @@ export type Database = {
           },
         ]
       }
+      documentosacessos: {
+        Row: {
+          acao: string
+          acessadoem: string
+          acessoid: number
+          caminho: string
+          contaid: number
+          documentoid: number | null
+          usuario: string | null
+        }
+        Insert: {
+          acao: string
+          acessadoem?: string
+          acessoid?: number
+          caminho: string
+          contaid?: number
+          documentoid?: number | null
+          usuario?: string | null
+        }
+        Update: {
+          acao?: string
+          acessadoem?: string
+          acessoid?: number
+          caminho?: string
+          contaid?: number
+          documentoid?: number | null
+          usuario?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documentosacessos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "documentosacessos_documento_fk"
+            columns: ["contaid", "documentoid"]
+            isOneToOne: false
+            referencedRelation: "documentospessoais"
+            referencedColumns: ["contaid", "documentoid"]
+          },
+        ]
+      }
       documentosassinaturas: {
         Row: {
           assinaturaid: number
           contaid: number
           dataciencia: string | null
           dataenvio: string | null
+          desfeitaem: string | null
+          desfeitapor: string | null
           documentoid: number
           funcionarioid: number
+          motivodesfazer: string | null
+          origem: string | null
+          pontospagos: number
+          registradopor: string | null
           statusassinatura: string
         }
         Insert: {
@@ -760,8 +832,14 @@ export type Database = {
           contaid?: number
           dataciencia?: string | null
           dataenvio?: string | null
+          desfeitaem?: string | null
+          desfeitapor?: string | null
           documentoid: number
           funcionarioid: number
+          motivodesfazer?: string | null
+          origem?: string | null
+          pontospagos?: number
+          registradopor?: string | null
           statusassinatura?: string
         }
         Update: {
@@ -769,8 +847,14 @@ export type Database = {
           contaid?: number
           dataciencia?: string | null
           dataenvio?: string | null
+          desfeitaem?: string | null
+          desfeitapor?: string | null
           documentoid?: number
           funcionarioid?: number
+          motivodesfazer?: string | null
+          origem?: string | null
+          pontospagos?: number
+          registradopor?: string | null
           statusassinatura?: string
         }
         Relationships: [
@@ -797,32 +881,111 @@ export type Database = {
           },
         ]
       }
+      documentoslojas: {
+        Row: {
+          contaid: number
+          documentoid: number
+          lojaid: number
+        }
+        Insert: {
+          contaid?: number
+          documentoid: number
+          lojaid: number
+        }
+        Update: {
+          contaid?: number
+          documentoid?: number
+          lojaid?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documentoslojas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "documentoslojas_documento_fk"
+            columns: ["contaid", "documentoid"]
+            isOneToOne: false
+            referencedRelation: "documentos"
+            referencedColumns: ["contaid", "documentoid"]
+          },
+          {
+            foreignKeyName: "documentoslojas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
       documentospessoais: {
         Row: {
+          arquivadoem: string | null
+          arquivadopor: string | null
           caminhoarquivo: string
           contaid: number
           dataupload: string | null
+          descricao: string | null
           documentoid: number
+          enviadopor: string | null
+          excluidoem: string | null
+          excluidopor: string | null
           funcionarioid: number
-          mesano: string
+          mesano: string | null
+          motivoexclusao: string | null
+          nomearquivo: string | null
+          situacao: string
+          substituidoem: string | null
+          substituidopor: number | null
+          tamanho: number | null
+          tipoarquivo: string | null
           tipodocumento: string
         }
         Insert: {
+          arquivadoem?: string | null
+          arquivadopor?: string | null
           caminhoarquivo: string
           contaid?: number
           dataupload?: string | null
+          descricao?: string | null
           documentoid?: number
+          enviadopor?: string | null
+          excluidoem?: string | null
+          excluidopor?: string | null
           funcionarioid: number
-          mesano: string
+          mesano?: string | null
+          motivoexclusao?: string | null
+          nomearquivo?: string | null
+          situacao?: string
+          substituidoem?: string | null
+          substituidopor?: number | null
+          tamanho?: number | null
+          tipoarquivo?: string | null
           tipodocumento: string
         }
         Update: {
+          arquivadoem?: string | null
+          arquivadopor?: string | null
           caminhoarquivo?: string
           contaid?: number
           dataupload?: string | null
+          descricao?: string | null
           documentoid?: number
+          enviadopor?: string | null
+          excluidoem?: string | null
+          excluidopor?: string | null
           funcionarioid?: number
-          mesano?: string
+          mesano?: string | null
+          motivoexclusao?: string | null
+          nomearquivo?: string | null
+          situacao?: string
+          substituidoem?: string | null
+          substituidopor?: number | null
+          tamanho?: number | null
+          tipoarquivo?: string | null
           tipodocumento?: string
         }
         Relationships: [
@@ -840,6 +1003,13 @@ export type Database = {
             referencedRelation: "funcionarios"
             referencedColumns: ["contaid", "funcionarioid"]
           },
+          {
+            foreignKeyName: "documentospessoais_substituto_fk"
+            columns: ["contaid", "substituidopor"]
+            isOneToOne: false
+            referencedRelation: "documentospessoais"
+            referencedColumns: ["contaid", "documentoid"]
+          },
         ]
       }
       documentospessoaisciencia: {
@@ -850,6 +1020,8 @@ export type Database = {
           dataenvio: string | null
           documentoid: number
           funcionarioid: number
+          origem: string | null
+          registradopor: string | null
           status: string
         }
         Insert: {
@@ -859,6 +1031,8 @@ export type Database = {
           dataenvio?: string | null
           documentoid: number
           funcionarioid: number
+          origem?: string | null
+          registradopor?: string | null
           status?: string
         }
         Update: {
@@ -868,6 +1042,8 @@ export type Database = {
           dataenvio?: string | null
           documentoid?: number
           funcionarioid?: number
+          origem?: string | null
+          registradopor?: string | null
           status?: string
         }
         Relationships: [
@@ -2329,6 +2505,7 @@ export type Database = {
       }
       movimentospontos: {
         Row: {
+          assinaturaid: number | null
           conquistafuncionarioid: number | null
           contaid: number
           criadopor: string | null
@@ -2345,6 +2522,7 @@ export type Database = {
           tipo: string
         }
         Insert: {
+          assinaturaid?: number | null
           conquistafuncionarioid?: number | null
           contaid?: number
           criadopor?: string | null
@@ -2361,6 +2539,7 @@ export type Database = {
           tipo: string
         }
         Update: {
+          assinaturaid?: number | null
           conquistafuncionarioid?: number | null
           contaid?: number
           criadopor?: string | null
@@ -2377,6 +2556,13 @@ export type Database = {
           tipo?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "movimentospontos_ciencia_fk"
+            columns: ["contaid", "assinaturaid"]
+            isOneToOne: false
+            referencedRelation: "documentosassinaturas"
+            referencedColumns: ["contaid", "assinaturaid"]
+          },
           {
             foreignKeyName: "movimentospontos_conquista_fk"
             columns: ["contaid", "conquistafuncionarioid"]
@@ -2545,63 +2731,130 @@ export type Database = {
           },
         ]
       }
-      onboardingstatus: {
+      onboardingetapas: {
         Row: {
+          ativo: boolean
           contaid: number
-          cpf_fileid: string | null
-          cpfconjugue: string | null
-          ctps_fileid: string | null
-          dadosfilhos: string | null
-          dataadmissional: string | null
-          datacasamento: string | null
-          escolaridade: string | null
-          estadocivil: string | null
-          funcionarioid: number
-          nomeconjugue: string | null
-          qtdfilhos: number | null
-          rg_fileid: string | null
-          statusadmissional: string
-          statusworkflow: string
-          tituloeleitor_fileid: string | null
-          ultimaetapa: string | null
+          criadoem: string
+          etapaid: number
+          nome: string
+          ordem: number
         }
         Insert: {
+          ativo?: boolean
           contaid?: number
-          cpf_fileid?: string | null
-          cpfconjugue?: string | null
-          ctps_fileid?: string | null
-          dadosfilhos?: string | null
-          dataadmissional?: string | null
-          datacasamento?: string | null
-          escolaridade?: string | null
-          estadocivil?: string | null
-          funcionarioid: number
-          nomeconjugue?: string | null
-          qtdfilhos?: number | null
-          rg_fileid?: string | null
-          statusadmissional?: string
-          statusworkflow?: string
-          tituloeleitor_fileid?: string | null
-          ultimaetapa?: string | null
+          criadoem?: string
+          etapaid?: number
+          nome: string
+          ordem?: number
         }
         Update: {
+          ativo?: boolean
           contaid?: number
-          cpf_fileid?: string | null
-          cpfconjugue?: string | null
-          ctps_fileid?: string | null
-          dadosfilhos?: string | null
-          dataadmissional?: string | null
-          datacasamento?: string | null
-          escolaridade?: string | null
-          estadocivil?: string | null
+          criadoem?: string
+          etapaid?: number
+          nome?: string
+          ordem?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboardingetapas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
+      onboardingitens: {
+        Row: {
+          concluidoem: string | null
+          concluidopor: string | null
+          contaid: number
+          criadoem: string
+          documentoid: number | null
+          etapaid: number
+          funcionarioid: number
+          itemid: number
+          observacao: string | null
+        }
+        Insert: {
+          concluidoem?: string | null
+          concluidopor?: string | null
+          contaid?: number
+          criadoem?: string
+          documentoid?: number | null
+          etapaid: number
+          funcionarioid: number
+          itemid?: number
+          observacao?: string | null
+        }
+        Update: {
+          concluidoem?: string | null
+          concluidopor?: string | null
+          contaid?: number
+          criadoem?: string
+          documentoid?: number | null
+          etapaid?: number
           funcionarioid?: number
-          nomeconjugue?: string | null
-          qtdfilhos?: number | null
-          rg_fileid?: string | null
-          statusadmissional?: string
+          itemid?: number
+          observacao?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboardingitens_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "onboardingitens_documento_fk"
+            columns: ["contaid", "documentoid"]
+            isOneToOne: false
+            referencedRelation: "documentospessoais"
+            referencedColumns: ["contaid", "documentoid"]
+          },
+          {
+            foreignKeyName: "onboardingitens_etapa_fk"
+            columns: ["contaid", "etapaid"]
+            isOneToOne: false
+            referencedRelation: "onboardingetapas"
+            referencedColumns: ["contaid", "etapaid"]
+          },
+          {
+            foreignKeyName: "onboardingitens_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "onboardingstatus"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+        ]
+      }
+      onboardingstatus: {
+        Row: {
+          concluidoem: string | null
+          contaid: number
+          funcionarioid: number
+          iniciadoem: string
+          iniciadopor: string | null
+          statusworkflow: string
+        }
+        Insert: {
+          concluidoem?: string | null
+          contaid?: number
+          funcionarioid: number
+          iniciadoem?: string
+          iniciadopor?: string | null
           statusworkflow?: string
-          tituloeleitor_fileid?: string | null
-          ultimaetapa?: string | null
+        }
+        Update: {
+          concluidoem?: string | null
+          contaid?: number
+          funcionarioid?: number
+          iniciadoem?: string
+          iniciadopor?: string | null
+          statusworkflow?: string
         }
         Relationships: [
           {
@@ -3402,6 +3655,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      alcance_do_comunicado: {
+        Args: { p_documentoid: number }
+        Returns: number[]
+      }
       alterar_configuracao: {
         Args: { p_chave: string; p_valor: string }
         Returns: string
@@ -3423,6 +3680,14 @@ export type Database = {
         Returns: undefined
       }
       aprovar_entrega: { Args: { p_entregaid: number }; Returns: number }
+      arquivar_comunicado: {
+        Args: { p_documentoid: number }
+        Returns: undefined
+      }
+      arquivar_documento_pessoal: {
+        Args: { p_documentoid: number }
+        Returns: undefined
+      }
       atribuicoes_para_entregar: {
         Args: { p_lojaid: number }
         Returns: {
@@ -3457,6 +3722,10 @@ export type Database = {
         Returns: Json
       }
       cria_configuracoes_padrao: {
+        Args: { p_contaid: number }
+        Returns: undefined
+      }
+      cria_etapas_onboarding_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
       }
@@ -3514,6 +3783,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      desfazer_ciencia: {
+        Args: { p_assinaturaid: number; p_motivo: string }
+        Returns: undefined
+      }
       desfazer_resgate: {
         Args: {
           p_de: string
@@ -3534,6 +3807,10 @@ export type Database = {
         Returns: boolean
       }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
+      documento_rh_liberado: {
+        Args: { p_acao: string; p_nome: string }
+        Returns: boolean
+      }
       editar_agendamento: {
         Args: {
           p_aceitawhatsapp: boolean
@@ -3543,6 +3820,15 @@ export type Database = {
           p_observacoes: string
           p_telefone: string
           p_tipoeventoid: number
+        }
+        Returns: undefined
+      }
+      editar_comunicado: {
+        Args: {
+          p_conteudo: string
+          p_documentoid: number
+          p_pontos: number
+          p_titulo: string
         }
         Returns: undefined
       }
@@ -3563,14 +3849,25 @@ export type Database = {
         Args: { p_motivo: string; p_resgateid: number }
         Returns: undefined
       }
+      excluir_documento_por_engano: {
+        Args: { p_documentoid: number; p_motivo: string }
+        Returns: string
+      }
+      exige_master_editavel: { Args: never; Returns: number }
       extrato_pontos: {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }
         Returns: Json
       }
+      fora_do_comunicado: { Args: { p_documentoid: number }; Returns: Json }
       historico_da_pessoa: {
         Args: { p_funcionarioid: number; p_limite?: number }
         Returns: Json
       }
+      incluir_destinatarios: {
+        Args: { p_documentoid: number; p_funcionarios: number[] }
+        Returns: number
+      }
+      iniciar_onboarding: { Args: { p_funcionarioid: number }; Returns: number }
       justificaveis: {
         Args: { p_dia: string; p_funcionarioid: number }
         Returns: Json
@@ -3583,6 +3880,10 @@ export type Database = {
           p_valor: number
         }
         Returns: number
+      }
+      liberar_documento_pessoal: {
+        Args: { p_documentoid: number }
+        Returns: string
       }
       listar_trocas: { Args: { p_limite?: number }; Returns: Json }
       maior_sequencia: {
@@ -3598,6 +3899,15 @@ export type Database = {
       }
       marcar_agendamento_realizado: {
         Args: { p_agendamentoid: number }
+        Returns: undefined
+      }
+      marcar_etapa_onboarding: {
+        Args: {
+          p_documentoid?: number
+          p_feito: boolean
+          p_itemid: number
+          p_observacao?: string
+        }
         Returns: undefined
       }
       meta_do_dia: {
@@ -3661,7 +3971,22 @@ export type Database = {
         }
         Returns: boolean
       }
+      preparar_envio_documento: {
+        Args: { p_funcionarioid: number; p_nomearquivo: string }
+        Returns: string
+      }
       primeiro_dia_editavel_meta: { Args: never; Returns: string }
+      publicar_comunicado: {
+        Args: {
+          p_alvo: string
+          p_conteudo: string
+          p_funcionarios?: number[]
+          p_lojas?: number[]
+          p_pontos: number
+          p_titulo: string
+        }
+        Returns: number
+      }
       ranking_mensal: {
         Args: { p_ano: number; p_lojaid?: number; p_mes: number }
         Returns: {
@@ -3697,6 +4022,8 @@ export type Database = {
         Args: { p_contaid: number; p_lojaid: number; p_mes: string }
         Returns: undefined
       }
+      recibo_ciencia: { Args: { p_assinaturaid: number }; Returns: Json }
+      recibo_resgate: { Args: { p_resgateid: number }; Returns: Json }
       recusar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined
@@ -3720,6 +4047,25 @@ export type Database = {
           p_nomearquivo: string
           p_tamanho: number
           p_tipo: string
+        }
+        Returns: number
+      }
+      registrar_ciencia: { Args: { p_assinaturaid: number }; Returns: boolean }
+      registrar_ciencia_documento: {
+        Args: { p_documentoid: number }
+        Returns: boolean
+      }
+      registrar_documento_pessoal: {
+        Args: {
+          p_caminho: string
+          p_descricao: string
+          p_funcionarioid: number
+          p_nomearquivo: string
+          p_referencia: string
+          p_substitui?: number
+          p_tamanho: number
+          p_tipo: string
+          p_tipoarquivo: string
         }
         Returns: number
       }

@@ -17,14 +17,17 @@ import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedCanalConfidencialRouteImport } from './routes/_authenticated/canal-confidencial'
+import { Route as AuthenticatedComunicadosRouteImport } from './routes/_authenticated/comunicados'
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
 import { Route as AuthenticatedConquistasRouteImport } from './routes/_authenticated/conquistas'
+import { Route as AuthenticatedDocumentosPessoaisRouteImport } from './routes/_authenticated/documentos-pessoais'
 import { Route as AuthenticatedExtratoRouteImport } from './routes/_authenticated/extrato'
 import { Route as AuthenticatedFeedbacksRouteImport } from './routes/_authenticated/feedbacks'
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
 import { Route as AuthenticatedJustificativasRouteImport } from './routes/_authenticated/justificativas'
 import { Route as AuthenticatedMetasRouteImport } from './routes/_authenticated/metas'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedOperacionalRouteImport } from './routes/_authenticated/operacional'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
 import { Route as AuthenticatedPremiosRouteImport } from './routes/_authenticated/premios'
@@ -75,6 +78,12 @@ const AuthenticatedCanalConfidencialRoute =
     path: '/canal-confidencial',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedComunicadosRoute =
+  AuthenticatedComunicadosRouteImport.update({
+    id: '/comunicados',
+    path: '/comunicados',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedConfiguracoesRoute =
   AuthenticatedConfiguracoesRouteImport.update({
     id: '/configuracoes',
@@ -86,6 +95,12 @@ const AuthenticatedConquistasRoute = AuthenticatedConquistasRouteImport.update({
   path: '/conquistas',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedDocumentosPessoaisRoute =
+  AuthenticatedDocumentosPessoaisRouteImport.update({
+    id: '/documentos-pessoais',
+    path: '/documentos-pessoais',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedExtratoRoute = AuthenticatedExtratoRouteImport.update({
   id: '/extrato',
   path: '/extrato',
@@ -116,6 +131,11 @@ const AuthenticatedJustificativasRoute =
 const AuthenticatedMetasRoute = AuthenticatedMetasRouteImport.update({
   id: '/metas',
   path: '/metas',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedOperacionalRoute =
@@ -174,14 +194,17 @@ export interface FileRoutesByFullPath {
   '/sem-acesso': typeof SemAcessoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
+  '/comunicados': typeof AuthenticatedComunicadosRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/conquistas': typeof AuthenticatedConquistasRoute
+  '/documentos-pessoais': typeof AuthenticatedDocumentosPessoaisRoute
   '/extrato': typeof AuthenticatedExtratoRoute
   '/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
   '/metas': typeof AuthenticatedMetasRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/premios': typeof AuthenticatedPremiosRoute
@@ -199,14 +222,17 @@ export interface FileRoutesByTo {
   '/sem-acesso': typeof SemAcessoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
+  '/comunicados': typeof AuthenticatedComunicadosRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/conquistas': typeof AuthenticatedConquistasRoute
+  '/documentos-pessoais': typeof AuthenticatedDocumentosPessoaisRoute
   '/extrato': typeof AuthenticatedExtratoRoute
   '/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
   '/metas': typeof AuthenticatedMetasRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/operacional': typeof AuthenticatedOperacionalRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/premios': typeof AuthenticatedPremiosRoute
@@ -227,14 +253,17 @@ export interface FileRoutesById {
   '/sem-acesso': typeof SemAcessoRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
+  '/_authenticated/comunicados': typeof AuthenticatedComunicadosRoute
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/conquistas': typeof AuthenticatedConquistasRoute
+  '/_authenticated/documentos-pessoais': typeof AuthenticatedDocumentosPessoaisRoute
   '/_authenticated/extrato': typeof AuthenticatedExtratoRoute
   '/_authenticated/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
   '/_authenticated/justificativas': typeof AuthenticatedJustificativasRoute
   '/_authenticated/metas': typeof AuthenticatedMetasRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/operacional': typeof AuthenticatedOperacionalRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/premios': typeof AuthenticatedPremiosRoute
@@ -255,14 +284,17 @@ export interface FileRouteTypes {
     | '/sem-acesso'
     | '/agenda'
     | '/canal-confidencial'
+    | '/comunicados'
     | '/configuracoes'
     | '/conquistas'
+    | '/documentos-pessoais'
     | '/extrato'
     | '/feedbacks'
     | '/funcionarios'
     | '/gestao'
     | '/justificativas'
     | '/metas'
+    | '/onboarding'
     | '/operacional'
     | '/painel'
     | '/premios'
@@ -280,14 +312,17 @@ export interface FileRouteTypes {
     | '/sem-acesso'
     | '/agenda'
     | '/canal-confidencial'
+    | '/comunicados'
     | '/configuracoes'
     | '/conquistas'
+    | '/documentos-pessoais'
     | '/extrato'
     | '/feedbacks'
     | '/funcionarios'
     | '/gestao'
     | '/justificativas'
     | '/metas'
+    | '/onboarding'
     | '/operacional'
     | '/painel'
     | '/premios'
@@ -307,14 +342,17 @@ export interface FileRouteTypes {
     | '/sem-acesso'
     | '/_authenticated/agenda'
     | '/_authenticated/canal-confidencial'
+    | '/_authenticated/comunicados'
     | '/_authenticated/configuracoes'
     | '/_authenticated/conquistas'
+    | '/_authenticated/documentos-pessoais'
     | '/_authenticated/extrato'
     | '/_authenticated/feedbacks'
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
     | '/_authenticated/justificativas'
     | '/_authenticated/metas'
+    | '/_authenticated/onboarding'
     | '/_authenticated/operacional'
     | '/_authenticated/painel'
     | '/_authenticated/premios'
@@ -394,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCanalConfidencialRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/comunicados': {
+      id: '/_authenticated/comunicados'
+      path: '/comunicados'
+      fullPath: '/comunicados'
+      preLoaderRoute: typeof AuthenticatedComunicadosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/configuracoes': {
       id: '/_authenticated/configuracoes'
       path: '/configuracoes'
@@ -406,6 +451,13 @@ declare module '@tanstack/react-router' {
       path: '/conquistas'
       fullPath: '/conquistas'
       preLoaderRoute: typeof AuthenticatedConquistasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/documentos-pessoais': {
+      id: '/_authenticated/documentos-pessoais'
+      path: '/documentos-pessoais'
+      fullPath: '/documentos-pessoais'
+      preLoaderRoute: typeof AuthenticatedDocumentosPessoaisRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/extrato': {
@@ -448,6 +500,13 @@ declare module '@tanstack/react-router' {
       path: '/metas'
       fullPath: '/metas'
       preLoaderRoute: typeof AuthenticatedMetasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/operacional': {
@@ -519,14 +578,17 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedCanalConfidencialRoute: typeof AuthenticatedCanalConfidencialRoute
+  AuthenticatedComunicadosRoute: typeof AuthenticatedComunicadosRoute
   AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
   AuthenticatedConquistasRoute: typeof AuthenticatedConquistasRoute
+  AuthenticatedDocumentosPessoaisRoute: typeof AuthenticatedDocumentosPessoaisRoute
   AuthenticatedExtratoRoute: typeof AuthenticatedExtratoRoute
   AuthenticatedFeedbacksRoute: typeof AuthenticatedFeedbacksRoute
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
   AuthenticatedJustificativasRoute: typeof AuthenticatedJustificativasRoute
   AuthenticatedMetasRoute: typeof AuthenticatedMetasRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedOperacionalRoute: typeof AuthenticatedOperacionalRoute
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedPremiosRoute: typeof AuthenticatedPremiosRoute
@@ -539,14 +601,17 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
   AuthenticatedCanalConfidencialRoute: AuthenticatedCanalConfidencialRoute,
+  AuthenticatedComunicadosRoute: AuthenticatedComunicadosRoute,
   AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
   AuthenticatedConquistasRoute: AuthenticatedConquistasRoute,
+  AuthenticatedDocumentosPessoaisRoute: AuthenticatedDocumentosPessoaisRoute,
   AuthenticatedExtratoRoute: AuthenticatedExtratoRoute,
   AuthenticatedFeedbacksRoute: AuthenticatedFeedbacksRoute,
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
   AuthenticatedJustificativasRoute: AuthenticatedJustificativasRoute,
   AuthenticatedMetasRoute: AuthenticatedMetasRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedOperacionalRoute: AuthenticatedOperacionalRoute,
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedPremiosRoute: AuthenticatedPremiosRoute,

@@ -190,6 +190,16 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
       );
     }
 
+    // E com as 6 etapas genéricas do onboarding (a conta edita depois).
+    const { error: erroEtapas } = await supabaseAdmin.rpc("cria_etapas_onboarding_padrao", {
+      p_contaid: conta.contaid,
+    });
+    if (erroEtapas) {
+      throw new Error(
+        `O cliente foi criado e o convite enviado, mas as etapas do onboarding falharam: ${erroEtapas.message}`,
+      );
+    }
+
     return { contaid: conta.contaid as number, email, reaproveitouLogin: Boolean(jaExiste) };
   });
 

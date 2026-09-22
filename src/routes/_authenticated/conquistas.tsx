@@ -16,8 +16,8 @@ const TIPOS: { id: string; rotulo: string; disponivel: boolean; modulo?: string 
   { id: "total_tarefas_aprovadas", rotulo: "Total de tarefas aprovadas", disponivel: true },
   { id: "tarefas_aprovadas_periodo", rotulo: "Tarefas aprovadas em X dias", disponivel: true },
   { id: "sequencia_dias_tarefas", rotulo: "Dias seguidos com tarefa entregue", disponivel: true },
-  { id: "sequencia_feedback_diario", rotulo: "Dias seguidos com feedback", disponivel: false, modulo: "feedbacks" },
-  { id: "total_comunicados_cientes", rotulo: "Comunicados lidos", disponivel: false, modulo: "comunicados" },
+  { id: "sequencia_feedback_diario", rotulo: "Dias seguidos com feedback", disponivel: true },
+  { id: "total_comunicados_cientes", rotulo: "Comunicados lidos (com ciência)", disponivel: true },
   { id: "tarefas_grupo_competitivo_aceitas", rotulo: "Tarefas de grupo aceitas", disponivel: false, modulo: "grupos" },
 ];
 

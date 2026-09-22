@@ -29,6 +29,14 @@ const grupos: Grupo[] = [
     ],
   },
   {
+    titulo: "RH",
+    itens: [
+      { to: "/comunicados", label: "Comunicados" },
+      { to: "/documentos-pessoais", label: "Documentos pessoais" },
+      { to: "/onboarding", label: "Onboarding" },
+    ],
+  },
+  {
     titulo: "Gamificação",
     itens: [
       { to: "/ranking", label: "Ranking" },
