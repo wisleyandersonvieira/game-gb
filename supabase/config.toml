@@ -1,1 +1,10 @@
 project_id = "asgdynxdcdnjglgyyaek"
+
+# Edge Functions do Telegram (Etapa 1.13A). A proteção não é o JWT:
+# - telegram-webhook confere o cabeçalho X-Telegram-Bot-Api-Secret-Token;
+# - telegram-fila confere o cabeçalho x-fila-segredo (chamada pelo pg_net).
+[functions.telegram-webhook]
+verify_jwt = false
+
+[functions.telegram-fila]
+verify_jwt = false
