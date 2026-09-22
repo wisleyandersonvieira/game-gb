@@ -1,0 +1,77 @@
+# Verificação automática do repositório. Roda em todo envio (push), de
+# qualquer branch e de qualquer autor, inclusive do Lovable, e em todo
+# pedido de alteração (pull request).
+#   1. Barra qualquer arquivo .env (só o .env.example é permitido).
+#   2. Barra outros lockfiles: o projeto usa só o bun (bun.lock).
+#   3. Instala exatamente o que está no bun.lock e roda o build.
+name: Verificação do repositório
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sem-env:
+    name: Nenhum .env no repositório
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Procurar arquivos .env
+        run: |
+          encontrados=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -vE '(^|/)\.env\.example$' || true)
+          if [ -n "$encontrados" ]; then
+            echo "::error::Arquivo .env enviado ao GitHub. Ele pode conter chaves secretas."
+            echo "Arquivos encontrados:"
+            echo "$encontrados"
+            echo ""
+            echo "O que fazer: tire o arquivo do Git (git rm --cached <arquivo>), confira"
+            echo "se ele tinha alguma chave secreta e, se tinha, troque essa chave no Supabase."
+            exit 1
+          fi
+          echo "Nenhum .env no repositório (só o .env.example, que é permitido)."
+
+  so-bun:
+    name: Só o bun.lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Procurar outros lockfiles
+        run: |
+          encontrados=$(git ls-files | grep -E '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$' || true)
+          if [ -n "$encontrados" ]; then
+            echo "::error::Lockfile de outro gerenciador enviado. O projeto usa só o bun (bun.lock)."
+            echo "Arquivos encontrados:"
+            echo "$encontrados"
+            echo ""
+            echo "Dois lockfiles resolvem versões diferentes dos pacotes e quebram a publicação."
+            echo "O que fazer: apague o arquivo (git rm <arquivo>) e use sempre 'bun install',"
+            echo "nunca 'npm install' nem 'yarn'."
+            exit 1
+          fi
+          if ! git ls-files --error-unmatch bun.lock > /dev/null 2>&1; then
+            echo "::error::O bun.lock sumiu do repositório. Rode 'bun install' e envie o bun.lock."
+            exit 1
+          fi
+          echo "Só o bun.lock no repositório."
+
+  build:
+    name: Build (bun run build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Instalar (exatamente o bun.lock)
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Conferir que o servidor foi empacotado
+        run: |
+          # Sem o nitro, o build gera um servidor que depende de node_modules e a
+          # publicação no Lovable dá "internal server error".
+          if [ ! -f .output/server/index.mjs ] || ! grep -rqF '_serverFn' .output/server; then
+            echo "::error::O servidor não foi empacotado pelo nitro (.output/server incompleto)."
+            exit 1
+          fi
+          echo "Servidor empacotado em .output/server."

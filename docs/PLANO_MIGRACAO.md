@@ -373,7 +373,7 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
 ### Etapa 1.14 — Segurança final (endurecimento)
 - [ ] **Já, sem esperar esta fase:** deixar o repositório GitHub privado (se ainda não foi) e revogar o token `sbp_` colado no chat.
 - [ ] **Trocar as chaves antigas do Supabase (`eyJ...`) pelas novas (`sb_secret_...` / `sb_publishable_...`), também no Lovable.** No Lovable, a `SUPABASE_SERVICE_ROLE_KEY` é preenchida pelo próprio Lovable (os nomes `SUPABASE_` são reservados; ficam em More → Cloud → Secrets). Depois da troca, testar um convite de ponta a ponta. Se o Lovable não aceitar a chave nova com esse nome, cadastrar como `STGAME_SERVICE_ROLE_KEY` e ajustar `src/integrations/supabase/client.server.ts` para ler esse nome.
-- [x] Verificação automática no GitHub (`.github/workflows/sem-env.yml`): barra qualquer `.env` enviado ao repositório, exceto o `.env.example` (22/09/2026).
+- [x] Verificação automática no GitHub (`.github/workflows/verificacao.yml`): barra qualquer `.env` enviado ao repositório, exceto o `.env.example` (22/09/2026); barra `package-lock.json`/`yarn.lock`/`pnpm-lock.yaml` e roda o `bun run build` (22/09/2026).
 - [ ] Revogar o token antigo do bot (@BotFather), os tokens da Z-API e as senhas antigas do `legado/config.py`; remover o `legado/config.py` do histórico.
 - [ ] Papéis extras dentro da conta (gerente de loja com acesso só às suas lojas).
 - [ ] Revisão completa das policies, do Storage (buckets privados + URLs assinadas) e das funções `security definer`.
@@ -506,6 +506,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Fechamento mensal: provisório nos dias 1 a 7, definitivo no dia 8; "Refazer" só pelo master, com motivo, guardando versões. Por loja, cada ponto conta na loja em que a tarefa foi feita; o geral soma todas. Sem pontos automáticos. |
 | 22/09/2026 | Conferência do livro nunca corrige sozinha. Limpeza só do registro de rotinas (180 dias). O papel do pg_cron ignora a RLS: toda função de rotina filtra a conta em todas as consultas e não é liberada para o navegador. |
 | 22/09/2026 | Produto renomeado para STGame; identidade visual aplicada (tokens em `src/styles/stgame-theme.css`). |
+| 22/09/2026 | Publicação no Lovable: o build volta a usar `@lovable.dev/vite-tanstack-config` + `nitro`, que empacota o servidor inteiro para o Cloudflare (sem isso, "internal server error": módulo `h3-v2` não encontrado). Só o bun (`bun.lock`); `package-lock.json` (criado por um `npm install` em 19/09) apagado e barrado no `.gitignore` e na verificação do GitHub. Versões fixas (sem `^`) dos pacotes `@tanstack/*`, `vite`, `nitro`, `react` e do Supabase. Removido o `index.html` da raiz, que fazia o nitro tratar o app como site estático. |
 
 ## Referência — arquivo do sistema antigo → etapa
 | Arquivo em `legado/` | Etapa |

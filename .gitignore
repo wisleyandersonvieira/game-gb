@@ -12,3 +12,13 @@ node_modules
 supabase/.temp/
 !.env.example
 prints/
+
+# O projeto usa só o bun (bun.lock). Outros lockfiles resolvem versões
+# diferentes e quebram a publicação no Lovable.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Gerado pelo build (nitro/Cloudflare) e pelo wrangler.
+.wrangler/
+.dev.vars
