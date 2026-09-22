@@ -119,6 +119,7 @@ function comando(texto: string, usuarioBot: string): { cmd: string; resto: strin
 
 async function privada(c: Contexto, m: Json) {
   const conversa = new Conversa(c, m.chat.id);
+  await rpc(c, "bot_visto", { p_chatid: m.chat.id });   // desfaz "bot bloqueado" sozinho
   try {
     await privadaInterna(c, m, conversa);
   } finally {
@@ -442,6 +443,7 @@ async function membroDoGrupo(c: Contexto, mcm: Json) {
 
 async function grupo(c: Contexto, m: Json) {
   const chat = m.chat.id as number;
+  await rpc(c, "bot_visto", { p_chatid: chat });
   const texto: string = typeof m.text === "string" ? m.text : "";
   const cmd = texto ? comando(texto, c.usuarioBot) : null;
   const g = await rpc(c, "bot_grupo", { p_chatid: chat });
@@ -536,6 +538,25 @@ async function atualizarMensagemDaEntrega(c: Contexto, chat: number, entregaid: 
   });
 }
 
+/** Depois de alguém pegar: atualiza a lista no grupo e avisa quem levou. */
+async function avisarQuemPegou(c: Contexto, q: Json, r: Json, tipo: string, referencia: number | null) {
+  await atualizarMensagemDoGrupo(c, q, tipo, referencia, `✅ <b>${h(r.titulo)}</b> ficou com ${h(r.nome)}.`);
+  await c.tg.enviar(q.from.id, `🚀 A tarefa <b>${h(r.titulo)}</b> é sua hoje! Ela já está em 📋 Minhas tarefas.`);
+  await rpc(c, "bot_registrar_uso", { p_chatid: chatDoBotao(q), p_tipo: "resposta", p_qtd: 1 });
+}
+
+const chatDoBotao = (q: Json) => q.message?.chat?.id as number;
+
+async function atualizarMensagemDoGrupo(c: Contexto, q: Json, tipo: string, referencia: number | null, rodape?: string) {
+  const chat = chatDoBotao(q);
+  const l = await rpc(c, "bot_texto_grupo", { p_chatgrupo: chat, p_tipo: tipo, p_referencia: referencia });
+  const texto = l?.texto ? `${l.texto}${rodape ? `\n\n${rodape}` : ""}` : (rodape ?? "✅ Tudo pego!");
+  await c.tg.chamar("editMessageText", {
+    chat_id: chat, message_id: q.message.message_id, text: texto, parse_mode: "HTML",
+    disable_web_page_preview: true, reply_markup: { inline_keyboard: l?.botoes ?? [] },
+  });
+}
+
 async function botaoDoGrupo(c: Contexto, q: Json) {
   const msg = q.message;
   const chat = msg.chat.id as number;
@@ -553,6 +574,26 @@ async function botaoDoGrupo(c: Contexto, q: Json) {
     if (!r?.ok) return void (await c.tg.responderBotao(q.id, String(r?.mensagem ?? "Não deu certo.").slice(0, 190), true));
     await c.tg.responderBotao(q.id, `Aprovada ✅ +${r.pontos} pts`);
     return atualizarMensagemDaEntrega(c, chat, id, msg.message_id, temFoto);
+  }
+  if (acao === "fg" || acao === "ms") {
+    const folga = acao === "fg";
+    const r = await rpc(c, folga ? "bot_pegar_folga" : "bot_pegar_missao", {
+      p_chatgrupo: chat, p_usuario: q.from.id, p_atribuicaoid: id,
+    });
+    if (r?.ok) {
+      await c.tg.responderBotao(q.id, `É sua: ${String(r.titulo ?? "").slice(0, 150)}`);
+      await avisarQuemPegou(c, q, r, folga ? "folga_drop" : "missao", folga ? null : id);
+      return;
+    }
+    const recados: Record<string, string> = {
+      sem_vinculo: "Ligue o seu Telegram com o seu gestor para pegar tarefas.",
+      grupo: "Este grupo não está ligado.",
+      ja_pega: "Alguém pegou primeiro.",
+      limite: `Você já pegou ${r?.max ?? 3} tarefas extras hoje.`,
+    };
+    await c.tg.responderBotao(q.id, recados[r?.erro] ?? String(r?.mensagem ?? "Não deu certo.").slice(0, 190), true);
+    if (r?.erro === "ja_pega") await atualizarMensagemDoGrupo(c, q, folga ? "folga_drop" : "missao", folga ? null : id);
+    return;
   }
   if (acao === "rc") {
     const r = await rpc(c, "bot_recusa_pedir", { p_chatgrupo: chat, p_usuario: q.from.id, p_entregaid: id });

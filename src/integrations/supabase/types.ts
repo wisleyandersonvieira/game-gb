@@ -1624,6 +1624,7 @@ export type Database = {
           domingofolgamensal: number | null
           funcionarioid: number
           horarionotificacao: string | null
+          horariosaida: string | null
           isgestor: boolean | null
           nivelacesso: string | null
           nomecompleto: string
@@ -1646,6 +1647,7 @@ export type Database = {
           domingofolgamensal?: number | null
           funcionarioid?: number
           horarionotificacao?: string | null
+          horariosaida?: string | null
           isgestor?: boolean | null
           nivelacesso?: string | null
           nomecompleto: string
@@ -1668,6 +1670,7 @@ export type Database = {
           domingofolgamensal?: number | null
           funcionarioid?: number
           horarionotificacao?: string | null
+          horariosaida?: string | null
           isgestor?: boolean | null
           nivelacesso?: string | null
           nomecompleto?: string
@@ -2275,14 +2278,19 @@ export type Database = {
       }
       mensagensfila: {
         Row: {
+          automatica: boolean
           chatid: number
+          chave: string | null
           contaid: number
           conteudo: Json
           criadoem: string
           enviadoem: string | null
           erro: string | null
           filaid: number
+          funcionarioid: number | null
+          juntarchave: string | null
           lojaid: number | null
+          naoreenviar: boolean
           proximaem: string
           referencia: number | null
           status: string
@@ -2290,14 +2298,19 @@ export type Database = {
           tipo: string
         }
         Insert: {
+          automatica?: boolean
           chatid: number
+          chave?: string | null
           contaid: number
           conteudo: Json
           criadoem?: string
           enviadoem?: string | null
           erro?: string | null
           filaid?: number
+          funcionarioid?: number | null
+          juntarchave?: string | null
           lojaid?: number | null
+          naoreenviar?: boolean
           proximaem?: string
           referencia?: number | null
           status?: string
@@ -2305,14 +2318,19 @@ export type Database = {
           tipo: string
         }
         Update: {
+          automatica?: boolean
           chatid?: number
+          chave?: string | null
           contaid?: number
           conteudo?: Json
           criadoem?: string
           enviadoem?: string | null
           erro?: string | null
           filaid?: number
+          funcionarioid?: number | null
+          juntarchave?: string | null
           lojaid?: number | null
+          naoreenviar?: boolean
           proximaem?: string
           referencia?: number | null
           status?: string
@@ -2328,7 +2346,56 @@ export type Database = {
             referencedColumns: ["contaid"]
           },
           {
+            foreignKeyName: "mensagensfila_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
             foreignKeyName: "mensagensfila_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      mensagensrotinas: {
+        Row: {
+          alteradoem: string
+          alteradopor: string | null
+          ativo: boolean
+          contaid: number
+          lojaid: number
+          rotina: string
+        }
+        Insert: {
+          alteradoem?: string
+          alteradopor?: string | null
+          ativo?: boolean
+          contaid?: number
+          lojaid: number
+          rotina: string
+        }
+        Update: {
+          alteradoem?: string
+          alteradopor?: string | null
+          ativo?: boolean
+          contaid?: number
+          lojaid?: number
+          rotina?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensagensrotinas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "mensagensrotinas_loja_fk"
             columns: ["contaid", "lojaid"]
             isOneToOne: false
             referencedRelation: "lojas"
@@ -2746,6 +2813,58 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lojas"
             referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      missoesaceites: {
+        Row: {
+          aceitoem: string
+          atribuicaoid: number
+          canal: string
+          contaid: number
+          dia: string
+          funcionarioid: number
+          novaatribuicaoid: number | null
+        }
+        Insert: {
+          aceitoem?: string
+          atribuicaoid: number
+          canal?: string
+          contaid: number
+          dia: string
+          funcionarioid: number
+          novaatribuicaoid?: number | null
+        }
+        Update: {
+          aceitoem?: string
+          atribuicaoid?: number
+          canal?: string
+          contaid?: number
+          dia?: string
+          funcionarioid?: number
+          novaatribuicaoid?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "missoesaceites_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "missoesaceites_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "missoesaceites_missao_fk"
+            columns: ["contaid", "atribuicaoid"]
+            isOneToOne: false
+            referencedRelation: "tarefasatribuidas"
+            referencedColumns: ["contaid", "atribuicaoid"]
           },
         ]
       }
@@ -4044,6 +4163,7 @@ export type Database = {
       telegramvinculos: {
         Row: {
           ativo: boolean
+          bloqueadoem: string | null
           chatid: number
           contaid: number
           desligadoem: string | null
@@ -4059,6 +4179,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          bloqueadoem?: string | null
           chatid: number
           contaid?: number
           desligadoem?: string | null
@@ -4074,6 +4195,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          bloqueadoem?: string | null
           chatid?: number
           contaid?: number
           desligadoem?: string | null
@@ -4292,6 +4414,10 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number }
         Returns: number
       }
+      bot_abertas_da_pessoa: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: Json
+      }
       bot_chat_da_pessoa: {
         Args: { p_contaid: number; p_funcionarioid: number }
         Returns: number
@@ -4337,11 +4463,31 @@ export type Database = {
         }
         Returns: undefined
       }
+      bot_enfileirar_ex: {
+        Args: {
+          p_chatid: number
+          p_chave: string
+          p_contaid: number
+          p_conteudo: Json
+          p_funcionarioid: number
+          p_juntarchave: string
+          p_lojaid: number
+          p_naoreenviar: boolean
+          p_quando: string
+          p_referencia: number
+          p_tipo: string
+        }
+        Returns: number
+      }
       bot_entrar: {
         Args: { p_contaid: number; p_funcionarioid: number; p_userid: string }
         Returns: undefined
       }
       bot_entrar_pessoa: { Args: { p_chatid: number }; Returns: Json }
+      bot_enviadas_hoje: {
+        Args: { p_agora: string; p_contaid: number; p_funcionarioid: number }
+        Returns: number
+      }
       bot_erro: { Args: { p_mensagem: string }; Returns: Json }
       bot_escolher_conta: {
         Args: { p_chatid: number; p_contaid: number }
@@ -4388,6 +4534,10 @@ export type Database = {
         Args: { p_atribuicaoid: number; p_chatid: number }
         Returns: Json
       }
+      bot_janela: {
+        Args: { p_agora: string; p_contaid: number; p_funcionarioid: number }
+        Returns: Json
+      }
       bot_lancar: {
         Args: {
           p_chatgrupo: number
@@ -4402,6 +4552,11 @@ export type Database = {
         Args: { p_chatid: number; p_usuarioid: number }
         Returns: undefined
       }
+      bot_lista_tarefas: { Args: { p_itens: Json }; Returns: Json }
+      bot_marcar_bloqueio: {
+        Args: { p_chatid: number; p_contaid: number; p_erro: string }
+        Returns: undefined
+      }
       bot_nao_aplicavel: {
         Args: { p_chatid: number; p_motivo: string }
         Returns: Json
@@ -4410,11 +4565,23 @@ export type Database = {
         Args: { p_atribuicaoid: number; p_chatid: number }
         Returns: Json
       }
+      bot_pegar_folga: {
+        Args: { p_atribuicaoid: number; p_chatgrupo: number; p_usuario: number }
+        Returns: Json
+      }
+      bot_pegar_missao: {
+        Args: { p_atribuicaoid: number; p_chatgrupo: number; p_usuario: number }
+        Returns: Json
+      }
       bot_pendencias: {
         Args: { p_chatgrupo: number; p_usuario: number }
         Returns: Json
       }
       bot_pessoa_do_chat: { Args: { p_chatid: number }; Returns: Json }
+      bot_pessoa_do_grupo: {
+        Args: { p_chatgrupo: number; p_usuario: number }
+        Returns: Json
+      }
       bot_quem: { Args: { p_chatid: number }; Returns: Json }
       bot_recusa_guardar: {
         Args: {
@@ -4457,11 +4624,29 @@ export type Database = {
         Args: { p_chatid: number; p_produtoid: number }
         Returns: Json
       }
+      bot_resumo_ausencia: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: Json
+      }
       bot_status_meta: {
         Args: { p_chatgrupo: number; p_usuario: number }
         Returns: Json
       }
       bot_tarefas: { Args: { p_chatid: number }; Returns: Json }
+      bot_texto_grupo: {
+        Args: { p_chatgrupo: number; p_referencia: number; p_tipo: string }
+        Returns: Json
+      }
+      bot_texto_juntado: { Args: { p_conteudos: Json }; Returns: string }
+      bot_texto_rotina: {
+        Args: {
+          p_contaid: number
+          p_funcionarioid: number
+          p_referencia: number
+          p_tipo: string
+        }
+        Returns: Json
+      }
       bot_usar_convite: {
         Args: {
           p_chatid: number
@@ -4485,6 +4670,7 @@ export type Database = {
         }
         Returns: Json
       }
+      bot_visto: { Args: { p_chatid: number }; Returns: undefined }
       canal_atual: { Args: never; Returns: string }
       cancelar_agendamento: {
         Args: { p_agendamentoid: number; p_motivo: string }
@@ -4573,6 +4759,14 @@ export type Database = {
           p_justificativaid: number
           p_motivo?: string
         }
+        Returns: undefined
+      }
+      definir_horario_equipe: {
+        Args: { p_entrada: string; p_funcionarios: number[]; p_saida: string }
+        Returns: number
+      }
+      definir_rotina_mensagem: {
+        Args: { p_ativo: boolean; p_lojaid: number; p_rotina: string }
         Returns: undefined
       }
       desfazer_ciencia: {
@@ -4666,6 +4860,10 @@ export type Database = {
         Returns: number
       }
       iniciar_onboarding: { Args: { p_funcionarioid: number }; Returns: number }
+      instante_local: {
+        Args: { p_dia: string; p_hora: string }
+        Returns: string
+      }
       item_tratado: {
         Args: {
           p_atribuicaoid: number
@@ -4674,6 +4872,15 @@ export type Database = {
           p_tipo: string
         }
         Returns: boolean
+      }
+      jornada_da_pessoa: {
+        Args: { p_contaid: number; p_dia: string; p_funcionarioid: number }
+        Returns: {
+          fim: string
+          inicio: string
+          temhorario: boolean
+          trabalha: boolean
+        }[]
       }
       justificaveis: {
         Args: { p_dia: string; p_funcionarioid: number }
@@ -4768,6 +4975,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      no_silencio: {
+        Args: { p_contaid: number; p_hora: string }
+        Returns: boolean
+      }
       nome_curto: { Args: { p_nome: string }; Returns: string }
       origem_da_acao: { Args: { p_origem_bot: string }; Returns: string }
       pagar_premio_meta: {
@@ -4797,6 +5008,10 @@ export type Database = {
       pasta_de_agendamento_minha: {
         Args: { p_editavel: boolean; p_nome: string }
         Returns: boolean
+      }
+      pegar_missao: {
+        Args: { p_atribuicaoid: number; p_funcionarioid: number }
+        Returns: number
       }
       pendencias_da_pessoa: {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }
@@ -5015,12 +5230,24 @@ export type Database = {
         Args: { p_chave: string; p_contaid: number; p_padrao: string }
         Returns: string
       }
+      rotina_ligada: {
+        Args: { p_contaid: number; p_lojaid: number; p_rotina: string }
+        Returns: boolean
+      }
+      rotina_ligada_pessoa: {
+        Args: { p_contaid: number; p_funcionarioid: number; p_rotina: string }
+        Returns: boolean
+      }
       rotina_limpeza: {
         Args: { p_agora: string; p_contaid: number }
         Returns: Json
       }
       rotina_lista_do_dia: {
         Args: { p_agora: string; p_contaid: number; p_origem: string }
+        Returns: Json
+      }
+      rotina_mensagens: {
+        Args: { p_agora: string; p_contaid: number }
         Returns: Json
       }
       rotina_registrar: {

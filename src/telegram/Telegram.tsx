@@ -20,6 +20,7 @@ export type Vinculo = {
   papelgrupo: "equipe" | "gestao" | null;
   nometelegram: string | null;
   vinculadoem: string;
+  bloqueadoem: string | null;
 };
 
 /** Vínculos ativos da conta (pessoas, grupos e o master). */
@@ -30,7 +31,7 @@ export function useVinculosTelegram() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("telegramvinculos")
-        .select("vinculoid, tipo, funcionarioid, userid, lojaid, papelgrupo, nometelegram, vinculadoem")
+        .select("vinculoid, tipo, funcionarioid, userid, lojaid, papelgrupo, nometelegram, vinculadoem, bloqueadoem")
         .eq("ativo", true);
       if (error) throw error;
       return (data ?? []) as Vinculo[];

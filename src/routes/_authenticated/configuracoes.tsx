@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Carregando } from "@/ui/Estados";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { Rotinas } from "@/configuracoes/Rotinas";
+import { MensagensAutomaticas } from "@/configuracoes/MensagensAutomaticas";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   component: Configuracoes,
@@ -78,6 +79,38 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
       { chave: "HORARIO_LEMBRETE_HOJE", rotulo: "Lembrete da agenda de hoje", ajuda: "", tipo: "horario" },
       { chave: "HORARIO_LEMBRETE_DIARIO_AMANHA", rotulo: "Lembrete da agenda de amanhã", ajuda: "", tipo: "horario" },
       { chave: "HORARIO_LEMBRETE_SEMANAL", rotulo: "Lembrete semanal da agenda", ajuda: "", tipo: "horario" },
+    ],
+  },
+  {
+    titulo: "Mensagens do bot",
+    aviso: "Valem para todas as lojas. O que liga e desliga cada mensagem está logo abaixo, em Mensagens automáticas.",
+    itens: [
+      {
+        chave: "HORARIO_SILENCIO_INICIO",
+        rotulo: "Começo do silêncio",
+        ajuda: "A partir desta hora o bot não manda mensagem automática. Não vale dentro do turno da pessoa: quem trabalha à noite recebe normalmente.",
+        tipo: "horario",
+      },
+      {
+        chave: "HORARIO_SILENCIO_FIM",
+        rotulo: "Fim do silêncio",
+        ajuda: "A partir desta hora o bot volta a mandar.",
+        tipo: "horario",
+      },
+      {
+        chave: "MAX_MENSAGENS_AUTOMATICAS_DIA",
+        rotulo: "Máximo de mensagens por pessoa por dia",
+        ajuda: "Conta só as mensagens automáticas. As respostas ao que a própria pessoa faz não contam.",
+        tipo: "inteiro",
+        unidade: "mensagens",
+      },
+      {
+        chave: "MAX_TAREFAS_FOLGA_POR_PESSOA",
+        rotulo: "Máximo de tarefas extras por pessoa por dia",
+        ajuda: "Quantas tarefas de quem está de folga uma pessoa pode pegar pelo grupo no mesmo dia.",
+        tipo: "inteiro",
+        unidade: "tarefas",
+      },
     ],
   },
   {
@@ -190,6 +223,8 @@ function Configuracoes() {
         ))}
 
       <Rotinas podeRodar={podeAlterar} />
+
+      <MensagensAutomaticas podeAlterar={podeAlterar} />
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Histórico de mudanças</h2>

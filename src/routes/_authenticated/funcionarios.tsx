@@ -48,6 +48,10 @@ function Funcionarios() {
   const [editando, setEditando] = useState<number | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
   const [filtroLoja, setFiltroLoja] = useState<number | "todas">("todas");
+  // Horário da jornada: dá para marcar várias pessoas e aplicar de uma vez.
+  const [selecionados, setSelecionados] = useState<number[]>([]);
+  const [horaEntrada, setHoraEntrada] = useState("");
+  const [horaSaida, setHoraSaida] = useState("");
 
   const equipe = useQuery({
     queryKey: ["equipe"],
@@ -55,7 +59,7 @@ function Funcionarios() {
       const { data: pessoas, error } = await supabase
         .from("funcionarios")
         .select(
-          "funcionarioid, nomecompleto, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo",
+          "funcionarioid, nomecompleto, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, horarionotificacao, horariosaida",
         )
         .order("nomecompleto");
       if (error) throw error;
@@ -154,6 +158,23 @@ function Funcionarios() {
     },
   });
 
+  const aplicarHorario = useMutation({
+    mutationFn: async () => {
+      if (selecionados.length === 0) throw new Error("Marque pelo menos uma pessoa.");
+      // Vazio = tirar o horário; o banco aceita nulo nos dois campos.
+      const { error } = await supabase.rpc("definir_horario_equipe", {
+        p_funcionarios: selecionados,
+        p_entrada: (horaEntrada || null) as unknown as string,
+        p_saida: (horaEntrada && horaSaida ? horaSaida : null) as unknown as string,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setSelecionados([]);
+      qc.invalidateQueries({ queryKey: ["equipe"] });
+    },
+  });
+
   const alternarAtivo = useMutation({
     mutationFn: async ({ funcionarioid, ativo }: { funcionarioid: number; ativo: boolean }) => {
       const { error } = await supabase
@@ -190,6 +211,7 @@ function Funcionarios() {
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
   const telegramDe = (id: number) =>
     (vinculos.data ?? []).find((v) => v.tipo === "pessoa" && v.funcionarioid === id);
+  const hhmm = (h: string | null) => (h ? h.slice(0, 5) : null);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -365,6 +387,51 @@ function Funcionarios() {
         )}
       </div>
 
+      <section className="space-y-2 rounded-xl border border-border bg-card p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Horário da jornada</h2>
+          <p className="text-xs text-muted-foreground">
+            O bot usa este horário para mandar as tarefas do dia, os lembretes e o resumo do fim do expediente. Quem
+            fica sem horário não recebe essas mensagens (continua recebendo os avisos). Saída em branco = entrada + 8h20.
+            Saída menor que a entrada = turno da noite.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            Entrada
+            <input type="time" value={horaEntrada} onChange={(e) => setHoraEntrada(e.target.value)} className={`${campo} ml-2`} />
+          </label>
+          <label className="text-sm">
+            Saída
+            <input type="time" value={horaSaida} onChange={(e) => setHoraSaida(e.target.value)} className={`${campo} ml-2`} />
+          </label>
+          <button
+            onClick={() => aplicarHorario.mutate()}
+            disabled={aplicarHorario.isPending || selecionados.length === 0}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            Aplicar a {selecionados.length} {selecionados.length === 1 ? "pessoa" : "pessoas"}
+          </button>
+          <button
+            onClick={() => setSelecionados(visiveis.filter((f) => f.ativo).map((f) => f.funcionarioid))}
+            className="rounded-lg border border-border px-3 py-2 text-sm"
+          >
+            Marcar todos
+          </button>
+          {selecionados.length > 0 && (
+            <button onClick={() => setSelecionados([])} className="rounded-lg border border-border px-3 py-2 text-sm">
+              Limpar
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Deixe a entrada em branco e aplique para tirar o horário das pessoas marcadas.
+        </p>
+        {aplicarHorario.isError && (
+          <p className="text-sm text-destructive">{(aplicarHorario.error as Error).message}</p>
+        )}
+      </section>
+
       <div className="space-y-2">
         {equipe.isLoading && <p className="text-muted-foreground">Carregando...</p>}
         {equipe.isError && (
@@ -378,10 +445,32 @@ function Funcionarios() {
             key={f.funcionarioid}
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
           >
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1.5"
+                aria-label={`Escolher ${f.nomecompleto} para aplicar horário`}
+                checked={selecionados.includes(f.funcionarioid)}
+                onChange={(e) =>
+                  setSelecionados((atual) =>
+                    e.target.checked ? [...atual, f.funcionarioid] : atual.filter((id) => id !== f.funcionarioid),
+                  )
+                }
+              />
+              <div className="min-w-0">
               <p className="flex flex-wrap items-center gap-2 font-medium">
                 {f.nomecompleto}
-                {telegramDe(f.funcionarioid) && <IconeTelegram desde={telegramDe(f.funcionarioid)!.vinculadoem} />}
+                {telegramDe(f.funcionarioid) &&
+                  (telegramDe(f.funcionarioid)!.bloqueadoem ? (
+                    <span
+                      className="rounded-md border border-destructive px-1.5 py-0.5 text-xs font-medium text-destructive"
+                      title="A pessoa bloqueou o bot no Telegram. Peça para ela desbloquear e mandar uma mensagem ao bot."
+                    >
+                      Bot bloqueado
+                    </span>
+                  ) : (
+                    <IconeTelegram desde={telegramDe(f.funcionarioid)!.vinculadoem} />
+                  ))}
                 {!f.ativo && (
                   <span className="ml-2 rounded-md border border-border px-2 py-0.5 text-xs font-normal text-muted-foreground">
                     Inativo
@@ -403,6 +492,12 @@ function Funcionarios() {
                   Aprova no Telegram: {f.validadorEm.map(nomeDaLoja).join(" · ")}
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">
+                {hhmm(f.horarionotificacao)
+                  ? `Jornada: ${hhmm(f.horarionotificacao)} às ${hhmm(f.horariosaida) ?? "(entrada + 8h20)"}`
+                  : "Sem horário: não recebe as mensagens da jornada"}
+              </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">

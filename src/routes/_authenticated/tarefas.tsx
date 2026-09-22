@@ -364,7 +364,10 @@ type Linha = {
 function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: string }) {
   const qc = useQueryClient();
   const [tarefaid, setTarefaid] = useState<number | "">("");
-  const [funcionarioid, setFuncionarioid] = useState<number | "">("");
+  // "missao" = tarefa sem dono, que o bot manda ao grupo da equipe e o
+  // primeiro que clicar leva.
+  const [funcionarioid, setFuncionarioid] = useState<number | "" | "missao">("");
+  const [horarioMissao, setHorarioMissao] = useState("10:00");
   const [frequencia, setFrequencia] = useState("Unica");
   const [data, setData] = useState(hojeEmSaoPaulo());
   const [diasSemana, setDiasSemana] = useState<number[]>([]);
@@ -426,7 +429,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       let consulta = supabase
         .from("tarefasatribuidas")
         .select(
-          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia",
+          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia, horariodisparo",
         )
         .eq("lojaid", lojaid)
         .order("atribuicaoid");
@@ -466,7 +469,9 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
             chave,
             ids: [l.atribuicaoid],
             titulo: titulo.get(l.tarefaid) ?? `Tarefa ${l.tarefaid}`,
-            nome: l.funcionarioid ? (nome.get(l.funcionarioid) ?? "—") : "—",
+            nome: l.funcionarioid
+              ? (nome.get(l.funcionarioid) ?? "—")
+              : `🚨 Missão da equipe${l.horariodisparo ? ` · ${l.horariodisparo.slice(0, 5)}` : ""}`,
             tipofrequencia: l.tipofrequencia,
             dias: l.valorfrequencia !== null ? [l.valorfrequencia] : [],
             valor: l.valorfrequencia,
@@ -485,12 +490,15 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   const atribuir = useMutation({
     mutationFn: async () => {
       if (tarefaid === "" || funcionarioid === "") throw new Error("Escolha a tarefa e a pessoa.");
+      const missao = funcionarioid === "missao";
+      if (missao && !horarioMissao) throw new Error("Escolha a hora em que a missão vai para o grupo.");
 
       const base = {
         tarefaid: Number(tarefaid),
-        funcionarioid: Number(funcionarioid),
+        funcionarioid: missao ? null : Number(funcionarioid),
         lojaid,
         tipofrequencia: frequencia,
+        horariodisparo: missao ? horarioMissao : null,
       };
 
       // Semanal com vários dias vira uma linha por dia, como no sistema antigo.
@@ -582,10 +590,15 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           <select
             required
             value={funcionarioid}
-            onChange={(e) => setFuncionarioid(e.target.value === "" ? "" : Number(e.target.value))}
+            onChange={(e) =>
+              setFuncionarioid(
+                e.target.value === "" ? "" : e.target.value === "missao" ? "missao" : Number(e.target.value),
+              )
+            }
             className={campo}
           >
             <option value="">Escolha a pessoa...</option>
+            <option value="missao">🚨 Missão da equipe (o primeiro que pegar)</option>
             {pessoas.map((p) => (
               <option key={p.funcionarioid} value={p.funcionarioid}>
                 {p.nomecompleto}
@@ -604,6 +617,25 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
             <option value="Mensal">Todo mês</option>
           </select>
         </div>
+
+        {funcionarioid === "missao" && (
+          <div className="space-y-1 rounded-lg border border-azul/40 bg-azul-soft px-3 py-2">
+            <label className="flex flex-wrap items-center gap-2 text-sm text-azul">
+              A que horas o bot manda a missão ao grupo da equipe?
+              <input
+                type="time"
+                required
+                value={horarioMissao}
+                onChange={(e) => setHorarioMissao(e.target.value)}
+                className={campo}
+              />
+            </label>
+            <p className="text-xs text-azul">
+              A missão não tem dono: o primeiro da equipe que tocar em "Eu aceito" fica com ela no dia. Vale como
+              esforço extra, igual à tarefa de quem está de folga.
+            </p>
+          </div>
+        )}
 
         {frequencia === "Unica" && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
