@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Carregando } from "@/ui/Estados";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
+import { Rotinas } from "@/configuracoes/Rotinas";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   component: Configuracoes,
@@ -47,13 +48,30 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
   },
   {
     titulo: "Horários das rotinas",
-    aviso: "As rotinas automáticas (lembretes, fechamento do mês) chegam com o bot. Os horários já ficam guardados.",
+    aviso: "Os três primeiros já rodam sozinhos. Os lembretes chegam com o bot; os horários deles já ficam guardados.",
     itens: [
-      { chave: "HORARIO_FECHAMENTO_MENSAL", rotulo: "Fechamento mensal do ranking", ajuda: "Roda no dia 1.", tipo: "horario" },
+      {
+        chave: "HORARIO_GERACAO_TAREFAS",
+        rotulo: "Lista de tarefas do dia",
+        ajuda: "A partir deste horário a lista do dia é gerada e, depois, ajustada a cada 5 minutos.",
+        tipo: "horario",
+      },
+      {
+        chave: "HORARIO_FECHAMENTO_MENSAL",
+        rotulo: "Fechamento mensal do ranking",
+        ajuda: "Dias 1 a 7: provisório, refeito todo dia. No dia 8 vira definitivo.",
+        tipo: "horario",
+      },
+      {
+        chave: "HORARIO_CONFERENCIA_LIVRO",
+        rotulo: "Conferência do livro de pontos",
+        ajuda: "Confere se o saldo de cada pessoa bate com o livro. Nunca corrige sozinha: só avisa.",
+        tipo: "horario",
+      },
       {
         chave: "HORARIO_DELEGACAO_FOLGA",
-        rotulo: "Repasse das tarefas de quem está de folga",
-        ajuda: "",
+        rotulo: "Repasse automático das tarefas de folga (bot)",
+        ajuda: "Hoje o repasse é feito no Quadro, pelo gestor.",
         tipo: "horario",
       },
       { chave: "HORARIO_LEMBRETE_COMUNICADOS", rotulo: "Lembrete de comunicados não lidos", ajuda: "", tipo: "horario" },
@@ -171,6 +189,8 @@ function Configuracoes() {
           </section>
         ))}
 
+      <Rotinas podeRodar={podeAlterar} />
+
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Histórico de mudanças</h2>
         {historico.isError && <p className="text-sm text-destructive">{(historico.error as Error).message}</p>}
@@ -261,7 +281,7 @@ function Linha({
             value={texto}
             disabled={!podeAlterar}
             onChange={(e) => setTexto(e.target.value)}
-            className={`${campo} w-28`}
+            className={`${campo} ${item.tipo === "horario" ? "w-36" : "w-28"}`}
           />
           {item.unidade && item.unidade !== "R$" && (
             <span className="text-sm text-muted-foreground">{item.unidade}</span>
