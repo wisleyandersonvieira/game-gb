@@ -157,7 +157,7 @@ function Configuracoes() {
       <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Configurações</h1>
 
       {eu.data && !podeAlterar && (
-        <p className="rounded-lg border border-accent bg-card px-4 py-3 text-sm text-accent">
+        <p className="rounded-lg border border-azul/40 bg-azul-soft px-4 py-3 text-sm text-azul">
           Só o responsável pela conta altera as configurações. Você pode consultar.
         </p>
       )}

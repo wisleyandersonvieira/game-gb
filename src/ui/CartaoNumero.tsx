@@ -9,7 +9,7 @@ const COR: Record<Tom, string> = {
   neutro: "text-foreground",
   primario: "text-primary",
   sucesso: "text-sucesso",
-  pendente: "text-accent",
+  pendente: "text-azul",
   erro: "text-destructive",
 };
 
@@ -40,7 +40,7 @@ export function CartaoNumero({
       {progresso !== undefined && (
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
           <div
-            className={`h-full rounded-full ${tom === "sucesso" ? "bg-sucesso" : tom === "pendente" ? "bg-accent" : "bg-primary"}`}
+            className={`h-full rounded-full ${tom === "sucesso" ? "bg-sucesso" : tom === "pendente" ? "bg-azul" : "bg-primary"}`}
             style={{ width: `${Math.min(100, Math.max(0, progresso))}%` }}
           />
         </div>

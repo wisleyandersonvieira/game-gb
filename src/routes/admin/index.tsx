@@ -27,7 +27,7 @@ const campo =
 
 const CORES_STATUS: Record<string, string> = {
   ativa: "text-sucesso",
-  suspensa: "text-accent",
+  suspensa: "text-azul",
   cancelada: "text-destructive",
 };
 
@@ -280,7 +280,7 @@ function PainelAdmin() {
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted-foreground">
-                  <strong className={usadas >= c.limitelojas ? "text-accent" : "text-foreground"}>
+                  <strong className={usadas >= c.limitelojas ? "text-azul" : "text-foreground"}>
                     {usadas}
                   </strong>{" "}
                   de {c.limitelojas} lojas

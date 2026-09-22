@@ -19,7 +19,7 @@ const CATEGORIAS: Record<string, string[]> = {
 const SITUACOES = ["Aberta", "Em andamento", "Concluída", "Recusada"] as const;
 
 const COR: Record<string, string> = {
-  Aberta: "border-accent text-accent",
+  Aberta: "border-azul/40 bg-azul-soft text-azul",
   "Em andamento": "border-primary text-primary",
   Concluída: "border-border text-muted-foreground",
   Recusada: "border-destructive text-destructive",

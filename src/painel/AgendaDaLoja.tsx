@@ -72,7 +72,7 @@ export function TelaDaAgenda({ agenda }: { agenda: ItemAgenda[] }) {
           <ul className="space-y-2">
             {g.itens.map((a, i) => (
               <li key={`${a.quando}-${i}`} className="rounded-xl border border-border bg-card px-5 py-4 text-2xl sm:text-4xl">
-                <strong className="text-accent">{horaCurta(a.quando)}</strong> — {a.tipo}
+                <strong className="text-azul">{horaCurta(a.quando)}</strong> — {a.tipo}
               </li>
             ))}
           </ul>

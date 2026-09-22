@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_authenticated/canal-confidencial")({
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 const COR: Record<string, string> = {
-  Nova: "border-accent text-accent",
+  Nova: "border-azul/40 bg-azul-soft text-azul",
   "Em análise": "border-primary text-primary",
   Tratada: "border-border text-muted-foreground",
 };
@@ -71,7 +71,7 @@ function CanalConfidencial() {
 
       {master.isLoading && <p className="text-muted-foreground">Carregando...</p>}
       {master.data === false && (
-        <p className="rounded-lg border border-accent bg-card px-4 py-3 text-sm text-accent">
+        <p className="rounded-lg border border-azul/40 bg-azul-soft px-4 py-3 text-sm text-azul">
           Só o responsável pela conta acessa o canal confidencial.
         </p>
       )}

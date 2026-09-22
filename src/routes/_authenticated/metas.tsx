@@ -268,7 +268,7 @@ function Lancar({ lojaid }: { lojaid: number }) {
                   <span className="text-xs font-normal text-muted-foreground">
                     {DIAS_SEMANA[new Date(`${d.dia}T12:00:00Z`).getUTCDay()]}
                   </span>
-                  {d.origem === "especial" && <span className="ml-1 text-xs text-accent">★ {d.descricao}</span>}
+                  {d.origem === "especial" && <span className="ml-1 text-xs text-azul">★ {d.descricao}</span>}
                 </>
               ),
               classe: () => "whitespace-nowrap",

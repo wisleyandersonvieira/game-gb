@@ -5,7 +5,11 @@ export function dispararFogos() {
   const duracao = 5000;
   const fim = Date.now() + duracao;
   const padrao = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
-  const cores = ["#FFD700", "#FF4500", "#FFFFFF", "#00FF00", "#0000FF"];
+  // Cores da marca (ouro, azul, sucesso), lidas do tema; o confete precisa de hex.
+  const tema = getComputedStyle(document.documentElement);
+  const cores = ["--stg-ouro", "--stg-azul", "--stg-azul-strong", "--stg-sucesso", "--stg-on-noite"]
+    .map((v) => tema.getPropertyValue(v).trim())
+    .filter((c) => c.startsWith("#"));
   const entre = (min: number, max: number) => Math.random() * (max - min) + min;
 
   const intervalo = window.setInterval(() => {

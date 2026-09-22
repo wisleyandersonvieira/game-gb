@@ -369,7 +369,7 @@ function Funcionarios() {
                 </span>
               ) : (
                 <span className="text-sm text-muted-foreground">
-                  <strong className="text-accent">{f.saldopontos}</strong> pontos
+                  <strong className="text-azul">{f.saldopontos}</strong> pontos
                 </span>
               )}
               <button

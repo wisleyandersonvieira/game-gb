@@ -42,7 +42,7 @@ function Barra({ percentual, bateu, alta }: { percentual: number; bateu: boolean
   return (
     <div className={`overflow-hidden rounded-full bg-muted ${alta}`}>
       <div
-        className={`h-full transition-all duration-700 ${bateu ? "bg-sucesso" : "bg-accent"}`}
+        className={`h-full transition-all duration-700 ${bateu ? "bg-sucesso" : "bg-azul"}`}
         style={{ width: `${Math.min(100, Math.max(0, percentual))}%` }}
       />
     </div>

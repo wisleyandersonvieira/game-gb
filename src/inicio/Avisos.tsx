@@ -55,10 +55,10 @@ export function Avisos({ avisos }: { avisos: PainelInicio["avisos"] }) {
           <Link
             to={i.para}
             className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm transition hover:shadow-sm ${
-              i.grave ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-accent/50 bg-accent/10"
+              i.grave ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-azul/40 bg-azul-soft"
             }`}
           >
-            <CircleAlert className={`mt-0.5 h-4 w-4 shrink-0 ${i.grave ? "" : "text-accent"}`} aria-hidden />
+            <CircleAlert className={`mt-0.5 h-4 w-4 shrink-0 ${i.grave ? "" : "text-azul"}`} aria-hidden />
             <span>{i.texto}</span>
           </Link>
         </li>

@@ -441,7 +441,7 @@ function Lista({ lojaid }: { lojaid: number }) {
       </div>
 
       {vista === "lista" && filtro === "proximos" && atrasados.length > 0 && (
-        <p className="rounded-lg border border-accent bg-card px-4 py-2 text-sm text-accent">
+        <p className="rounded-lg border border-azul/40 bg-azul-soft px-4 py-2 text-sm text-azul">
           {atrasados.length} {atrasados.length === 1 ? "agendamento já passou e continua" : "agendamentos já passaram e continuam"}{" "}
           "Confirmado". Marque como realizado ou cancele (veja em "Todos").
         </p>
@@ -540,7 +540,7 @@ function Calendario({
               onClick={() => escolher(dia)}
               className={`min-h-16 rounded-md border p-1 text-left align-top sm:min-h-20 ${
                 dia === diaEscolhido ? "border-primary bg-card" : "border-border"
-              } ${dia === h ? "ring-1 ring-accent" : ""}`}
+              } ${dia === h ? "ring-1 ring-azul" : ""}`}
             >
               <span className={`text-xs ${dia < h ? "text-muted-foreground" : "font-semibold"}`}>{i + 1}</span>
               <span className="hidden sm:block">
@@ -549,10 +549,10 @@ function Calendario({
                     {partes(a.dataevento).hora} {a.tipoevento}
                   </span>
                 ))}
-                {itens.length > 2 && <span className="block text-[11px] text-accent">+{itens.length - 2}</span>}
+                {itens.length > 2 && <span className="block text-[11px] text-azul">+{itens.length - 2}</span>}
               </span>
               {itens.length > 0 && (
-                <span className="mt-1 block text-center text-xs font-semibold text-accent sm:hidden">{itens.length}</span>
+                <span className="mt-1 block text-center text-xs font-semibold text-azul sm:hidden">{itens.length}</span>
               )}
             </button>
           );

@@ -69,7 +69,7 @@ export function PainelDaLoja({ dados, tv = false }: { dados: DadosPainel; tv?: b
                     <span className="mr-2">{MEDALHAS[i]}</span>
                     {p.pessoa}
                   </span>
-                  <strong className="text-accent">{p.pontos}</strong>
+                  <strong className="text-azul">{p.pontos}</strong>
                 </li>
               ))}
             </ol>
@@ -185,7 +185,7 @@ function Item({ titulo, linha, destaque, tv }: { titulo: string; linha: string; 
       <p className={`${tv ? "text-2xl" : "text-sm"} font-medium`}>
         {titulo}
         {destaque && (
-          <span className={`ml-2 rounded-md border border-accent px-1.5 text-accent ${tv ? "text-base" : "text-xs"}`}>
+          <span className={`ml-2 rounded-md border border-azul/40 bg-azul-soft px-1.5 text-azul ${tv ? "text-base" : "text-xs"}`}>
             {destaque}
           </span>
         )}

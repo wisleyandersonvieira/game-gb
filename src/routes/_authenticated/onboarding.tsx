@@ -130,7 +130,7 @@ function Pessoas() {
                   {!p.ativo && <span className="ml-2 text-xs text-muted-foreground">(desativado)</span>}
                 </button>
                 {st ? (
-                  <span className={`text-sm ${st.statusworkflow === "Concluído" ? "text-sucesso" : "text-accent"}`}>
+                  <span className={`text-sm ${st.statusworkflow === "Concluído" ? "text-sucesso" : "text-azul"}`}>
                     {st.statusworkflow === "Concluído" ? `✓ Concluído em ${dataHoraBr(st.concluidoem!)}` : `${feitos} de ${itens.length} etapas`}
                   </span>
                 ) : (
@@ -150,7 +150,7 @@ function Pessoas() {
               {aberto === p.funcionarioid && st && (
                 <div className="space-y-1 border-t border-border pt-2">
                   {faltamNovas > 0 && p.ativo && (
-                    <button onClick={() => rpc("iniciar_onboarding", { p_funcionarioid: p.funcionarioid })} className="text-xs text-accent underline">
+                    <button onClick={() => rpc("iniciar_onboarding", { p_funcionarioid: p.funcionarioid })} className="text-xs text-azul underline">
                       Há {faltamNovas} {faltamNovas === 1 ? "etapa nova" : "etapas novas"} na conta. Acrescentar ao checklist
                     </button>
                   )}

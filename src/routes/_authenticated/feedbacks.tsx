@@ -23,7 +23,7 @@ const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 
 function corDaNota(n: number) {
   if (n >= 8) return "text-sucesso";
-  if (n >= 5) return "text-accent";
+  if (n >= 5) return "text-azul";
   return "text-destructive";
 }
 

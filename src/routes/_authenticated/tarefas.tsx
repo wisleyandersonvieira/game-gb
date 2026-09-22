@@ -287,7 +287,7 @@ function Catalogo() {
               <p className="font-medium">
                 {t.titulo}
                 {t.sistema && (
-                  <span className="ml-2 rounded-md border border-accent px-2 py-0.5 text-xs font-normal text-accent">
+                  <span className="ml-2 rounded-md border border-azul/40 bg-azul-soft px-2 py-0.5 text-xs font-normal text-azul">
                     do sistema
                   </span>
                 )}

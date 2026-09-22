@@ -133,7 +133,7 @@ function Comunicados() {
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium">{c.titulo}</p>
                     <p className="text-sm text-muted-foreground">
-                      <strong className={cientes === destes.length ? "text-sucesso" : "text-accent"}>
+                      <strong className={cientes === destes.length ? "text-sucesso" : "text-azul"}>
                         {cientes} de {destes.length}
                       </strong>{" "}
                       cientes · {dataHoraBr(c.datacriacao)}
@@ -378,7 +378,7 @@ function Detalhe({ c, ciencias }: { c: Comunicado; ciencias: Ciencia[] }) {
       </div>
 
       {publicado && (fora.data ?? []).length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-accent px-3 py-2 text-sm text-accent">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-azul/40 bg-azul-soft px-3 py-2 text-sm text-azul">
           <span>
             {fora.data!.length} {fora.data!.length === 1 ? "funcionário ativo entrou" : "funcionários ativos entraram"} depois e não{" "}
             {fora.data!.length === 1 ? "está" : "estão"} neste comunicado: {fora.data!.map((p) => p.nome).join(", ")}.
@@ -428,7 +428,7 @@ function Detalhe({ c, ciencias }: { c: Comunicado; ciencias: Ciencia[] }) {
                   {s.pontospagos > 0 && ` · +${s.pontospagos} pontos`}
                 </span>
               ) : (
-                <span className="ml-2 text-xs text-accent">
+                <span className="ml-2 text-xs text-azul">
                   pendente{s.motivodesfazer ? ` · ciência desfeita: ${s.motivodesfazer}` : ""}
                 </span>
               )}

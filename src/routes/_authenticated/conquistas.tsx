@@ -263,7 +263,7 @@ function Cadastro() {
         </div>
 
         {tipoEscolhido && !tipoEscolhido.disponivel && (
-          <p className="text-xs text-accent">
+          <p className="text-xs text-azul">
             Esta regra depende do módulo de {tipoEscolhido.modulo}, que ainda não existe. Ela fica cadastrada e começa a
             valer quando o módulo estiver pronto.
           </p>
@@ -390,14 +390,14 @@ function Cadastro() {
                         </span>
                       )}
                       {tipo && !tipo.disponivel && (
-                        <span className="ml-2 rounded-md border border-accent px-2 py-0.5 text-xs font-normal text-accent">
+                        <span className="ml-2 rounded-md border border-azul/40 bg-azul-soft px-2 py-0.5 text-xs font-normal text-azul">
                           aguarda o módulo de {tipo.modulo}
                         </span>
                       )}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {descreverRegra(c.criteriotipo, c.criteriovalor, c.criteriodias)} ·{" "}
-                      <strong className="text-accent">+{c.pontosbonus ?? 0}</strong> pontos de bônus
+                      <strong className="text-azul">+{c.pontosbonus ?? 0}</strong> pontos de bônus
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {c.contardesde
@@ -492,7 +492,7 @@ function Ganhadores() {
             {g.pontosbonus > 0 && (
               <>
                 {" "}
-                · <strong className="text-accent">+{g.pontosbonus}</strong> pontos
+                · <strong className="text-azul">+{g.pontosbonus}</strong> pontos
               </>
             )}
           </p>

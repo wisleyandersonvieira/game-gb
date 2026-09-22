@@ -132,7 +132,7 @@ export function MesesFechados({ lojaid, master }: { lojaid: number | null; maste
               atual.situacao === "definitivo"
                 ? "bg-sucesso/15 text-sucesso"
                 : atual.situacao === "provisorio"
-                  ? "bg-accent/15 text-accent"
+                  ? "bg-azul-soft text-azul"
                   : "bg-muted text-muted-foreground"
             }`}
           >

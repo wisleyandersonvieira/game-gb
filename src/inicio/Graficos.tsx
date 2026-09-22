@@ -9,7 +9,7 @@ import { diaMes, reais, reaisCurto, type PainelInicio } from "./tipos";
 const COR = {
   primario: "var(--color-primary)",
   sucesso: "var(--color-sucesso)",
-  pendente: "var(--color-accent)",
+  pendente: "var(--stg-ink-muted)",
   erro: "var(--color-destructive)",
   grade: "var(--color-border)",
   texto: "var(--color-muted-foreground)",

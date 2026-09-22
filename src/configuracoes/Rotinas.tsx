@@ -156,7 +156,7 @@ export function Rotinas({ podeRodar }: { podeRodar: boolean }) {
               {
                 titulo: "Como",
                 valor: (e) => (e.recuperado ? "Recuperado" : e.origem === "manual" ? "Rodar agora" : "Automática"),
-                classe: (e) => (e.recuperado ? "text-accent" : "text-muted-foreground"),
+                classe: (e) => (e.recuperado ? "text-azul" : "text-muted-foreground"),
               },
               {
                 titulo: "Resultado",

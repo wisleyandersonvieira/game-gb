@@ -15,7 +15,7 @@ const hoje = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Pau
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 const COR: Record<string, string> = {
-  Pendente: "border-accent text-accent",
+  Pendente: "border-azul/40 bg-azul-soft text-azul",
   Aceita: "border-sucesso text-sucesso",
   Recusada: "border-destructive text-destructive",
 };

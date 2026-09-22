@@ -60,7 +60,7 @@ function DocumentosPessoais() {
       </p>
       {master.isLoading && <p className="text-muted-foreground">Carregando...</p>}
       {master.data === false && (
-        <p className="rounded-lg border border-accent bg-card px-4 py-3 text-sm text-accent">
+        <p className="rounded-lg border border-azul/40 bg-azul-soft px-4 py-3 text-sm text-azul">
           Só o responsável pela conta acessa os documentos pessoais.
         </p>
       )}

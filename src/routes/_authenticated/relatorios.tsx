@@ -58,7 +58,7 @@ type TarefaAnalise = {
 };
 
 const COR_STATUS: Record<string, string> = {
-  Pendente: "border-accent text-accent",
+  Pendente: "border-azul/40 bg-azul-soft text-azul",
   Aprovada: "border-sucesso text-sucesso",
   Recusada: "border-destructive text-destructive",
   Estornada: "border-destructive text-destructive",
@@ -217,7 +217,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                     title={`Ganhou em ${c.dataconquista ? dataHora(c.dataconquista) : "—"}`}
                   >
                     {c.icone} {c.nome}
-                    {c.pontosbonus > 0 && <span className="ml-1 text-accent">+{c.pontosbonus}</span>}
+                    {c.pontosbonus > 0 && <span className="ml-1 text-azul">+{c.pontosbonus}</span>}
                   </span>
                 ))}
               </div>
@@ -278,7 +278,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                   valor: (p) => {
                     const chave = `${p.atribuicaoid}-${p.dia}`;
                     return p.justificativa === "Pendente" ? (
-                      <span className="text-xs text-accent">justificativa a decidir</span>
+                      <span className="text-xs text-azul">justificativa a decidir</span>
                     ) : (
                       <>
                         {p.justificativa === "Recusada" && (
@@ -323,7 +323,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                     </p>
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {e.status === "Aprovada" ? <strong className="text-accent">+{e.pontos}</strong> : "—"}
+                    {e.status === "Aprovada" ? <strong className="text-azul">+{e.pontos}</strong> : "—"}
                   </span>
                 </div>
               ))}

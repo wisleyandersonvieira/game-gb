@@ -160,7 +160,7 @@ function Gestao() {
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{conta.data.nome}</h1>
             <p className="text-sm text-muted-foreground">
-              <strong className={noLimite ? "text-accent" : "text-foreground"}>
+              <strong className={noLimite ? "text-azul" : "text-foreground"}>
                 {ativas.length}
               </strong>{" "}
               de {limite} lojas usadas
@@ -174,7 +174,7 @@ function Gestao() {
           </p>
 
           {suspensa && (
-            <p className="rounded-lg border border-accent bg-card px-4 py-3 text-sm text-accent">
+            <p className="rounded-lg border border-azul/40 bg-azul-soft px-4 py-3 text-sm text-azul">
               <strong>Conta {conta.data.status}.</strong> Você continua consultando tudo, mas o
               sistema não aceita cadastrar nem alterar nada. Fale com o suporte para reativar.
             </p>
@@ -199,7 +199,7 @@ function Gestao() {
             </div>
 
             {noLimite && !suspensa && (
-              <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-accent">
+              <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-azul">
                 Você atingiu o limite do seu plano. Fale com o suporte para ampliar.
               </p>
             )}
@@ -460,7 +460,7 @@ function ResumoDasLojas() {
               <p>
                 {l.progresso.aprovadas} de {l.progresso.total} tarefas concluídas
               </p>
-              <p className={l.pendentes > 0 ? "text-accent" : undefined}>
+              <p className={l.pendentes > 0 ? "text-azul" : undefined}>
                 {l.pendentes} {l.pendentes === 1 ? "entrega esperando" : "entregas esperando"} validação
               </p>
               <p>
@@ -594,8 +594,8 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
       </form>
 
       {novoLink && (
-        <div className="space-y-2 rounded-xl border border-accent bg-card p-4">
-          <p className="text-sm font-semibold text-accent">
+        <div className="space-y-2 rounded-xl border border-azul/40 bg-azul-soft p-4">
+          <p className="text-sm font-semibold text-azul">
             Copie agora: este link aparece uma única vez.
           </p>
           <p className="break-all rounded-md bg-background px-3 py-2 font-mono text-xs">{novoLink}</p>

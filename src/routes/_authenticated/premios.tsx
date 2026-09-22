@@ -298,7 +298,7 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
 /* ------------------------------------------------------------------ */
 
 const COR_STATUS: Record<string, string> = {
-  Pendente: "border-accent text-accent",
+  Pendente: "border-azul/40 bg-azul-soft text-azul",
   Entregue: "border-sucesso text-sucesso",
   Cancelado: "border-border text-muted-foreground",
   Estornado: "border-destructive text-destructive",
@@ -598,7 +598,7 @@ function Catalogo() {
                   )}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  <strong className="text-accent">{p.custoempontos}</strong> pontos ·{" "}
+                  <strong className="text-azul">{p.custoempontos}</strong> pontos ·{" "}
                   {p.estoquedisponivel === null ? "estoque ilimitado" : `${p.estoquedisponivel} em estoque`}
                   {p.descricao && ` · ${p.descricao}`}
                 </p>

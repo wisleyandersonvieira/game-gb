@@ -151,7 +151,7 @@ function PontosDoPeriodo({
               <span className="font-medium">{l.nomecompleto}</span>
             </span>
             <span className="text-sm text-muted-foreground">
-              <strong className="text-accent">{l.pontos}</strong> pontos · {l.entregas}{" "}
+              <strong className="text-azul">{l.pontos}</strong> pontos · {l.entregas}{" "}
               {l.entregas === 1 ? "entrega" : "entregas"}
             </span>
           </li>
@@ -243,7 +243,7 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
                 <span className="w-8 text-center text-lg">{MEDALHAS[i] ?? `${i + 1}º`}</span>
                 <span className="font-medium">{l.nomecompleto}</span>
               </span>
-              <span className="text-2xl font-bold text-accent">
+              <span className="text-2xl font-bold text-azul">
                 {Number(l.nota).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
               </span>
             </div>
