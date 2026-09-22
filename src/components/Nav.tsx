@@ -11,6 +11,9 @@ const itens = [
   { to: "/ranking", label: "Ranking" },
   { to: "/premios", label: "Prêmios" },
   { to: "/extrato", label: "Extrato" },
+  { to: "/conquistas", label: "Conquistas" },
+  { to: "/relatorios", label: "Relatórios" },
+  { to: "/configuracoes", label: "Configurações" },
 ] as const;
 
 export function Nav() {

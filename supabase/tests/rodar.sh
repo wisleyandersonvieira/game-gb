@@ -77,6 +77,26 @@ rm -f /tmp/gamegb-sessao1.txt /tmp/gamegb-sessao2.txt
 saida_c="$(rodar "$RAIZ/supabase/tests/concorrencia_confere.sql" 2>&1)" && ok_c=1 || ok_c=0
 echo "$saida_c" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
 
+echo "==> duas aprovacoes ao mesmo tempo disputando a mesma conquista"
+rodar "$RAIZ/supabase/tests/concorrencia_conquista_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_conquista_sessao.sql" "$CONTAINER:/sessao_c.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -v entrega=9201 -f /sessao_c.sql >/tmp/gamegb-sessao3.txt 2>&1 &
+p3=$!
+docker exec "$CONTAINER" psql -U postgres -q -v entrega=9202 -f /sessao_c.sql >/tmp/gamegb-sessao4.txt 2>&1 &
+p4=$!
+wait "$p3" "$p4" || true
+erros_c=$(cat /tmp/gamegb-sessao3.txt /tmp/gamegb-sessao4.txt | grep -c "ERROR" || true)
+grep -h ERROR /tmp/gamegb-sessao3.txt /tmp/gamegb-sessao4.txt || true; rm -f /tmp/gamegb-sessao3.txt /tmp/gamegb-sessao4.txt
+echo "    conexoes com erro: $erros_c de 2"
+
+saida_q="$(rodar "$RAIZ/supabase/tests/concorrencia_conquista_confere.sql" 2>&1)" && ok_q=1 || ok_q=0
+echo "$saida_q" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_q" != "1" ] || [ "$erros_c" != "0" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_q"
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"

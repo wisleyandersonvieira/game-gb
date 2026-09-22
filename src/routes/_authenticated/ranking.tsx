@@ -18,7 +18,7 @@ const MEDALHAS = ["🥇", "🥈", "🥉"];
 
 function Ranking() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
-  const [periodo, setPeriodo] = useState<"dia" | "mes">("dia");
+  const [periodo, setPeriodo] = useState<"dia" | "mes" | "nota">("dia");
   const [alcance, setAlcance] = useState<"loja" | "conta">("loja");
 
   const hoje = hojeEmSaoPaulo();
@@ -27,7 +27,7 @@ function Ranking() {
 
   const ranking = useQuery({
     queryKey: ["ranking", de, hoje, lojaFiltro],
-    enabled: lojaAtiva !== null,
+    enabled: lojaAtiva !== null && periodo !== "nota",
     queryFn: async () => {
       const { data, error } = await supabase.rpc("ranking_pontos", {
         p_de: de,
@@ -75,6 +75,9 @@ function Ranking() {
           <button className={botao(periodo === "mes")} onClick={() => setPeriodo("mes")}>
             Este mês
           </button>
+          <button className={botao(periodo === "nota")} onClick={() => setPeriodo("nota")}>
+            Nota do mês
+          </button>
         </div>
         <div className="flex gap-1 rounded-lg border border-border p-1">
           <button className={botao(alcance === "loja")} onClick={() => setAlcance("loja")}>
@@ -86,13 +89,45 @@ function Ranking() {
         </div>
       </div>
 
+      {periodo === "nota" ? (
+        <NotaDoMes hoje={hoje} lojaid={lojaFiltro} />
+      ) : (
+        <PontosDoPeriodo
+          periodo={periodo}
+          alcance={alcance}
+          carregando={ranking.isLoading}
+          erro={ranking.isError ? (ranking.error as Error).message : null}
+          linhas={linhas}
+        />
+      )}
+    </main>
+  );
+}
+
+type LinhaPontos = { funcionarioid: number; nomecompleto: string; pontos: number; entregas: number };
+
+function PontosDoPeriodo({
+  periodo,
+  alcance,
+  carregando,
+  erro,
+  linhas,
+}: {
+  periodo: "dia" | "mes";
+  alcance: "loja" | "conta";
+  carregando: boolean;
+  erro: string | null;
+  linhas: LinhaPontos[];
+}) {
+  return (
+    <>
       <p className="text-xs text-muted-foreground">
         Soma dos pontos aprovados {periodo === "dia" ? "hoje" : "neste mês"}, pela data da aprovação.
         {alcance === "conta" && " Quem trabalha em mais de uma loja soma os pontos de todas."}
       </p>
 
-      {ranking.isLoading && <p className="text-muted-foreground">Carregando...</p>}
-      {ranking.isError && <p className="text-sm text-destructive">{(ranking.error as Error).message}</p>}
+      {carregando && <p className="text-muted-foreground">Carregando...</p>}
+      {erro && <p className="text-sm text-destructive">{erro}</p>}
 
       <ol className="space-y-2">
         {linhas.map((l, i) => (
@@ -112,11 +147,96 @@ function Ranking() {
         ))}
       </ol>
 
-      {!ranking.isLoading && linhas.length === 0 && (
+      {!carregando && linhas.length === 0 && (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           Ninguém pontuou {periodo === "dia" ? "hoje" : "neste mês"} ainda.
         </p>
       )}
-    </main>
+    </>
+  );
+}
+
+/** Nota do mês: 50% confiabilidade + 50% esforço (calculada no banco). */
+function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
+  const [mes, setMes] = useState(hoje.slice(0, 7));
+  const [ano, numeroMes] = mes.split("-").map(Number);
+  const mesCorrente = mes === hoje.slice(0, 7);
+
+  const nota = useQuery({
+    queryKey: ["ranking-mensal", mes, lojaid],
+    enabled: Boolean(ano && numeroMes),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("ranking_mensal", {
+        p_ano: ano,
+        p_mes: numeroMes,
+        p_lojaid: lojaid ?? undefined,
+      });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const linhas = nota.data ?? [];
+  const pct = (v: number) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Mês
+          <input
+            type="month"
+            value={mes}
+            max={hoje.slice(0, 7)}
+            onChange={(e) => setMes(e.target.value)}
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+          />
+        </label>
+      </div>
+
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>
+          <strong>Nota = metade confiabilidade + metade esforço.</strong>
+          {mesCorrente && " No mês corrente, a conta vai até ontem."}
+        </p>
+        <p>
+          <strong>Confiabilidade:</strong> dos pontos que a pessoa podia fazer nas tarefas dela, quanto fez (pelo dia
+          do envio). Folga, domingo de folga e afastamento não contam.
+        </p>
+        <p>
+          <strong>Esforço:</strong> os pontos aprovados no mês comparados com os de quem mais fez. Bônus de conquista não
+          entra.
+        </p>
+      </div>
+
+      {nota.isLoading && <p className="text-muted-foreground">Carregando...</p>}
+      {nota.isError && <p className="text-sm text-destructive">{(nota.error as Error).message}</p>}
+
+      <ol className="space-y-2">
+        {linhas.map((l, i) => (
+          <li key={l.funcionarioid} className="rounded-lg border border-border bg-card px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-3">
+                <span className="w-8 text-center text-lg">{MEDALHAS[i] ?? `${i + 1}º`}</span>
+                <span className="font-medium">{l.nomecompleto}</span>
+              </span>
+              <span className="text-2xl font-bold text-accent">
+                {Number(l.nota).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+              </span>
+            </div>
+            <p className="mt-1 pl-11 text-xs text-muted-foreground">
+              Confiabilidade {pct(l.confiabilidade)} ({l.pontosregulares} de {l.pontospossiveis} pontos) · Esforço{" "}
+              {pct(l.esforco)} ({l.pontosganhos} pontos no mês)
+            </p>
+          </li>
+        ))}
+      </ol>
+
+      {!nota.isLoading && linhas.length === 0 && (
+        <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Ninguém com tarefas neste mês.
+        </p>
+      )}
+    </>
   );
 }

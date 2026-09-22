@@ -56,7 +56,6 @@ INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (1000, 10);
 INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (5000, 1000, 100, 10);
 DO $$ BEGIN PERFORM public.registrar_entrega(5000); END $$;
 INSERT INTO public.grupos (grupoid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (200, 'Cozinha', 10);
-INSERT INTO public.configuracoes (chave, valor) VALUES ('TAXA_CONVERSAO_PONTO_REAL', '0.03');
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '1/10/foto-a.jpg');
 
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -68,10 +67,14 @@ INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (2000, 20);
 INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (6000, 2000, 200, 20);
 DO $$ BEGIN PERFORM public.registrar_entrega(6000); END $$;
 INSERT INTO public.grupos (grupoid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (300, 'Cozinha', 20);
-INSERT INTO public.configuracoes (chave, valor) VALUES ('TAXA_CONVERSAO_PONTO_REAL', '0.05');
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '2/20/foto-b.jpg');
 
 RESET ROLE;
+-- Configuracoes so mudam por alterar_configuracao (Etapa 1.7): aqui, como
+-- dono do banco, gravamos uma para cada conta.
+INSERT INTO public.configuracoes (contaid, chave, valor) VALUES
+  (1, 'TAXA_CONVERSAO_PONTO_REAL', '0.03'),
+  (2, 'TAXA_CONVERSAO_PONTO_REAL', '0.05');
 DO $$ BEGIN RAISE NOTICE '--- dados criados: conta A e conta B ---'; END $$;
 
 -- ===========================================================================
@@ -143,8 +146,12 @@ BEGIN
   END;
   PERFORM public.exigir(afetadas = 0, 'A nao apaga entrega de B');
 
-  DELETE FROM public.configuracoes WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL' AND valor = '0.05';
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  BEGIN
+    DELETE FROM public.configuracoes WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL' AND valor = '0.05';
+    GET DIAGNOSTICS afetadas = ROW_COUNT;
+  EXCEPTION WHEN insufficient_privilege THEN
+    afetadas := 0;
+  END;
   PERFORM public.exigir(afetadas = 0, 'A nao apaga configuracao de B');
 END $$;
 
@@ -779,7 +786,7 @@ DECLARE saldo integer; premio integer;
 BEGIN
   PERFORM public.aprovar_entrega(current_setting('teste.entrega_c')::integer);
   INSERT INTO public.produtosloja (nome, custoempontos) VALUES ('Brinde de teste', 3) RETURNING produtoid INTO premio;
-  PERFORM public.registrar_resgate(100, premio, 10, true);
+  PERFORM public.registrar_troca(100, premio, 10, true);
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 2,
                         'resgate de 3 pontos deixa o saldo em 2');
   saldo := public.estornar_entrega(current_setting('teste.entrega_c')::integer, 'Ja tinha trocado por premio');
@@ -1005,7 +1012,7 @@ BEGIN
   INSERT INTO public.produtosloja (nome, custoempontos, estoquedisponivel) VALUES ('Caneca', 1, 0)    RETURNING produtoid INTO caneca;
   PERFORM set_config('teste.bombom', bombom::text, false);
 
-  BEGIN PERFORM public.registrar_resgate(100, bombom); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca(100, bombom); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'com saldo negativo (-3) nao se resgata nada');
 
@@ -1017,66 +1024,66 @@ BEGIN
   SELECT saldopontos INTO saldo FROM public.funcionarios WHERE funcionarioid = 100;
   PERFORM public.exigir(saldo = 27, 'aprovar 30 pontos leva o saldo de -3 a 27');
 
-  BEGIN PERFORM public.registrar_resgate(100, caneca); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca(100, caneca); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'premio com estoque 0 (esgotado) nao se resgata');
 
-  BEGIN PERFORM public.registrar_resgate(100, camiseta); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca(100, camiseta); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'resgatar sem saldo suficiente e recusado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
                         'tentativas recusadas nao mexem no saldo');
 
-  r := public.registrar_resgate(100, bombom, 10, true);
+  r := public.registrar_troca(100, bombom, 10, true);
   PERFORM set_config('teste.resgate_a', r::text, false);
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17
                     AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 0
                     AND (SELECT status FROM public.resgates WHERE resgateid = r) = 'Entregue',
                         'resgatar desconta saldo e estoque de uma vez (e ja entrega)');
 
-  BEGIN PERFORM public.registrar_resgate(100, bombom); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca(100, bombom); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'o estoque acabou: o segundo bombom e recusado');
 
-  BEGIN PERFORM public.cancelar_resgate(r, 'desistiu'); deu_erro := false;
+  BEGIN PERFORM public.cancelar_troca(r, 'desistiu'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'resgate ja entregue nao se cancela (se estorna)');
 
-  BEGIN PERFORM public.estornar_resgate(r, '  '); deu_erro := false;
+  BEGIN PERFORM public.estornar_troca(r, '  '); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'estornar resgate sem motivo e recusado');
 
-  PERFORM public.estornar_resgate(r, 'Veio estragado');
+  PERFORM public.estornar_troca(r, 'Veio estragado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27
                     AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 1
                     AND (SELECT status FROM public.resgates WHERE resgateid = r) = 'Estornado',
                         'estornar devolve os pontos e o estoque');
 
-  BEGIN PERFORM public.estornar_resgate(r, 'de novo'); deu_erro := false;
+  BEGIN PERFORM public.estornar_troca(r, 'de novo'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
                         'estornar duas vezes NAO devolve em dobro');
 
-  r := public.registrar_resgate(100, bombom, NULL, false);
+  r := public.registrar_troca(100, bombom, NULL, false);
   PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = r) = 'Pendente'
                     AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17
                     AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 0,
                         '"entregar depois": pontos e estoque ja ficam reservados');
-  PERFORM public.cancelar_resgate(r, 'Desistiu');
+  PERFORM public.cancelar_troca(r, 'Desistiu');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27
                     AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 1,
                         'cancelar devolve os pontos e o estoque');
-  BEGIN PERFORM public.cancelar_resgate(r, 'de novo'); deu_erro := false;
+  BEGIN PERFORM public.cancelar_troca(r, 'de novo'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
                         'cancelar duas vezes NAO devolve em dobro');
 
-  r := public.registrar_resgate(100, bombom, NULL, false);
-  PERFORM public.entregar_resgate(r);
+  r := public.registrar_troca(100, bombom, NULL, false);
+  PERFORM public.concluir_troca(r);
   PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = r) = 'Entregue'
                     AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17,
                         'entregar um pendente nao cobra de novo');
-  BEGIN PERFORM public.entregar_resgate(r); deu_erro := false;
+  BEGIN PERFORM public.concluir_troca(r); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'entregar duas vezes e recusado');
 
@@ -1089,32 +1096,32 @@ DO $$
 DECLARE deu_erro boolean; r integer; r2 integer; linha record;
 BEGIN
   RAISE NOTICE '20b. abate na comanda';
-  UPDATE public.configuracoes SET valor = '0.03' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL';
+  PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.03');
 
-  r := public.registrar_abate_comanda(100, 0.31, 10);
+  r := public.registrar_troca_por_valor(100, 0.31, 10);
   SELECT pontosgastos, valorreais, taxaconversao INTO linha FROM public.resgates WHERE resgateid = r;
   PERFORM public.exigir(linha.pontosgastos = 11 AND linha.valorreais = 0.31 AND linha.taxaconversao = 0.03,
                         'R$ 0,31 a 0,03 custa 11 pontos (10,33 arredondado para cima)');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 6,
                         'a comanda desconta os pontos');
 
-  BEGIN PERFORM public.registrar_abate_comanda(100, 15.50); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca_por_valor(100, 15.50); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'comanda acima do saldo e recusada pelo banco');
 
-  BEGIN PERFORM public.registrar_abate_comanda(100, 0); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca_por_valor(100, 0); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'comanda de valor zero e recusada');
 
-  UPDATE public.configuracoes SET valor = '0.05' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL';
-  r2 := public.registrar_abate_comanda(100, 0.30);
+  PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.05');
+  r2 := public.registrar_troca_por_valor(100, 0.30);
   PERFORM public.exigir((SELECT pontosgastos FROM public.resgates WHERE resgateid = r2) = 6,
                         'taxa nova (0,05) vale para a comanda nova: R$ 0,30 = 6 pontos');
   SELECT pontosgastos, valorreais, taxaconversao INTO linha FROM public.resgates WHERE resgateid = r;
   PERFORM public.exigir(linha.pontosgastos = 11 AND linha.valorreais = 0.31 AND linha.taxaconversao = 0.03,
                         'a comanda antiga mantem o valor, os pontos e a taxa que registrou');
 
-  BEGIN PERFORM public.registrar_resgate(100, (SELECT produtoid FROM public.produtosloja WHERE sistema = 'abate_comanda'));
+  BEGIN PERFORM public.registrar_troca(100, (SELECT produtoid FROM public.produtosloja WHERE sistema = 'abate_comanda'));
         deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'o premio do sistema nao sai pelo catalogo');
@@ -1127,11 +1134,11 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'ninguem marca um premio comum como do sistema');
 
-  PERFORM public.estornar_resgate(r, 'Lancado errado');
+  PERFORM public.estornar_troca(r, 'Lancado errado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 11,
                         'estornar a comanda devolve os 11 pontos');
 
-  UPDATE public.configuracoes SET valor = '0.03' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL';
+  PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.03');
 END $$;
 
 DO $$
@@ -1178,15 +1185,15 @@ BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.resgates) = 0, 'B nao ve os resgates de A');
   PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos) = 0, 'B nao ve os movimentos de A');
 
-  BEGIN PERFORM public.registrar_resgate(100, pb); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca(100, pb); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'B nao resgata para um funcionario de A');
 
-  BEGIN PERFORM public.estornar_resgate(current_setting('teste.resgate_a')::integer, 'invasao'); deu_erro := false;
+  BEGIN PERFORM public.estornar_troca(current_setting('teste.resgate_a')::integer, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'B nao estorna resgate de A');
 
-  BEGIN PERFORM public.registrar_abate_comanda(100, 1); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca_por_valor(100, 1); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'B nao faz comanda para funcionario de A');
 END $$;
@@ -1195,9 +1202,372 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  BEGIN PERFORM public.registrar_resgate(100, current_setting('teste.premio_b')::integer); deu_erro := false;
+  BEGIN PERFORM public.registrar_troca(100, current_setting('teste.premio_b')::integer); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'A nao resgata um premio de B');
+END $$;
+
+-- ===========================================================================
+-- 23. Dia de trabalho: folga semanal, domingo de folga e afastamento
+-- ===========================================================================
+
+DO $$
+BEGIN
+  RAISE NOTICE '23. dia de trabalho (mesma regra da nota e da sequencia)';
+  -- setembro de 2026: dia 13 e o 2o domingo, dia 14 e segunda-feira
+  PERFORM public.exigir(NOT public.dia_de_trabalho(1, 0, NULL, NULL, '2026-09-13'), 'folga no domingo: domingo nao conta');
+  PERFORM public.exigir(NOT public.dia_de_trabalho(2, 0, NULL, NULL, '2026-09-14'), 'folga na segunda: segunda nao conta');
+  PERFORM public.exigir(public.dia_de_trabalho(2, 0, NULL, NULL, '2026-09-15'),     'folga na segunda: terca conta');
+  PERFORM public.exigir(NOT public.dia_de_trabalho(0, 2, NULL, NULL, '2026-09-13'), '2o domingo de folga: dia 13 nao conta');
+  PERFORM public.exigir(public.dia_de_trabalho(0, 2, NULL, NULL, '2026-09-20'),     '2o domingo de folga: dia 20 conta');
+  PERFORM public.exigir(NOT public.dia_de_trabalho(0, 0, '2026-09-10', '2026-09-12', '2026-09-12'), 'ultimo dia de afastamento nao conta');
+  PERFORM public.exigir(public.dia_de_trabalho(0, 0, '2026-09-10', '2026-09-12', '2026-09-13'),     'dia seguinte ao afastamento conta');
+END $$;
+
+-- ===========================================================================
+-- 24. Conquistas
+-- ===========================================================================
+
+RESET ROLE;
+-- Carla (110) na Loja A1, com uma tarefa diaria. Entregas de dias passados
+-- (hoje-10, hoje-9 e hoje-7), com afastamento no dia hoje-8.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, datainicioafastamento, datafimafastamento)
+  OVERRIDING SYSTEM VALUE
+  VALUES (110, 1, 'Carla da conta A', public.dia_em_sao_paulo(now()) - 8, public.dia_em_sao_paulo(now()) - 8);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (1100, 1, 'Abrir o caixa', 3);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 110, 10);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 1100, 10);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao)
+  OVERRIDING SYSTEM VALUE VALUES (5100, 1, 1100, 110, 10, 'Diaria', now() - interval '30 days');
+INSERT INTO public.entregas (entregaid, contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio)
+  OVERRIDING SYSTEM VALUE
+  SELECT 7100 + d, 1, 1100, 110, 10, 5100,
+         ((public.dia_em_sao_paulo(now()) - d)::timestamp + time '12:00') AT TIME ZONE 'America/Sao_Paulo'
+    FROM unnest(ARRAY[10, 9, 7]) d;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+DO $$
+DECLARE r jsonb; k1 integer; k2 integer; k3 integer; k4 integer; k5 integer; k6 integer; k7 integer;
+        deu_erro boolean; x jsonb; e integer; hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  RAISE NOTICE '24. conquistas';
+
+  -- "So a partir de hoje", criada ANTES das aprovacoes das entregas antigas.
+  k1 := (public.criar_conquista('Estreia', NULL, '🌟', 'total_tarefas_aprovadas', 1, NULL, 7, false))->>'conquistaid';
+  PERFORM public.aprovar_entrega(7110);
+  PERFORM public.aprovar_entrega(7109);
+  PERFORM public.aprovar_entrega(7107);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k1),
+                        '"so a partir de hoje" ignora tarefas enviadas antes da criacao');
+
+  r  := public.criar_conquista('Tres tarefas', 'Fez 3 tarefas', '🥉', 'total_tarefas_aprovadas', 3, NULL, 10, true);
+  k2 := r->>'conquistaid';
+  PERFORM public.exigir((r->>'concedidas')::integer >= 1, 'retroativa concede na hora a quem ja cumpre');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k2),
+                        'Carla ganhou "3 tarefas" pelo historico');
+
+  k3 := (public.criar_conquista('Ritmo', NULL, NULL, 'tarefas_aprovadas_periodo', 3, 4, 0, true))->>'conquistaid';
+  k4 := (public.criar_conquista('Ritmo forte', NULL, NULL, 'tarefas_aprovadas_periodo', 3, 3, 0, true))->>'conquistaid';
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k3),
+                        '3 tarefas em 4 dias: concedida');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k4),
+                        '3 tarefas em 3 dias: nao concedida');
+
+  k5 := (public.criar_conquista('Sequencia de 3', NULL, '🔥', 'sequencia_dias_tarefas', 3, NULL, 5, true))->>'conquistaid';
+  k6 := (public.criar_conquista('Sequencia de 4', NULL, NULL, 'sequencia_dias_tarefas', 4, NULL, 5, true))->>'conquistaid';
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k5),
+                        'o dia de afastamento nao quebra a sequencia (3 dias)');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k6),
+                        'nem conta como dia feito (4 dias nao fecha)');
+  PERFORM set_config('teste.k5', k5::text, false);
+
+  k7 := (public.criar_conquista('Feedback em dia', NULL, NULL, 'sequencia_feedback_diario', 1, NULL, 5, true))->>'conquistaid';
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE conquistaid = k7),
+                        'conquista de modulo que ainda nao existe fica cadastrada, sem conceder');
+
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 110) = 24,
+                        'bonus entrou no saldo: 3 tarefas x 3 + 10 + 5 = 24');
+  PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos
+                          WHERE funcionarioid = 110 AND tipo = 'bonus' AND conquistafuncionarioid IS NOT NULL) = 2,
+                        'cada bonus e um movimento do livro ligado a conquista');
+  x := public.extrato_pontos(110, hoje - 30, hoje);
+  PERFORM public.exigir((x->>'confere')::boolean
+                        AND EXISTS (SELECT 1 FROM jsonb_array_elements(x->'movimentos') m
+                                     WHERE m->>'descricao' LIKE 'Conquista:%Tres tarefas' AND (m->>'pontos')::integer = 10),
+                        'o bonus aparece no extrato, e o extrato bate com o saldo');
+
+  -- Entrega de hoje: agora a "so a partir de hoje" vale; as outras nao repetem.
+  e := public.registrar_entrega(5100, NULL, NULL, true);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k1),
+                        '"so a partir de hoje" conta a tarefa enviada depois da criacao');
+  PERFORM public.exigir((SELECT count(*) FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k2) = 1,
+                        'a mesma conquista nao e concedida duas vezes');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 110) = 34,
+                        'saldo 24 + tarefa 3 + bonus 7 = 34');
+
+  PERFORM public.estornar_entrega(e, 'Teste de estorno');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 110 AND conquistaid = k1),
+                        'estorno nao retira a conquista');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 110) = 31,
+                        'o estorno tira so os pontos da tarefa (34 - 3 = 31)');
+
+  -- A regra nao muda depois de criada; nome, bonus e ativa podem mudar.
+  BEGIN UPDATE public.conquistas SET criteriovalor = 1 WHERE conquistaid = k2; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege OR restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a regra da conquista nao muda depois de criada');
+  UPDATE public.conquistas SET nome = 'Tres tarefas!', pontosbonus = 12 WHERE conquistaid = k2;
+  PERFORM public.exigir((SELECT nome FROM public.conquistas WHERE conquistaid = k2) = 'Tres tarefas!', 'o nome e o bonus podem mudar');
+
+  BEGIN INSERT INTO public.conquistasfuncionarios (funcionarioid, conquistaid) VALUES (100, k6); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem concede conquista na mao');
+
+  BEGIN INSERT INTO public.conquistas (nome, descricao, criteriotipo, criteriovalor) VALUES ('X', 'X', 'total_tarefas_aprovadas', 1);
+        deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'conquista so e criada pela funcao (que decide o historico)');
+
+  BEGIN PERFORM public.criar_conquista('X', NULL, NULL, 'tipo_inventado', 1, NULL, 0, true); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'tipo de regra desconhecido e recusado');
+  BEGIN PERFORM public.criar_conquista('X', NULL, NULL, 'tarefas_aprovadas_periodo', 3, NULL, 0, true); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, '"N tarefas em X dias" exige o X');
+  BEGIN PERFORM public.criar_conquista('X', NULL, NULL, 'total_tarefas_aprovadas', 0, NULL, 0, true); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'meta zero e recusada');
+END $$;
+
+RESET ROLE;
+DO $$
+DECLARE deu_erro boolean; k5 integer := current_setting('teste.k5')::integer;
+BEGIN
+  BEGIN UPDATE public.conquistas SET criteriovalor = 1 WHERE conquistaid = k5; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco muda a regra de uma conquista');
+
+  PERFORM public.exigir(public.avaliar_conquistas(1, 110) = 0, 'avaliar de novo nao concede nada repetido');
+
+  UPDATE public.funcionarios SET datainicioafastamento = NULL, datafimafastamento = NULL WHERE funcionarioid = 110;
+  PERFORM public.exigir(NOT public.pessoa_cumpre_conquista(1, 110, k5),
+                        'sem o afastamento, o dia vazio quebraria a sequencia');
+END $$;
+
+-- ===========================================================================
+-- 25. Nota do ranking mensal e relatorios (mes passado, Loja A2)
+-- ===========================================================================
+
+-- Duda (120): sem folga, tarefa diaria de 2 pontos o mes todo + uma unica;
+--   entrega so nos 5 primeiros dias.
+-- Edu  (121): mesma tarefa, afastado do dia 6 ao fim do mes; entrega nos 5.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, datainicioafastamento, datafimafastamento)
+  OVERRIDING SYSTEM VALUE VALUES
+  (120, 1, 'Duda da conta A', NULL, NULL),
+  (121, 1, 'Edu da conta A',
+   (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 month')::date + 5,
+   (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 day')::date);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (1200, 1, 'Repor gelo', 2);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 120, 11), (1, 121, 11);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 1200, 11);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao, dataagendamento)
+  OVERRIDING SYSTEM VALUE
+  SELECT a.id, 1, 1200, a.f, 11, a.tipo, ini::timestamp AT TIME ZONE 'America/Sao_Paulo', a.agenda
+    FROM (SELECT (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 month')::date AS ini) m,
+         LATERAL (VALUES (5200, 120, 'Diaria', NULL::timestamptz),
+                         (5201, 121, 'Diaria', NULL::timestamptz),
+                         (5202, 120, 'Unica', ((m.ini + 2)::timestamp + time '10:00') AT TIME ZONE 'America/Sao_Paulo')) a(id, f, tipo, agenda);
+INSERT INTO public.entregas (entregaid, contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio)
+  OVERRIDING SYSTEM VALUE
+  SELECT 7200 + p.i * 10 + d, 1, 1200, p.f, 11, p.a,
+         ((m.ini + d)::timestamp + time '12:00') AT TIME ZONE 'America/Sao_Paulo'
+    FROM (SELECT (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 month')::date AS ini) m,
+         (VALUES (0, 120, 5200), (1, 121, 5201)) p(i, f, a),
+         generate_series(0, 4) d;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE e record;
+BEGIN
+  FOR e IN SELECT entregaid FROM public.entregas WHERE entregaid BETWEEN 7200 AND 7219 ORDER BY 1 LOOP
+    PERFORM public.aprovar_entrega(e.entregaid);
+  END LOOP;
+END $$;
+RESET ROLE;
+UPDATE public.entregas SET dataaprovacao = dataenvio WHERE entregaid BETWEEN 7200 AND 7219;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE
+  ini date := (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 month')::date;
+  fim date := (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 day')::date;
+  dias integer;
+  duda record; edu record; atual record; n integer; x jsonb;
+BEGIN
+  RAISE NOTICE '25. nota do ranking mensal e relatorios';
+  dias := fim - ini + 1;
+
+  SELECT * INTO duda FROM public.ranking_mensal(extract(year FROM ini)::integer, extract(month FROM ini)::integer, 11) WHERE funcionarioid = 120;
+  SELECT * INTO edu  FROM public.ranking_mensal(extract(year FROM ini)::integer, extract(month FROM ini)::integer, 11) WHERE funcionarioid = 121;
+
+  PERFORM public.exigir(duda.pontospossiveis = dias * 2 + 2,
+                        'possiveis da Duda: todo dia do mes + a tarefa unica (' || duda.pontospossiveis || ')');
+  PERFORM public.exigir(edu.pontospossiveis = 10, 'possiveis do Edu: so os 5 dias antes do afastamento');
+  PERFORM public.exigir(edu.confiabilidade = 100 AND edu.esforco = 100 AND edu.nota = 100,
+                        'Edu fez tudo o que podia: nota 100');
+  PERFORM public.exigir(duda.confiabilidade = round(10 * 100.0 / (dias * 2 + 2), 2)
+                        AND duda.nota = round(duda.confiabilidade * 0.5 + 50, 2),
+                        'Duda: confiabilidade baixa, esforco igual, nota ' || duda.nota);
+  PERFORM public.exigir(duda.pontosganhos = 10,
+                        'bonus de conquista nao entra no ranking (Duda ganhou bonus, mas conta 10)');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.movimentospontos WHERE funcionarioid = 120 AND tipo = 'bonus'),
+                        '(e ela de fato recebeu bonus de conquista)');
+  PERFORM public.exigir((SELECT funcionarioid FROM public.ranking_mensal(extract(year FROM ini)::integer, extract(month FROM ini)::integer, 11) LIMIT 1) = 121,
+                        'Edu fica na frente da Duda');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_mensal(extract(year FROM ini)::integer, extract(month FROM ini)::integer, 11)
+                                     WHERE funcionarioid NOT IN (120, 121)),
+                        'o filtro de loja deixa so quem tem tarefa na Loja A2');
+
+  -- Mes corrente: conta ate ontem.
+  IF extract(day FROM public.dia_em_sao_paulo(now())) > 1 THEN
+    SELECT * INTO atual FROM public.ranking_mensal(extract(year FROM now())::integer,
+                                                   extract(month FROM public.dia_em_sao_paulo(now()))::integer, 11)
+     WHERE funcionarioid = 120;
+    PERFORM public.exigir(atual.pontospossiveis = (extract(day FROM public.dia_em_sao_paulo(now()))::integer - 1) * 2,
+                          'no mes corrente a nota vai ate ontem');
+  END IF;
+
+  x := public.pendencias_da_pessoa(120, ini, fim);
+  PERFORM public.exigir(jsonb_array_length(x) = dias - 5 + 1,
+                        'pendencias da Duda: dias sem entrega + a tarefa unica (' || jsonb_array_length(x) || ')');
+  PERFORM public.exigir(jsonb_array_length(public.pendencias_da_pessoa(121, ini, fim)) = 0,
+                        'afastamento nao gera pendencia');
+  PERFORM public.exigir(jsonb_array_length(public.historico_da_pessoa(120)) = 5, 'historico da Duda: 5 entregas');
+  x := public.analise_de_tarefas(ini, fim, 11);
+  PERFORM public.exigir((x->0->>'titulo') = 'Repor gelo' AND (x->0->>'aprovadas')::integer = 10,
+                        'analise por tarefa: 10 aprovadas de "Repor gelo"');
+END $$;
+
+-- ===========================================================================
+-- 26. Configuracoes: validadas, so o master altera, com historico
+-- ===========================================================================
+
+RESET ROLE;
+INSERT INTO auth.users (id, email, email_confirmed_at)
+  VALUES ('12121212-1212-1212-1212-121212121212', 'gerente.a@exemplo.com', now());
+INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, '12121212-1212-1212-1212-121212121212', 'gerente');
+SELECT public.cria_configuracoes_padrao(2);
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean; h record; v text;
+BEGIN
+  RAISE NOTICE '26. configuracoes';
+
+  BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'taxa zero e recusada');
+  BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '-0.01'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'taxa negativa e recusada');
+  BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', 'abc'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'taxa que nao e numero e recusada');
+
+  v := public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0,04');
+  PERFORM public.exigir(v = '0.04', 'taxa com virgula e aceita (0,04)');
+  SELECT * INTO h FROM public.configuracoeshistorico ORDER BY historicoid DESC LIMIT 1;
+  PERFORM public.exigir(h.chave = 'TAXA_CONVERSAO_PONTO_REAL' AND h.valoranterior = '0.03' AND h.valornovo = '0.04'
+                        AND h.alteradopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND h.alteradoem IS NOT NULL,
+                        'a mudanca fica registrada: quem, quando, valor antigo e novo');
+  PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.03');
+
+  BEGIN PERFORM public.alterar_configuracao('HORARIO_FECHAMENTO_MENSAL', '25:00'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'horario invalido e recusado');
+  PERFORM public.exigir(public.alterar_configuracao('HORARIO_FECHAMENTO_MENSAL', '07:30') = '07:30', 'horario valido e aceito');
+
+  BEGIN PERFORM public.alterar_configuracao('PONTOS_BONUS_NOTA_FISCAL', '-5'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'pontos de bonus negativos sao recusados');
+  BEGIN PERFORM public.alterar_configuracao('PONTOS_BONUS_NOTA_FISCAL', '2.5'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'pontos de bonus quebrados sao recusados');
+  PERFORM public.exigir(public.alterar_configuracao('PONTOS_BONUS_NOTA_FISCAL', '15') = '15', 'pontos de bonus validos sao aceitos');
+
+  BEGIN PERFORM public.alterar_configuracao('TAREFA_ID_LEITURA', '1'); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'os IDs do sistema nao se alteram pela tela');
+  BEGIN PERFORM public.alterar_configuracao('CHAVE_INVENTADA', '1'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'chave que nao existe e recusada');
+
+  BEGIN UPDATE public.configuracoes SET valor = '9' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL'; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem altera a tabela direto (so pela funcao, que registra)');
+  BEGIN INSERT INTO public.configuracoes (chave, valor) VALUES ('NOVA', '1'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem cria chave nova');
+END $$;
+
+SET teste.uid = '12121212-1212-1212-1212-121212121212';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.05'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'gerente nao altera configuracao (so o master)');
+END $$;
+
+SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.05'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao altera configuracao');
+END $$;
+
+-- ===========================================================================
+-- 27. Conquistas, relatorios e configuracoes de outro cliente
+-- ===========================================================================
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE afetadas integer; ini date := (date_trunc('month', public.dia_em_sao_paulo(now())) - interval '1 month')::date;
+BEGIN
+  RAISE NOTICE '27. conquistas, relatorios e configuracoes de outro cliente';
+  PERFORM public.exigir((SELECT count(*) FROM public.conquistas) = 0, 'B nao ve as conquistas de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.conquistasfuncionarios) = 0, 'B nao ve quem ganhou conquista em A');
+  PERFORM public.exigir((SELECT count(*) FROM public.configuracoeshistorico) = 0, 'B nao ve o historico de configuracoes de A');
+  UPDATE public.conquistas SET nome = 'INVADIDA';
+  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  PERFORM public.exigir(afetadas = 0, 'B nao altera conquista de A');
+
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_mensal(extract(year FROM ini)::integer, extract(month FROM ini)::integer)),
+                        'o ranking mensal de B nao mostra ninguem de A');
+  PERFORM public.exigir(public.pendencias_da_pessoa(120, ini, ini + 27) = '[]'::jsonb, 'B nao ve pendencias de funcionario de A');
+  PERFORM public.exigir(public.historico_da_pessoa(120) = '[]'::jsonb, 'B nao ve historico de funcionario de A');
+  PERFORM public.exigir(public.analise_de_tarefas(ini, ini + 27) = '[]'::jsonb, 'B nao ve analise de tarefas de A');
+  PERFORM public.exigir(public.listar_trocas() = '[]'::jsonb OR NOT EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(public.listar_trocas()) t WHERE (t->>'funcionarioid')::integer = 100),
+                        'B nao ve as trocas de A');
+
+  PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.09');
+END $$;
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT valor FROM public.configuracoes WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL') = '0.03',
+                        'B mudar a propria taxa nao mexe na taxa de A');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoeshistorico WHERE valornovo = '0.09'),
+                        'A nao ve o historico de B');
+  PERFORM public.exigir(jsonb_array_length(public.listar_trocas()) > 0, 'A ve as proprias trocas');
 END $$;
 
 -- ===========================================================================
@@ -1264,7 +1634,8 @@ BEGIN
       'minha_conta', 'minha_conta_editavel', 'eh_admin_geral',
       'registrar_entrega', 'aprovar_entrega', 'recusar_entrega', 'estornar_entrega',
       'painel_da_loja', 'resumo_das_lojas', 'criar_link_tv', 'revogar_link_tv', 'painel_da_tv',
-      'registrar_resgate', 'registrar_abate_comanda', 'entregar_resgate', 'cancelar_resgate', 'estornar_resgate'
+      'registrar_troca', 'registrar_troca_por_valor', 'concluir_troca', 'cancelar_troca', 'estornar_troca',
+      'criar_conquista', 'alterar_configuracao'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'

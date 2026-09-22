@@ -15,6 +15,8 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
+import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
+import { Route as AuthenticatedConquistasRouteImport } from './routes/_authenticated/conquistas'
 import { Route as AuthenticatedExtratoRouteImport } from './routes/_authenticated/extrato'
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
@@ -22,6 +24,7 @@ import { Route as AuthenticatedOperacionalRouteImport } from './routes/_authenti
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
 import { Route as AuthenticatedPremiosRouteImport } from './routes/_authenticated/premios'
 import { Route as AuthenticatedRankingRouteImport } from './routes/_authenticated/ranking'
+import { Route as AuthenticatedRelatoriosRouteImport } from './routes/_authenticated/relatorios'
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
@@ -54,6 +57,17 @@ const SemAcessoRoute = SemAcessoRouteImport.update({
   id: '/sem-acesso',
   path: '/sem-acesso',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedConfiguracoesRoute =
+  AuthenticatedConfiguracoesRouteImport.update({
+    id: '/configuracoes',
+    path: '/configuracoes',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedConquistasRoute = AuthenticatedConquistasRouteImport.update({
+  id: '/conquistas',
+  path: '/conquistas',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedExtratoRoute = AuthenticatedExtratoRouteImport.update({
   id: '/extrato',
@@ -92,6 +106,11 @@ const AuthenticatedRankingRoute = AuthenticatedRankingRouteImport.update({
   path: '/ranking',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRelatoriosRoute = AuthenticatedRelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedTarefasRoute = AuthenticatedTarefasRouteImport.update({
   id: '/tarefas',
   path: '/tarefas',
@@ -114,6 +133,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/configuracoes': typeof AuthenticatedConfiguracoesRoute
+  '/conquistas': typeof AuthenticatedConquistasRoute
   '/extrato': typeof AuthenticatedExtratoRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
@@ -121,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/painel': typeof AuthenticatedPainelRoute
   '/premios': typeof AuthenticatedPremiosRoute
   '/ranking': typeof AuthenticatedRankingRoute
+  '/relatorios': typeof AuthenticatedRelatoriosRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
@@ -130,6 +152,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/configuracoes': typeof AuthenticatedConfiguracoesRoute
+  '/conquistas': typeof AuthenticatedConquistasRoute
   '/extrato': typeof AuthenticatedExtratoRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
@@ -137,6 +161,7 @@ export interface FileRoutesByTo {
   '/painel': typeof AuthenticatedPainelRoute
   '/premios': typeof AuthenticatedPremiosRoute
   '/ranking': typeof AuthenticatedRankingRoute
+  '/relatorios': typeof AuthenticatedRelatoriosRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
@@ -149,6 +174,8 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
+  '/_authenticated/conquistas': typeof AuthenticatedConquistasRoute
   '/_authenticated/extrato': typeof AuthenticatedExtratoRoute
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
@@ -156,6 +183,7 @@ export interface FileRoutesById {
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/premios': typeof AuthenticatedPremiosRoute
   '/_authenticated/ranking': typeof AuthenticatedRankingRoute
+  '/_authenticated/relatorios': typeof AuthenticatedRelatoriosRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
@@ -168,6 +196,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/definir-senha'
     | '/sem-acesso'
+    | '/configuracoes'
+    | '/conquistas'
     | '/extrato'
     | '/funcionarios'
     | '/gestao'
@@ -175,6 +205,7 @@ export interface FileRouteTypes {
     | '/painel'
     | '/premios'
     | '/ranking'
+    | '/relatorios'
     | '/tarefas'
     | '/tv/$codigo'
     | '/admin/'
@@ -184,6 +215,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/definir-senha'
     | '/sem-acesso'
+    | '/configuracoes'
+    | '/conquistas'
     | '/extrato'
     | '/funcionarios'
     | '/gestao'
@@ -191,6 +224,7 @@ export interface FileRouteTypes {
     | '/painel'
     | '/premios'
     | '/ranking'
+    | '/relatorios'
     | '/tarefas'
     | '/tv/$codigo'
     | '/admin'
@@ -202,6 +236,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/definir-senha'
     | '/sem-acesso'
+    | '/_authenticated/configuracoes'
+    | '/_authenticated/conquistas'
     | '/_authenticated/extrato'
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
@@ -209,6 +245,7 @@ export interface FileRouteTypes {
     | '/_authenticated/painel'
     | '/_authenticated/premios'
     | '/_authenticated/ranking'
+    | '/_authenticated/relatorios'
     | '/_authenticated/tarefas'
     | '/tv/$codigo'
     | '/admin/'
@@ -268,6 +305,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SemAcessoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/configuracoes': {
+      id: '/_authenticated/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/configuracoes'
+      preLoaderRoute: typeof AuthenticatedConfiguracoesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/conquistas': {
+      id: '/_authenticated/conquistas'
+      path: '/conquistas'
+      fullPath: '/conquistas'
+      preLoaderRoute: typeof AuthenticatedConquistasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/extrato': {
       id: '/_authenticated/extrato'
       path: '/extrato'
@@ -317,6 +368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRankingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/relatorios': {
+      id: '/_authenticated/relatorios'
+      path: '/relatorios'
+      fullPath: '/relatorios'
+      preLoaderRoute: typeof AuthenticatedRelatoriosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/tarefas': {
       id: '/_authenticated/tarefas'
       path: '/tarefas'
@@ -342,6 +400,8 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
+  AuthenticatedConquistasRoute: typeof AuthenticatedConquistasRoute
   AuthenticatedExtratoRoute: typeof AuthenticatedExtratoRoute
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
@@ -349,10 +409,13 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedPremiosRoute: typeof AuthenticatedPremiosRoute
   AuthenticatedRankingRoute: typeof AuthenticatedRankingRoute
+  AuthenticatedRelatoriosRoute: typeof AuthenticatedRelatoriosRoute
   AuthenticatedTarefasRoute: typeof AuthenticatedTarefasRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
+  AuthenticatedConquistasRoute: AuthenticatedConquistasRoute,
   AuthenticatedExtratoRoute: AuthenticatedExtratoRoute,
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
@@ -360,6 +423,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedPremiosRoute: AuthenticatedPremiosRoute,
   AuthenticatedRankingRoute: AuthenticatedRankingRoute,
+  AuthenticatedRelatoriosRoute: AuthenticatedRelatoriosRoute,
   AuthenticatedTarefasRoute: AuthenticatedTarefasRoute,
 }
 

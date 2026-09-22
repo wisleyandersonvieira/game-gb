@@ -3,6 +3,6 @@
 SET ROLE authenticated;
 SET teste.uid = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 BEGIN;
-SELECT public.registrar_resgate(900, 900, NULL, true);
+SELECT public.registrar_troca(900, 900, NULL, true);
 SELECT pg_sleep(2);
 COMMIT;

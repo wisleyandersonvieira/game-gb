@@ -1,0 +1,382 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Nav } from "@/components/Nav";
+import { useLojaAtiva } from "@/lojas/loja-ativa";
+
+export const Route = createFileRoute("/_authenticated/relatorios")({
+  component: Relatorios,
+});
+
+const campo =
+  "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
+
+const hoje = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+
+/** AAAA-MM-DD → dd/mm/aaaa, sem passar por fuso. */
+function dia(iso: string) {
+  const [a, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}
+
+function dataHora(iso: string) {
+  return new Date(iso).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+type Pendencia = { dia: string; titulo: string; pontos: number; loja: string | null };
+type Entrega = {
+  titulo: string;
+  loja: string | null;
+  enviadaem: string;
+  status: string;
+  pontos: number;
+  motivo: string | null;
+};
+type TarefaAnalise = { titulo: string; aprovadas: number; recusadas: number; estornadas: number; pendentes: number };
+
+const COR_STATUS: Record<string, string> = {
+  Pendente: "border-accent text-accent",
+  Aprovada: "border-primary text-primary",
+  Recusada: "border-destructive text-destructive",
+  Estornada: "border-destructive text-destructive",
+};
+
+function Relatorios() {
+  const [aba, setAba] = useState<"pessoa" | "tarefa">("pessoa");
+  const [de, setDe] = useState(`${hoje().slice(0, 7)}-01`);
+  const [ate, setAte] = useState(hoje());
+
+  return (
+    <main className="mx-auto min-h-screen max-w-5xl space-y-6 p-6">
+      <Nav />
+      <h1 className="text-3xl font-bold">Relatórios</h1>
+
+      <div className="flex gap-2 border-b border-border">
+        {(
+          [
+            ["pessoa", "Por pessoa"],
+            ["tarefa", "Por tarefa"],
+          ] as const
+        ).map(([id, rotulo]) => (
+          <button
+            key={id}
+            onClick={() => setAba(id)}
+            className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
+              aba === id ? "bg-card text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {rotulo}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          De
+          <input type="date" value={de} onChange={(e) => setDe(e.target.value)} className={campo} />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          até
+          <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className={campo} />
+        </label>
+      </div>
+
+      {aba === "pessoa" ? <PorPessoa de={de} ate={ate} /> : <PorTarefa de={de} ate={ate} />}
+    </main>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Por pessoa: saldo, conquistas, o que ficou por fazer, o que entregou */
+/* ------------------------------------------------------------------ */
+
+function PorPessoa({ de, ate }: { de: string; ate: string }) {
+  const [funcionarioid, setFuncionarioid] = useState<number | "">("");
+
+  const pessoas = useQuery({
+    queryKey: ["pessoas-relatorio"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("funcionarios")
+        .select("funcionarioid, nomecompleto, ativo, saldopontos, pontostotal")
+        .order("nomecompleto");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const escolhida = funcionarioid !== "";
+
+  const pendencias = useQuery({
+    queryKey: ["pendencias", funcionarioid, de, ate],
+    enabled: escolhida && de !== "" && ate !== "",
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("pendencias_da_pessoa", {
+        p_funcionarioid: Number(funcionarioid),
+        p_de: de,
+        p_ate: ate,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as Pendencia[];
+    },
+  });
+
+  const historico = useQuery({
+    queryKey: ["historico-pessoa", funcionarioid],
+    enabled: escolhida,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("historico_da_pessoa", {
+        p_funcionarioid: Number(funcionarioid),
+        p_limite: 100,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as Entrega[];
+    },
+  });
+
+  const conquistas = useQuery({
+    queryKey: ["conquistas-pessoa", funcionarioid],
+    enabled: escolhida,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("conquistasfuncionarios")
+        .select("conquistafuncionarioid, conquistaid, dataconquista, pontosbonus")
+        .eq("funcionarioid", Number(funcionarioid))
+        .order("dataconquista", { ascending: false });
+      if (error) throw error;
+      const { data: nomes } = await supabase.from("conquistas").select("conquistaid, nome, icone");
+      const porId = new Map((nomes ?? []).map((c) => [c.conquistaid, c]));
+      return (data ?? []).map((l) => ({
+        ...l,
+        nome: porId.get(l.conquistaid)?.nome ?? "—",
+        icone: porId.get(l.conquistaid)?.icone ?? "🏆",
+      }));
+    },
+  });
+
+  const pessoa = (pessoas.data ?? []).find((p) => p.funcionarioid === funcionarioid);
+  const listaPendencias = pendencias.data ?? [];
+  const pontosPerdidos = listaPendencias.reduce((s, p) => s + p.pontos, 0);
+
+  return (
+    <div className="space-y-6">
+      <select
+        value={funcionarioid}
+        onChange={(e) => setFuncionarioid(e.target.value === "" ? "" : Number(e.target.value))}
+        className={campo}
+      >
+        <option value="">Escolha a pessoa...</option>
+        {(pessoas.data ?? []).map((p) => (
+          <option key={p.funcionarioid} value={p.funcionarioid}>
+            {p.nomecompleto}
+            {p.ativo ? "" : " (inativo)"}
+          </option>
+        ))}
+      </select>
+
+      {pessoa && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Cartao titulo="Saldo atual" valor={`${pessoa.saldopontos} pontos`} />
+            <Cartao titulo="Pontos ganhos desde o início" valor={`${pessoa.pontostotal ?? 0} pontos`} />
+            <Cartao titulo="Conquistas" valor={String(conquistas.data?.length ?? "—")} />
+          </div>
+
+          {(conquistas.data ?? []).length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-lg font-semibold">Conquistas</h2>
+              <div className="flex flex-wrap gap-2">
+                {(conquistas.data ?? []).map((c) => (
+                  <span
+                    key={c.conquistafuncionarioid}
+                    className="rounded-lg border border-border bg-card px-3 py-2 text-sm"
+                    title={`Ganhou em ${c.dataconquista ? dataHora(c.dataconquista) : "—"}`}
+                  >
+                    {c.icone} {c.nome}
+                    {c.pontosbonus > 0 && <span className="ml-1 text-accent">+{c.pontosbonus}</span>}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold">O que ficou por fazer</h2>
+            <p className="text-xs text-muted-foreground">
+              Tarefas que caíam no dia e não foram entregues, até ontem. Folga, domingo de folga e afastamento não
+              entram. No máximo 3 meses por vez.
+            </p>
+            {pendencias.isLoading && <p className="text-muted-foreground">Carregando...</p>}
+            {pendencias.isError && <p className="text-sm text-destructive">{(pendencias.error as Error).message}</p>}
+            {listaPendencias.length > 0 && (
+              <p className="text-sm">
+                <strong>{listaPendencias.length}</strong> {listaPendencias.length === 1 ? "tarefa" : "tarefas"} sem
+                entrega, <strong className="text-destructive">{pontosPerdidos}</strong> pontos que deixaram de entrar.
+              </p>
+            )}
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <table className="w-full text-sm">
+                <thead className="bg-card text-left text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Dia</th>
+                    <th className="px-3 py-2 font-medium">Tarefa</th>
+                    <th className="px-3 py-2 font-medium">Loja</th>
+                    <th className="px-3 py-2 text-right font-medium">Pontos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listaPendencias.map((p, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{dia(p.dia)}</td>
+                      <td className="px-3 py-2">{p.titulo}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{p.loja ?? "—"}</td>
+                      <td className="px-3 py-2 text-right">{p.pontos}</td>
+                    </tr>
+                  ))}
+                  {!pendencias.isLoading && listaPendencias.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                        Nada ficou para trás neste período. 👏
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold">Últimas entregas</h2>
+            {historico.isLoading && <p className="text-muted-foreground">Carregando...</p>}
+            {historico.isError && <p className="text-sm text-destructive">{(historico.error as Error).message}</p>}
+            <div className="space-y-2">
+              {(historico.data ?? []).map((e, i) => (
+                <div
+                  key={i}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {e.titulo}
+                      <span className={`ml-2 rounded-md border px-2 py-0.5 text-xs font-normal ${COR_STATUS[e.status] ?? ""}`}>
+                        {e.status}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {dataHora(e.enviadaem)}
+                      {e.loja && ` · ${e.loja}`}
+                      {e.motivo && ` · ${e.motivo}`}
+                    </p>
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {e.status === "Aprovada" ? <strong className="text-accent">+{e.pontos}</strong> : "—"}
+                  </span>
+                </div>
+              ))}
+              {!historico.isLoading && (historico.data ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground">Nenhuma entrega ainda.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Cartao({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <p className="text-xs text-muted-foreground">{titulo}</p>
+      <p className="text-2xl font-bold">{valor}</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Por tarefa: onde mais se recusa ou estorna                          */
+/* ------------------------------------------------------------------ */
+
+function PorTarefa({ de, ate }: { de: string; ate: string }) {
+  const { lojaAtiva, loja } = useLojaAtiva();
+  const [alcance, setAlcance] = useState<"loja" | "conta">("conta");
+  const lojaFiltro = alcance === "loja" ? lojaAtiva : null;
+
+  const analise = useQuery({
+    queryKey: ["analise-tarefas", de, ate, lojaFiltro],
+    enabled: de !== "" && ate !== "",
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("analise_de_tarefas", {
+        p_de: de,
+        p_ate: ate,
+        p_lojaid: lojaFiltro ?? undefined,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as TarefaAnalise[];
+    },
+  });
+
+  const botao = (ativo: boolean) =>
+    `rounded-lg px-3 py-1.5 text-sm ${ativo ? "bg-card font-semibold text-foreground" : "text-muted-foreground"}`;
+  const lista = analise.data ?? [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex w-fit gap-1 rounded-lg border border-border p-1">
+        <button className={botao(alcance === "conta")} onClick={() => setAlcance("conta")}>
+          Todas as lojas
+        </button>
+        <button className={botao(alcance === "loja")} onClick={() => setAlcance("loja")} disabled={lojaAtiva === null}>
+          {loja?.nome ?? "Loja"}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Entregas por tarefa, pelo dia do envio. As tarefas com mais recusas e estornos aparecem primeiro: pode ser sinal de
+        tarefa mal explicada.
+      </p>
+
+      {analise.isLoading && <p className="text-muted-foreground">Carregando...</p>}
+      {analise.isError && <p className="text-sm text-destructive">{(analise.error as Error).message}</p>}
+
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-card text-left text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">Tarefa</th>
+              <th className="px-3 py-2 text-right font-medium">Aprovadas</th>
+              <th className="px-3 py-2 text-right font-medium">Recusadas</th>
+              <th className="px-3 py-2 text-right font-medium">Estornadas</th>
+              <th className="px-3 py-2 text-right font-medium">Aguardando</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((t) => (
+              <tr key={t.titulo} className="border-t border-border">
+                <td className="px-3 py-2">{t.titulo}</td>
+                <td className="px-3 py-2 text-right text-primary">{t.aprovadas}</td>
+                <td className={`px-3 py-2 text-right ${t.recusadas > 0 ? "text-destructive" : ""}`}>{t.recusadas}</td>
+                <td className={`px-3 py-2 text-right ${t.estornadas > 0 ? "text-destructive" : ""}`}>{t.estornadas}</td>
+                <td className="px-3 py-2 text-right text-muted-foreground">{t.pendentes}</td>
+              </tr>
+            ))}
+            {!analise.isLoading && lista.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                  Nenhuma entrega neste período.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

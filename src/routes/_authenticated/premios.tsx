@@ -163,7 +163,7 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
       if (funcionarioid === "") throw new Error("Escolha a pessoa.");
       if (tipo === "premio") {
         if (produtoid === "") throw new Error("Escolha o prêmio.");
-        const { error } = await supabase.rpc("registrar_resgate", {
+        const { error } = await supabase.rpc("registrar_troca", {
           p_funcionarioid: funcionarioid,
           p_produtoid: produtoid,
           p_lojaid: lojaAtiva ?? undefined,
@@ -173,7 +173,7 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
         return `${premio?.nome} resgatado por ${pessoa?.nomecompleto}.`;
       }
       if (!(valorNumero > 0)) throw new Error("Informe o valor em reais.");
-      const { error } = await supabase.rpc("registrar_abate_comanda", {
+      const { error } = await supabase.rpc("registrar_troca_por_valor", {
         p_funcionarioid: funcionarioid,
         p_valorreais: valorNumero,
         p_lojaid: lojaAtiva ?? undefined,
@@ -307,36 +307,39 @@ const COR_STATUS: Record<string, string> = {
   Estornado: "border-destructive text-destructive",
 };
 
+type Troca = {
+  trocaid: number;
+  status: string;
+  pontos: number;
+  datasolicitacao: string;
+  motivocancelamento: string | null;
+  motivoestorno: string | null;
+  pessoa: string;
+  premio: string;
+  loja: string | null;
+};
+
 function ListaDeResgates() {
   const qc = useQueryClient();
   const [aviso, setAviso] = useState<{ texto: string; grave: boolean } | null>(null);
 
+  // Vem por funcao (listar_trocas), para nenhum endereco do navegador levar
+  // palavras que bloqueadores de anuncio costumam barrar.
   const resgates = useQuery({
     queryKey: ["resgates"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("resgates")
-        .select(
-          "resgateid, funcionarioid, produtoid, lojaid, pontosgastos, valorreais, status, datasolicitacao, dataentrega, motivocancelamento, motivoestorno",
-        )
-        .order("datasolicitacao", { ascending: false })
-        .limit(100);
+      const { data, error } = await supabase.rpc("listar_trocas", { p_limite: 100 });
       if (error) throw error;
-      const linhas = data ?? [];
-      if (linhas.length === 0) return [];
-      const [{ data: pessoas }, { data: produtos }, { data: lojas }] = await Promise.all([
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto"),
-        supabase.from("produtosloja").select("produtoid, nome"),
-        supabase.from("lojas").select("lojaid, nome"),
-      ]);
-      const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
-      const produto = new Map((produtos ?? []).map((p) => [p.produtoid, p.nome]));
-      const loja = new Map((lojas ?? []).map((l) => [l.lojaid, l.nome]));
-      return linhas.map((r) => ({
-        ...r,
-        pessoa: nome.get(r.funcionarioid) ?? "—",
-        premio: r.valorreais !== null ? `Abate na comanda de ${reais(Number(r.valorreais))}` : (produto.get(r.produtoid) ?? "—"),
-        loja: r.lojaid ? (loja.get(r.lojaid) ?? null) : null,
+      return ((data ?? []) as unknown as Troca[]).map((t) => ({
+        resgateid: t.trocaid,
+        status: t.status,
+        pontosgastos: t.pontos,
+        datasolicitacao: t.datasolicitacao,
+        motivocancelamento: t.motivocancelamento,
+        motivoestorno: t.motivoestorno,
+        pessoa: t.pessoa,
+        premio: t.premio,
+        loja: t.loja,
       }));
     },
   });
@@ -345,10 +348,10 @@ function ListaDeResgates() {
     mutationFn: async (p: { tipo: "entregar" | "cancelar" | "estornar"; resgateid: number; motivo?: string }) => {
       const { error } =
         p.tipo === "entregar"
-          ? await supabase.rpc("entregar_resgate", { p_resgateid: p.resgateid })
+          ? await supabase.rpc("concluir_troca", { p_resgateid: p.resgateid })
           : p.tipo === "cancelar"
-            ? await supabase.rpc("cancelar_resgate", { p_resgateid: p.resgateid, p_motivo: p.motivo ?? "" })
-            : await supabase.rpc("estornar_resgate", { p_resgateid: p.resgateid, p_motivo: p.motivo ?? "" });
+            ? await supabase.rpc("cancelar_troca", { p_resgateid: p.resgateid, p_motivo: p.motivo ?? "" })
+            : await supabase.rpc("estornar_troca", { p_resgateid: p.resgateid, p_motivo: p.motivo ?? "" });
       if (error) throw error;
       return p.tipo;
     },

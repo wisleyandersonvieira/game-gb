@@ -56,7 +56,7 @@ Administrador geral (Wisley)
 | 1.4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
 | 1.5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
 | 1.6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
-| 1.7 | Gestão de pessoas e gamificação | 🟨 Em andamento — parte 1 (prêmios, resgates, comanda e extrato) pronta |
+| 1.7 | Gestão de pessoas e gamificação | 🟨 Em andamento — partes 1 (prêmios, resgates, comanda, extrato) e 2 (conquistas, nota do mês, relatórios, configurações) prontas; falta a parte 3 |
 | 1.8 | Metas de faturamento | ⬜ |
 | 1.9 | Agenda (agendamentos) | ⬜ |
 | 1.10 | RH (onboarding, comunicados, documentos) | ⬜ |
@@ -210,10 +210,12 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 - [ ] Pendências e justificativas ("Não aplicável"). *(parte 3)*
 - [x] Loja de recompensas e resgates. *(parte 1, 21/09/2026)*
 - [x] Abate na comanda (pontos usados como dinheiro). *(parte 1)*
-- [ ] Conquistas. O gancho já existe: `apos_aprovar_entrega()` é chamada em toda aprovação e hoje não faz nada. Critérios do sistema antigo: total de tarefas aprovadas, tarefas aprovadas no período, sequência de dias com tarefa, sequência de feedback diário, total de comunicados lidos.
+- [x] Conquistas. *(parte 2, 22/09/2026)* Critérios de feedback, comunicados e grupos ficam cadastráveis e passam a valer quando esses módulos existirem.
 - [ ] Feedbacks, canal confidencial e solicitações internas (visão do gestor). *(parte 3)*
-- [ ] Relatórios e histórico por funcionário.
-- [ ] **Nota híbrida do ranking mensal**, como no sistema antigo: 50% confiabilidade (pontos ganhos em tarefas normais ÷ pontos possíveis no mês, travado em 100%, sem os bônus) + 50% esforço (pontos totais ÷ os de quem mais fez, em cima de 100). Exige calcular os "pontos possíveis" varrendo o mês dia a dia. Até lá, o ranking mensal é a soma simples.
+- [x] Relatórios e histórico por funcionário. *(parte 2)*
+- [x] **Nota híbrida do ranking mensal**: 50% confiabilidade (pontos das tarefas atribuídas ÷ pontos possíveis no mês, travado em 100%, sem os bônus) + 50% esforço (pontos aprovados ÷ os de quem mais fez, em cima de 100). *(parte 2)*
+- [x] **Configurações** da conta (taxa ponto→real, bônus, horários das rotinas), com validação, só o master altera e histórico de mudanças. *(parte 2)*
+- [x] Nomes neutros nos endereços da loja de prêmios (bloqueadores de anúncio). *(parte 2)*
 - [x] Extrato de pontos (substitui `pontos_analyzer.py`). *(parte 1)*
 
 **Feito em 21/09/2026 (parte 1).**
@@ -224,6 +226,18 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 - **Situações**: Pendente → Entregue; Pendente → Cancelado; Entregue → Estornado. Cancelar e estornar exigem motivo, devolvem pontos e estoque, e só funcionam uma vez.
 - **Abate na comanda** (`registrar_abate_comanda`): prêmio do sistema escondido do catálogo. O banco lê a taxa da conta, arredonda para cima e confere o saldo na hora. O resgate guarda R$, pontos e a taxa usada: mudar a taxa só vale para comandas novas.
 - **Extrato** (item novo no menu): pessoa e período, saldo inicial, saldo final, saldo atual (em pontos e em R$ pela taxa atual), e cada movimento com data, loja, pontos e saldo após. Mostra se o saldo bate com a soma dos movimentos.
+
+**Feito em 22/09/2026 (parte 2).**
+
+- **Conquistas** (item novo no menu): criar com ícone, nome, regra, quantidade e bônus. Regras que já valem: total de tarefas aprovadas, "N tarefas em X dias" (o X é escolhido na conquista) e dias seguidos com tarefa entregue. Na criação o gestor escolhe **"vale para o histórico"** (quem já cumpre ganha na hora) ou **"só a partir de hoje"**; essa escolha e a regra não mudam depois (o banco recusa). Nome, ícone, descrição, bônus e ativa/desativada podem mudar. Aba "Quem ganhou".
+- **Uma vez por pessoa, garantido pelo banco** (`UNIQUE (funcionarioid, conquistaid)`), inclusive com duas aprovações ao mesmo tempo — provado com duas conexões simultâneas. O bônus entra pelo livro de pontos (movimento "bônus" com a conquista ligada) e aparece no extrato. Estornar uma tarefa não tira a conquista. Só contam tarefas atribuídas e aprovadas, pelo dia do envio.
+- **Sequência de dias**: folga semanal, domingo de folga e afastamento (férias/atestado) não quebram a sequência nem contam como dia feito. É a mesma função (`dia_de_trabalho`) da nota do mês.
+- **Nota do mês** (Ranking → "Nota do mês", com escolha do mês): confiabilidade pelo dia do envio, contando só os dias em que a tarefa cai (mesma regra de `tarefa_cai_no_dia`), dentro da vigência, e só dias de trabalho da pessoa. Mês corrente vai até ontem. Bônus de conquista não entra.
+- **Relatórios** (item novo no menu): *Por pessoa* — saldo, total ganho, conquistas, o que ficou por fazer (dia a dia, até ontem, sem folga/afastamento, no máximo 3 meses por vez) e as últimas entregas. *Por tarefa* — aprovadas, recusadas, estornadas e aguardando, com as mais recusadas no topo.
+- **Configurações** (item novo no menu): taxa do ponto, bônus e horários das rotinas. O banco valida (taxa maior que zero e no máximo R$ 10; bônus inteiro de 0 a 10.000; horário HH:MM), só o master altera (gerente e conta suspensa não), e cada mudança fica registrada com quem, quando, valor antigo e novo. Os IDs das tarefas do sistema não aparecem nem se alteram pela tela. Ninguém altera a tabela direto: só pela função `alterar_configuracao`.
+- **Nomes neutros**: `registrar_troca`, `registrar_troca_por_valor`, `concluir_troca`, `cancelar_troca`, `estornar_troca` e `listar_trocas` (a lista não lê mais a tabela `resgates` pelo endereço). Todos os 66 endereços do app (funções, tabelas, arquivos, páginas, login) passaram por 8 listas de bloqueio (EasyList, EasyPrivacy, EasyList Português, uBlock, uBlock Privacy, AdGuard Base, AdGuard Tracking, Fanboy Annoyance — 528 mil regras): **nenhum é barrado**.
+
+⚠️ **Deadlock evitado nesta parte.** A primeira versão da concessão de conquistas travava a pessoa com `FOR UPDATE` depois de gravar no livro; duas aprovações simultâneas da mesma pessoa se travavam mutuamente e uma falhava. O teste de concorrência pegou; a trava virou `FOR NO KEY UPDATE`, o mesmo nível do gatilho do saldo.
 
 **Problemas do sistema antigo corrigidos:** o estoque nunca era conferido nem descontado; recusar um resgate duas vezes devolvia os pontos em dobro; a comanda não conferia o saldo no banco (podia deixá-lo negativo) e arredondava a favor do funcionário; o extrato não batia com o saldo (resgates pendentes e ajustes manuais ficavam de fora).
 
@@ -387,6 +401,10 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 21/09/2026 | Etapa 1.8 fica só com o faturamento; meta de lucro e histórico foram para a 2.3. |
 | 21/09/2026 | A foto de nota fiscal pelo bot e a tarefa "guardar mercadoria" foram da Etapa 1.13 para a 2.2 (Estoque). |
 | 21/09/2026 | Rodízio de telas no Modo TV: painel, meta (1.8) e agenda (1.9). O mapa entra só na 2.1. (Substitui a decisão anterior que incluía o mapa.) |
+| 22/09/2026 | Nota do mês **pula** folga semanal, domingo de folga e afastamento; confiabilidade pelo **dia do envio**; no mês corrente conta **até ontem**. |
+| 22/09/2026 | Conquistas: estorno **não retira** a conquista; bônus de conquista **não conta** no ranking; "N tarefas em X dias" com X escolhido na conquista; "vale para o histórico" ou "só a partir de hoje" escolhido na criação, sem mudar depois (a regra também não muda). Sequência de dias não quebra em folga, domingo de folga nem afastamento (mesma regra da nota do mês). |
+| 22/09/2026 | Configurações só mudam pela função `alterar_configuracao` (só o master), com validação no banco e histórico (`configuracoeshistorico`). Taxa > 0 e ≤ R$ 10. |
+| 22/09/2026 | Funções da loja de prêmios com **nomes neutros** (`*_troca`), por causa de bloqueadores de anúncio. Endereços novos passam pelas listas de bloqueio antes de entrar. |
 | 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
 
 ## Referência — arquivo do sistema antigo → etapa

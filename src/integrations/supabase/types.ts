@@ -196,6 +196,51 @@ export type Database = {
           },
         ]
       }
+      configuracoeshistorico: {
+        Row: {
+          alteradoem: string
+          alteradopor: string | null
+          chave: string
+          contaid: number
+          historicoid: number
+          valoranterior: string | null
+          valornovo: string | null
+        }
+        Insert: {
+          alteradoem?: string
+          alteradopor?: string | null
+          chave: string
+          contaid?: number
+          historicoid?: number
+          valoranterior?: string | null
+          valornovo?: string | null
+        }
+        Update: {
+          alteradoem?: string
+          alteradopor?: string | null
+          chave?: string
+          contaid?: number
+          historicoid?: number
+          valoranterior?: string | null
+          valornovo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "configuracoeshistorico_config_fk"
+            columns: ["contaid", "chave"]
+            isOneToOne: false
+            referencedRelation: "configuracoes"
+            referencedColumns: ["contaid", "chave"]
+          },
+          {
+            foreignKeyName: "configuracoeshistorico_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       configuracoessetores: {
         Row: {
           contaid: number
@@ -224,8 +269,12 @@ export type Database = {
       }
       conquistas: {
         Row: {
+          ativa: boolean
           conquistaid: number
           contaid: number
+          contardesde: string | null
+          criadoem: string
+          criteriodias: number | null
           criteriotipo: string
           criteriovalor: number
           descricao: string
@@ -234,8 +283,12 @@ export type Database = {
           pontosbonus: number | null
         }
         Insert: {
+          ativa?: boolean
           conquistaid?: number
           contaid?: number
+          contardesde?: string | null
+          criadoem?: string
+          criteriodias?: number | null
           criteriotipo: string
           criteriovalor: number
           descricao: string
@@ -244,8 +297,12 @@ export type Database = {
           pontosbonus?: number | null
         }
         Update: {
+          ativa?: boolean
           conquistaid?: number
           contaid?: number
+          contardesde?: string | null
+          criadoem?: string
+          criteriodias?: number | null
           criteriotipo?: string
           criteriovalor?: number
           descricao?: string
@@ -270,6 +327,7 @@ export type Database = {
           contaid: number
           dataconquista: string | null
           funcionarioid: number
+          pontosbonus: number
         }
         Insert: {
           conquistafuncionarioid?: number
@@ -277,6 +335,7 @@ export type Database = {
           contaid?: number
           dataconquista?: string | null
           funcionarioid: number
+          pontosbonus?: number
         }
         Update: {
           conquistafuncionarioid?: number
@@ -284,6 +343,7 @@ export type Database = {
           contaid?: number
           dataconquista?: string | null
           funcionarioid?: number
+          pontosbonus?: number
         }
         Relationships: [
           {
@@ -1774,6 +1834,7 @@ export type Database = {
       }
       movimentospontos: {
         Row: {
+          conquistafuncionarioid: number | null
           contaid: number
           criadopor: string | null
           datamovimento: string
@@ -1787,6 +1848,7 @@ export type Database = {
           tipo: string
         }
         Insert: {
+          conquistafuncionarioid?: number | null
           contaid?: number
           criadopor?: string | null
           datamovimento?: string
@@ -1800,6 +1862,7 @@ export type Database = {
           tipo: string
         }
         Update: {
+          conquistafuncionarioid?: number | null
           contaid?: number
           criadopor?: string | null
           datamovimento?: string
@@ -1813,6 +1876,13 @@ export type Database = {
           tipo?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "movimentospontos_conquista_fk"
+            columns: ["contaid", "conquistafuncionarioid"]
+            isOneToOne: false
+            referencedRelation: "conquistasfuncionarios"
+            referencedColumns: ["contaid", "conquistafuncionarioid"]
+          },
           {
             foreignKeyName: "movimentospontos_contaid_fkey"
             columns: ["contaid"]
@@ -2658,6 +2728,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      alterar_configuracao: {
+        Args: { p_chave: string; p_valor: string }
+        Returns: string
+      }
+      analise_de_tarefas: {
+        Args: { p_ate: string; p_de: string; p_lojaid?: number }
+        Returns: Json
+      }
       apos_aprovar_entrega: {
         Args: { p_entregaid: number }
         Returns: undefined
@@ -2675,10 +2753,15 @@ export type Database = {
           titulo: string
         }[]
       }
-      cancelar_resgate: {
+      avaliar_conquistas: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: number
+      }
+      cancelar_troca: {
         Args: { p_motivo: string; p_resgateid: number }
         Returns: undefined
       }
+      concluir_troca: { Args: { p_resgateid: number }; Returns: undefined }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
@@ -2691,10 +2774,24 @@ export type Database = {
         Args: { p_contaid: number }
         Returns: undefined
       }
+      criar_conquista: {
+        Args: {
+          p_bonus: number
+          p_descricao: string
+          p_dias: number
+          p_icone: string
+          p_nome: string
+          p_retroativa: boolean
+          p_tipo: string
+          p_valor: number
+        }
+        Returns: Json
+      }
       criar_link_tv: {
         Args: { p_lojaid: number; p_nome: string }
         Returns: string
       }
+      criterio_disponivel: { Args: { p_tipo: string }; Returns: boolean }
       desfazer_resgate: {
         Args: {
           p_de: string
@@ -2704,14 +2801,23 @@ export type Database = {
         }
         Returns: undefined
       }
+      dia_de_trabalho: {
+        Args: {
+          p_dia: string
+          p_diadefolga: number
+          p_domingofolga: number
+          p_fimafast: string
+          p_inicioafast: string
+        }
+        Returns: boolean
+      }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
       eh_admin_geral: { Args: never; Returns: boolean }
-      entregar_resgate: { Args: { p_resgateid: number }; Returns: undefined }
       estornar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: number
       }
-      estornar_resgate: {
+      estornar_troca: {
         Args: { p_motivo: string; p_resgateid: number }
         Returns: undefined
       }
@@ -2719,6 +2825,11 @@ export type Database = {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }
         Returns: Json
       }
+      historico_da_pessoa: {
+        Args: { p_funcionarioid: number; p_limite?: number }
+        Returns: Json
+      }
+      listar_trocas: { Args: { p_limite?: number }; Returns: Json }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
       minha_taxa: { Args: never; Returns: number }
@@ -2729,6 +2840,31 @@ export type Database = {
       nome_curto: { Args: { p_nome: string }; Returns: string }
       painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
       painel_da_tv: { Args: { p_codigo: string }; Returns: Json }
+      pendencias_da_pessoa: {
+        Args: { p_ate: string; p_de: string; p_funcionarioid: number }
+        Returns: Json
+      }
+      pessoa_cumpre_conquista: {
+        Args: {
+          p_conquistaid: number
+          p_contaid: number
+          p_funcionarioid: number
+        }
+        Returns: boolean
+      }
+      ranking_mensal: {
+        Args: { p_ano: number; p_lojaid?: number; p_mes: number }
+        Returns: {
+          confiabilidade: number
+          esforco: number
+          funcionarioid: number
+          nomecompleto: string
+          nota: number
+          pontosganhos: number
+          pontospossiveis: number
+          pontosregulares: number
+        }[]
+      }
       ranking_pontos: {
         Args: { p_ate: string; p_de: string; p_lojaid?: number }
         Returns: {
@@ -2743,15 +2879,6 @@ export type Database = {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined
       }
-      registrar_abate_comanda: {
-        Args: {
-          p_entregar?: boolean
-          p_funcionarioid: number
-          p_lojaid?: number
-          p_valorreais: number
-        }
-        Returns: number
-      }
       registrar_entrega: {
         Args: {
           p_aprovar?: boolean
@@ -2761,12 +2888,21 @@ export type Database = {
         }
         Returns: number
       }
-      registrar_resgate: {
+      registrar_troca: {
         Args: {
           p_entregar?: boolean
           p_funcionarioid: number
           p_lojaid?: number
           p_produtoid: number
+        }
+        Returns: number
+      }
+      registrar_troca_por_valor: {
+        Args: {
+          p_entregar?: boolean
+          p_funcionarioid: number
+          p_lojaid?: number
+          p_valorreais: number
         }
         Returns: number
       }

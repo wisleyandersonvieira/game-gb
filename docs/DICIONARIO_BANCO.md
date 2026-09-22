@@ -21,6 +21,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `configuracoesescala` | **loja** | configid |  |
 | `configuracoessetores` | conta | setor |  |
 | `configuracoes` | conta | (contaid, chave) |  |
+| `configuracoeshistorico` | conta | historicoid | configuracoes |
 | `conquistas` | conta | conquistaid |  |
 | `conquistasfuncionarios` | conta | conquistafuncionarioid | conquistas, funcionarios |
 | `contagensestoque` | **loja** | contagemid | funcionarios |
@@ -106,8 +107,14 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | descricao | varchar(255) | obrigatório |
 | icone | varchar(10) |  |
 | criteriotipo | varchar(50) | obrigatório |
-| criteriovalor | integer | obrigatório |
-| pontosbonus | integer | padrão 0 |
+| criteriovalor | integer | obrigatório; maior que zero |
+| pontosbonus | integer | padrão 0; 0 ou mais |
+| criteriodias | integer | o X de "N tarefas em X dias" (1 a 366); só nesse tipo, e obrigatório nele |
+| ativa | boolean | obrigatório; padrão true |
+| contardesde | timestamptz | vazio = vale para o histórico; preenchido = "só a partir de hoje" (só contam tarefas enviadas depois) |
+| criadoem | timestamptz | obrigatório; padrão now() |
+
+`criteriotipo`: `total_tarefas_aprovadas`, `tarefas_aprovadas_periodo`, `sequencia_dias_tarefas` (já valem) e `sequencia_feedback_diario`, `total_comunicados_cientes`, `tarefas_grupo_competitivo_aceitas` (cadastráveis; valem quando os módulos existirem). **A regra (tipo, valor, dias, contardesde) não muda depois de criada** — o banco recusa, até para o dono. Criação só por `criar_conquista`; o navegador altera só nome, descrição, ícone, bônus e ativa.
 
 ## conquistasfuncionarios
 | Coluna | Tipo | Obs |
@@ -116,6 +123,9 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
 | conquistaid | integer | obrigatório; → conquistas.conquistaid |
 | dataconquista | timestamptz | padrão now() |
+| pontosbonus | integer | obrigatório; padrão 0. O bônus pago na concessão (mudar o bônus da conquista depois não muda este) |
+
+**Única (funcionarioid, conquistaid)**: cada pessoa ganha cada conquista uma vez só. O navegador só lê; quem grava é o banco, na aprovação.
 
 ## contagensestoque
 | Coluna | Tipo | Obs |
@@ -532,6 +542,21 @@ Tabela **nova**, não existia no SQL Server. Guarda os parâmetros que ficavam f
 | descricao | text |  |
 | atualizadoem | timestamptz | obrigatório; padrão now() |
 
+O navegador só lê; altera por `alterar_configuracao` (só o master; os `TAREFA_*` não). Um gatilho valida todo caminho: taxa numérica > 0 e ≤ 10; `PONTOS_BONUS_*` inteiro de 0 a 10.000; `MAX_DIFERENCA_FOTO_SEGUNDOS` inteiro até 86.400; `HORARIO_*` no formato HH:MM.
+
+## configuracoeshistorico
+Tabela **nova** (Etapa 1.7, parte 2). Cada mudança de configuração, gravada por gatilho. O navegador só lê.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| historicoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| chave | varchar(100) | obrigatório; → configuracoes (junto com contaid) |
+| valoranterior | text |  |
+| valornovo | text |  |
+| alteradopor | uuid | → auth.users |
+| alteradoem | timestamptz | obrigatório; padrão now() |
+
 ---
 
 # Tabelas do modelo multi-empresa
@@ -614,7 +639,7 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `estornar_entrega(entrega, motivo)` | Só estorna Aprovada. Motivo obrigatório. Desconta os pontos; o saldo pode ficar negativo. Devolve o saldo novo |
 | `atribuicoes_para_entregar(loja)` | O que pode ser entregue hoje naquela loja |
 | `ranking_pontos(de, ate, loja)` | Soma dos pontos aprovados no período, pela data da aprovação. Sem loja = geral da conta |
-| `apos_aprovar_entrega(entrega)` | Gancho das conquistas (Fase 7). Hoje não faz nada |
+| `apos_aprovar_entrega(entrega)` | **Interna.** Chamada em toda aprovação; avalia as conquistas da pessoa |
 | `nome_curto(nome)` | "Ana Souza" → "Ana S.". Usado na TV |
 | `montar_painel(conta, loja, tv)` | **Interna, ninguém chama direto.** Monta o painel de uma loja (barra, pódio, colunas), sem ids, fotos, observações, telefone ou CPF |
 | `painel_da_loja(loja)` | O painel para quem está logado; só lojas da própria conta |
@@ -624,14 +649,25 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `painel_da_tv(codigo)` | **A única função que um visitante sem login pode chamar.** Devolve o painel da loja do link com nomes curtos, ou `{"disponivel": false}` |
 | `reais(valor)` | "R$ 15,50" |
 | `minha_taxa()` | A taxa ponto → real da conta de quem está logado |
-| `registrar_resgate(pessoa, premio, loja, entregar)` | Resgate atômico: trava pessoa e prêmio, confere saldo e estoque, desconta os dois e grava o movimento |
-| `registrar_abate_comanda(pessoa, valor, loja, entregar)` | Comanda: pontos = valor ÷ taxa, arredondado para cima; guarda R$, pontos e taxa |
-| `entregar_resgate(resgate)` | Pendente → Entregue |
-| `cancelar_resgate(resgate, motivo)` | Pendente → Cancelado; devolve pontos e estoque |
-| `estornar_resgate(resgate, motivo)` | Entregue → Estornado; devolve pontos e estoque |
+| `registrar_troca(pessoa, premio, loja, entregar)` | Resgate atômico: trava pessoa e prêmio, confere saldo e estoque, desconta os dois e grava o movimento. (Era `registrar_resgate`; nomes neutros por causa de bloqueadores de anúncio) |
+| `registrar_troca_por_valor(pessoa, valor, loja, entregar)` | Abate na comanda: pontos = valor ÷ taxa, arredondado para cima; guarda R$, pontos e taxa |
+| `concluir_troca(resgate)` | Pendente → Entregue |
+| `cancelar_troca(resgate, motivo)` | Pendente → Cancelado; devolve pontos e estoque |
+| `estornar_troca(resgate, motivo)` | Entregue → Estornado; devolve pontos e estoque |
+| `listar_trocas(limite)` | Os resgates recentes com pessoa, prêmio e loja (a tela não lê a tabela `resgates` pelo endereço) |
 | `extrato_pontos(pessoa, de, ate)` | Saldo inicial, final, atual, taxa e os movimentos do período com saldo após cada um |
+| `dia_de_trabalho(folga, domingofolga, inicioafast, fimafast, dia)` | Falso na folga semanal, no N-ésimo domingo de folga e no afastamento. Usada pela nota do mês, pela sequência de dias e pelas pendências |
+| `ranking_mensal(ano, mes, loja)` | Nota do mês: pontos ganhos, regulares, possíveis, confiabilidade, esforço e nota (50/50). Mês corrente até ontem |
+| `criar_conquista(nome, descricao, icone, tipo, valor, dias, bonus, retroativa)` | Cria a conquista; se retroativa, concede na hora a quem já cumpre |
+| `criterio_disponivel(tipo)` | Se a regra já é avaliada (os módulos de feedback, comunicados e grupos ainda não existem) |
+| `pessoa_cumpre_conquista(conta, pessoa, conquista)` | **Interna.** Confere a regra |
+| `avaliar_conquistas(conta, pessoa)` | **Interna.** Concede o que a pessoa passou a cumprir, uma vez só, e grava o bônus no livro |
+| `pendencias_da_pessoa(pessoa, de, ate)` | Tarefas que caíam e não foram entregues, dia a dia, até ontem (no máximo 3 meses) |
+| `historico_da_pessoa(pessoa, limite)` | Últimas entregas da pessoa em qualquer situação |
+| `analise_de_tarefas(de, ate, loja)` | Por tarefa: aprovadas, recusadas, estornadas e pendentes |
+| `alterar_configuracao(chave, valor)` | Só o master; recusa os `TAREFA_*`; o gatilho valida e registra no histórico |
 
-Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos` e `atribuicoes_para_entregar` rodam com a RLS de quem chamou.
+Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos`, `atribuicoes_para_entregar`, `ranking_mensal`, `listar_trocas` e os relatórios rodam com a RLS de quem chamou.
 
 ## linkstv
 Links de TV de cada loja (**nível loja**). O código em si nunca é guardado.
@@ -665,6 +701,7 @@ O livro de pontos (**nível conta**; a loja é opcional). Cada entrada e saída 
 | descricao | text | obrigatório. O que aparece no extrato |
 | entregaid | integer | → entregas (junto com contaid), quando veio de uma entrega |
 | resgateid | integer | → resgates (junto com contaid), quando veio de um resgate |
+| conquistafuncionarioid | integer | → conquistasfuncionarios (junto com contaid), quando é bônus de conquista |
 | criadopor | uuid | → auth.users |
 
 O navegador só lê. Os tipos `aprovacao`, `estorno_entrega` e `bonus` também somam em `pontostotal`.
