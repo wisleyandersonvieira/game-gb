@@ -60,6 +60,7 @@ Administrador geral (Wisley)
 | 1.8 | Metas de faturamento | ✅ Concluída (22/09/2026) |
 | 1.9 | Agenda (agendamentos) | ✅ Concluída (22/09/2026) |
 | 1.10 | RH (onboarding, comunicados, documentos) | ✅ Concluída (22/09/2026) |
+| 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ⬜ Proposta em aprovação |
 | 1.11 | Rotinas automáticas sem Telegram | ⬜ |
 | 1.12 | **Comercialização:** publicação online + Stripe | ⬜ |
 | 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | ⬜ |
@@ -319,6 +320,15 @@ Só o faturamento. Meta de lucro, histórico de lucro e relatórios financeiros 
 - **Bloqueadores:** 137 endereços do app, 8 listas, nenhum barrado.
 
 **Problemas do sistema antigo corrigidos:** ciência com dois toques podia pagar duas vezes; o mesmo comunicado podia ir duas vezes para a mesma pessoa; excluir comunicado apagava as provas de leitura; o ID da tarefa de leitura era fixo no código; o download de documento pessoal **não pedia login** e aceitava trocar o número no endereço; um segundo arquivo do mesmo mês sobrescrevia o primeiro; o onboarding guardava cônjuge, filhos e CPFs sem necessidade.
+
+### Etapa 1.10B — Reestruturação visual
+Só visual e navegação: não muda regras de negócio, tabelas nem permissões (exceto funções de leitura do dashboard). O Modo TV não muda.
+- [ ] Tema claro por padrão, com botão para o escuro; preferência salva por usuário (vale no próximo login). Cores centralizadas em variáveis de tema: azul principal; verde = sucesso/meta batida; amarelo = pendente; vermelho = erro/recusa/estorno; bom contraste nos dois temas.
+- [ ] Layout único para todas as telas do master (e o mesmo estilo no painel do admin geral): menu lateral fixo e agrupado (Início, Operação, Pessoas, Metas, Agenda, RH, Configurações), item atual destacado, opção de recolher; topo com nome da conta, seletor de loja, botão de tema e usuário/sair.
+- [ ] Celular (a partir de 360 px): barra inferior fixa (Início, Quadro, Equipe, Metas, Mais); tabelas viram cartões; formulários em uma coluna; botões com área de toque grande; nada de rolagem para o lado.
+- [ ] Componentes reutilizáveis: cartão de número, tabela/cartão responsivo, cabeçalho de página, botões, estados vazio/carregando/erro.
+- [ ] Tela **Início** (aberta após o login): cartões de números, gráficos e listas curtas da loja ativa, com opção "Todas as lojas". Números vindos de funções do banco (bloqueadas por padrão, no teste de isolamento). Nada de CPF, telefone ou documentos pessoais.
+- [ ] Prints das telas principais em 1280 px e 375 px, nos dois temas.
 
 ### Etapa 1.11 — Rotinas automáticas sem Telegram
 Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**, cada uma com seus horários em `configuracoes`:
