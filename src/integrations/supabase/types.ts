@@ -326,6 +326,57 @@ export type Database = {
           },
         ]
       }
+      codigosacesso: {
+        Row: {
+          canceladoem: string | null
+          codigohash: string
+          codigoid: number
+          contaid: number
+          criadoem: string
+          criadopor: string | null
+          expiraem: string
+          funcionarioid: number
+          usadoem: string | null
+        }
+        Insert: {
+          canceladoem?: string | null
+          codigohash: string
+          codigoid?: number
+          contaid: number
+          criadoem?: string
+          criadopor?: string | null
+          expiraem: string
+          funcionarioid: number
+          usadoem?: string | null
+        }
+        Update: {
+          canceladoem?: string | null
+          codigohash?: string
+          codigoid?: number
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          expiraem?: string
+          funcionarioid?: number
+          usadoem?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "codigosacesso_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "codigosacesso_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+        ]
+      }
       configuracoes: {
         Row: {
           atualizadoem: string
@@ -1708,11 +1759,10 @@ export type Database = {
           isgestor: boolean | null
           nomecompleto: string
           pinhash: string | null
-          pinprovisorio: boolean
           pontostotal: number | null
           primeiroacessoem: string | null
           saldopontos: number
-          senhaprovisoria: boolean
+          senhahashapp: string | null
           setor: string | null
           telefonewhatsapp: string | null
         }
@@ -1734,11 +1784,10 @@ export type Database = {
           isgestor?: boolean | null
           nomecompleto: string
           pinhash?: string | null
-          pinprovisorio?: boolean
           pontostotal?: number | null
           primeiroacessoem?: string | null
           saldopontos?: number
-          senhaprovisoria?: boolean
+          senhahashapp?: string | null
           setor?: string | null
           telefonewhatsapp?: string | null
         }
@@ -1760,11 +1809,10 @@ export type Database = {
           isgestor?: boolean | null
           nomecompleto?: string
           pinhash?: string | null
-          pinprovisorio?: boolean
           pontostotal?: number | null
           primeiroacessoem?: string | null
           saldopontos?: number
-          senhaprovisoria?: boolean
+          senhahashapp?: string | null
           setor?: string | null
           telefonewhatsapp?: string | null
         }
@@ -4824,7 +4872,7 @@ export type Database = {
         Returns: Json
       }
       conta_do_bot: { Args: never; Returns: number }
-      conta_por_codigo: { Args: { p_codigo: string }; Returns: Json }
+      conta_do_codigo: { Args: { p_codigo: string }; Returns: number }
       cpf_valido: { Args: { p_cpf: string }; Returns: boolean }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
@@ -4881,6 +4929,16 @@ export type Database = {
         }
         Returns: number
       }
+      criar_codigo_acesso: {
+        Args: {
+          p_codigohash: string
+          p_contaid: number
+          p_dias: number
+          p_funcionarioid: number
+          p_quem: string
+        }
+        Returns: undefined
+      }
       criar_conquista: {
         Args: {
           p_bonus: number
@@ -4931,6 +4989,10 @@ export type Database = {
       }
       definir_rotina_mensagem: {
         Args: { p_ativo: boolean; p_lojaid: number; p_rotina: string }
+        Returns: undefined
+      }
+      definir_senha_app: {
+        Args: { p_contaid: number; p_funcionarioid: number; p_hash: string }
         Returns: undefined
       }
       desfazer_ciencia: {
@@ -5512,15 +5574,20 @@ export type Database = {
         }
         Returns: number
       }
+      senha_app_de: {
+        Args: { p_contaid: number; p_cpf: string }
+        Returns: Json
+      }
       situacao_dos_acessos: {
         Args: never
         Returns: {
+          codigoexpiraem: string
+          codigopendente: boolean
           funcionarioid: number
           nuncaentrou: boolean
-          pinprovisorio: boolean
           redefinidoem: string
           sempin: boolean
-          senhaprovisoria: boolean
+          semsenha: boolean
           temacesso: boolean
         }[]
       }
@@ -5560,9 +5627,17 @@ export type Database = {
         Args: { p_denunciaid: number; p_resposta?: string; p_status: string }
         Returns: undefined
       }
+      trocar_cpf: {
+        Args: { p_contaid: number; p_cpf: string; p_funcionarioid: number }
+        Returns: undefined
+      }
       trocar_responsavel_agendamento: {
         Args: { p_agendamentoid: number; p_funcionarioid: number }
         Returns: undefined
+      }
+      usar_codigo_acesso: {
+        Args: { p_codigohash: string; p_contaid: number; p_cpf: string }
+        Returns: Json
       }
       usar_mensagens: {
         Args: {

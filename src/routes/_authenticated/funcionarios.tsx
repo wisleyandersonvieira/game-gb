@@ -2,7 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { criarAcessoColaborador, redefinirAcessoColaborador } from "@/servidor/acesso";
+import {
+  criarAcessoColaborador,
+  desativarColaborador,
+  gerarCodigoDeAcesso,
+  redefinirAcessoColaborador,
+  trocarCpfDoColaborador,
+} from "@/servidor/acesso";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pontos } from "@/ui/Pontos";
 import { IconeTelegram, JanelaConvite, useDesligarTelegram, useVinculosTelegram } from "@/telegram/Telegram";
@@ -35,19 +41,20 @@ const FORM_VAZIO = {
 };
 
 type SituacaoAcesso = {
-  temacesso: boolean; nuncaentrou: boolean; senhaprovisoria: boolean;
-  pinprovisorio: boolean; sempin: boolean; redefinidoem: string | null;
+  temacesso: boolean; nuncaentrou: boolean; semsenha: boolean; sempin: boolean;
+  codigopendente: boolean; codigoexpiraem: string | null; redefinidoem: string | null;
 };
 
 /** Frase curta sobre o acesso ao aplicativo, para o gestor saber o que falta. */
 function situacaoDoAcesso(a: SituacaoAcesso | undefined) {
   if (!a?.temacesso) return "Sem acesso ao app";
-  if (a.nuncaentrou) return "Acesso criado, nunca entrou";
-  const pendentes = [
-    a.senhaprovisoria ? "senha provisória" : null,
-    a.sempin ? "PIN pendente" : a.pinprovisorio ? "PIN provisório" : null,
-  ].filter(Boolean);
-  return pendentes.length > 0 ? `Acesso ativo · ${pendentes.join(" e ")}` : "Acesso ativo";
+  if (a.semsenha) {
+    return a.codigopendente
+      ? "Aguardando o primeiro acesso (código entregue)"
+      : "Sem senha e sem código: gere um código novo";
+  }
+  if (a.sempin) return "Entrou, falta escolher o PIN do tablet";
+  return "Acesso ativo";
 }
 
 /** CPF só aparece inteiro para quem edita; na lista fica escondido. */
@@ -208,42 +215,53 @@ function Funcionarios() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc("situacao_dos_acessos");
       if (error) throw error;
-      const mapa = new Map<number, {
-        temacesso: boolean; nuncaentrou: boolean; senhaprovisoria: boolean;
-        pinprovisorio: boolean; sempin: boolean; redefinidoem: string | null;
-      }>();
+      const mapa = new Map<number, SituacaoAcesso>();
       for (const a of data ?? []) mapa.set(a.funcionarioid, a);
       return mapa;
     },
   });
 
-  const [senhaInicial, setSenhaInicial] = useState<{ nome: string; inicial: string; pinPendente: boolean } | null>(null);
+  const [codigoNovo, setCodigoNovo] = useState<{ nome: string; codigo: string; dias: number } | null>(null);
+
+  function aoGerarCodigo(r: { nome: string; codigo: string; dias: number }) {
+    setCodigoNovo(r);
+    qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
+    qc.invalidateQueries({ queryKey: ["equipe"] });
+  }
 
   const criarAcesso = useMutation({
     mutationFn: (funcionarioid: number) => criarAcessoColaborador({ data: { funcionarioid } }),
-    onSuccess: (r) => {
-      setSenhaInicial(r);
-      qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
-    },
+    onSuccess: aoGerarCodigo,
   });
 
   const redefinirAcesso = useMutation({
     mutationFn: (funcionarioid: number) => redefinirAcessoColaborador({ data: { funcionarioid } }),
-    onSuccess: (r) => {
-      setSenhaInicial(r);
+    onSuccess: aoGerarCodigo,
+  });
+
+  const novoCodigo = useMutation({
+    mutationFn: (funcionarioid: number) => gerarCodigoDeAcesso({ data: { funcionarioid } }),
+    onSuccess: aoGerarCodigo,
+  });
+
+  const trocarCpf = useMutation({
+    mutationFn: ({ funcionarioid, cpf }: { funcionarioid: number; cpf: string }) =>
+      trocarCpfDoColaborador({ data: { funcionarioid, cpf } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["equipe"] });
       qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
     },
   });
 
+  // Desativar passa pelo servidor: além de marcar no cadastro, ele derruba o
+  // login da pessoa no mesmo movimento (o banco apaga senha e PIN).
   const alternarAtivo = useMutation({
-    mutationFn: async ({ funcionarioid, ativo }: { funcionarioid: number; ativo: boolean }) => {
-      const { error } = await supabase
-        .from("funcionarios")
-        .update({ ativo })
-        .eq("funcionarioid", funcionarioid);
-      if (error) throw error;
+    mutationFn: ({ funcionarioid, ativo }: { funcionarioid: number; ativo: boolean }) =>
+      desativarColaborador({ data: { funcionarioid, ativo } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["equipe"] });
+      qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["equipe"] }),
   });
 
   if (carregandoLojas) {
@@ -610,10 +628,19 @@ function Funcionarios() {
                   Criar acesso
                 </button>
               )}
-              {acessos.data?.get(f.funcionarioid)?.temacesso && (
+              {acessos.data?.get(f.funcionarioid)?.temacesso && acessos.data?.get(f.funcionarioid)?.semsenha && (
+                <button
+                  onClick={() => novoCodigo.mutate(f.funcionarioid)}
+                  disabled={novoCodigo.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm"
+                >
+                  Gerar código novo
+                </button>
+              )}
+              {acessos.data?.get(f.funcionarioid)?.temacesso && !acessos.data?.get(f.funcionarioid)?.semsenha && (
                 <button
                   onClick={() => {
-                    if (confirm(`Redefinir o acesso de ${f.nomecompleto}? A senha e o PIN voltam para os 6 primeiros números do CPF, e quem estiver usando é desconectado.`)) {
+                    if (confirm(`Redefinir o acesso de ${f.nomecompleto}? A senha e o PIN são apagados, quem estiver usando é desconectado e sai um código novo para ela entrar.`)) {
                       redefinirAcesso.mutate(f.funcionarioid);
                     }
                   }}
@@ -621,6 +648,18 @@ function Funcionarios() {
                   className="rounded-md border border-border px-3 py-1 text-sm"
                 >
                   Redefinir acesso
+                </button>
+              )}
+              {acessos.data?.get(f.funcionarioid)?.temacesso && (
+                <button
+                  onClick={() => {
+                    const novo = prompt(`Novo CPF de ${f.nomecompleto} (o login muda junto):`, f.cpf ?? "");
+                    if (novo) trocarCpf.mutate({ funcionarioid: f.funcionarioid, cpf: novo });
+                  }}
+                  disabled={trocarCpf.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm"
+                >
+                  Trocar CPF
                 </button>
               )}
               <button

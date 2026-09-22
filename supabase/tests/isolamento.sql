@@ -4678,16 +4678,18 @@ END $$;
 
 -- Os acessos entram pelo servidor (contexto confiavel), nunca pelo navegador.
 DO $$
-DECLARE v_compin boolean;
 BEGIN
   PERFORM public.criar_acesso_loja(1, 10, '10100000-0000-0000-0000-000000000001',
                                    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-  v_compin := public.criar_acesso_colaborador(1, 8100, '10100000-0000-0000-0000-000000000002',
-                                              repeat('a', 64), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-  PERFORM public.exigir(v_compin, 'o colaborador comeca com o PIN inicial');
-  v_compin := public.criar_acesso_colaborador(2, 8200, '10100000-0000-0000-0000-000000000003',
-                                              repeat('b', 64), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
-  PERFORM public.exigir(v_compin, 'o colaborador da conta B tambem');
+  PERFORM public.criar_acesso_colaborador(1, 8100, '10100000-0000-0000-0000-000000000002',
+                                          NULL, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_acesso_colaborador(2, 8200, '10100000-0000-0000-0000-000000000003',
+                                          NULL, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  -- NAO existe senha nem PIN padrao: quem acabou de ganhar acesso nao tem nada
+  -- que alguem possa adivinhar.
+  PERFORM public.exigir((SELECT senhahashapp IS NULL AND pinhash IS NULL
+                           FROM public.funcionarios WHERE funcionarioid = 8100),
+                        'acesso novo nasce SEM senha e SEM PIN');
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -4719,9 +4721,11 @@ BEGIN
   PERFORM public.exigir(public.meu_acesso()->>'loja' = 'Loja A1', 'meu_acesso traz a loja certa');
 
   -- E nao consegue ligar o contexto das visoes por conta propria.
+  -- Erro TEM de ser de permissao: com "WHEN others" o teste passaria ate se a
+  -- funcao nao existisse.
   BEGIN
     PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet'); deu_erro := false;
-  EXCEPTION WHEN others THEN deu_erro := true; END;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'quem esta logado nao liga o contexto das visoes');
 END $$;
 
@@ -4738,8 +4742,8 @@ BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.contasusuarios) = 0, 'o colaborador nao le a lista de acessos');
   PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'colaborador', 'meu_acesso diz que e colaborador');
   PERFORM public.exigir(public.meu_acesso()->>'nome' = 'Carla Colaboradora', 'meu_acesso traz o nome da pessoa');
-  PERFORM public.exigir((public.meu_acesso()->>'senhaprovisoria')::boolean, 'a senha comeca provisoria');
-  PERFORM public.exigir((public.meu_acesso()->>'pinprovisorio')::boolean, 'o PIN comeca provisorio');
+  PERFORM public.exigir((public.meu_acesso()->>'semsenha')::boolean, 'comeca sem senha (so entra com o codigo)');
+  PERFORM public.exigir((public.meu_acesso()->>'sempin')::boolean, 'comeca sem PIN');
 END $$;
 
 -- O colaborador da conta B nao enxerga nada da conta A (nem o contrario).
@@ -4759,8 +4763,8 @@ DO $$
 DECLARE deu_erro boolean; v_msg text;
 BEGIN
   PERFORM public.definir_pin(1, 8100, repeat('1', 64), false);
-  PERFORM public.exigir(NOT (SELECT pinprovisorio FROM public.funcionarios WHERE funcionarioid = 8100),
-                        'quem escolhe o PIN deixa de estar provisorio');
+  PERFORM public.exigir((SELECT pinhash FROM public.funcionarios WHERE funcionarioid = 8100) = repeat('1', 64),
+                        'a pessoa escolhe o proprio PIN');
 
   BEGIN
     PERFORM public.definir_pin(1, 8101, repeat('1', 64), false); deu_erro := false;
@@ -4773,12 +4777,13 @@ BEGIN
   PERFORM public.exigir((SELECT pinhash FROM public.funcionarios WHERE funcionarioid = 8200) = repeat('1', 64),
                         'o mesmo PIN pode existir em outra conta');
 
-  -- Redefinir acesso: volta tudo para provisorio, com registro.
-  PERFORM public.redefinir_acesso(1, 8100, repeat('9', 64), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-  PERFORM public.exigir((SELECT senhaprovisoria AND pinprovisorio AND acessoredefinidoem IS NOT NULL
+  -- Redefinir acesso: apaga senha e PIN, com registro de quem e quando.
+  PERFORM public.definir_senha_app(1, 8100, 'pbkdf2$1$aa$bb');
+  PERFORM public.redefinir_acesso(1, 8100, NULL, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir((SELECT senhahashapp IS NULL AND pinhash IS NULL AND acessoredefinidoem IS NOT NULL
                            AND acessoredefinidopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
                            FROM public.funcionarios WHERE funcionarioid = 8100),
-                        'redefinir acesso volta senha e PIN ao provisorio, com registro de quem e quando');
+                        'redefinir acesso apaga senha e PIN, com registro de quem e quando');
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -4796,8 +4801,11 @@ BEGIN
   PERFORM public.registrar_tentativa(1, 'pin', repeat('c', 64), 'tablet-1', false);
   PERFORM public.exigir(public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-1'),
                         'cinco erros seguidos travam a janela');
-  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-2'),
-                        'a trava e do tablet que errou, nao da loja inteira');
+  -- Outra pessoa (outra chave), no mesmo tablet ou em outro: nao esta travada.
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', repeat('z', 64), 'tablet-2'),
+                        'a trava nao pega a loja inteira: outra pessoa continua entrando');
+  PERFORM public.exigir(public.acesso_travado(1, 'pin', repeat('c', 64), 'tablet-2'),
+                        'quem errou 5 vezes fica travado mesmo trocando de tablet');
   PERFORM public.exigir(NOT public.acesso_travado(2, 'pin', repeat('c', 64), 'tablet-1'),
                         'a trava de uma conta nao trava outra');
 
@@ -4928,6 +4936,183 @@ BEGIN
   PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.tentativasacesso', 'SELECT')
                         AND NOT has_table_privilege('anon', 'public.tentativasacesso', 'SELECT'),
                         'ninguem le o registro de tentativas pelo navegador');
+END $$;
+
+
+-- ===========================================================================
+-- 43. Consertos da revisao adversarial (Etapa 1.12, parte A)
+-- ===========================================================================
+RESET ROLE;
+DO $$ BEGIN RAISE NOTICE '43. consertos da revisao adversarial'; END $$;
+
+-- ---------------------------------------------------------------------------
+-- Nao existe senha padrao: so se entra com o codigo de primeiro acesso
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_pessoa jsonb; v_usou jsonb; deu_erro boolean;
+BEGIN
+  -- Quem tem acesso mas nunca entrou nao tem senha nenhuma guardada.
+  v_pessoa := public.senha_app_de(1, '52998224725');
+  PERFORM public.exigir(v_pessoa IS NOT NULL, 'o servidor acha a pessoa pelo CPF');
+  PERFORM public.exigir(v_pessoa->>'senhahash' IS NULL,
+                        'sem senha guardada: nao existe senha padrao para adivinhar');
+
+  -- Codigo de primeiro acesso: uso unico.
+  PERFORM public.criar_codigo_acesso(1, 8100, repeat('c', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  v_usou := public.usar_codigo_acesso(1, '52998224725', repeat('c', 64));
+  PERFORM public.exigir((v_usou->>'funcionarioid')::integer = 8100, 'o codigo certo abre a porta uma vez');
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '52998224725', repeat('c', 64)) IS NULL,
+                        'o mesmo codigo nao serve duas vezes');
+
+  -- Codigo de outra pessoa, CPF trocado: nao serve.
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('d', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '52998224725', repeat('d', 64)) IS NULL,
+                        'codigo de um nao entra no CPF de outro');
+
+  -- Codigo vencido nao serve.
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('e', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  UPDATE public.codigosacesso SET expiraem = now() - interval '1 day' WHERE codigohash = repeat('e', 64);
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '11144477735', repeat('e', 64)) IS NULL,
+                        'codigo vencido nao serve');
+
+  -- Gerar outro cancela o anterior.
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('f', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('g', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '11144477735', repeat('f', 64)) IS NULL,
+                        'gerar um codigo novo cancela o anterior');
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '11144477735', repeat('g', 64)) IS NOT NULL,
+                        'o codigo novo funciona');
+
+  -- Codigo da conta A nao vale na conta B.
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('h', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir(public.usar_codigo_acesso(2, '11144477735', repeat('h', 64)) IS NULL,
+                        'codigo de uma conta nao vale em outra');
+
+  -- Ninguem gera codigo para pessoa de outra conta.
+  BEGIN
+    PERFORM public.criar_codigo_acesso(2, 8101, repeat('i', 64), 7, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+    deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao se gera codigo para pessoa de outra conta');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- O adivinhador de PIN morre no teto do dia
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE v_chave text := repeat('p', 64);
+BEGIN
+  DELETE FROM public.tentativasacesso;
+  -- 30 tentativas no dia (mesmo espacadas, mesmo bem-sucedidas) travam.
+  FOR i IN 1..29 LOOP
+    PERFORM public.registrar_tentativa(1, 'pin', v_chave, 'origem-' || i, true);
+  END LOOP;
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', v_chave, 'origem-nova'),
+                        'ate 29 tentativas de PIN no dia ainda passam');
+  PERFORM public.registrar_tentativa(1, 'pin', v_chave, 'origem-30', true);
+  PERFORM public.exigir(public.acesso_travado(1, 'pin', v_chave, 'origem-nova'),
+                        'o teto do dia trava o adivinhador de PIN, mesmo trocando de origem');
+  PERFORM public.exigir(NOT public.acesso_travado(1, 'pin', repeat('q', 64), 'origem-nova'),
+                        'o teto e por pessoa: nao trava o resto da equipe');
+  DELETE FROM public.tentativasacesso;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Desativar apaga senha e PIN e cancela o codigo pendente
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  PERFORM public.definir_senha_app(1, 8100, 'pbkdf2$1$aa$bb');
+  PERFORM public.definir_pin(1, 8100, repeat('7', 64), false);
+  PERFORM public.criar_codigo_acesso(1, 8100, repeat('j', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
+  UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 8100;
+
+  PERFORM public.exigir((SELECT senhahashapp IS NULL AND pinhash IS NULL
+                           FROM public.funcionarios WHERE funcionarioid = 8100),
+                        'desativar a pessoa apaga a senha e o PIN dela');
+  PERFORM public.exigir((SELECT canceladoem IS NOT NULL FROM public.codigosacesso WHERE codigohash = repeat('j', 64)),
+                        'desativar a pessoa cancela o codigo pendente');
+  PERFORM public.exigir(public.senha_app_de(1, '52998224725') IS NULL,
+                        'pessoa desativada nao e achada pelo login');
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '52998224725', repeat('j', 64)) IS NULL,
+                        'codigo de pessoa desativada nao serve');
+
+  UPDATE public.funcionarios SET ativo = true WHERE funcionarioid = 8100;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Trocar o CPF de quem tem acesso so pelo caminho certo
+-- ---------------------------------------------------------------------------
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN
+    UPDATE public.funcionarios SET cpf = '39053344705' WHERE funcionarioid = 8100;
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao troca sozinho o CPF de quem ja entra no app');
+  PERFORM public.exigir((SELECT cpf FROM public.funcionarios WHERE funcionarioid = 8100) = '52998224725',
+                        'o CPF continua o mesmo depois da recusa');
+END $$;
+RESET ROLE;
+
+DO $$
+BEGIN
+  PERFORM public.trocar_cpf(1, 8100, '39053344705');
+  PERFORM public.exigir((SELECT cpf FROM public.funcionarios WHERE funcionarioid = 8100) = '39053344705',
+                        'pelo caminho certo (servidor), o CPF troca');
+  PERFORM public.trocar_cpf(1, 8100, '52998224725');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Nem o master le os segredos, e nada disso e do navegador
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE f text;
+BEGIN
+  PERFORM public.exigir(NOT has_column_privilege('authenticated', 'public.funcionarios', 'pinhash', 'SELECT'),
+                        'ninguem le a coluna do PIN pelo navegador, nem o master');
+  PERFORM public.exigir(NOT has_column_privilege('authenticated', 'public.funcionarios', 'senhahashapp', 'SELECT'),
+                        'ninguem le a coluna da senha pelo navegador, nem o master');
+  PERFORM public.exigir(has_column_privilege('authenticated', 'public.funcionarios', 'nomecompleto', 'SELECT'),
+                        'o resto da equipe continua visivel para o master');
+  PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.codigosacesso', 'SELECT')
+                        AND NOT has_table_privilege('anon', 'public.codigosacesso', 'SELECT'),
+                        'ninguem le os codigos de acesso pelo navegador');
+
+  FOREACH f IN ARRAY ARRAY[
+    'public.criar_codigo_acesso(integer, integer, text, integer, uuid)',
+    'public.usar_codigo_acesso(integer, text, text)',
+    'public.senha_app_de(integer, text)',
+    'public.definir_senha_app(integer, integer, text)',
+    'public.trocar_cpf(integer, integer, text)',
+    'public.conta_do_codigo(text)'
+  ] LOOP
+    PERFORM public.exigir(NOT has_function_privilege('authenticated', f, 'EXECUTE')
+                          AND NOT has_function_privilege('anon', f, 'EXECUTE'),
+                          'funcao do acesso nao liberada para o navegador: ' || f);
+  END LOOP;
+
+  -- O endereco publico que devolvia o nome da empresa saiu de vez.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                                     WHERE n.nspname = 'public' AND p.proname = 'conta_por_codigo'),
+                        'o endereco que dizia o nome da empresa nao existe mais');
+END $$;
+
+-- Codigo de empresa novo nao e adivinhavel a partir do nome.
+DO $$
+DECLARE v_codigo text;
+BEGIN
+  INSERT INTO public.contas (contaid, nome, email, limitelojas) OVERRIDING SYSTEM VALUE
+  VALUES (9001, 'Padaria Teste', 'padaria@exemplo.com', 1)
+  RETURNING codigo INTO v_codigo;
+  PERFORM public.exigir(v_codigo LIKE 'padariateste-%' AND length(v_codigo) > 15,
+                        'o codigo da empresa nova tem parte sorteada (nao da para enumerar clientes)');
+  DELETE FROM public.configuracoes WHERE contaid = 9001;
+  DELETE FROM public.contas WHERE contaid = 9001;
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

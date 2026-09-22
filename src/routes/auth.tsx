@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { destinoDoUsuario } from "@/integrations/supabase/destino";
-import { entrarColaborador, entrarMaster } from "@/servidor/acesso";
+import { entrarColaborador, entrarComCodigo, entrarMaster } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
 
 /** O codigo da empresa fica guardado no aparelho: quem le o QR uma vez nao digita mais. */
@@ -27,7 +27,8 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [aba, setAba] = useState<"colaborador" | "gestor">("colaborador");
+  const [aba, setAba] = useState<"colaborador" | "primeiro" | "gestor">("colaborador");
+  const [codigoAcesso, setCodigoAcesso] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
@@ -59,17 +60,19 @@ function AuthPage() {
     setAviso(null);
     setCarregando(true);
     try {
-      if (aba === "colaborador") {
+      if (aba === "gestor") {
+        await usarSessao(await entrarMaster({ data: { email, senha } }));
+      } else {
         const codigo = empresa.trim().toLowerCase();
-        const sessao = await entrarColaborador({ data: { codigo, cpf, senha, origem: "login" } });
+        const sessao =
+          aba === "primeiro"
+            ? await entrarComCodigo({ data: { codigo, cpf, codigoacesso: codigoAcesso } })
+            : await entrarColaborador({ data: { codigo, cpf, senha } });
         try {
           localStorage.setItem(CHAVE_EMPRESA, codigo);
         } catch {
           // Sem armazenamento: o codigo e digitado da proxima vez.
         }
-        await usarSessao(sessao);
-      } else {
-        const sessao = await entrarMaster({ data: { email, senha, origem: "login" } });
         await usarSessao(sessao);
       }
     } catch (erroEntrada) {
@@ -104,13 +107,15 @@ function AuthPage() {
           <h1 className="font-display text-2xl font-semibold">Entrar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {aba === "colaborador"
-              ? "Use o seu CPF e a sua senha. No primeiro acesso, a senha são os 6 primeiros números do seu CPF."
-              : "Acesso do dono da conta, por e-mail."}
+              ? "Use o seu CPF e a sua senha."
+              : aba === "primeiro"
+                ? "Primeira vez? Use o CPF e o código que o seu gestor entregou. Ele vale uma vez só."
+                : "Acesso do dono da conta, por e-mail."}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-sm">
-          {(["colaborador", "gestor"] as const).map((v) => (
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1 text-sm">
+          {(["colaborador", "primeiro", "gestor"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -120,12 +125,12 @@ function AuthPage() {
               }}
               className={`rounded-md px-3 py-1.5 font-medium ${aba === v ? "bg-card shadow-sm" : "text-muted-foreground"}`}
             >
-              {v === "colaborador" ? "Sou da equipe" : "Sou o gestor"}
+              {v === "colaborador" ? "Equipe" : v === "primeiro" ? "1º acesso" : "Gestor"}
             </button>
           ))}
         </div>
 
-        {aba === "colaborador" ? (
+        {aba !== "gestor" ? (
           <>
             <input
               required
@@ -156,15 +161,26 @@ function AuthPage() {
             className="w-full rounded-lg border border-border bg-background px-3 py-2"
           />
         )}
-        <input
-          type="password"
-          required
-          autoComplete="current-password"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-          placeholder="Senha"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2"
-        />
+        {aba === "primeiro" ? (
+          <input
+            required
+            value={codigoAcesso}
+            onChange={(e) => setCodigoAcesso(e.target.value.toUpperCase())}
+            placeholder="Código de primeiro acesso (ex.: ABCD-2345)"
+            autoCapitalize="characters"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono"
+          />
+        ) : (
+          <input
+            type="password"
+            required
+            autoComplete="current-password"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            placeholder="Senha"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2"
+          />
+        )}
 
         {erro && <p className="text-sm text-destructive">{erro}</p>}
         {aviso && <p className="text-sm text-muted-foreground">{aviso}</p>}
@@ -187,7 +203,7 @@ function AuthPage() {
           </button>
         ) : (
           <p className="text-center text-sm text-muted-foreground">
-            Esqueceu a senha ou o PIN? Peça ao seu gestor para redefinir.
+            Esqueceu a senha ou o PIN? Peça ao seu gestor um código novo.
           </p>
         )}
       </form>

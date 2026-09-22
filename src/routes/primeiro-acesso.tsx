@@ -65,8 +65,8 @@ function PrimeiroAcesso() {
     );
   }
 
-  const faltaSenha = a.senhaprovisoria;
-  const faltaPin = a.pinprovisorio;
+  const faltaSenha = a.semsenha;
+  const faltaPin = a.sempin;
   const faltaPolitica = a.politicapendente;
 
   if (!faltaSenha && !faltaPin && !faltaPolitica) {
@@ -89,7 +89,7 @@ function PrimeiroAcesso() {
       <Logo altura={36} />
       <h1 className="font-display text-2xl font-semibold">Bem-vindo, {a.nome}</h1>
       <p className="text-sm text-muted-foreground">
-        Três passos rápidos e você está dentro. Só você usa estes números: não empreste a ninguém.
+Três passos rápidos e você está dentro. A senha e o PIN são só seus: não empreste a ninguém.
       </p>
 
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -97,7 +97,7 @@ function PrimeiroAcesso() {
         {faltaSenha && (
           <>
             <p className="text-xs text-muted-foreground">
-              Pelo menos 6 caracteres. Não pode ser os primeiros números do seu CPF, nem sequência, nem número repetido.
+              Pelo menos 8 caracteres. Não pode ser um pedaço do seu CPF, nem sequência, nem número repetido.
             </p>
             <input type="password" className={campo} placeholder="Nova senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
             <input type="password" className={campo} placeholder="Repita a senha" value={senha2} onChange={(e) => setSenha2(e.target.value)} />

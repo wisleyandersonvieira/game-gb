@@ -386,7 +386,11 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
   - Desligado na hora: pessoa inativa, loja desativada ou conta cancelada perdem o acesso na chamada seguinte.
   - Política de uso versionada: cada versão é um comunicado (0 ponto), ciência no primeiro acesso, ciências antigas guardadas na versão antiga. Responsável em `CONTATO_PRIVACIDADE`.
   - Teste de isolamento: seção 42 com 60+ provas novas (905 verificações no total, todas passando).
-  - [ ] **Falta cadastrar no Lovable:** `STGAME_PIN_PEPPER` (chave longa e aleatória). Sem ela, criar acesso e PIN não funcionam.
+  - [x] **Revisão adversarial e consertos (23/09/2026)** — um segundo agente tentou quebrar a parte A. Não achou vazamento entre contas nem escalada de privilégio, mas achou duas falhas sérias na porta de entrada, já corrigidas:
+    - A trava de tentativas era contornável (dava para falar direto com o Supabase) e a senha inicial (6 dígitos do CPF) era adivinhável. Agora **a senha é conferida por nós** (PBKDF2 com sal, em `funcionarios.senhahashapp`) e a senha que o Supabase guarda é derivada da chave do servidor: ninguém a digita nem adivinha. **Não existe mais senha padrão**: o primeiro acesso é com **código sorteado** (uso único, 7 dias, cancelável, gerado pelo gestor).
+    - A tela de escolher o PIN era um adivinhador sem limite. Agora toda tentativa passa pela trava, com **teto de 30 por dia**.
+    - Médias: PIN e senha somem ao desativar a pessoa (e o login é derrubado); trocar o CPF passa pelo servidor e leva o login junto; a origem da tentativa é definida pelo servidor; nem o master lê as colunas de segredo; o endereço público que devolvia o nome de empresas foi apagado; código de empresa novo tem parte sorteada; foto presa no expurgo vira aviso para o master e erro no painel do admin.
+  - [ ] **Falta cadastrar no Lovable:** `STGAME_PIN_PEPPER` (chave longa e aleatória). Sem ela, criar acesso, entrar e escolher PIN não funcionam. **Trocar essa chave depois obriga a refazer os acessos de todo mundo.**
 - [ ] **B — Tablet** (grande): painel, fila do dia, PIN, aceitar, entregar com foto, mural com ciência, feedback, justificativa, solicitação, modo quiosque, pareamento e corte de tablet.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
 - [ ] **D — Extras** (pequeno): checklist de abertura/fechamento e aviso de tarefa parada.

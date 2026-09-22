@@ -8,8 +8,8 @@ export type Acesso = {
   loja?: string | null;
   nome?: string;
   somenteleitura?: boolean;
-  senhaprovisoria?: boolean;
-  pinprovisorio?: boolean;
+  semsenha?: boolean;
+  sempin?: boolean;
   politicapendente?: boolean;
 };
 
@@ -31,7 +31,7 @@ export function destinoDoAcesso(a: Acesso): Destino {
   if (a.tipo === "master" || a.tipo === "gerente") return "/inicio";
   if (a.tipo === "colaborador") {
     // Primeiro acesso: trocar a senha, escolher o PIN e dar ciencia na politica.
-    return a.senhaprovisoria || a.pinprovisorio || a.politicapendente ? "/primeiro-acesso" : "/meu-acesso";
+    return a.semsenha || a.sempin || a.politicapendente ? "/primeiro-acesso" : "/meu-acesso";
   }
   if (a.tipo === "loja") return "/meu-acesso";
   return "/sem-acesso";
