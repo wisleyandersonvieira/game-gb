@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Nav } from "@/components/Nav";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
+import { Justificar } from "@/pessoas/justificar";
 
 export const Route = createFileRoute("/_authenticated/relatorios")({
   component: Relatorios,
@@ -31,7 +32,14 @@ function dataHora(iso: string) {
   });
 }
 
-type Pendencia = { dia: string; titulo: string; pontos: number; loja: string | null };
+type Pendencia = {
+  dia: string;
+  atribuicaoid: number;
+  titulo: string;
+  pontos: number;
+  loja: string | null;
+  justificativa: string | null;
+};
 type Entrega = {
   titulo: string;
   loja: string | null;
@@ -40,7 +48,14 @@ type Entrega = {
   pontos: number;
   motivo: string | null;
 };
-type TarefaAnalise = { titulo: string; aprovadas: number; recusadas: number; estornadas: number; pendentes: number };
+type TarefaAnalise = {
+  titulo: string;
+  aprovadas: number;
+  recusadas: number;
+  estornadas: number;
+  pendentes: number;
+  naoseaplica: number;
+};
 
 const COR_STATUS: Record<string, string> = {
   Pendente: "border-accent text-accent",
@@ -100,6 +115,8 @@ function Relatorios() {
 
 function PorPessoa({ de, ate }: { de: string; ate: string }) {
   const [funcionarioid, setFuncionarioid] = useState<number | "">("");
+  const [justificando, setJustificando] = useState<string | null>(null);
+  const [recado, setRecado] = useState<string | null>(null);
 
   const pessoas = useQuery({
     queryKey: ["pessoas-relatorio"],
@@ -211,11 +228,13 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
           <section className="space-y-2">
             <h2 className="text-lg font-semibold">O que ficou por fazer</h2>
             <p className="text-xs text-muted-foreground">
-              Tarefas que caíam no dia e não foram entregues, até ontem. Folga, domingo de folga e afastamento não
-              entram. No máximo 3 meses por vez.
+              Tarefas que caíam no dia e não foram entregues, até ontem. Folga, domingo de folga, afastamento e
+              justificativa aceita não entram. No máximo 3 meses por vez. Se a tarefa não fazia sentido no dia, use
+              "Não se aplica".
             </p>
             {pendencias.isLoading && <p className="text-muted-foreground">Carregando...</p>}
             {pendencias.isError && <p className="text-sm text-destructive">{(pendencias.error as Error).message}</p>}
+            {recado && <p className="text-sm text-primary">{recado}</p>}
             {listaPendencias.length > 0 && (
               <p className="text-sm">
                 <strong>{listaPendencias.length}</strong> {listaPendencias.length === 1 ? "tarefa" : "tarefas"} sem
@@ -230,20 +249,55 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
                     <th className="px-3 py-2 font-medium">Tarefa</th>
                     <th className="px-3 py-2 font-medium">Loja</th>
                     <th className="px-3 py-2 text-right font-medium">Pontos</th>
+                    <th className="px-3 py-2 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {listaPendencias.map((p, i) => (
-                    <tr key={i} className="border-t border-border">
-                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{dia(p.dia)}</td>
-                      <td className="px-3 py-2">{p.titulo}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{p.loja ?? "—"}</td>
-                      <td className="px-3 py-2 text-right">{p.pontos}</td>
-                    </tr>
-                  ))}
+                  {listaPendencias.map((p) => {
+                    const chave = `${p.atribuicaoid}-${p.dia}`;
+                    return (
+                      <tr key={chave} className="border-t border-border align-top">
+                        <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{dia(p.dia)}</td>
+                        <td className="px-3 py-2">
+                          {p.titulo}
+                          {justificando === chave && (
+                            <div className="mt-2">
+                              <Justificar
+                                atribuicaoid={p.atribuicaoid}
+                                dia={p.dia.slice(0, 10)}
+                                aoTerminar={(texto) => {
+                                  setJustificando(null);
+                                  setRecado(`${p.titulo} (${dia(p.dia)}): ${texto}`);
+                                }}
+                              />
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{p.loja ?? "—"}</td>
+                        <td className="px-3 py-2 text-right">{p.pontos}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          {p.justificativa === "Pendente" ? (
+                            <span className="text-xs text-accent">justificativa a decidir</span>
+                          ) : (
+                            <>
+                              {p.justificativa === "Recusada" && (
+                                <span className="mr-2 text-xs text-destructive">justificativa recusada</span>
+                              )}
+                              <button
+                                onClick={() => setJustificando(justificando === chave ? null : chave)}
+                                className="rounded-md border border-border px-2 py-1 text-xs"
+                              >
+                                {justificando === chave ? "Cancelar" : "Não se aplica"}
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {!pendencias.isLoading && listaPendencias.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                      <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
                         Nada ficou para trás neste período. 👏
                       </td>
                     </tr>
@@ -339,8 +393,8 @@ function PorTarefa({ de, ate }: { de: string; ate: string }) {
         </button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Entregas por tarefa, pelo dia do envio. As tarefas com mais recusas e estornos aparecem primeiro: pode ser sinal de
-        tarefa mal explicada.
+        Entregas por tarefa, pelo dia do envio, e justificativas aceitas ("não se aplica"). As tarefas com mais recusas,
+        estornos e "não se aplica" aparecem primeiro: pode ser sinal de tarefa mal explicada ou que não faz sentido.
       </p>
 
       {analise.isLoading && <p className="text-muted-foreground">Carregando...</p>}
@@ -354,6 +408,7 @@ function PorTarefa({ de, ate }: { de: string; ate: string }) {
               <th className="px-3 py-2 text-right font-medium">Aprovadas</th>
               <th className="px-3 py-2 text-right font-medium">Recusadas</th>
               <th className="px-3 py-2 text-right font-medium">Estornadas</th>
+              <th className="px-3 py-2 text-right font-medium">Não se aplica</th>
               <th className="px-3 py-2 text-right font-medium">Aguardando</th>
             </tr>
           </thead>
@@ -364,12 +419,13 @@ function PorTarefa({ de, ate }: { de: string; ate: string }) {
                 <td className="px-3 py-2 text-right text-primary">{t.aprovadas}</td>
                 <td className={`px-3 py-2 text-right ${t.recusadas > 0 ? "text-destructive" : ""}`}>{t.recusadas}</td>
                 <td className={`px-3 py-2 text-right ${t.estornadas > 0 ? "text-destructive" : ""}`}>{t.estornadas}</td>
+                <td className="px-3 py-2 text-right">{t.naoseaplica}</td>
                 <td className="px-3 py-2 text-right text-muted-foreground">{t.pendentes}</td>
               </tr>
             ))}
             {!analise.isLoading && lista.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                   Nenhuma entrega neste período.
                 </td>
               </tr>

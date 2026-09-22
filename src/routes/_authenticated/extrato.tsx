@@ -20,6 +20,7 @@ const ROTULO_TIPO: Record<string, string> = {
   aprovacao: "Tarefa",
   estorno_entrega: "Estorno",
   bonus: "Bônus",
+  estorno_bonus: "Estorno de bônus",
   resgate: "Resgate",
   cancelamento_resgate: "Cancelamento",
   estorno_resgate: "Estorno de resgate",

@@ -42,6 +42,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `historicoranking` | **loja** | historicoid | funcionarios |
 | `itenscontagemestoque` | **loja** | itemcontagemid | contagensestoque, produtosestoque |
 | `itensnotafiscalentrada` | **loja** | itemnotaid | notasfiscaisentrada, produtosfornecedor |
+| `justificativas` | **loja** | justificativaid | tarefasatribuidas, funcionarios |
 | `lucromensalhistorico` | **loja** | historicoid |  |
 | `metasdiariasapuracoes` | **loja** | apuracaoid | funcionarios, metasprincipais |
 | `metasdiariasinstancias` | **loja** | metainstanciaid |  |
@@ -56,6 +57,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `produtosfornecedor` | conta | produtofornecedorid | fornecedores, produtosestoque |
 | `produtosloja` | conta | produtoid |  |
 | `resgates` | conta | resgateid | funcionarios, produtosloja |
+| `solicitacoeshistorico` | **loja** | historicoid | solicitacoesinternas |
 | `solicitacoesinternas` | **loja** | solicitacaoid | funcionarios |
 | `tarefas` | conta | tarefaid |  |
 | `tarefasatribuidas` | **loja** | atribuicaoid | funcionarios, grupos, tarefas, tarefasatribuidas |
@@ -140,9 +142,16 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | Coluna | Tipo | Obs |
 |---|---|---|
 | denunciaid | integer | ID automático; obrigatório |
-| mensagem | text | obrigatório |
-| dataregistro | timestamptz | padrão now() |
-| status | varchar(50) | padrão 'Pendente' |
+| mensagem | text | obrigatório; 1 a 4.000 caracteres |
+| dataregistro | **date** | obrigatório; padrão hoje (São Paulo). **Só o dia, sem hora** |
+| status | varchar(50) | obrigatório; `Nova`, `Em análise` ou `Tratada` |
+| protocolohash | char(64) | único. Impressão digital (sha256) do protocolo; o protocolo em si só quem enviou recebe |
+| resposta | text | resposta do master (quem enviou lê pelo protocolo) |
+| respondidoem | date | dia da resposta |
+| tratadopor | uuid | o master que tratou (nunca quem enviou) |
+| tratadoem | timestamptz | quando foi tratado |
+
+**Canal confidencial (anonimato real).** Nível conta, **sem loja**. Nenhuma coluna aponta para quem enviou. **Só o master lê** (policy `contaid = minha_conta() AND sou_master()`); gerente e qualquer papel futuro não. Ninguém grava pelo navegador: a entrada é `registrar_relato`, só do servidor. Texto, dia e protocolo nunca mudam; nada se apaga. O teste de isolamento confere a lista exata de colunas, gatilhos, chaves e funções que tocam esta tabela.
 
 ## documentos
 | Coluna | Tipo | Obs |
@@ -242,8 +251,17 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | feedbackid | integer | ID automático; obrigatório |
 | funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
 | datafeedback | date | obrigatório |
-| notadia | integer | obrigatório |
+| notadia | integer | obrigatório; 0 a 10 |
 | comentario | varchar(500) |  |
+| origem | varchar(10) | obrigatório; `gestor` (registrado pelo gestor) ou `bot` |
+| registradopor | uuid | → auth.users |
+| criadoem | timestamptz | obrigatório; padrão now() |
+| pontosbonus | integer | obrigatório; o bônus pago (vem de `PONTOS_BONUS_FEEDBACK_DIARIO`) |
+| anuladoem | timestamptz | preenchido ao anular |
+| anuladopor | uuid | → auth.users |
+| motivoanulacao | text | obrigatório ao anular |
+
+**Único (funcionarioid, datafeedback)** entre os não anulados. Entra só por `registrar_feedback` (hoje ou ontem); a nota não se altera nem se apaga — corrige-se anulando com motivo (`anular_feedback`), que estorna o bônus pelo livro.
 
 ## fornecedores
 | Coluna | Tipo | Obs |
@@ -492,8 +510,13 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | descricao | text |  |
 | quantidade | numeric(10,2) |  |
 | caminhofoto | varchar(255) |  |
-| status | varchar(20) | padrão 'Pendente' |
-| motivorecusa | text |  |
+| status | varchar(20) | obrigatório; `Aberta`, `Em andamento`, `Concluída` ou `Recusada` |
+| motivorecusa | text | obrigatório quando Recusada |
+| unidade | varchar(20) | só em Compra (ex.: litros) |
+| registradopor | uuid | → auth.users |
+| atualizadoem | timestamptz | obrigatório; padrão now() |
+
+`tipo`: `Compra` ou `Manutencao`. Transições: Aberta → Em andamento/Concluída/Recusada; Em andamento → Concluída/Recusada. O pedido em si não muda; nada se apaga. Entra por `abrir_solicitacao` e muda por `mudar_situacao_solicitacao`. Cada mudança vai para `solicitacoeshistorico` por gatilho.
 | dataconclusao | timestamptz |  |
 
 ## tarefas
@@ -543,6 +566,41 @@ Tabela **nova**, não existia no SQL Server. Guarda os parâmetros que ficavam f
 | atualizadoem | timestamptz | obrigatório; padrão now() |
 
 O navegador só lê; altera por `alterar_configuracao` (só o master; os `TAREFA_*` não). Um gatilho valida todo caminho: taxa numérica > 0 e ≤ 10; `PONTOS_BONUS_*` inteiro de 0 a 10.000; `MAX_DIFERENCA_FOTO_SEGUNDOS` inteiro até 86.400; `HORARIO_*` no formato HH:MM.
+
+## justificativas
+Tabela **nova** (Etapa 1.7, parte 3), **nível loja**. "Não se aplica" de uma tarefa num dia.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| justificativaid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| atribuicaoid | integer | obrigatório; → tarefasatribuidas (junto com contaid) |
+| funcionarioid | integer | obrigatório; → funcionarios (junto com contaid) |
+| dia | date | obrigatório. Na tarefa Única, o dia marcado |
+| motivo | text | obrigatório |
+| status | varchar(10) | `Pendente`, `Aceita` ou `Recusada` |
+| origem | varchar(10) | `gestor` ou `bot` |
+| registradopor / registradoem | uuid / timestamptz | quem e quando registrou |
+| decididopor / decididoem | uuid / timestamptz | quem e quando decidiu |
+| motivorecusa | text | obrigatório quando Recusada |
+
+Uma só por (atribuição, dia) enquanto Pendente ou Aceita. **Aceita:** sai das pendências, dos pontos possíveis da nota do mês e vira dia neutro na sequência de dias. **Pendente ou aceita:** o banco recusa entrega daquela tarefa naquele dia. Decidida não muda; nada se apaga. O navegador só lê.
+
+## solicitacoeshistorico
+Tabela **nova** (Etapa 1.7, parte 3), **nível loja**. Cada abertura e mudança de situação de uma solicitação, gravada por gatilho. **Nunca muda nem se apaga**, nem para o dono.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| historicoid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| solicitacaoid | integer | obrigatório; → solicitacoesinternas (junto com contaid) |
+| statusanterior | varchar(20) | vazio na abertura |
+| statusnovo | varchar(20) | obrigatório |
+| observacao | text | motivo da recusa ou observação |
+| alteradopor | uuid | → auth.users |
+| alteradoem | timestamptz | obrigatório; padrão now() |
 
 ## configuracoeshistorico
 Tabela **nova** (Etapa 1.7, parte 2). Cada mudança de configuração, gravada por gatilho. O navegador só lê.
@@ -665,6 +723,19 @@ Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
 | `pendencias_da_pessoa(pessoa, de, ate)` | Tarefas que caíam e não foram entregues, dia a dia, até ontem (no máximo 3 meses) |
 | `historico_da_pessoa(pessoa, limite)` | Últimas entregas da pessoa em qualquer situação |
 | `analise_de_tarefas(de, ate, loja)` | Por tarefa: aprovadas, recusadas, estornadas e pendentes |
+| `registrar_feedback(pessoa, dia, nota, comentario)` | Só hoje ou ontem; um por dia; bônus pelo livro; avalia as conquistas |
+| `anular_feedback(feedback, motivo)` | Anula uma vez só e estorna o bônus pelo livro; a conquista fica |
+| `tem_justificativa(atribuicao, tipo, dia, so_aceita)` | Se a tarefa está justificada no dia (Única vale para qualquer dia) |
+| `justificaveis(pessoa, dia)` | Tarefas que caíam naquele dia de trabalho e não foram entregues nem justificadas |
+| `registrar_justificativa(atribuicao, dia, motivo, aceitar)` | Registra; já aceita ou fica pendente |
+| `decidir_justificativa(justificativa, aceitar, motivo)` | Só Pendente; recusar exige motivo |
+| `maior_sequencia(feitos, neutros, folga, domingofolga, inicioafast, fimafast)` | Maior sequência de dias; folga, afastamento e neutros não quebram nem somam |
+| `sou_master()` | Se quem está logado é o master da conta |
+| `registrar_relato(conta, texto)` | **Só o servidor (bot).** Grava o relato anônimo e devolve o protocolo uma única vez |
+| `consultar_relato(conta, protocolo)` | **Só o servidor.** Situação e resposta pelo protocolo |
+| `tratar_relato(relato, situacao, resposta)` | Só o master: em análise, tratado, resposta |
+| `abrir_solicitacao(loja, pessoa, tipo, categoria, descricao, quantidade, unidade)` | Quem pediu precisa trabalhar na loja; nasce Aberta |
+| `mudar_situacao_solicitacao(solicitacao, situacao, observacao)` | Só as transições permitidas; recusar exige motivo |
 | `alterar_configuracao(chave, valor)` | Só o master; recusa os `TAREFA_*`; o gatilho valida e registra no histórico |
 
 Todas têm `search_path` fixo. As de entrega e as de identificação são `security definer` e **conferem por conta própria** quem chamou. `cria_configuracoes_padrao` e `cria_tarefas_do_sistema` também são, mas **só o servidor** as executa. `ranking_pontos`, `atribuicoes_para_entregar`, `ranking_mensal`, `listar_trocas` e os relatórios rodam com a RLS de quem chamou.
@@ -696,15 +767,16 @@ O livro de pontos (**nível conta**; a loja é opcional). Cada entrada e saída 
 | funcionarioid | integer | obrigatório; → funcionarios (junto com contaid) |
 | lojaid | integer | opcional; → lojas (junto com contaid) |
 | datamovimento | timestamptz | obrigatório; padrão now() |
-| tipo | varchar(30) | `aprovacao`, `estorno_entrega`, `bonus`, `resgate`, `cancelamento_resgate`, `estorno_resgate`, `ajuste_abertura` |
+| tipo | varchar(30) | `aprovacao`, `estorno_entrega`, `bonus`, `estorno_bonus`, `resgate`, `cancelamento_resgate`, `estorno_resgate`, `ajuste_abertura` |
 | pontos | integer | obrigatório; diferente de zero. Positivo entra, negativo sai |
 | descricao | text | obrigatório. O que aparece no extrato |
 | entregaid | integer | → entregas (junto com contaid), quando veio de uma entrega |
 | resgateid | integer | → resgates (junto com contaid), quando veio de um resgate |
 | conquistafuncionarioid | integer | → conquistasfuncionarios (junto com contaid), quando é bônus de conquista |
+| feedbackid | integer | → feedbacks (junto com contaid), quando é bônus de feedback ou o estorno dele |
 | criadopor | uuid | → auth.users |
 
-O navegador só lê. Os tipos `aprovacao`, `estorno_entrega` e `bonus` também somam em `pontostotal`.
+O navegador só lê. Os tipos `aprovacao`, `estorno_entrega`, `bonus` e `estorno_bonus` também somam em `pontostotal`.
 
 ## Mudanças da Fase 7 em tabelas existentes
 

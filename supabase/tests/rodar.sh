@@ -97,6 +97,26 @@ if [ "$ok_q" != "1" ] || [ "$erros_c" != "0" ]; then
 $saida_q"
 fi
 
+echo "==> dois feedbacks do mesmo dia ao mesmo tempo"
+rodar "$RAIZ/supabase/tests/concorrencia_feedback_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_feedback_sessao.sql" "$CONTAINER:/sessao_f.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -f /sessao_f.sql >/tmp/gamegb-sessao5.txt 2>&1 &
+p5=$!
+docker exec "$CONTAINER" psql -U postgres -q -f /sessao_f.sql >/tmp/gamegb-sessao6.txt 2>&1 &
+p6=$!
+wait "$p5" "$p6" || true
+duplicados=$(cat /tmp/gamegb-sessao5.txt /tmp/gamegb-sessao6.txt | grep -c "já tem feedback" || true)
+rm -f /tmp/gamegb-sessao5.txt /tmp/gamegb-sessao6.txt
+echo "    conexao recusada por feedback duplicado: $duplicados de 2"
+
+saida_f="$(rodar "$RAIZ/supabase/tests/concorrencia_feedback_confere.sql" 2>&1)" && ok_f=1 || ok_f=0
+echo "$saida_f" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_f" != "1" ] || [ "$duplicados" != "1" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_f"
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"

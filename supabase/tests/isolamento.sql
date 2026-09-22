@@ -1571,6 +1571,438 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- 28. Feedback diario
+-- ===========================================================================
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE
+  hoje date := public.dia_em_sao_paulo(now());
+  s0 integer; f1 integer; f2 integer; deu_erro boolean; x jsonb;
+  k7 integer := (SELECT conquistaid FROM public.conquistas WHERE nome = 'Feedback em dia');
+BEGIN
+  RAISE NOTICE '28. feedback diario';
+  s0 := (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 120);
+
+  f1 := public.registrar_feedback(120, hoje, 8, 'Dia bom');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.movimentospontos
+                                 WHERE feedbackid = f1 AND tipo = 'bonus' AND pontos = 5),
+                        'o bonus do feedback (5) entra pelo livro, ligado ao feedback');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 120 AND conquistaid = k7),
+                        'a conquista de sequencia de feedback passou a valer');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 120) = s0 + 5 + 5,
+                        'saldo: + 5 do feedback + 5 da conquista');
+  PERFORM public.exigir((SELECT origem FROM public.feedbacks WHERE feedbackid = f1) = 'gestor',
+                        'marcado como registrado pelo gestor');
+  x := public.extrato_pontos(120, hoje, hoje);
+  PERFORM public.exigir((x->>'confere')::boolean AND EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(x->'movimentos') m WHERE m->>'descricao' LIKE 'Feedback do dia%'),
+                        'o bonus do feedback aparece no extrato, e o extrato bate');
+
+  BEGIN PERFORM public.registrar_feedback(120, hoje, 3); deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'feedback duplicado no mesmo dia e recusado');
+  BEGIN PERFORM public.registrar_feedback(120, hoje - 2, 5); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'so hoje ou ontem (anteontem e recusado)');
+  BEGIN PERFORM public.registrar_feedback(120, hoje + 1, 5); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'amanha tambem e recusado');
+  BEGIN PERFORM public.registrar_feedback(120, hoje - 1, 11); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nota fora de 0 a 10 e recusada');
+
+  BEGIN UPDATE public.feedbacks SET notadia = 10 WHERE feedbackid = f1; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a nota nao se altera pelo navegador');
+  BEGIN INSERT INTO public.feedbacks (funcionarioid, datafeedback, notadia) VALUES (120, hoje - 1, 5); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'feedback so entra pela funcao (que paga o bonus pelo livro)');
+
+  BEGIN PERFORM public.anular_feedback(f1, ''); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'anular exige motivo');
+  PERFORM public.anular_feedback(f1, 'Lancado na pessoa errada');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.movimentospontos
+                                 WHERE feedbackid = f1 AND tipo = 'estorno_bonus' AND pontos = -5),
+                        'anular estorna o bonus pelo livro');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 120) = s0 + 5,
+                        'saldo volta (so fica o bonus da conquista)');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 120 AND conquistaid = k7),
+                        'a conquista fica');
+  BEGIN PERFORM public.anular_feedback(f1, 'de novo'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao se anula duas vezes (o bonus nao sai em dobro)');
+
+  f2 := public.registrar_feedback(120, hoje, 9);
+  PERFORM public.exigir(f2 IS NOT NULL, 'depois de anular, o lancamento certo do dia e aceito');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_pontos(hoje, hoje, NULL) WHERE funcionarioid = 120),
+                        'bonus de feedback nao entra no ranking');
+END $$;
+
+SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.registrar_feedback(120, public.dia_em_sao_paulo(now()), 5); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'conta suspensa nao registra feedback');
+END $$;
+
+-- Sequencia de feedback: a folga nao quebra. Edu (121) deu feedback em
+-- hoje-5, hoje-4 e hoje-2; hoje-3 e a folga semanal dele.
+RESET ROLE;
+UPDATE public.funcionarios
+   SET diadefolga = extract(dow FROM public.dia_em_sao_paulo(now()) - 3)::integer + 1,
+       datainicioafastamento = NULL, datafimafastamento = NULL
+ WHERE funcionarioid = 121;
+INSERT INTO public.feedbacks (contaid, funcionarioid, datafeedback, notadia)
+SELECT 1, 121, public.dia_em_sao_paulo(now()) - d, 7 FROM unnest(ARRAY[5, 4, 2]) d;
+
+DO $$
+DECLARE deu_erro boolean; f integer := (SELECT min(feedbackid) FROM public.feedbacks WHERE funcionarioid = 121);
+BEGIN
+  BEGIN UPDATE public.feedbacks SET notadia = 0 WHERE feedbackid = f; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco altera a nota');
+  BEGIN DELETE FROM public.feedbacks WHERE feedbackid = f; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem apaga feedback');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE k integer;
+BEGIN
+  k := (public.criar_conquista('3 dias de feedback', NULL, NULL, 'sequencia_feedback_diario', 3, NULL, 0, true))->>'conquistaid';
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 121 AND conquistaid = k),
+                        'sequencia de feedback: a folga nao quebra (3 dias)');
+  PERFORM set_config('teste.kfb', k::text, false);
+END $$;
+
+RESET ROLE;
+UPDATE public.funcionarios SET diadefolga = 0 WHERE funcionarioid = 121;
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT public.pessoa_cumpre_conquista(1, 121, current_setting('teste.kfb')::integer),
+                        'sem a folga, o dia sem feedback quebraria a sequencia');
+END $$;
+
+-- ===========================================================================
+-- 29. Justificativas ("nao se aplica")
+-- ===========================================================================
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE
+  hoje date := public.dia_em_sao_paulo(now());
+  ontem date := public.dia_em_sao_paulo(now()) - 1;
+  j1 integer; j3 integer; deu_erro boolean; x jsonb; antes integer; depois integer;
+BEGIN
+  RAISE NOTICE '29. justificativas';
+  -- Carla (110): tarefa diaria 5100; ontem nao entregou.
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.justificaveis(110, ontem)) t
+                                 WHERE (t->>'atribuicaoid')::integer = 5100),
+                        'a tarefa de ontem nao entregue pode ser justificada');
+  SELECT pontospossiveis INTO antes FROM public.ranking_mensal(extract(year FROM ontem)::integer, extract(month FROM ontem)::integer)
+   WHERE funcionarioid = 110;
+
+  j1 := public.registrar_justificativa(5100, ontem, 'Faltou energia', false);
+  x := public.pendencias_da_pessoa(110, ontem, ontem);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x) p WHERE p->>'justificativa' = 'Pendente'),
+                        'pendente: continua nas pendencias, marcada como justificativa pendente');
+
+  BEGIN PERFORM public.registrar_justificativa(5100, ontem, 'de novo', true); deu_erro := false;
+  EXCEPTION WHEN check_violation OR unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'uma justificativa so por tarefa e dia');
+  BEGIN PERFORM public.decidir_justificativa(j1, false, NULL); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'recusar exige motivo');
+
+  PERFORM public.decidir_justificativa(j1, true);
+  PERFORM public.exigir(public.pendencias_da_pessoa(110, ontem, ontem) = '[]'::jsonb,
+                        'aceita: sai das pendencias');
+  SELECT pontospossiveis INTO depois FROM public.ranking_mensal(extract(year FROM ontem)::integer, extract(month FROM ontem)::integer)
+   WHERE funcionarioid = 110;
+  PERFORM public.exigir(depois = antes - 3,
+                        'aceita: sai dos pontos possiveis da nota do mes (' || antes || ' -> ' || depois || ')');
+  BEGIN PERFORM public.decidir_justificativa(j1, false, 'mudei de ideia'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'justificativa decidida nao muda');
+
+  -- Recusada: continua pendencia e conta na nota.
+  j3 := public.registrar_justificativa(5100, hoje - 2, 'Esqueci', false);
+  PERFORM public.decidir_justificativa(j3, false, 'Nao e motivo');
+  x := public.pendencias_da_pessoa(110, hoje - 2, hoje - 2);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x) p WHERE p->>'justificativa' = 'Recusada'),
+                        'recusada: continua nas pendencias');
+
+  -- Hoje, ja aceita: some da lista de entregas e a entrega e recusada.
+  PERFORM public.registrar_justificativa(5100, hoje, 'Loja fechada hoje', true);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = 5100),
+                        'justificada hoje: sai da lista do que entregar');
+  BEGIN PERFORM public.registrar_entrega(5100); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'e nao da para entregar a tarefa justificada no mesmo dia');
+
+  BEGIN PERFORM public.registrar_justificativa(5100, hoje + 1, 'amanha', true); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'dia futuro nao se justifica');
+  BEGIN PERFORM public.registrar_justificativa(5100, ontem, '', true); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'justificativa exige motivo');
+  BEGIN INSERT INTO public.justificativas (lojaid, atribuicaoid, funcionarioid, dia, motivo, status)
+        VALUES (10, 5100, 110, hoje - 3, 'na mao', 'Aceita'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'justificativa so entra pela funcao');
+
+  x := public.analise_de_tarefas(hoje - 10, hoje, 10);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x) t
+                                 WHERE t->>'titulo' = 'Abrir o caixa' AND (t->>'naoseaplica')::integer = 2),
+                        'analise por tarefa mostra as 2 aceitas como "nao se aplica"');
+END $$;
+
+-- Sequencia de tarefas: justificativa aceita e dia neutro. Carla entregou em
+-- hoje-10, hoje-9 e hoje-7 (sem afastamento, a sequencia maxima e 2).
+RESET ROLE;
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT public.pessoa_cumpre_conquista(1, 110, current_setting('teste.k5')::integer),
+                        'antes: hoje-8 sem entrega quebra a sequencia de 3');
+END $$;
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$ BEGIN PERFORM public.registrar_justificativa(5100, public.dia_em_sao_paulo(now()) - 8, 'Inventario', true); END $$;
+RESET ROLE;
+DO $$
+BEGIN
+  PERFORM public.exigir(public.pessoa_cumpre_conquista(1, 110, current_setting('teste.k5')::integer),
+                        'justificativa aceita em hoje-8 e dia neutro: a sequencia de 3 fecha');
+  PERFORM public.exigir(public.maior_sequencia(
+                          ARRAY[date '2026-09-01', date '2026-09-02', date '2026-09-04'],
+                          ARRAY[date '2026-09-03'], 0, 0, NULL, NULL) = 3,
+                        'dia neutro nao soma: 1, 2, (3 neutro), 4 = 3 dias');
+END $$;
+
+-- ===========================================================================
+-- 30. Solicitacoes internas
+-- ===========================================================================
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE s1 integer; s2 integer; deu_erro boolean; h text;
+BEGIN
+  RAISE NOTICE '30. solicitacoes internas';
+  s1 := public.abrir_solicitacao(10, 100, 'Compra', 'Limpeza', 'Detergente', 5, 'litros');
+  PERFORM public.exigir((SELECT status FROM public.solicitacoesinternas WHERE solicitacaoid = s1) = 'Aberta',
+                        'nasce aberta');
+  BEGIN PERFORM public.abrir_solicitacao(10, 120, 'Compra', NULL, 'Papel'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem pediu precisa trabalhar na loja');
+
+  PERFORM public.mudar_situacao_solicitacao(s1, 'Em andamento');
+  BEGIN PERFORM public.mudar_situacao_solicitacao(s1, 'Aberta'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao volta para aberta');
+  BEGIN PERFORM public.mudar_situacao_solicitacao(s1, 'Recusada'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'recusar exige motivo');
+  PERFORM public.mudar_situacao_solicitacao(s1, 'Concluída', 'Comprado no atacado');
+  BEGIN PERFORM public.mudar_situacao_solicitacao(s1, 'Em andamento'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'concluida e final');
+
+  SELECT string_agg(coalesce(statusanterior, '-') || '>' || statusnovo, ' ' ORDER BY historicoid) INTO h
+    FROM public.solicitacoeshistorico WHERE solicitacaoid = s1;
+  PERFORM public.exigir(h = '->Aberta Aberta>Em andamento Em andamento>Concluída', 'historico: ' || h);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.solicitacoeshistorico
+                                     WHERE solicitacaoid = s1 AND alteradopor IS DISTINCT FROM 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+                        'historico registra quem mudou');
+  PERFORM public.exigir((SELECT observacao FROM public.solicitacoeshistorico WHERE solicitacaoid = s1 AND statusnovo = 'Concluída')
+                        = 'Comprado no atacado', 'historico guarda a observacao');
+
+  s2 := public.abrir_solicitacao(10, 100, 'Manutencao', 'Predial', 'Pia vazando');
+  PERFORM public.mudar_situacao_solicitacao(s2, 'Recusada', 'Ja consertada');
+  PERFORM public.exigir((SELECT motivorecusa = 'Ja consertada' AND dataconclusao IS NOT NULL
+                           FROM public.solicitacoesinternas WHERE solicitacaoid = s2),
+                        'recusada guarda o motivo e a data');
+
+  BEGIN UPDATE public.solicitacoesinternas SET status = 'Aberta' WHERE solicitacaoid = s1; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'situacao so muda pela funcao');
+  BEGIN UPDATE public.solicitacoeshistorico SET observacao = 'x'; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'historico nao se altera pelo navegador');
+  PERFORM set_config('teste.s1', s1::text, false);
+END $$;
+
+RESET ROLE;
+DO $$
+DECLARE deu_erro boolean; s1 integer := current_setting('teste.s1')::integer;
+BEGIN
+  BEGIN UPDATE public.solicitacoeshistorico SET observacao = 'x' WHERE solicitacaoid = s1; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco altera o historico');
+  BEGIN UPDATE public.solicitacoesinternas SET status = 'Aberta' WHERE solicitacaoid = s1; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem pula a regra das situacoes');
+END $$;
+
+-- ===========================================================================
+-- 31. Canal confidencial: anonimato real
+-- ===========================================================================
+
+DO $$
+DECLARE p text; p2 text; sobra text;
+BEGIN
+  RAISE NOTICE '31. canal confidencial';
+  -- A entrada e so pelo servidor (aqui, o dono do banco faz o papel do bot).
+  p  := public.registrar_relato(1, 'O caixa da tarde sai mais cedo todo dia');
+  p2 := public.registrar_relato(2, 'Relato da conta B');
+  PERFORM set_config('teste.protocolo', p, false);
+  PERFORM public.exigir(p ~ '^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', 'protocolo aleatorio no formato XXXX-XXXX-XXXX');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.denunciasanonimas WHERE protocolohash = p OR mensagem LIKE '%' || p || '%'),
+                        'o protocolo nao fica guardado em claro');
+  PERFORM public.exigir((public.consultar_relato(1, lower(p))->>'status') = 'Nova', 'o protocolo consulta o relato');
+  PERFORM public.exigir(public.consultar_relato(2, p) IS NULL, 'o protocolo nao abre relato de outra conta');
+
+  SELECT string_agg(column_name, ',' ORDER BY column_name) INTO sobra
+    FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'denunciasanonimas';
+  PERFORM public.exigir(sobra = 'contaid,dataregistro,denunciaid,mensagem,protocolohash,respondidoem,resposta,status,tratadoem,tratadopor',
+                        'a tabela so tem as colunas aprovadas, nenhuma de quem enviou (' || sobra || ')');
+  PERFORM public.exigir((SELECT data_type FROM information_schema.columns
+                          WHERE table_schema = 'public' AND table_name = 'denunciasanonimas' AND column_name = 'dataregistro') = 'date',
+                        'guarda so o dia, sem hora');
+  SELECT string_agg(tgname, ',') INTO sobra FROM pg_trigger
+   WHERE tgrelid = 'public.denunciasanonimas'::regclass AND NOT tgisinternal AND tgname <> 'denunciasanonimas_protege';
+  PERFORM public.exigir(sobra IS NULL, 'nenhum gatilho copia o relato para outro lugar' || coalesce(' (' || sobra || ')', ''));
+  SELECT string_agg(conname, ',') INTO sobra FROM pg_constraint
+   WHERE contype = 'f' AND (conrelid = 'public.denunciasanonimas'::regclass AND confrelid <> 'public.contas'::regclass
+                            OR confrelid = 'public.denunciasanonimas'::regclass);
+  PERFORM public.exigir(sobra IS NULL, 'nenhuma chave liga o relato a pessoa, login ou outra tabela' || coalesce(' (' || sobra || ')', ''));
+  SELECT string_agg(proname, ',') INTO sobra FROM pg_proc
+   WHERE pronamespace = 'public'::regnamespace AND prosrc ILIKE '%insert into public.denunciasanonimas%'
+     AND proname <> 'registrar_relato';
+  PERFORM public.exigir(sobra IS NULL, 'so registrar_relato grava relato' || coalesce(' (' || sobra || ')', ''));
+  PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.denunciasanonimas', 'INSERT')
+                        AND NOT has_table_privilege('authenticated', 'public.denunciasanonimas', 'UPDATE')
+                        AND NOT has_table_privilege('authenticated', 'public.denunciasanonimas', 'DELETE')
+                        AND NOT has_table_privilege('anon', 'public.denunciasanonimas', 'SELECT'),
+                        'ninguem grava relato pelo navegador, nem o master');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.registrar_relato(integer, text)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.consultar_relato(integer, text)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.registrar_relato(integer, text)', 'EXECUTE'),
+                        'a entrada e a consulta sao so do servidor');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE d integer; deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.denunciasanonimas) = 1, 'o master le os relatos da propria conta, nao os de B');
+  d := (SELECT denunciaid FROM public.denunciasanonimas);
+  PERFORM public.tratar_relato(d, 'Em análise');
+  PERFORM public.tratar_relato(d, 'Tratada', 'Conversamos com a equipe da tarde');
+  PERFORM public.exigir((SELECT status = 'Tratada' AND resposta IS NOT NULL AND respondidoem IS NOT NULL
+                           FROM public.denunciasanonimas WHERE denunciaid = d),
+                        'o master marca como tratado e responde');
+  BEGIN INSERT INTO public.denunciasanonimas (mensagem) VALUES ('forjado'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao grava relato');
+  BEGIN UPDATE public.denunciasanonimas SET mensagem = 'editado'; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem edita o texto');
+  PERFORM set_config('teste.relato', d::text, false);
+END $$;
+
+SET teste.uid = '12121212-1212-1212-1212-121212121212';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.denunciasanonimas) = 0, 'gerente nao le o canal confidencial');
+  BEGIN PERFORM public.tratar_relato(current_setting('teste.relato')::integer, 'Em análise'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'gerente nao trata relato');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.denunciasanonimas) = 1, 'B le so o relato dela');
+  BEGIN PERFORM public.tratar_relato(current_setting('teste.relato')::integer, 'Tratada', 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao trata relato de A');
+END $$;
+
+RESET ROLE;
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((public.consultar_relato(1, current_setting('teste.protocolo'))->>'resposta') = 'Conversamos com a equipe da tarde',
+                        'quem enviou ve a resposta pelo protocolo');
+  BEGIN UPDATE public.denunciasanonimas SET mensagem = 'x'; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono do banco altera o texto');
+  BEGIN DELETE FROM public.denunciasanonimas; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem apaga relato');
+END $$;
+
+-- ===========================================================================
+-- 32. Feedbacks, justificativas e solicitacoes de outro cliente
+-- ===========================================================================
+
+SET ROLE authenticated;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean; hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  RAISE NOTICE '32. feedbacks, justificativas e solicitacoes de outro cliente';
+  PERFORM public.exigir((SELECT count(*) FROM public.feedbacks) = 0, 'B nao ve feedbacks de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.justificativas) = 0, 'B nao ve justificativas de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.solicitacoesinternas) = 0, 'B nao ve solicitacoes de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.solicitacoeshistorico) = 0, 'B nao ve o historico das solicitacoes de A');
+  PERFORM public.exigir(public.justificaveis(110, hoje - 1) = '[]'::jsonb, 'B nao ve o que A pode justificar');
+
+  BEGIN PERFORM public.registrar_feedback(120, hoje, 5); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao registra feedback para funcionario de A');
+  BEGIN PERFORM public.anular_feedback((SELECT max(feedbackid) FROM public.feedbacks), 'x'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao anula feedback de A');
+  BEGIN PERFORM public.registrar_justificativa(5100, hoje - 3, 'invasao', true); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao justifica tarefa de A');
+  BEGIN PERFORM public.mudar_situacao_solicitacao(current_setting('teste.s1')::integer, 'Recusada', 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao mexe em solicitacao de A');
+  BEGIN PERFORM public.abrir_solicitacao(10, 100, 'Compra', NULL, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao abre solicitacao em loja de A');
+END $$;
+
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean; j integer;
+BEGIN
+  SELECT justificativaid INTO j FROM public.justificativas ORDER BY 1 LIMIT 1;
+  PERFORM set_config('teste.jus', j::text, false);
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.decidir_justificativa(current_setting('teste.jus')::integer, false, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao decide justificativa de A');
+END $$;
+
+-- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -1635,7 +2067,9 @@ BEGIN
       'registrar_entrega', 'aprovar_entrega', 'recusar_entrega', 'estornar_entrega',
       'painel_da_loja', 'resumo_das_lojas', 'criar_link_tv', 'revogar_link_tv', 'painel_da_tv',
       'registrar_troca', 'registrar_troca_por_valor', 'concluir_troca', 'cancelar_troca', 'estornar_troca',
-      'criar_conquista', 'alterar_configuracao'
+      'criar_conquista', 'alterar_configuracao',
+      'registrar_feedback', 'anular_feedback', 'registrar_justificativa', 'decidir_justificativa',
+      'sou_master', 'tratar_relato', 'abrir_solicitacao', 'mudar_situacao_solicitacao'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -1712,7 +2146,7 @@ BEGIN
     INTO sobra
     FROM public.funcionarios f
     LEFT JOIN (SELECT funcionarioid, sum(pontos) AS soma,
-                      sum(pontos) FILTER (WHERE tipo IN ('aprovacao', 'estorno_entrega', 'bonus')) AS ganhos
+                      sum(pontos) FILTER (WHERE tipo IN ('aprovacao', 'estorno_entrega', 'bonus', 'estorno_bonus')) AS ganhos
                  FROM public.movimentospontos GROUP BY funcionarioid) m USING (funcionarioid)
    WHERE f.saldopontos <> coalesce(m.soma, 0) OR coalesce(f.pontostotal, 0) <> coalesce(m.ganhos, 0);
   PERFORM public.exigir(sobra IS NULL,

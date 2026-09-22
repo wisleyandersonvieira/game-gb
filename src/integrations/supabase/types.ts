@@ -481,24 +481,39 @@ export type Database = {
       denunciasanonimas: {
         Row: {
           contaid: number
-          dataregistro: string | null
+          dataregistro: string
           denunciaid: number
           mensagem: string
-          status: string | null
+          protocolohash: string | null
+          respondidoem: string | null
+          resposta: string | null
+          status: string
+          tratadoem: string | null
+          tratadopor: string | null
         }
         Insert: {
           contaid?: number
-          dataregistro?: string | null
+          dataregistro?: string
           denunciaid?: number
           mensagem: string
-          status?: string | null
+          protocolohash?: string | null
+          respondidoem?: string | null
+          resposta?: string | null
+          status?: string
+          tratadoem?: string | null
+          tratadopor?: string | null
         }
         Update: {
           contaid?: number
-          dataregistro?: string | null
+          dataregistro?: string
           denunciaid?: number
           mensagem?: string
-          status?: string | null
+          protocolohash?: string | null
+          respondidoem?: string | null
+          resposta?: string | null
+          status?: string
+          tratadoem?: string | null
+          tratadopor?: string | null
         }
         Relationships: [
           {
@@ -920,28 +935,49 @@ export type Database = {
       }
       feedbacks: {
         Row: {
+          anuladoem: string | null
+          anuladopor: string | null
           comentario: string | null
           contaid: number
+          criadoem: string
           datafeedback: string
           feedbackid: number
           funcionarioid: number
+          motivoanulacao: string | null
           notadia: number
+          origem: string
+          pontosbonus: number
+          registradopor: string | null
         }
         Insert: {
+          anuladoem?: string | null
+          anuladopor?: string | null
           comentario?: string | null
           contaid?: number
+          criadoem?: string
           datafeedback: string
           feedbackid?: number
           funcionarioid: number
+          motivoanulacao?: string | null
           notadia: number
+          origem?: string
+          pontosbonus?: number
+          registradopor?: string | null
         }
         Update: {
+          anuladoem?: string | null
+          anuladopor?: string | null
           comentario?: string | null
           contaid?: number
+          criadoem?: string
           datafeedback?: string
           feedbackid?: number
           funcionarioid?: number
+          motivoanulacao?: string | null
           notadia?: number
+          origem?: string
+          pontosbonus?: number
+          registradopor?: string | null
         }
         Relationships: [
           {
@@ -1476,6 +1512,86 @@ export type Database = {
           },
         ]
       }
+      justificativas: {
+        Row: {
+          atribuicaoid: number
+          contaid: number
+          decididoem: string | null
+          decididopor: string | null
+          dia: string
+          funcionarioid: number
+          justificativaid: number
+          lojaid: number
+          motivo: string
+          motivorecusa: string | null
+          origem: string
+          registradoem: string
+          registradopor: string | null
+          status: string
+        }
+        Insert: {
+          atribuicaoid: number
+          contaid?: number
+          decididoem?: string | null
+          decididopor?: string | null
+          dia: string
+          funcionarioid: number
+          justificativaid?: number
+          lojaid: number
+          motivo: string
+          motivorecusa?: string | null
+          origem?: string
+          registradoem?: string
+          registradopor?: string | null
+          status?: string
+        }
+        Update: {
+          atribuicaoid?: number
+          contaid?: number
+          decididoem?: string | null
+          decididopor?: string | null
+          dia?: string
+          funcionarioid?: number
+          justificativaid?: number
+          lojaid?: number
+          motivo?: string
+          motivorecusa?: string | null
+          origem?: string
+          registradoem?: string
+          registradopor?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "justificativas_atribuicao_fk"
+            columns: ["contaid", "atribuicaoid"]
+            isOneToOne: false
+            referencedRelation: "tarefasatribuidas"
+            referencedColumns: ["contaid", "atribuicaoid"]
+          },
+          {
+            foreignKeyName: "justificativas_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "justificativas_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+          {
+            foreignKeyName: "justificativas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
       linkstv: {
         Row: {
           contaid: number
@@ -1840,6 +1956,7 @@ export type Database = {
           datamovimento: string
           descricao: string
           entregaid: number | null
+          feedbackid: number | null
           funcionarioid: number
           lojaid: number | null
           movimentoid: number
@@ -1854,6 +1971,7 @@ export type Database = {
           datamovimento?: string
           descricao: string
           entregaid?: number | null
+          feedbackid?: number | null
           funcionarioid: number
           lojaid?: number | null
           movimentoid?: number
@@ -1868,6 +1986,7 @@ export type Database = {
           datamovimento?: string
           descricao?: string
           entregaid?: number | null
+          feedbackid?: number | null
           funcionarioid?: number
           lojaid?: number | null
           movimentoid?: number
@@ -1896,6 +2015,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "entregas"
             referencedColumns: ["contaid", "entregaid"]
+          },
+          {
+            foreignKeyName: "movimentospontos_feedback_fk"
+            columns: ["contaid", "feedbackid"]
+            isOneToOne: false
+            referencedRelation: "feedbacks"
+            referencedColumns: ["contaid", "feedbackid"]
           },
           {
             foreignKeyName: "movimentospontos_funcionario_fk"
@@ -2433,51 +2559,118 @@ export type Database = {
           },
         ]
       }
+      solicitacoeshistorico: {
+        Row: {
+          alteradoem: string
+          alteradopor: string | null
+          contaid: number
+          historicoid: number
+          lojaid: number
+          observacao: string | null
+          solicitacaoid: number
+          statusanterior: string | null
+          statusnovo: string
+        }
+        Insert: {
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          historicoid?: number
+          lojaid: number
+          observacao?: string | null
+          solicitacaoid: number
+          statusanterior?: string | null
+          statusnovo: string
+        }
+        Update: {
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          historicoid?: number
+          lojaid?: number
+          observacao?: string | null
+          solicitacaoid?: number
+          statusanterior?: string | null
+          statusnovo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacoeshistorico_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "solicitacoeshistorico_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+          {
+            foreignKeyName: "solicitacoeshistorico_solicitacao_fk"
+            columns: ["contaid", "solicitacaoid"]
+            isOneToOne: false
+            referencedRelation: "solicitacoesinternas"
+            referencedColumns: ["contaid", "solicitacaoid"]
+          },
+        ]
+      }
       solicitacoesinternas: {
         Row: {
+          atualizadoem: string
           caminhofoto: string | null
           categoria: string | null
           contaid: number
           dataconclusao: string | null
-          datasolicitacao: string | null
+          datasolicitacao: string
           descricao: string | null
           funcionarioid: number | null
           lojaid: number
           motivorecusa: string | null
           quantidade: number | null
+          registradopor: string | null
           solicitacaoid: number
-          status: string | null
+          status: string
           tipo: string
+          unidade: string | null
         }
         Insert: {
+          atualizadoem?: string
           caminhofoto?: string | null
           categoria?: string | null
           contaid?: number
           dataconclusao?: string | null
-          datasolicitacao?: string | null
+          datasolicitacao?: string
           descricao?: string | null
           funcionarioid?: number | null
           lojaid: number
           motivorecusa?: string | null
           quantidade?: number | null
+          registradopor?: string | null
           solicitacaoid?: number
-          status?: string | null
+          status?: string
           tipo: string
+          unidade?: string | null
         }
         Update: {
+          atualizadoem?: string
           caminhofoto?: string | null
           categoria?: string | null
           contaid?: number
           dataconclusao?: string | null
-          datasolicitacao?: string | null
+          datasolicitacao?: string
           descricao?: string | null
           funcionarioid?: number | null
           lojaid?: number
           motivorecusa?: string | null
           quantidade?: number | null
+          registradopor?: string | null
           solicitacaoid?: number
-          status?: string | null
+          status?: string
           tipo?: string
+          unidade?: string | null
         }
         Relationships: [
           {
@@ -2728,6 +2921,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      abrir_solicitacao: {
+        Args: {
+          p_categoria: string
+          p_descricao: string
+          p_funcionarioid: number
+          p_lojaid: number
+          p_quantidade?: number
+          p_tipo: string
+          p_unidade?: string
+        }
+        Returns: number
+      }
       alterar_configuracao: {
         Args: { p_chave: string; p_valor: string }
         Returns: string
@@ -2735,6 +2940,10 @@ export type Database = {
       analise_de_tarefas: {
         Args: { p_ate: string; p_de: string; p_lojaid?: number }
         Returns: Json
+      }
+      anular_feedback: {
+        Args: { p_feedbackid: number; p_motivo: string }
+        Returns: undefined
       }
       apos_aprovar_entrega: {
         Args: { p_entregaid: number }
@@ -2762,6 +2971,10 @@ export type Database = {
         Returns: undefined
       }
       concluir_troca: { Args: { p_resgateid: number }; Returns: undefined }
+      consultar_relato: {
+        Args: { p_contaid: number; p_protocolo: string }
+        Returns: Json
+      }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
@@ -2792,6 +3005,14 @@ export type Database = {
         Returns: string
       }
       criterio_disponivel: { Args: { p_tipo: string }; Returns: boolean }
+      decidir_justificativa: {
+        Args: {
+          p_aceitar: boolean
+          p_justificativaid: number
+          p_motivo?: string
+        }
+        Returns: undefined
+      }
       desfazer_resgate: {
         Args: {
           p_de: string
@@ -2829,13 +3050,36 @@ export type Database = {
         Args: { p_funcionarioid: number; p_limite?: number }
         Returns: Json
       }
+      justificaveis: {
+        Args: { p_dia: string; p_funcionarioid: number }
+        Returns: Json
+      }
       listar_trocas: { Args: { p_limite?: number }; Returns: Json }
+      maior_sequencia: {
+        Args: {
+          p_diadefolga: number
+          p_domingofolga: number
+          p_feitos: string[]
+          p_fimafast: string
+          p_inicioafast: string
+          p_neutros: string[]
+        }
+        Returns: number
+      }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
       minha_taxa: { Args: never; Returns: number }
       montar_painel: {
         Args: { p_contaid: number; p_lojaid: number; p_tv: boolean }
         Returns: Json
+      }
+      mudar_situacao_solicitacao: {
+        Args: {
+          p_observacao?: string
+          p_solicitacaoid: number
+          p_status: string
+        }
+        Returns: undefined
       }
       nome_curto: { Args: { p_nome: string }; Returns: string }
       painel_da_loja: { Args: { p_lojaid: number }; Returns: Json }
@@ -2888,6 +3132,28 @@ export type Database = {
         }
         Returns: number
       }
+      registrar_feedback: {
+        Args: {
+          p_comentario?: string
+          p_dia: string
+          p_funcionarioid: number
+          p_nota: number
+        }
+        Returns: number
+      }
+      registrar_justificativa: {
+        Args: {
+          p_aceitar: boolean
+          p_atribuicaoid: number
+          p_dia: string
+          p_motivo: string
+        }
+        Returns: number
+      }
+      registrar_relato: {
+        Args: { p_contaid: number; p_mensagem: string }
+        Returns: string
+      }
       registrar_troca: {
         Args: {
           p_entregar?: boolean
@@ -2908,6 +3174,7 @@ export type Database = {
       }
       resumo_das_lojas: { Args: never; Returns: Json }
       revogar_link_tv: { Args: { p_linktvid: number }; Returns: undefined }
+      sou_master: { Args: never; Returns: boolean }
       tarefa_cai_no_dia: {
         Args: {
           p_dataagendamento: string
@@ -2918,6 +3185,19 @@ export type Database = {
         Returns: boolean
       }
       taxa_da_conta: { Args: { p_contaid: number }; Returns: number }
+      tem_justificativa: {
+        Args: {
+          p_atribuicaoid: number
+          p_dia: string
+          p_so_aceita: boolean
+          p_tipo: string
+        }
+        Returns: boolean
+      }
+      tratar_relato: {
+        Args: { p_denunciaid: number; p_resposta?: string; p_status: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

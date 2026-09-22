@@ -56,7 +56,7 @@ Administrador geral (Wisley)
 | 1.4 | **Gestão do usuário master** (lojas e seletor de loja) | ✅ Concluída |
 | 1.5 | Telas iniciais: Equipe, Tarefas, Quadro | ✅ Concluída — o projeto inteiro compila sem nenhum erro de TypeScript |
 | 1.6 | Painel operacional por loja + validação (dashboard da loja) | ✅ Concluída |
-| 1.7 | Gestão de pessoas e gamificação | 🟨 Em andamento — partes 1 (prêmios, resgates, comanda, extrato) e 2 (conquistas, nota do mês, relatórios, configurações) prontas; falta a parte 3 |
+| 1.7 | Gestão de pessoas e gamificação | ✅ Concluída (22/09/2026) — partes 1, 2 e 3 |
 | 1.8 | Metas de faturamento | ⬜ |
 | 1.9 | Agenda (agendamentos) | ⬜ |
 | 1.10 | RH (onboarding, comunicados, documentos) | ⬜ |
@@ -207,11 +207,12 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 
 ### Etapa 1.7 — Gestão de pessoas e gamificação (abas do `main.py`)
 > Dividida em partes: **parte 1** prêmios, resgates, comanda e extrato · **parte 2** conquistas, nota do ranking mensal, relatórios e configurações · **parte 3** feedbacks, canal confidencial, solicitações e justificativas. Os **grupos** foram para a Etapa 1.13, junto com o Telegram.
-- [ ] Pendências e justificativas ("Não aplicável"). *(parte 3)*
+- [x] Pendências e justificativas ("Não se aplica"). *(parte 3, 22/09/2026)*
 - [x] Loja de recompensas e resgates. *(parte 1, 21/09/2026)*
 - [x] Abate na comanda (pontos usados como dinheiro). *(parte 1)*
 - [x] Conquistas. *(parte 2, 22/09/2026)* Critérios de feedback, comunicados e grupos ficam cadastráveis e passam a valer quando esses módulos existirem.
-- [ ] Feedbacks, canal confidencial e solicitações internas (visão do gestor). *(parte 3)*
+- [x] Feedbacks, canal confidencial e solicitações internas (visão do gestor). *(parte 3)*
+- [x] Menu agrupado (Operação, Pessoas, Gamificação, Relatórios, Gestão), com versão para celular. *(parte 3)*
 - [x] Relatórios e histórico por funcionário. *(parte 2)*
 - [x] **Nota híbrida do ranking mensal**: 50% confiabilidade (pontos das tarefas atribuídas ÷ pontos possíveis no mês, travado em 100%, sem os bônus) + 50% esforço (pontos aprovados ÷ os de quem mais fez, em cima de 100). *(parte 2)*
 - [x] **Configurações** da conta (taxa ponto→real, bônus, horários das rotinas), com validação, só o master altera e histórico de mudanças. *(parte 2)*
@@ -238,6 +239,18 @@ O visitante sem login (`anon`) agora só chama `painel_da_tv` e **não tem acess
 - **Nomes neutros**: `registrar_troca`, `registrar_troca_por_valor`, `concluir_troca`, `cancelar_troca`, `estornar_troca` e `listar_trocas` (a lista não lê mais a tabela `resgates` pelo endereço). Todos os 66 endereços do app (funções, tabelas, arquivos, páginas, login) passaram por 8 listas de bloqueio (EasyList, EasyPrivacy, EasyList Português, uBlock, uBlock Privacy, AdGuard Base, AdGuard Tracking, Fanboy Annoyance — 528 mil regras): **nenhum é barrado**.
 
 ⚠️ **Deadlock evitado nesta parte.** A primeira versão da concessão de conquistas travava a pessoa com `FOR UPDATE` depois de gravar no livro; duas aprovações simultâneas da mesma pessoa se travavam mutuamente e uma falhava. O teste de concorrência pegou; a trava virou `FOR NO KEY UPDATE`, o mesmo nível do gatilho do saldo.
+
+**Feito em 22/09/2026 (parte 3). Etapa 1.7 fechada.**
+
+- **Feedbacks** (Pessoas → Feedbacks): nota de 0 a 10 e comentário opcional, **um por pessoa por dia** (índice único no banco, provado com duas conexões ao mesmo tempo), só **hoje ou ontem**, marcado "registrado pelo gestor". O bônus (`PONTOS_BONUS_FEEDBACK_DIARIO`) entra pelo livro, ligado ao feedback, e aparece no extrato. A nota **não se altera nem se apaga**; se foi erro, o gestor **anula com motivo** e o bônus é estornado pelo livro (movimento novo `estorno_bonus`); a conquista fica. Anulado libera o dia para o lançamento certo. Bônus de feedback fica **fora do ranking**. Lista com filtro e média por pessoa.
+- **Conquistas de "dias seguidos com feedback" passam a valer**, com folga, domingo de folga e afastamento neutros.
+- **Justificativas** (Pessoas → Justificativas, e o botão "Não se aplica" em Relatórios → O que ficou por fazer): só para dia de trabalho em que a tarefa caía e não foi entregue; uma por tarefa e dia; nunca dia futuro. Dois botões: **"Registrar e aceitar"** e **"Registrar para decidir depois"** (aba "Para decidir", com Aceitar/Recusar; recusar exige motivo). **Aceita:** sai das pendências, sai dos pontos possíveis da nota do mês, some do Painel/Quadro do dia e **vira dia neutro na sequência de dias** (não quebra nem soma). **Pendente:** a tarefa sai da lista do que entregar naquele dia (o banco recusa a entrega), mas ainda conta na nota. **Recusada:** conta normalmente. A análise por tarefa ganhou a coluna "não se aplica".
+- **Solicitações internas** (Pessoas → Solicitações, por loja): Compra (categoria, item, quantidade e unidade) e Manutenção (categoria e descrição). Situações **Aberta → Em andamento → Concluída**, ou **Recusada** com motivo; Concluída e Recusada são finais. O banco recusa qualquer outra transição, até para o dono. **Histórico** (`solicitacoeshistorico`) gravado por gatilho em cada mudança: de, para, quem, quando e observação; nunca muda nem se apaga. Por enquanto o gestor registra indicando quem pediu; os líderes pedem pelo bot na 1.13 (com a foto da manutenção).
+- **Canal confidencial** (Pessoas → Canal confidencial): **só o master lê** (policy com `sou_master()`; gerente não vê nada). O relato guarda só texto, **dia (sem hora)** e situação (Nova, Em análise, Tratada); **sem loja** e sem nenhuma coluna de quem enviou. **Protocolo aleatório** (XXXX-XXXX-XXXX): o banco guarda só a impressão digital; com ele, quem enviou consulta a resposta sem se identificar. **Entrada só pelo servidor** (`registrar_relato`, que o navegador não consegue chamar, nem o master). Texto, dia e protocolo nunca mudam; nada se apaga. O master marca em análise/tratado e responde. O teste de isolamento reprova qualquer coluna nova na tabela, qualquer gatilho ou chave que ligue o relato a outra tabela, qualquer outra função que grave relato e qualquer permissão de escrita pelo navegador. Um relato de exemplo ("[EXEMPLO criado pelo suporte…]") foi gravado na conta Premier Lojas para testar a tela.
+- **Menu agrupado**: Operação (Painel, Quadro, Tarefas), Pessoas (Equipe, Feedbacks, Justificativas, Solicitações, Canal confidencial), Gamificação (Ranking, Conquistas, Prêmios, Extrato), Relatórios e Gestão (Lojas, Configurações). No computador, listas suspensas; no celular, um botão "☰" abre o menu inteiro em duas colunas. Conferido em 390 px de largura sem rolagem para os lados.
+- **Bloqueadores:** os 82 endereços do app passaram pelas 8 listas (528 mil regras): nenhum barrado.
+
+**Problemas do sistema antigo corrigidos (parte 3):** feedback duplicado era possível (checagem só no programa) e o bônus somava o saldo por fora de qualquer livro; `feedbacksolicitacoes` estava morta (duas funções com o mesmo nome); o canal guardava a hora exata e um protocolo sequencial, e ninguém conseguia tratá-lo; as solicitações não tinham como mudar de situação nem registro de quem mudou; o "Não aplicável" valia sem ninguém aprovar, ficava escondido no campo de recusa e **derrubava a confiabilidade** como se a tarefa não tivesse sido feita.
 
 **Problemas do sistema antigo corrigidos:** o estoque nunca era conferido nem descontado; recusar um resgate duas vezes devolvia os pontos em dobro; a comanda não conferia o saldo no banco (podia deixá-lo negativo) e arredondava a favor do funcionário; o extrato não batia com o saldo (resgates pendentes e ajustes manuais ficavam de fora).
 
@@ -288,6 +301,8 @@ Via **pg_cron** e funções SQL/Edge Functions, **rodando para todas as contas**
 - **Fila de envio central** (tabela + processamento), respeitando os limites do Telegram (≈30 msg/s no total, ≈20/min por grupo), para uma conta não atrasar as outras.
 - **Medição de uso:** todo envio (Telegram/WhatsApp) é registrado em `usomensagens` (conta, loja, canal, tipo, data). O total do mês vai para o Stripe como **cobrança por uso** ou como franquia incluída no plano, com excedente.
 - **WhatsApp (Z-API):** decidir entre um número da plataforma para todos ou um número por cliente (custo por instância repassado).
+- ⚠️ **Canal confidencial no bot:** a entrada chama só `registrar_relato(conta, texto)` pelo servidor, sem nenhum dado de quem envia. O bot **não pode logar mensagem + `chat_id`** nesse fluxo (nem em nível DEBUG da biblioteca do Telegram), não guarda o texto no estado da conversa depois de enviar e **não avisa o gestor na hora** (aviso agrupado, uma vez por dia, sem horário), para ninguém cruzar horários. O protocolo vai só para quem enviou; a consulta usa `consultar_relato`.
+- Entradas que já existem no banco e esperam o bot: feedback (`origem = 'bot'`), justificativa (`origem = 'bot'`, fica pendente), solicitações dos líderes (com a foto da manutenção, em `<contaid>/<lojaid>/...`) e a trava "feedback de ontem antes da comanda".
 - Funções a portar: comandos (/start, /tarefas, /ranking, /meuhistorico, /meusaldo, /loja, /documentos, /conquistas, /ajuda, /pendencias, /status_meta, /lancar), recebimento da foto da entrega com validação EXIF (a foto de nota fiscal fica na Etapa 2.2), canal confidencial, solicitações, abate de comanda, notificações de jornada, lembretes, recusa com motivo, meta batida, confirmação e pós-venda por WhatsApp.
 - Desligar os serviços antigos (`systemctl`) e o SQL Server.
 
@@ -404,6 +419,10 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Nota do mês **pula** folga semanal, domingo de folga e afastamento; confiabilidade pelo **dia do envio**; no mês corrente conta **até ontem**. |
 | 22/09/2026 | Conquistas: estorno **não retira** a conquista; bônus de conquista **não conta** no ranking; "N tarefas em X dias" com X escolhido na conquista; "vale para o histórico" ou "só a partir de hoje" escolhido na criação, sem mudar depois (a regra também não muda). Sequência de dias não quebra em folga, domingo de folga nem afastamento (mesma regra da nota do mês). |
 | 22/09/2026 | Configurações só mudam pela função `alterar_configuracao` (só o master), com validação no banco e histórico (`configuracoeshistorico`). Taxa > 0 e ≤ R$ 10. |
+| 22/09/2026 | Feedback: só hoje ou ontem; a nota não se altera (erro → anular com motivo, bônus estornado pelo livro, conquista fica); bônus de feedback fora do ranking; `feedbacksolicitacoes` sem tela. |
+| 22/09/2026 | **Canal confidencial:** só o dia (sem hora), protocolo aleatório, sem loja, **só o master lê** — nenhum papel futuro (gerente, líder) terá acesso. Entrada só pelo servidor, sem identificar quem envia; nenhum log guarda o texto junto com quem mandou. Regra permanente no `CLAUDE.md`. |
+| 22/09/2026 | Justificativa: dois botões ("Registrar e aceitar" / "Registrar para decidir depois"). Aceita sai das pendências e dos pontos possíveis e é **dia neutro** na sequência de dias (como a folga). |
+| 22/09/2026 | Foto da manutenção fica para a 1.13 (vem pelo bot). Menu agrupado em Operação, Pessoas, Gamificação, Relatórios e Gestão. |
 | 22/09/2026 | Funções da loja de prêmios com **nomes neutros** (`*_troca`), por causa de bloqueadores de anúncio. Endereços novos passam pelas listas de bloqueio antes de entrar. |
 | 21/09/2026 | Grupos foram da Etapa 1.7 para a 1.13, junto com o Telegram. A Etapa 1.7 tem três partes: 1) prêmios, resgates, comanda e extrato; 2) conquistas, nota do ranking mensal, relatórios e configurações; 3) feedbacks, canal confidencial, solicitações e justificativas. |
 
