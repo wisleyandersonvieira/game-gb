@@ -222,24 +222,31 @@ function Funcionarios() {
   });
 
   const [codigoNovo, setCodigoNovo] = useState<{ nome: string; codigo: string; dias: number } | null>(null);
+  // Erro aparece NA LINHA de quem foi clicado: antes ia para o topo da tela e
+  // quem clicava lá embaixo não via nada acontecer.
+  const [erroDoAcesso, setErroDoAcesso] = useState<{ funcionarioid: number; texto: string } | null>(null);
 
   function aoGerarCodigo(r: { nome: string; codigo: string; dias: number }) {
+    setErroDoAcesso(null);
     setCodigoNovo(r);
     qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
     qc.invalidateQueries({ queryKey: ["equipe"] });
   }
 
   const criarAcesso = useMutation({
+    onError: (e, funcionarioid) => setErroDoAcesso({ funcionarioid, texto: (e as Error).message }),
     mutationFn: (funcionarioid: number) => criarAcessoColaborador({ data: { funcionarioid } }),
     onSuccess: aoGerarCodigo,
   });
 
   const redefinirAcesso = useMutation({
+    onError: (e, funcionarioid) => setErroDoAcesso({ funcionarioid, texto: (e as Error).message }),
     mutationFn: (funcionarioid: number) => redefinirAcessoColaborador({ data: { funcionarioid } }),
     onSuccess: aoGerarCodigo,
   });
 
   const novoCodigo = useMutation({
+    onError: (e, funcionarioid) => setErroDoAcesso({ funcionarioid, texto: (e as Error).message }),
     mutationFn: (funcionarioid: number) => gerarCodigoDeAcesso({ data: { funcionarioid } }),
     onSuccess: aoGerarCodigo,
   });
@@ -585,6 +592,11 @@ function Funcionarios() {
                 {cpfMascarado(f.cpf) ? `CPF ${cpfMascarado(f.cpf)}` : "Sem CPF cadastrado"} ·{" "}
                 {situacaoDoAcesso(acessos.data?.get(f.funcionarioid))}
               </p>
+              {erroDoAcesso?.funcionarioid === f.funcionarioid && (
+                <p className="mt-1 rounded-md border border-destructive px-2 py-1 text-xs text-destructive">
+                  {erroDoAcesso.texto}
+                </p>
+              )}
               </div>
             </div>
 
@@ -619,22 +631,27 @@ function Funcionarios() {
               >
                 Editar
               </button>
+              {codigoNovo && codigoNovo.nome === f.nomecompleto && (
+                <span className="rounded-md border border-primary px-2 py-1 font-mono text-sm">
+                  {codigoNovo.codigo}
+                </span>
+              )}
               {f.ativo && f.cpf && !acessos.data?.get(f.funcionarioid)?.temacesso && (
                 <button
                   onClick={() => criarAcesso.mutate(f.funcionarioid)}
                   disabled={criarAcesso.isPending}
-                  className="rounded-md border border-border px-3 py-1 text-sm"
+                  className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
                 >
-                  Criar acesso
+                  {criarAcesso.isPending ? "Criando..." : "Criar acesso"}
                 </button>
               )}
               {acessos.data?.get(f.funcionarioid)?.temacesso && acessos.data?.get(f.funcionarioid)?.semsenha && (
                 <button
                   onClick={() => novoCodigo.mutate(f.funcionarioid)}
                   disabled={novoCodigo.isPending}
-                  className="rounded-md border border-border px-3 py-1 text-sm"
+                  className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
                 >
-                  Gerar código novo
+                  {novoCodigo.isPending ? "Gerando..." : "Gerar código novo"}
                 </button>
               )}
               {acessos.data?.get(f.funcionarioid)?.temacesso && !acessos.data?.get(f.funcionarioid)?.semsenha && (

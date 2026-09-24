@@ -21,8 +21,11 @@ import { getRequest } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/config-publica";
 
-const DOMINIO_COLABORADOR = "colaborador.stgame.local";
-const DOMINIO_LOJA = "loja.stgame.local";
+// Domínio interno dos logins que o sistema monta sozinho. É um subdomínio de
+// um domínio REAL de propósito: validador de e-mail recusa TLD inventado (o
+// antigo .local). Ninguém recebe e-mail aqui — estas caixas não existem.
+const DOMINIO_COLABORADOR = "colaborador.stgame.com.br";
+const DOMINIO_LOJA = "loja.stgame.com.br";
 const DIAS_DO_CODIGO = 7;
 // A hospedagem (Cloudflare) recusa PBKDF2 acima de 100.000 voltas — e recusa
 // no ar, não aqui. Este número é o teto de lá; a verificação do GitHub barra
@@ -195,8 +198,18 @@ async function clienteDeLogin() {
   });
 }
 
-/** Abre a sessao do colaborador depois de NOS conferirmos quem e. */
-async function abrirSessao(userid: string, email: string) {
+/**
+ * Abre a sessao depois de NOS conferirmos quem e.
+ *
+ * O e-mail vem do proprio login (pelo identificador), nao remontado a partir do
+ * CPF: assim, trocar o dominio interno ou o CPF nunca deixa ninguem de fora.
+ */
+async function abrirSessao(userid: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: dono } = await supabaseAdmin.auth.admin.getUserById(userid);
+  const email = dono?.user?.email;
+  if (!email) throw new Error("Não foi possível abrir a sessão. Peça ao gestor para redefinir o seu acesso.");
+
   const login = await clienteDeLogin();
   const { data, error } = await login.auth.signInWithPassword({ email, password: await senhaInterna(userid) });
   if (error || !data?.session) {
@@ -267,7 +280,7 @@ export const entrarColaborador = createServerFn({ method: "POST" })
     await fecharTentativa(tentativa, ok);
     if (!ok || !dados) throw new Error(ERRO_LOGIN);
 
-    return abrirSessao(dados.userid, emailDoColaborador(cpf, contaid));
+    return abrirSessao(dados.userid);
   });
 
 /** Primeiro acesso: CPF + código do gestor. Uso único. */
@@ -298,7 +311,7 @@ export const entrarComCodigo = createServerFn({ method: "POST" })
     const { data: pessoa } = await supabaseAdmin.rpc("senha_app_de", { p_contaid: contaid, p_cpf: cpf });
     const dados = pessoa as { userid: string } | null;
     if (!dados) throw new Error(ERRO_CODIGO);
-    return abrirSessao(dados.userid, emailDoColaborador(cpf, contaid));
+    return abrirSessao(dados.userid);
   });
 
 /**
@@ -337,7 +350,7 @@ export const entrarMaster = createServerFn({ method: "POST" })
       const ok = await senhaConfere(senha, acesso.senhahash);
       await fecharTentativa(tentativa, ok);
       if (!ok) throw new Error(ERRO_LOGIN_EMAIL);
-      return abrirSessao(acesso.userid, email);
+      return abrirSessao(acesso.userid);
     }
 
     // Conversão (uma vez por login antigo): confere no Supabase e passa a
