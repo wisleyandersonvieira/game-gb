@@ -50,8 +50,8 @@ function situacaoDoAcesso(a: SituacaoAcesso | undefined) {
   if (!a?.temacesso) return "Sem acesso ao app";
   if (a.semsenha) {
     return a.codigopendente
-      ? "Aguardando o primeiro acesso (código entregue)"
-      : "Sem senha e sem código: gere um código novo";
+      ? "Aguardando o 1º acesso: a pessoa entra com o CPF e o código (não há senha provisória)"
+      : "Sem senha e sem código válido: gere um código novo";
   }
   if (a.sempin) return "Entrou, falta escolher o PIN do tablet";
   return "Acesso ativo";
@@ -307,6 +307,25 @@ function Funcionarios() {
         </p>
       }
     >
+      {codigoNovo && (
+        <div className="space-y-2 rounded-xl border-2 border-primary bg-card p-4">
+          <p className="font-semibold">Código de primeiro acesso — {codigoNovo.nome}</p>
+          <p className="font-mono text-3xl tracking-widest">{codigoNovo.codigo}</p>
+          <p className="text-sm">
+            <strong>Não existe senha provisória.</strong> Este código é a entrada: com ele a pessoa
+            cria a própria senha. Vale {codigoNovo.dias} dias e serve uma vez só.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Entregue à pessoa, junto com o link da equipe (Lojas → Link da equipe). No celular dela:
+            abrir o link → aba <strong>1º acesso</strong> → CPF + este código → criar senha → escolher
+            o PIN → aceitar a política.
+          </p>
+          <p className="text-sm text-destructive">Anote agora: o código não aparece de novo.</p>
+          <button onClick={() => setCodigoNovo(null)} className="rounded-md border border-border px-3 py-1 text-sm">
+            Anotei
+          </button>
+        </div>
+      )}
 
       <form
         onSubmit={(e) => {
