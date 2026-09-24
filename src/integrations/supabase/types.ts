@@ -5393,6 +5393,10 @@ export type Database = {
         }
         Returns: number
       }
+      fechamento_valendo: {
+        Args: { p_ano: number; p_mes: number }
+        Returns: number
+      }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number

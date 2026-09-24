@@ -3126,7 +3126,70 @@ BEGIN
                         'a nota do fechamento e a mesma do ranking ao vivo');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.historicoranking WHERE contaid = 1 AND funcionarioid = 7101),
                         'fechamento da conta A nao tem ninguem da conta B');
+
+  -- Decisao de 24/09/2026: a tela Ranking le o FECHAMENTO quando o mes ja
+  -- esta fechado, para nunca discordar da tela "Meses fechados". Prova forte:
+  -- dezembro de 2026 esta no futuro em relacao a "hoje" do teste, entao o
+  -- calculo ao vivo (que vai ate ontem) devolveria ZERO linhas.
+  PERFORM public.exigir((SELECT count(*) FROM public.ranking_mensal(2026, 12)) > 0,
+                        'a tela Ranking mostra um mes fechado (ao vivo nao teria nada)');
+  PERFORM public.exigir((SELECT count(*) FROM public.ranking_mensal(2026, 12))
+                        = (SELECT count(*) FROM public.historicoranking
+                            WHERE fechamentoid = f AND lojaid IS NULL),
+                        'com as mesmas pessoas do fechamento');
+  PERFORM public.exigir((SELECT nota FROM public.ranking_mensal(2026, 12) WHERE funcionarioid = 7006)
+                        = (SELECT nota FROM public.historicoranking
+                            WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7006),
+                        'e com os mesmos numeros: Ranking e "Meses fechados" nao discordam');
+  PERFORM public.exigir((SELECT pontosganhos FROM public.ranking_mensal(2026, 12, 10) WHERE funcionarioid = 7006)
+                        = (SELECT pontosganhos FROM public.historicoranking
+                            WHERE fechamentoid = f AND lojaid = 10 AND funcionarioid = 7006),
+                        'vale tambem quando se escolhe uma loja');
 END $$;
+
+-- Gente da conta A usada logo abaixo, guardada antes de trocar para a conta B
+-- (dentro da sessao de B a RLS esconderia estes ids).
+CREATE TEMP TABLE IF NOT EXISTS gente_da_conta_a AS
+  SELECT funcionarioid FROM public.funcionarios WHERE contaid = 1;
+
+-- Mes SEM fechamento continua sendo calculado ao vivo.
+-- (Nao da para supor que o mes corrente esta aberto: os testes acima ja fecham
+-- meses relativos a "hoje". Entao procuramos um mes que de fato nao tem
+-- fechamento nenhum.)
+DO $$
+DECLARE v_ano integer; v_mes integer; i integer;
+        d date := public.dia_em_sao_paulo(now());
+BEGIN
+  FOR i IN 0..24 LOOP
+    v_ano := extract(year  FROM (d - (i || ' month')::interval))::integer;
+    v_mes := extract(month FROM (d - (i || ' month')::interval))::integer;
+    EXIT WHEN public.fechamento_valendo(v_ano, v_mes) IS NULL;
+  END LOOP;
+  PERFORM public.exigir(public.fechamento_valendo(v_ano, v_mes) IS NULL,
+                        'existe mes sem fechamento para conferir o calculo ao vivo');
+  PERFORM public.exigir(
+    (SELECT count(*) FROM public.ranking_mensal(v_ano, v_mes))
+    = (SELECT count(*) FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, d - 1)),
+    'mes sem fechamento continua saindo do calculo ao vivo');
+END $$;
+
+-- A conta B tem o proprio fechamento (a rotina roda para todas as contas),
+-- mas o dela nunca e o de A.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE f_a integer; f_b integer;
+BEGIN
+  SELECT fechamentoid INTO f_a FROM public.fechamentosmensais
+   WHERE contaid = 1 AND ano = 2026 AND mes = 12 AND situacao <> 'substituido';
+  f_b := public.fechamento_valendo(2026, 12);
+  PERFORM public.exigir(f_b IS NULL OR f_b IS DISTINCT FROM f_a,
+                        'B nunca cai no fechamento de A');
+  PERFORM public.exigir(NOT EXISTS (
+    SELECT 1 FROM public.ranking_mensal(2026, 12) r
+      JOIN gente_da_conta_a x ON x.funcionarioid = r.funcionarioid),
+    'o mes fechado de B nao mostra ninguem da conta A');
+END $$;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- Dia 3: uma entrega de 31/12 aprovada depois muda o provisório.
 INSERT INTO public.entregas (contaid, tarefaid, funcionarioid, lojaid, atribuicaoid, dataenvio, statusvalidacao, pontosganhos, dataaprovacao)

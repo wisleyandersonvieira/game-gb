@@ -196,6 +196,18 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
     },
   });
 
+  // Mês já fechado: os números vêm do fechamento e não mudam mais. É a mesma
+  // fonte da tela "Meses fechados", então as duas nunca discordam.
+  const fechado = useQuery({
+    queryKey: ["fechamento-do-mes", mes],
+    enabled: Boolean(ano && numeroMes),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("fechamento_valendo", { p_ano: ano, p_mes: numeroMes });
+      if (error) throw error;
+      return data as number | null;
+    },
+  });
+
   const linhas = nota.data ?? [];
   const pct = (v: number) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 
@@ -217,9 +229,11 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
       <div className="space-y-1 text-xs text-muted-foreground">
         <p>
           <strong>Nota = metade confiabilidade + metade esforço.</strong>{" "}
-          {semDias
-            ? "Hoje é dia 1: a nota deste mês começa a aparecer amanhã."
-            : `Contando de ${dd(inicio)} a ${dd(fim)}${mesCorrente ? " (no mês corrente, até ontem; o que for feito hoje entra amanhã)" : ""}.`}
+          {fechado.data
+            ? "Este mês já foi fechado: os números abaixo vêm do fechamento e não mudam mais. São os mesmos da tela Meses fechados."
+            : semDias
+              ? "Hoje é dia 1: a nota deste mês começa a aparecer amanhã."
+              : `Contando de ${dd(inicio)} a ${dd(fim)}${mesCorrente ? " (no mês corrente, até ontem; o que for feito hoje entra amanhã)" : ""}.`}
         </p>
         <p>
           <strong>Confiabilidade:</strong> dos pontos que a pessoa podia fazer nas tarefas dela, quanto fez (pelo dia

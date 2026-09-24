@@ -1,6 +1,6 @@
 -- =========================================================================
--- STGame — Etapa 1.12, parte B1: tarefa compartilhada, pegar, revogar e o
--- tablet do balcão (já com os consertos da revisão adversarial).
+-- STGame — Etapa 1.12, parte B1: tarefa compartilhada, pegar, revogar, o
+-- tablet do balcão e o Ranking lendo o fechamento.
 --
 -- Como usar: Supabase -> SQL Editor -> New query -> colar TUDO -> Run.
 -- Se der erro, NADA é aplicado (roda tudo junto ou nada): me mande a mensagem.
@@ -12,6 +12,7 @@
 --   20260928100000_tarefa_compartilhada_e_aceite.sql
 --   20260928100100_visao_do_tablet.sql
 --   20260928100200_consertos_revisao_b1.sql
+--   20260928100300_ranking_le_o_fechamento.sql
 -- =========================================================================
 
 BEGIN;
@@ -1744,6 +1745,81 @@ GRANT EXECUTE ON FUNCTION public.registrar_entrega(integer, text, text, boolean)
 REVOKE ALL ON FUNCTION public.bot_texto_rotina(text, integer, integer, integer) FROM public, anon, authenticated;
 
 -- =========================================================================
+-- 20260928100300_ranking_le_o_fechamento.sql
+-- =========================================================================
+
+-- Etapa 1.12, parte B1 — a tela Ranking passa a ler o fechamento (24/09/2026).
+--
+-- Decisão do Wisley: mês já fechado vem do fechamento; mês aberto continua
+-- sendo calculado ao vivo. Antes, a tela Ranking recalculava qualquer mês, e
+-- uma mudança de regra (como "quem pega assume", da parte B1a) mexia em meses
+-- antigos — a tela Ranking e a tela "Meses fechados" podiam mostrar números
+-- diferentes para o mesmo mês.
+
+-- Qual fechamento vale para este mês, na conta de quem está perguntando.
+-- Nada de SECURITY DEFINER: a RLS de fechamentosmensais já filtra a conta, e
+-- o filtro está explícito de novo aqui.
+CREATE OR REPLACE FUNCTION public.fechamento_valendo(p_ano integer, p_mes integer)
+RETURNS integer
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+  SELECT f.fechamentoid
+    FROM public.fechamentosmensais f
+   WHERE f.contaid = (select public.minha_conta())
+     AND f.ano = p_ano AND f.mes = p_mes
+     AND f.situacao <> 'substituido'
+   ORDER BY f.versao DESC
+   LIMIT 1
+$$;
+
+CREATE OR REPLACE FUNCTION public.ranking_mensal(p_ano integer, p_mes integer, p_lojaid integer DEFAULT NULL)
+RETURNS TABLE (
+  funcionarioid   integer,
+  nomecompleto    varchar,
+  pontosganhos    integer,
+  pontosregulares integer,
+  pontospossiveis integer,
+  confiabilidade  numeric,
+  esforco         numeric,
+  nota            numeric
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_fechamento integer := public.fechamento_valendo(p_ano, p_mes);
+BEGIN
+  IF v_fechamento IS NOT NULL THEN
+    -- Mês fechado: os números estão congelados. É a mesma fonte da tela
+    -- "Meses fechados", então as duas nunca discordam.
+    RETURN QUERY
+      SELECT h.funcionarioid, h.nomefuncionario, h.pontosganhos,
+             coalesce(h.pontosregulares, 0), h.pontospossiveis,
+             coalesce(h.confiabilidade, 0), coalesce(h.esforco, 0), coalesce(h.nota, 0)
+        FROM public.historicoranking h
+       WHERE h.fechamentoid = v_fechamento
+         AND h.lojaid IS NOT DISTINCT FROM p_lojaid
+       ORDER BY h.posicao;
+  ELSE
+    -- Mês aberto: ao vivo, até ontem.
+    RETURN QUERY
+      SELECT * FROM public.ranking_mensal_da_conta(public.minha_conta(), p_ano, p_mes, p_lojaid,
+                                                   public.dia_em_sao_paulo(now()) - 1);
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fechamento_valendo(integer, integer)      FROM public, anon;
+REVOKE ALL ON FUNCTION public.ranking_mensal(integer, integer, integer) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.fechamento_valendo(integer, integer)      TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ranking_mensal(integer, integer, integer) TO authenticated;
+
+-- =========================================================================
 -- Conferência final: se chegou aqui, está tudo no lugar.
 -- =========================================================================
 DO $verifica$
@@ -1752,7 +1828,8 @@ BEGIN
   SELECT coalesce(array_agg(f ORDER BY f), ARRAY[]::text[]) INTO v_falta
     FROM unnest(ARRAY['pegar_tarefa', 'revogar_aceite', 'atribuir_tarefa', 'fila_da_loja',
                       'tarefas_nao_pegas', 'tarefas_pegas_da_pessoa', 'tarefa_unica_ja_cumprida',
-                      'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar']) f
+                      'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar',
+                      'fechamento_valendo']) f
    WHERE NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                       WHERE n.nspname = 'public' AND p.proname = f);
   IF array_length(v_falta, 1) > 0 THEN
