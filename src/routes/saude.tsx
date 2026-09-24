@@ -56,7 +56,7 @@ function Saude() {
             <Linha
               ok={d.data.temSite}
               titulo="Endereço do site"
-              ajuda="Cadastre SITE_URL nos Secrets do Lovable (ex.: https://stgame.lovable.app)."
+              ajuda="Cadastre SITE_URL nos Secrets do Lovable, com o endereço do site (ex.: https://stgame.com.br), sem barra no fim."
             />
             <Linha
               ok={d.data.contaDeSenha}
