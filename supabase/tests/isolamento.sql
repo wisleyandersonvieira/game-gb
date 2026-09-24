@@ -3899,6 +3899,16 @@ END $$;
 DO $$
 DECLARE v jsonb; x jsonb; e1 integer := current_setting('teste.e1')::integer;
 BEGIN
+  -- O teste nao pode depender da hora em que roda: estas pessoas nao tem
+  -- horario de trabalho, entao o silencio da noite as pegaria. Aqui o silencio
+  -- e jogado para daqui a duas horas (e volta ao normal no fim do bloco).
+  UPDATE public.configuracoes
+     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '2 hours')::time, 'HH24:MI')
+   WHERE chave = 'HORARIO_SILENCIO_INICIO';
+  UPDATE public.configuracoes
+     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '3 hours')::time, 'HH24:MI')
+   WHERE chave = 'HORARIO_SILENCIO_FIM';
+
   v := public.bot_fila_pegar(50);
   PERFORM public.exigir(jsonb_array_length(v) > 0, 'fila entrega os avisos para envio');
   FOR x IN SELECT * FROM jsonb_array_elements(v) LOOP
@@ -3917,6 +3927,9 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'usomensagens'
                                      AND column_name NOT IN ('contaid', 'lojaid', 'canal', 'tipo', 'dia', 'quantidade')),
                         'a medicao nao guarda texto');
+
+  UPDATE public.configuracoes SET valor = '22:00' WHERE chave = 'HORARIO_SILENCIO_INICIO';
+  UPDATE public.configuracoes SET valor = '07:00' WHERE chave = 'HORARIO_SILENCIO_FIM';
 END $$;
 
 -- Funcionário desativado não usa nada; master desliga um vínculo.
@@ -4276,6 +4289,13 @@ DO $$
 DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE;
 BEGIN
   DELETE FROM public.mensagensfila WHERE contaid = 1;
+  -- Fora do silencio, seja qual for a hora em que o teste rode.
+  UPDATE public.configuracoes
+     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '2 hours')::time, 'HH24:MI')
+   WHERE chave = 'HORARIO_SILENCIO_INICIO';
+  UPDATE public.configuracoes
+     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '3 hours')::time, 'HH24:MI')
+   WHERE chave = 'HORARIO_SILENCIO_FIM';
   UPDATE public.configuracoes SET valor = '1' WHERE contaid = 1 AND chave = 'MAX_MENSAGENS_AUTOMATICAS_DIA';
 
   -- Uma já enviada hoje.
@@ -4298,6 +4318,8 @@ BEGIN
                         'aviso acima do limite espera o dia seguinte');
 
   UPDATE public.configuracoes SET valor = '8' WHERE contaid = 1 AND chave = 'MAX_MENSAGENS_AUTOMATICAS_DIA';
+  UPDATE public.configuracoes SET valor = '22:00' WHERE chave = 'HORARIO_SILENCIO_INICIO';
+  UPDATE public.configuracoes SET valor = '07:00' WHERE chave = 'HORARIO_SILENCIO_FIM';
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
