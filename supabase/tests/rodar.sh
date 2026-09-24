@@ -224,6 +224,25 @@ if [ "$ok_m" != "1" ] || [ "$ja_pega" != "1" ] || [ "$erros_m" != "0" ]; then
 $saida_m"
 fi
 
+echo "==> revogar o aceite e entregar no mesmo instante (duas conexoes)"
+rodar "$RAIZ/supabase/tests/concorrencia_revogar_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_revogar_gestor.sql" "$CONTAINER:/rev_g.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_revogar_tablet.sql" "$CONTAINER:/rev_t.sql" >/dev/null
+docker exec "$CONTAINER" psql -U postgres -q -f /rev_g.sql >/tmp/gamegb-rev1.txt 2>&1 &
+pr1=$!
+docker exec "$CONTAINER" psql -U postgres -q -f /rev_t.sql >/tmp/gamegb-rev2.txt 2>&1 &
+pr2=$!
+wait "$pr1" "$pr2" || true
+recusadas=$(cat /tmp/gamegb-rev1.txt /tmp/gamegb-rev2.txt | grep -c "ERROR" || true)
+echo "    conexao recusada (uma das duas tem de perder): $recusadas de 2"
+rm -f /tmp/gamegb-rev1.txt /tmp/gamegb-rev2.txt
+saida_rv="$(rodar "$RAIZ/supabase/tests/concorrencia_revogar_confere.sql" 2>&1)" && ok_rv=1 || ok_rv=0
+echo "$saida_rv" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_rv" != "1" ] || [ "$recusadas" != "1" ]; then
+  echo "$saida_rv" | grep -E 'ERROR|FALHOU' || true
+  ok_c=0
+fi
+
 echo "==> duas tentativas de acesso no mesmo instante (trava)"
 rodar "$RAIZ/supabase/tests/concorrencia_trava_preparo.sql" >/dev/null
 docker cp "$RAIZ/supabase/tests/concorrencia_trava_sessao.sql" "$CONTAINER:/sessao_t.sql" >/dev/null

@@ -64,7 +64,7 @@ async function pessoaDoPin(t: Tablet, pin: string) {
   if (!/^\d{6}$/.test(limpo)) throw new Error("PIN não reconhecido.");
 
   const chave = await embaralhar(`pintablet:${t.contaid}:${t.lojaid}`);
-  const tentativa = await abrirTentativa(t.contaid, "tablet", chave, origemDaChamada());
+  const tentativa = await abrirTentativa(t.contaid, "pintablet", chave, origemDaChamada());
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin.rpc("visao_pessoa_do_pin", {

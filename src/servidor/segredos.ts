@@ -57,7 +57,7 @@ export function origemDaChamada() {
 
 export async function abrirTentativa(
   contaid: number | null,
-  tipo: "senha" | "pin" | "tablet",
+  tipo: "senha" | "pin" | "tablet" | "pintablet",
   chave: string,
   origem: string,
 ) {

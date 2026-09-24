@@ -5589,7 +5589,15 @@ BEGIN
                         'a tarefa que ja era dela nao aparece como "pega" (nao e o mesmo caso)');
 END $$;
 
--- Isolamento: a conta B nao alcanca nada disso.
+-- Isolamento: a conta B nao alcanca nada disso. O id da tarefa de A e guardado
+-- AQUI, ainda como A: dentro da sessao de B a RLS o esconderia.
+DO $$
+BEGIN
+  PERFORM set_config('teste.atr_de_a',
+    (SELECT atribuicaoid::text FROM public.tarefasatribuidas
+      WHERE contaid = 1 AND tarefaid = 9602 ORDER BY atribuicaoid LIMIT 1), false);
+END $$;
+
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
 DECLARE deu_erro boolean; v_n integer; v_atr integer; v_hoje date := public.dia_em_sao_paulo(now());
@@ -5603,7 +5611,10 @@ BEGIN
   SELECT count(*) INTO v_n FROM public.tarefas_pegas_da_pessoa(9502, v_hoje - 1, v_hoje);
   PERFORM public.exigir(v_n = 0, 'B nao ve o que gente de A pegou');
 
-  SELECT atribuicaoid INTO v_atr FROM public.tarefasatribuidas WHERE contaid = 1 AND tarefaid = 9602 LIMIT 1;
+  -- O id tem de vir de FORA da sessao de B: lido aqui, a RLS devolveria NULL e
+  -- o teste passaria testando o id -1, que nao existe para ninguem.
+  v_atr := current_setting('teste.atr_de_a')::integer;
+  PERFORM public.exigir(v_atr > 0, 'o teste usa uma tarefa REAL da conta A');
   BEGIN PERFORM public.pegar_tarefa(coalesce(v_atr, -1), 9501); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'B nao pega uma tarefa de A');
@@ -5726,5 +5737,162 @@ END $$;
 
 RESET ROLE;
 SET teste.uid = '';
+
+-- ===========================================================================
+-- 48. Consertos da revisao adversarial da parte B1 (24/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '48. consertos da revisao adversarial da B1'; END $$;
+
+-- (1) CRITICO: a trava do PIN do tablet. Antes, o tipo 'tablet' era isento da
+-- trava por chave e a trava por origem zerava a cada acerto: quem sabia o
+-- proprio PIN chutava para sempre (o revisor provou 200 chutes aceitos).
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_id bigint; v_aceitas integer := 0; i integer;
+BEGIN
+  DELETE FROM public.tentativasacesso WHERE tipo = 'pintablet';
+
+  -- 4 erros + 1 acerto, repetido: era assim que o contador era zerado.
+  FOR i IN 1..60 LOOP
+    v_id := public.tentativa_abrir(1, 'pintablet', 'tablet-a', '9.9.9.9');
+    EXIT WHEN v_id IS NULL;
+    v_aceitas := v_aceitas + 1;
+    PERFORM public.tentativa_fechar(v_id, (i % 5 = 0));
+  END LOOP;
+  PERFORM public.exigir(v_aceitas <= 26,
+    'o PIN do tablet trava mesmo com um acerto a cada 4 erros (aceitas: ' || v_aceitas || ')');
+
+  -- Sem o cabecalho de IP da hospedagem, a trava por origem e pulada: a trava
+  -- por chave tem de segurar sozinha.
+  DELETE FROM public.tentativasacesso WHERE tipo = 'pintablet';
+  v_aceitas := 0;
+  FOR i IN 1..60 LOOP
+    v_id := public.tentativa_abrir(1, 'pintablet', 'tablet-b', 'sem-ip');
+    EXIT WHEN v_id IS NULL;
+    v_aceitas := v_aceitas + 1;
+    PERFORM public.tentativa_fechar(v_id, false);
+  END LOOP;
+  PERFORM public.exigir(v_aceitas <= 6,
+    'sem IP confiavel a trava por chave segura sozinha (aceitas: ' || v_aceitas || ')');
+
+  DELETE FROM public.tentativasacesso WHERE tipo = 'pintablet';
+END $$;
+
+-- (2) SERIO: tarefa compartilhada Unica, ja entregue e aprovada, voltava para
+-- a fila no dia seguinte e pagava de novo, todo dia.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_atr integer; v_nova integer;
+BEGIN
+  v_atr := public.atribuir_tarefa(9602, 10, ARRAY[9501, 9503], 'Unica', NULL, now() - interval '1 day', NULL);
+  v_nova := public.pegar_tarefa(v_atr, 9501);
+  PERFORM public.aprovar_entrega(public.registrar_entrega(v_nova));
+  PERFORM set_config('teste.unica', v_atr::text, false);
+  PERFORM set_config('teste.unica_copia', v_nova::text, false);
+END $$;
+
+-- Finge que tudo isso aconteceu ONTEM (so o dono do banco mexe no aceite).
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  UPDATE public.missoesaceites SET dia = v_hoje - 1
+   WHERE contaid = 1 AND atribuicaoid = current_setting('teste.unica')::integer;
+  UPDATE public.tarefasatribuidas SET dataagendamento = now() - interval '1 day',
+                                      dataatribuicao  = now() - interval '1 day'
+   WHERE contaid = 1 AND atribuicaoid = current_setting('teste.unica_copia')::integer;
+  UPDATE public.entregas SET dataenvio = now() - interval '1 day', dataaprovacao = now() - interval '1 day'
+   WHERE contaid = 1 AND atribuicaoid = current_setting('teste.unica_copia')::integer;
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_atr integer := current_setting('teste.unica')::integer; deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'feita',
+                        'tarefa unica compartilhada entregue ontem continua "feita" hoje');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr),
+                        'e nao volta para o cartao "Ninguem pegou"');
+  BEGIN PERFORM public.pegar_tarefa(v_atr, 9503); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem ninguem a pega de novo para receber os pontos outra vez');
+END $$;
+
+-- (3) MEDIO: a mesma foto nao prova duas tarefas.
+DO $$
+DECLARE v_a integer; v_b integer; deu_erro boolean;
+BEGIN
+  v_a := public.atribuir_tarefa(9600, 10, ARRAY[9501], 'Unica', NULL, now(), NULL);
+  v_b := public.atribuir_tarefa(9601, 10, ARRAY[9503], 'Unica', NULL, now(), NULL);
+  PERFORM public.registrar_entrega(v_a, NULL, '1/10/prova-unica.jpg');
+  BEGIN PERFORM public.registrar_entrega(v_b, NULL, '1/10/prova-unica.jpg'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a foto de uma entrega nao serve para provar outra');
+  PERFORM set_config('teste.desativar', v_b::text, false);
+END $$;
+
+-- (4) MEDIO: o tablet mandava o atribuicaoid que quisesse. Tarefa desativada
+-- pelo gestor sai da fila e agora tambem e recusada no pegar e no entregar.
+DO $$
+BEGIN
+  UPDATE public.tarefas SET ativa = false WHERE contaid = 1 AND tarefaid = 9601;
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_atr integer := current_setting('teste.desativar')::integer; deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.visao_pegar(1, 10, 9503, v_atr); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o tablet nao pega tarefa que nao esta na fila de hoje');
+
+  BEGIN PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem entrega nela');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$ BEGIN UPDATE public.tarefas SET ativa = true WHERE contaid = 1 AND tarefaid = 9601; END $$;
+
+-- (5) PEQUENO: depois de revogado, a missao volta a ser anunciada no grupo.
+DO $$
+DECLARE v_atr integer; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  v_atr := public.atribuir_tarefa(9600, 10, NULL, 'Diaria', NULL, NULL, '09:30');
+  PERFORM public.pegar_tarefa(v_atr, 9501);
+  PERFORM set_config('teste.missao', v_atr::text, false);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_atr integer := current_setting('teste.missao')::integer;
+BEGIN
+  PERFORM public.exigir(public.bot_texto_rotina('missao', 1, NULL, v_atr) IS NULL,
+                        'missao ja pega nao e reanunciada no grupo');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.revogar_aceite(current_setting('teste.missao')::integer,
+                                public.dia_em_sao_paulo(now()), 'nao era para ela');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_atr integer := current_setting('teste.missao')::integer;
+BEGIN
+  PERFORM public.exigir(public.bot_texto_rotina('missao', 1, NULL, v_atr) IS NOT NULL,
+                        'depois de revogada, a missao volta a ser anunciada');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;
