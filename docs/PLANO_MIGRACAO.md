@@ -415,6 +415,11 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
     - Teste de isolamento, **seção 44 (contrato)**: toda função que o servidor chama existe no banco e é executável pela chave de servidor; e o login do **administrador geral** e do **master** é provado ponta a ponta.
     - Verificação do GitHub: **falha** se o servidor chamar função que nenhuma migração cria, ou se um segredo usado no código não estiver no `.env.example`.
     - **Ordem certa de publicação (sempre):** 1) aplicar as migrações no Supabase; 2) cadastrar os segredos; 3) publicar; 4) abrir `/saude`.
+  - [x] **Segundo incidente (24/09/2026): a hospedagem recusou a conta de senha.** Depois de aplicar as migrações, o login do gestor deu "Pbkdf2 failed: iteration counts above 100000 are not supported". A Cloudflare (hospedagem do Lovable) limita o PBKDF2 a 100.000 voltas, e só falha **no ar** — aqui rodava normalmente. Pior: a senha do Supabase já tinha sido trocada pela interna **antes** de o resumo ser gravado, então o dono da conta ficou trancado do lado de fora. Ficou:
+    - Voltas ajustadas para 100.000 (o teto da hospedagem).
+    - **Ordem segura em toda conversão de senha:** grava o resumo primeiro, troca a senha do Supabase depois, e desfaz o resumo se a troca falhar. Nunca mais existe o meio-termo "senha antiga morta e resumo ausente".
+    - `/saude` passou a **fazer uma conta de senha de verdade** e mostrar o erro da hospedagem, se houver.
+    - Verificação do GitHub: falha se as voltas passarem de 100.000.
     - Para quem não usa o terminal: **`supabase/aplicar-etapa-1.12-parte-A.sql`** é o mesmo conteúdo das 10 migrações desta etapa, num arquivo só, para colar no SQL Editor. Roda tudo junto ou nada, pode rodar duas vezes sem erro, e termina dizendo "tudo certo". Foi testado num banco igual ao do Supabase (sem a parte A): aplicou, e o teste de isolamento passou inteiro em cima dele.
   - [ ] **Falta cadastrar no Lovable:** `STGAME_PIN_PEPPER` (chave longa e aleatória). Sem ela, criar acesso, entrar e escolher PIN não funcionam. **Trocar essa chave depois obriga a refazer os acessos de todo mundo.**
 - [ ] **B — Tablet** (grande): painel, fila do dia, PIN, aceitar, entregar com foto, mural com ciência, feedback, justificativa, solicitação, modo quiosque, pareamento e corte de tablet.

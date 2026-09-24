@@ -24,7 +24,10 @@ import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/
 const DOMINIO_COLABORADOR = "colaborador.stgame.local";
 const DOMINIO_LOJA = "loja.stgame.local";
 const DIAS_DO_CODIGO = 7;
-const ITERACOES_SENHA = 210_000;
+// A hospedagem (Cloudflare) recusa PBKDF2 acima de 100.000 voltas — e recusa
+// no ar, não aqui. Este número é o teto de lá; a verificação do GitHub barra
+// qualquer valor maior.
+const ITERACOES_SENHA = 100_000;
 
 type ClienteDoUsuario = {
   rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
@@ -406,16 +409,17 @@ export const definirSenhaDeGestor = createServerFn({ method: "POST" })
       throw new Error("A senha atual não confere.");
     }
 
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      password: await senhaInterna(userId),
-    });
-    if (error) throw new Error(`Não foi possível salvar a senha: ${error.message}`);
+    // Guarda o resumo primeiro; só depois troca a senha do Supabase.
     const { error: erroBanco } = await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: userId,
       p_contaid: (achado?.contaid ?? null) as unknown as number,
       p_hash: await resumoDaSenha(senha),
     });
     if (erroBanco) throw new Error(`Não foi possível salvar a senha: ${erroBanco.message}`);
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password: await senhaInterna(userId),
+    });
+    if (error) throw new Error(`Não foi possível salvar a senha: ${error.message}`);
     if (guardada) await supabaseAdmin.auth.admin.signOut(userId, "others").catch(() => undefined);
     return { ok: true };
   });
@@ -781,19 +785,19 @@ export const criarAcessoLoja = createServerFn({ method: "POST" })
     }
     // A senha do tablet também é conferida por nós: guardamos o resumo e a
     // senha do Supabase vira a interna. Assim o tablet não é uma porta aberta.
-    const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(criado.user.id, {
-      password: await senhaInterna(criado.user.id),
-    });
-    if (erroInterna) {
-      await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
-      throw new Error(`Não foi possível criar o acesso: ${erroInterna.message}`);
-    }
     const { error: erroResumo } = await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: criado.user.id, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
     });
     if (erroResumo) {
       await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
       throw new Error(`Não foi possível criar o acesso: ${erroResumo.message}`);
+    }
+    const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(criado.user.id, {
+      password: await senhaInterna(criado.user.id),
+    });
+    if (erroInterna) {
+      await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
+      throw new Error(`Não foi possível criar o acesso: ${erroInterna.message}`);
     }
     // A senha aparece UMA vez, como o link da TV.
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
@@ -817,14 +821,14 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
     if (!acesso) throw new Error("Esta loja ainda não tem acesso.");
 
     const senha = senhaSorteada();
-    const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
-      password: await senhaInterna(acesso.userid),
-    });
-    if (erroInterna) throw new Error(`Não foi possível redefinir: ${erroInterna.message}`);
     const { error } = await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: acesso.userid, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
     });
     if (error) throw new Error(`Não foi possível redefinir: ${error.message}`);
+    const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(acesso.userid, {
+      password: await senhaInterna(acesso.userid),
+    });
+    if (erroInterna) throw new Error(`Não foi possível redefinir: ${erroInterna.message}`);
     // Derruba os tablets que estavam abertos com a senha antiga.
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
@@ -841,6 +845,20 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
  */
 export const diagnostico = createServerFn({ method: "GET" }).handler(async () => {
   const temPepper = !!process.env["STGAME_PIN_PEPPER"] && process.env["STGAME_PIN_PEPPER"]!.length >= 16;
+
+  // Conta de senha DE VERDADE: a hospedagem tem limites próprios (já recusou
+  // 210.000 voltas de PBKDF2 no ar, com tudo certo aqui). Melhor descobrir
+  // nesta tela do que na hora de entrar.
+  let contaDeSenha = false;
+  let erroDaConta = "";
+  try {
+    if (temPepper) {
+      const teste = await resumoDaSenha("conferencia-do-diagnostico");
+      contaDeSenha = await senhaConfere("conferencia-do-diagnostico", teste);
+    }
+  } catch (e) {
+    erroDaConta = (e as Error).message;
+  }
   const temChave = !!(process.env["STGAME_SERVICE_ROLE_KEY"] ?? process.env["SUPABASE_SERVICE_ROLE_KEY"]);
   const temSite = !!process.env["SITE_URL"];
 
@@ -864,5 +882,5 @@ export const diagnostico = createServerFn({ method: "GET" }).handler(async () =>
     }
   }
 
-  return { temPepper, temChave, temSite, banco, faltando };
+  return { temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando };
 });

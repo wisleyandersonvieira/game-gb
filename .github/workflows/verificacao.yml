@@ -77,6 +77,22 @@ jobs:
             exit 1
           fi
           echo "Toda função chamada pelo servidor existe numa migração."
+      - name: PBKDF2 dentro do limite da hospedagem
+        run: |
+          # A Cloudflare (hospedagem do Lovable) recusa PBKDF2 acima de 100.000
+          # voltas, e só no ar. Em 24/09/2026 isso deixou o dono da conta sem
+          # entrar. Aqui o número é conferido antes de publicar.
+          voltas=$(grep -oE 'ITERACOES_SENHA = [0-9_]+' src/servidor/acesso.ts | grep -oE '[0-9_]+' | tr -d '_')
+          if [ -z "$voltas" ]; then
+            echo "::error::Não achei ITERACOES_SENHA em src/servidor/acesso.ts"
+            exit 1
+          fi
+          if [ "$voltas" -gt 100000 ]; then
+            echo "::error::ITERACOES_SENHA=$voltas passa do limite da hospedagem (100000)."
+            exit 1
+          fi
+          echo "PBKDF2 com $voltas voltas: dentro do limite."
+
       - name: Todo segredo usado está no .env.example
         run: |
           faltando=""

@@ -59,6 +59,15 @@ function Saude() {
               ajuda="Cadastre SITE_URL nos Secrets do Lovable (ex.: https://stgame.lovable.app)."
             />
             <Linha
+              ok={d.data.contaDeSenha}
+              titulo="Conta de senha funciona nesta hospedagem"
+              ajuda={
+                d.data.erroDaConta
+                  ? `A hospedagem recusou a conta de senha: ${d.data.erroDaConta}`
+                  : "A conta de senha não funcionou. Sem ela, ninguém entra."
+              }
+            />
+            <Linha
               ok={d.data.banco === "ok"}
               titulo="Banco de dados atualizado"
               ajuda={
@@ -78,7 +87,7 @@ function Saude() {
             </div>
           )}
 
-          {d.data.temChave && d.data.temPepper && d.data.temSite && d.data.banco === "ok" && (
+          {d.data.temChave && d.data.temPepper && d.data.temSite && d.data.contaDeSenha && d.data.banco === "ok" && (
             <p className="rounded-lg border border-sucesso bg-card p-3 text-sm">
               Tudo certo: o sistema está pronto para uso.
             </p>
