@@ -17,9 +17,12 @@
 //   CODIGO sorteado pelo gestor (uso unico, validade curta).
 // - O PIN tambem e escolhido pela pessoa, e cada tentativa passa pela trava.
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/config-publica";
+import {
+  ERRO_TRAVADO, abrirTentativa, deHex, embaralhar, fecharTentativa,
+  hex, origemDaChamada, resumoDoPin,
+} from "@/servidor/segredos";
 
 // Domínio interno dos logins que o sistema monta sozinho. É um subdomínio de
 // um domínio REAL de propósito: validador de e-mail recusa TLD inventado (o
@@ -52,33 +55,6 @@ async function contaDoMaster(supabase: ClienteDoUsuario) {
 // ---------------------------------------------------------------------------
 // Segredos: tudo com a chave do servidor
 // ---------------------------------------------------------------------------
-
-function chaveDoServidor() {
-  const chave = process.env["STGAME_PIN_PEPPER"];
-  if (!chave || chave.length < 16) {
-    throw new Error("Falta a chave STGAME_PIN_PEPPER no servidor (Secrets do Lovable).");
-  }
-  return chave;
-}
-
-const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
-const deHex = (s: string) => Uint8Array.from((s.match(/../g) ?? []).map((h) => parseInt(h, 16)));
-
-/**
- * Embaralha com a chave do servidor (HMAC-SHA256). O resultado e sempre o mesmo
- * para a mesma entrada, e so por isso o banco acha a pessoa pelo PIN direto no
- * indice — sem comparar uma a uma, que ficaria lento com 20+ pessoas.
- */
-async function embaralhar(valor: string) {
-  const material = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(chaveDoServidor()),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return hex(await crypto.subtle.sign("HMAC", material, new TextEncoder().encode(valor)));
-}
 
 /**
  * A senha que o Supabase guarda. Ninguem digita nem conhece: e derivada da
@@ -130,23 +106,6 @@ const soNumeros = (v: string) => (v ?? "").replace(/\D/g, "");
 /** E-mail interno, montado pelo sistema. Nao recebe e-mail nenhum. */
 const emailDoColaborador = (cpf: string, contaid: number) => `${soNumeros(cpf)}.${contaid}@${DOMINIO_COLABORADOR}`;
 const emailDaLoja = (lojaid: number, contaid: number) => `loja${lojaid}.${contaid}@${DOMINIO_LOJA}`;
-
-/**
- * De onde veio a tentativa. Definido pelo SERVIDOR (o navegador nao escolhe),
- * senao bastaria mandar um valor novo a cada tentativa para zerar a trava.
- */
-function origemDaChamada() {
-  try {
-    // Só o cabeçalho que a hospedagem (Cloudflare) escreve por cima do que o
-    // navegador manda. x-forwarded-for e x-real-ip são escolhidos pelo cliente
-    // quando não há um intermediário confiável, e por isso não servem: com
-    // eles, bastava mandar um valor novo a cada tentativa para zerar a trava.
-    const ip = getRequest()?.headers.get("cf-connecting-ip");
-    return (ip || "sem-ip").slice(0, 40);
-  } catch {
-    return "sem-ip";
-  }
-}
 
 /** Codigo de primeiro acesso: 8 caracteres, sem letras que se confundem. */
 function codigoSorteado() {
@@ -223,34 +182,9 @@ async function abrirSessao(userid: string) {
  * Conferir e registrar em duas idas separadas deixava uma rajada simultânea
  * passar inteira por cima do teto — era assim que o adivinhador voltava.
  */
-async function abrirTentativa(contaid: number | null, tipo: "senha" | "pin" | "tablet", chave: string, origem: string) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("tentativa_abrir", {
-    p_contaid: contaid as unknown as number, p_tipo: tipo, p_chave: chave, p_origem: origem,
-  });
-  if (error) {
-    // Função ausente = o banco não recebeu as migrações desta versão. Dizer
-    // isso na tela evita ficar horas procurando onde está o erro.
-    if (error.code === "PGRST202" || error.message.includes("Could not find")) {
-      throw new Error(
-        "O banco de dados ainda não recebeu as atualizações desta versão. Abra /saude para ver o que falta.",
-      );
-    }
-    throw new Error("Não foi possível conferir o acesso agora.");
-  }
-  if (data === null || data === undefined) throw new Error(ERRO_TRAVADO);
-  return data as number;
-}
-
-async function fecharTentativa(tentativaid: number, sucesso: boolean) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin.rpc("tentativa_fechar", { p_tentativaid: tentativaid, p_sucesso: sucesso });
-}
-
 /** Mensagens únicas: nunca dizem se o CPF existe. */
 const ERRO_LOGIN = "CPF ou senha inválidos.";
 const ERRO_CODIGO = "CPF ou código inválidos.";
-const ERRO_TRAVADO = "Muitas tentativas. Espere um pouco e tente de novo.";
 const ERRO_LOGIN_EMAIL = "E-mail ou senha inválidos.";
 
 // ---------------------------------------------------------------------------
@@ -517,7 +451,7 @@ export const definirMeuPin = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.rpc("definir_pin", {
       p_contaid: pessoa.contaid,
       p_funcionarioid: pessoa.funcionarioid,
-      p_pinhash: await embaralhar(`pin:${pessoa.contaid}:${pin}`),
+      p_pinhash: await resumoDoPin(pessoa.contaid, pin),
       p_provisorio: false,
     });
     await fecharTentativa(tentativa, !error);

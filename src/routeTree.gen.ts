@@ -18,6 +18,7 @@ import { Route as MeuAcessoRouteImport } from './routes/meu-acesso'
 import { Route as PrimeiroAcessoRouteImport } from './routes/primeiro-acesso'
 import { Route as SaudeRouteImport } from './routes/saude'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
+import { Route as TabletRouteImport } from './routes/tablet'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedCanalConfidencialRouteImport } from './routes/_authenticated/canal-confidencial'
 import { Route as AuthenticatedComunicadosRouteImport } from './routes/_authenticated/comunicados'
@@ -87,6 +88,11 @@ const SaudeRoute = SaudeRouteImport.update({
 const SemAcessoRoute = SemAcessoRouteImport.update({
   id: '/sem-acesso',
   path: '/sem-acesso',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TabletRoute = TabletRouteImport.update({
+  id: '/tablet',
+  path: '/tablet',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/tablet': typeof TabletRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
   '/comunicados': typeof AuthenticatedComunicadosRoute
@@ -272,6 +279,7 @@ export interface FileRoutesByTo {
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/tablet': typeof TabletRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
   '/comunicados': typeof AuthenticatedComunicadosRoute
@@ -310,6 +318,7 @@ export interface FileRoutesById {
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
+  '/tablet': typeof TabletRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/canal-confidencial': typeof AuthenticatedCanalConfidencialRoute
   '/_authenticated/comunicados': typeof AuthenticatedComunicadosRoute
@@ -348,6 +357,7 @@ export interface FileRouteTypes {
     | '/primeiro-acesso'
     | '/saude'
     | '/sem-acesso'
+    | '/tablet'
     | '/agenda'
     | '/canal-confidencial'
     | '/comunicados'
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/primeiro-acesso'
     | '/saude'
     | '/sem-acesso'
+    | '/tablet'
     | '/agenda'
     | '/canal-confidencial'
     | '/comunicados'
@@ -420,6 +431,7 @@ export interface FileRouteTypes {
     | '/primeiro-acesso'
     | '/saude'
     | '/sem-acesso'
+    | '/tablet'
     | '/_authenticated/agenda'
     | '/_authenticated/canal-confidencial'
     | '/_authenticated/comunicados'
@@ -458,6 +470,7 @@ export interface RootRouteChildren {
   PrimeiroAcessoRoute: typeof PrimeiroAcessoRoute
   SaudeRoute: typeof SaudeRoute
   SemAcessoRoute: typeof SemAcessoRoute
+  TabletRoute: typeof TabletRoute
   ECodigoRoute: typeof ECodigoRoute
   TvCodigoRoute: typeof TvCodigoRoute
 }
@@ -525,6 +538,13 @@ declare module '@tanstack/react-router' {
       path: '/sem-acesso'
       fullPath: '/sem-acesso'
       preLoaderRoute: typeof SemAcessoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tablet': {
+      id: '/tablet'
+      path: '/tablet'
+      fullPath: '/tablet'
+      preLoaderRoute: typeof TabletRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/agenda': {
@@ -789,6 +809,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrimeiroAcessoRoute: PrimeiroAcessoRoute,
   SaudeRoute: SaudeRoute,
   SemAcessoRoute: SemAcessoRoute,
+  TabletRoute: TabletRoute,
   ECodigoRoute: ECodigoRoute,
   TvCodigoRoute: TvCodigoRoute,
 }

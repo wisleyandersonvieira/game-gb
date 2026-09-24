@@ -39,7 +39,7 @@ function MeuAcesso() {
             {a?.tipo === "loja" ? `Tablet da ${a?.loja ?? "loja"}` : `Olá, ${a?.nome ?? ""}`}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Seu acesso está pronto. As telas {a?.tipo === "loja" ? "do tablet" : "do celular"} entram no ar na próxima etapa.
+            Seu acesso está pronto. As telas do celular entram no ar na próxima etapa.
           </p>
         </>
       )}

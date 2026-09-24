@@ -436,9 +436,17 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
     - **Tela:** em Tarefas, a lista de uma pessoa virou seleção de várias; no Quadro, a "Fila de hoje" em três faixas com "Revogar o aceite"; no Início, o cartão "Ninguém pegou"; em Relatórios, "Tarefas que ela pegou" separado de "O que ficou por fazer".
     - **Dois defeitos achados pelos próprios testes novos:** o canal `tablet` não cabia nas colunas de canal (a primeira entrega feita no tablet teria quebrado na B1b), e o índice que impede pegar duas vezes no dia também impedia pegar de novo **depois de revogado**.
     - Teste de isolamento: **seção 45**, 1010 verificações, todas passando. A prova de corrida "dois cliques ao mesmo tempo" passou a exercitar a função nova (`pegar_tarefa`): de duas conexões simultâneas, exatamente uma leva.
-    - Para colar no SQL Editor: **`supabase/aplicar-etapa-1.12-parte-B1a.sql`** (aplicar depois da parte A; testado rodando duas vezes seguidas).
-  - [ ] **B1b — o tablet:** fila em três faixas, teclado do PIN, pegar, entregar com foto, modo quiosque, pareamento e corte de tablet.
+    - Para colar no SQL Editor: **`supabase/aplicar-etapa-1.12-parte-B1.sql`** (aplicar depois da parte A; testado rodando duas vezes seguidas).
+  - [x] **B1b — o tablet (24/09/2026)**, em `/tablet`.
+    - **O tablet não fala com o banco.** Para ele `minha_conta()` responde vazio e as ~200 regras de acesso negam tudo. Tudo passa por funções de servidor e daí para as funções `visao_*`, que recebem conta e loja e por isso **nunca** são liberadas para quem está logado (regra da Etapa 1.6). Cada uma liga o contexto da visão e faz o trabalho na **mesma transação** — o contexto é local à transação.
+    - **O PIN é a assinatura.** O tablet fica logado como a loja, não como pessoa. Pegar e entregar pedem o PIN de 6 dígitos no fim da ação; o servidor descobre quem é e registra em nome dela. O número **nunca aparece na tela** (só bolinhas) e não fica guardado em lugar nenhum. Toda tentativa passa pela trava da parte A com tipo `tablet`: vale a trava por origem, não a por chave — senão um engraçadinho deixaria o balcão sem sistema por 15 minutos.
+    - **A foto não passa pela chave secreta:** o servidor emite uma autorização de envio de prazo curto para a pasta `<conta>/<loja>/`, e o tablet manda a foto direto para o Storage. Caminho de outra loja é recusado pelo banco.
+    - **Fila em três faixas**, atualizando a cada **15 segundos** e **na hora** depois de qualquer toque. Entregar sem ter pegado vale como aceite. A entrega nasce **Pendente**: o tablet não aprova nada, não mostra CPF, valor em R$, documento, relatório nem canal confidencial.
+    - Teste de isolamento: **seção 46** (PIN de outra conta não vale, tablet de uma loja não vê a outra, foto só na pasta certa, entrega do tablet nasce Pendente, nenhuma `visao_*` liberada para quem está logado). **1036 verificações, todas passando.**
+    - `/saude` e o teste de contrato (seção 44) passaram a conhecer as funções desta parte.
+  - [ ] **B1b pendente:** modo quiosque de verdade (bloqueio do aparelho) e pareamento — hoje o corte do tablet é o "Redefinir senha" da parte A, que derruba as sessões na hora.
   - [ ] **B2 — o resto do tablet:** mural com ciência, feedback, justificativa, solicitação, painel do dia.
+  - [ ] **Falta antes de publicar a B1:** aplicar `supabase/aplicar-etapa-1.12-parte-B1.sql` no SQL Editor (depois da parte A), e conferir `/saude`.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
 - [ ] **D — Extras** (pequeno): checklist de abertura/fechamento e aviso de tarefa parada.
 

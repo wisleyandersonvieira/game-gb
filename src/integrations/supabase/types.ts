@@ -5365,6 +5365,34 @@ export type Database = {
           titulo: string
         }[]
       }
+      visao_fila: {
+        Args: { p_contaid: number; p_lojaid: number }
+        Returns: Json
+      }
+      visao_pessoa_do_pin: {
+        Args: { p_contaid: number; p_lojaid: number; p_pinhash: string }
+        Returns: Json
+      }
+      visao_pegar: {
+        Args: {
+          p_atribuicaoid: number
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+        }
+        Returns: number
+      }
+      visao_entregar: {
+        Args: {
+          p_atribuicaoid: number
+          p_caminho: string | null
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+          p_observacao: string | null
+        }
+        Returns: number
+      }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number

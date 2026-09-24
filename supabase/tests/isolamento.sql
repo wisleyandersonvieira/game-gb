@@ -5314,7 +5314,9 @@ BEGIN
     'criar_acesso_loja', 'criar_acesso_colaborador', 'redefinir_acesso', 'trocar_cpf',
     'meu_acesso', 'situacao_dos_acessos', 'minha_politica_de_uso', 'politica_dar_ciencia',
     'limpar_senha_gestor', 'publicar_politica_de_uso', 'sou_master', 'minha_conta',
-    'eh_admin_geral', 'diagnostico_do_sistema'
+    'eh_admin_geral', 'diagnostico_do_sistema',
+    -- Etapa 1.12 B1b: a visao do tablet.
+    'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname = f) THEN
@@ -5613,6 +5615,113 @@ BEGIN
   BEGIN PERFORM public.atribuir_tarefa(9600, 10, ARRAY[9501], 'Unica', NULL, now(), NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'B nao atribui tarefa de A para gente de A');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 46. A visao do TABLET (Etapa 1.12, parte B1b)
+-- ===========================================================================
+-- As funcoes visao_* recebem conta e loja, entao NUNCA sao liberadas para quem
+-- esta logado: so o servidor as chama, depois de conferir o token.
+DO $$ BEGIN RAISE NOTICE '46. visao do tablet'; END $$;
+
+-- PINs de mentira (o resumo real e feito pelo servidor, com a chave dele).
+DO $$
+BEGIN
+  PERFORM public.definir_pin(1, 9501, 'pin-da-ana', false);
+  PERFORM public.definir_pin(1, 9503, 'pin-do-caio', false);
+  PERFORM public.definir_pin(2, 200,  'pin-do-bruno', false);
+END $$;
+
+DO $$
+DECLARE v jsonb; v_atr integer; v_alvo integer; deu_erro boolean; v_n integer;
+        v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  -- Quem e o PIN.
+  v := public.visao_pessoa_do_pin(1, 10, 'pin-da-ana');
+  PERFORM public.exigir((v->>'funcionarioid')::integer = 9501, 'o tablet descobre quem digitou o PIN');
+  PERFORM public.exigir(v->>'nome' = 'Ana S.', 'e mostra o nome curto, como na TV');
+
+  PERFORM public.exigir(public.visao_pessoa_do_pin(1, 10, 'pin-do-bruno') IS NULL,
+                        'PIN de outra conta nao vale neste tablet');
+  PERFORM public.exigir(public.visao_pessoa_do_pin(2, 20, 'pin-da-ana') IS NULL,
+                        'nem o PIN de A vale no tablet de B');
+  PERFORM public.exigir(public.visao_pessoa_do_pin(1, 11, 'pin-da-ana') IS NULL,
+                        'PIN de quem nao trabalha nesta loja nao vale');
+  PERFORM public.exigir(public.visao_pessoa_do_pin(1, 10, 'pin-nenhum') IS NULL,
+                        'PIN errado nao devolve ninguem');
+
+  -- A fila: so a da propria loja, da propria conta.
+  PERFORM public.exigir(jsonb_array_length(public.visao_fila(1, 10)) > 0, 'o tablet ve a fila da propria loja');
+  PERFORM public.exigir(jsonb_array_length(public.visao_fila(2, 10)) = 0,
+                        'a conta B nao ve a fila de uma loja de A nem passando a loja de A');
+  PERFORM public.exigir(jsonb_array_length(public.visao_fila(1, 20)) = 0,
+                        'e a conta A nao ve a fila de uma loja de B');
+
+  -- Pegar pelo tablet.
+  v_atr := public.atribuir_tarefa(9600, 10, ARRAY[9501, 9503], 'Unica', NULL, now(), NULL);
+  BEGIN PERFORM public.visao_pegar(2, 10, 9501, v_atr); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o tablet de B nao pega tarefa de A');
+
+  v_alvo := public.visao_pegar(1, 10, 9501, v_atr);
+  PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE atribuicaoid = v_alvo) = 9501,
+                        'quem digitou o PIN fica com a tarefa');
+  PERFORM public.exigir((SELECT canal FROM public.missoesaceites
+                          WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje AND revogadoem IS NULL) = 'tablet',
+                        'e fica registrado que veio do tablet');
+
+  -- Entregar: so o PIN de quem pegou.
+  BEGIN PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o PIN de outra pessoa nao entrega a tarefa que ela nao pegou');
+
+  -- Foto: so na pasta da propria loja.
+  BEGIN PERFORM public.visao_entregar(1, 10, 9501, v_atr, '2/20/roubada.jpg', NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a foto da entrega tem de estar na pasta da propria loja');
+
+  PERFORM public.visao_entregar(1, 10, 9501, v_atr, '1/10/ok.jpg', 'feito');
+  PERFORM public.exigir((SELECT canalenvio FROM public.entregas WHERE atribuicaoid = v_alvo) = 'tablet',
+                        'a entrega feita no tablet fica marcada como do tablet');
+  PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas WHERE atribuicaoid = v_alvo) = 'Pendente',
+                        'e nasce Pendente: o tablet nao aprova nada');
+
+  -- Entregar sem ter pegado vale como aceite.
+  v_atr := public.atribuir_tarefa(9601, 10, ARRAY[9501, 9503], 'Unica', NULL, now(), NULL);
+  PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.missoesaceites
+                                 WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje
+                                   AND funcionarioid = 9503 AND revogadoem IS NULL),
+                        'entregar no tablet sem ter pegado vale como aceite');
+  SELECT count(*) INTO v_n FROM public.missoesaceites
+   WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje AND revogadoem IS NULL;
+  PERFORM public.exigir(v_n = 1, 'e so uma pessoa fica com ela');
+END $$;
+
+-- Quem esta logado no navegador nao chama nenhuma funcao da visao.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text; deu_erro boolean;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar'] LOOP
+    PERFORM public.exigir(
+      EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+               WHERE n.nspname = 'public' AND p.proname = f)
+      AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname = 'public' AND p.proname = f
+                         AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                              OR has_function_privilege('anon', p.oid, 'EXECUTE'))),
+      'usuario logado nao chama public.' || f);
+  END LOOP;
+
+  -- E o PIN nao vaza pela tabela, nem para o dono da conta.
+  BEGIN PERFORM pinhash FROM public.funcionarios WHERE funcionarioid = 9501; deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem o dono da conta le o PIN de ninguem');
 END $$;
 
 RESET ROLE;

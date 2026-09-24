@@ -1,0 +1,151 @@
+// Etapa 1.12, parte B1b: o que o tablet do balcao pode fazer.
+//
+// O tablet fica logado como a LOJA, nao como pessoa. Ele NAO fala com o banco:
+// para ele `minha_conta()` responde vazio e as ~200 regras de acesso negam
+// tudo. Tudo passa por aqui, e daqui para as funcoes `visao_*`, que sao as
+// unicas que ligam o contexto da visao.
+//
+// Toda acao com dono (pegar, entregar) e assinada com o PIN de 6 digitos:
+// o servidor descobre quem e e registra em nome dela. O PIN nunca fica
+// guardado em lugar nenhum — vem no pedido, e some quando ele acaba.
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { abrirTentativa, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+
+type ClienteDoUsuario = {
+  rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+};
+
+type Tablet = { contaid: number; lojaid: number; loja: string };
+
+export type ItemDaFila = {
+  atribuicaoid: number;
+  entregarid: number | null;
+  titulo: string;
+  pontos: number;
+  tipofrequencia: string;
+  aberta: boolean;
+  donoid: number | null;
+  quempegou: number | null;
+  quempegounome: string | null;
+  pegaem: string | null;
+  situacao: "para_pegar" | "em_andamento" | "feita";
+  atrasada: boolean;
+};
+
+/**
+ * Qual loja e este tablet — pelo TOKEN, nunca pelo que o navegador diz.
+ * Pessoa desligada, loja desativada ou conta cancelada caem aqui na hora.
+ */
+async function tabletDoToken(supabase: ClienteDoUsuario, userId: string): Promise<Tablet> {
+  const { data, error } = await supabase.rpc("meu_acesso");
+  if (error) throw new Error("Não foi possível confirmar o acesso deste tablet.");
+  const acesso = data as { tipo?: string; loja?: string } | null;
+  if (!acesso || acesso.tipo !== "loja") throw new Error("Esta tela é do tablet da loja.");
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: vinculo, error: erro } = await supabaseAdmin
+    .from("contasusuarios")
+    .select("contaid, lojaid")
+    .eq("userid", userId)
+    .single();
+  if (erro || !vinculo?.lojaid) throw new Error("Este tablet não está ligado a nenhuma loja.");
+  return { contaid: vinculo.contaid, lojaid: vinculo.lojaid, loja: acesso.loja ?? "" };
+}
+
+/**
+ * Descobre quem digitou o PIN. Passa pela trava da parte A com tipo "tablet":
+ * a trava por origem vale (é ela que segura um adivinhador), mas a trava por
+ * chave não — senão um engraçadinho deixaria o balcão sem sistema por 15
+ * minutos num horário de pico.
+ */
+async function pessoaDoPin(t: Tablet, pin: string) {
+  const limpo = (pin ?? "").trim();
+  if (!/^\d{6}$/.test(limpo)) throw new Error("PIN não reconhecido.");
+
+  const chave = await embaralhar(`pintablet:${t.contaid}:${t.lojaid}`);
+  const tentativa = await abrirTentativa(t.contaid, "tablet", chave, origemDaChamada());
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("visao_pessoa_do_pin", {
+    p_contaid: t.contaid,
+    p_lojaid: t.lojaid,
+    p_pinhash: await resumoDoPin(t.contaid, limpo),
+  });
+  const pessoa = data as { funcionarioid: number; nome: string } | null;
+  await fecharTentativa(tentativa, !error && !!pessoa);
+  if (error) throw new Error("Não foi possível conferir o PIN agora.");
+  // Mensagem única: nunca diz se o PIN existe e a pessoa é que não pode.
+  if (!pessoa) throw new Error("PIN não reconhecido. Confira o número — e lembre que só quem trabalha hoje nesta loja aparece na fila.");
+  return pessoa;
+}
+
+/** A fila do dia. Não precisa de PIN: é o que está no balcão, à vista de todos. */
+export const filaDoTablet = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.rpc("visao_fila", { p_contaid: t.contaid, p_lojaid: t.lojaid });
+    if (error) throw new Error("Não foi possível carregar a fila agora.");
+    return { loja: t.loja, itens: (data ?? []) as unknown as ItemDaFila[] };
+  });
+
+export const pegarNoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { pin: string; atribuicaoid: number }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    const pessoa = await pessoaDoPin(t, data.pin);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.rpc("visao_pegar", {
+      p_contaid: t.contaid,
+      p_lojaid: t.lojaid,
+      p_funcionarioid: pessoa.funcionarioid,
+      p_atribuicaoid: data.atribuicaoid,
+    });
+    if (error) throw new Error(error.message);
+    return { nome: pessoa.nome };
+  });
+
+/**
+ * Autorizacao de envio da foto: vale por poucos minutos e so para a pasta
+ * desta loja. A chave secreta nunca sai do servidor, e o tablet nao consegue
+ * escrever na pasta de outra loja nem de outra conta.
+ */
+export const autorizacaoDeFoto = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    const caminho = `${t.contaid}/${t.lojaid}/${crypto.randomUUID()}.jpg`;
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.storage.from("entregas").createSignedUploadUrl(caminho);
+    if (error || !data) throw new Error("Não foi possível preparar o envio da foto.");
+    return { caminho, url: data.signedUrl, token: data.token };
+  });
+
+export const entregarNoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { pin: string; atribuicaoid: number; caminho?: string | null; observacao?: string | null }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    const pessoa = await pessoaDoPin(t, data.pin);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.rpc("visao_entregar", {
+      p_contaid: t.contaid,
+      p_lojaid: t.lojaid,
+      p_funcionarioid: pessoa.funcionarioid,
+      p_atribuicaoid: data.atribuicaoid,
+      p_caminho: data.caminho ?? null,
+      p_observacao: data.observacao ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return { nome: pessoa.nome };
+  });
