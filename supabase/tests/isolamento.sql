@@ -4435,7 +4435,9 @@ DECLARE deu_erro boolean; v_n integer;
 BEGIN
   SELECT count(*) INTO v_n FROM public.mensagensrotinas;
   PERFORM public.exigir(v_n = 0, 'B nao le o liga/desliga de rotinas de A');
-  SELECT count(*) INTO v_n FROM public.missoesaceites;
+  -- Desde a Etapa 1.12 B1a, entregar tambem grava aceite, entao B tem aceites
+  -- proprios. A prova e que nenhuma linha de OUTRA conta aparece.
+  SELECT count(*) INTO v_n FROM public.missoesaceites WHERE contaid <> 2;
   PERFORM public.exigir(v_n = 0, 'B nao le as missoes aceitas em A');
 
   BEGIN PERFORM public.definir_rotina_mensagem(10, 'inicio_jornada', false); deu_erro := false;
@@ -4561,7 +4563,10 @@ BEGIN
       'definir_rotina_mensagem', 'definir_horario_equipe',
       -- Etapa 1.12: falam so do proprio login (meu_acesso) ou exigem master
       -- (publicar_politica_de_uso, situacao_dos_acessos).
-      'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso'
+      'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso',
+      -- Etapa 1.12 B1a: todas leem a conta de quem chamou (minha_conta ou
+      -- minha_conta_editavel) e filtram por ela em cada tabela.
+      'pegar_tarefa', 'revogar_aceite', 'atribuir_tarefa', 'fila_da_loja', 'tarefas_nao_pegas'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -5385,5 +5390,218 @@ BEGIN
   PERFORM public.exigir(NOT (d::text ILIKE '%pbkdf2%') AND NOT (d::text ILIKE '%senhahash%'),
                         'o diagnostico nao devolve nenhum segredo');
 END $$;
+
+-- ===========================================================================
+-- 45. Tarefa compartilhada, pegar e revogar (Etapa 1.12, parte B1a)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '45. tarefa compartilhada, pegar e revogar'; END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES
+  (9501, 'Ana Souza'), (9502, 'Bia Lima'), (9503, 'Caio Melo'), (9504, 'Davi Rocha');
+INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES
+  (9501, 10), (9502, 10), (9503, 10), (9504, 11);
+INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (9600, 'Limpar a vitrine', 10), (9601, 'Conferir o freezer', 6), (9602, 'Varrer a calcada', 4);
+INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (9600, 10), (9601, 10), (9602, 10);
+
+-- Atribuir a VARIAS: uma tarefa so, sem dono, com lista de quem pode pegar.
+DO $$
+DECLARE v_atr integer; v_n integer; v jsonb; deu_erro boolean; v_nova integer; v_ent integer;
+        v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  v_atr := public.atribuir_tarefa(9600, 10, ARRAY[9501, 9502], 'Unica', NULL, now(), NULL);
+
+  PERFORM public.exigir((SELECT funcionarioid IS NULL AND compartilhada
+                           FROM public.tarefasatribuidas WHERE atribuicaoid = v_atr),
+                        'atribuir a varias cria UMA tarefa, sem dono');
+  SELECT count(*) INTO v_n FROM public.tarefascandidatos WHERE atribuicaoid = v_atr;
+  PERFORM public.exigir(v_n = 2, 'com as duas pessoas na lista de quem pode pegar');
+
+  -- A fila mostra "para pegar", aberta.
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'para_pegar',
+                        'a fila da loja mostra a tarefa compartilhada para pegar');
+  PERFORM public.exigir((SELECT aberta FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr),
+                        'marcada como aberta (qualquer um da lista pega)');
+
+  -- Quem nao esta na lista nao pega.
+  BEGIN PERFORM public.pegar_tarefa(v_atr, 9503); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem nao esta na lista nao pega a tarefa compartilhada');
+
+  -- Quem nem e da loja tambem nao.
+  BEGIN PERFORM public.pegar_tarefa(v_atr, 9504); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem nao trabalha nesta loja nao pega');
+
+  -- A primeira que pega leva.
+  v_nova := public.pegar_tarefa(v_atr, 9502);
+  PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE atribuicaoid = v_nova) = 9502
+                        AND (SELECT origematribuicaoid FROM public.tarefasatribuidas WHERE atribuicaoid = v_nova) = v_atr,
+                        'quem pega ganha a copia da tarefa no proprio nome');
+  PERFORM public.exigir((SELECT quempegounome FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Bia L.',
+                        'a fila mostra quem pegou como "Bia L."');
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'em_andamento',
+                        'e passa para "em andamento"');
+
+  -- A segunda nao leva.
+  BEGIN PERFORM public.pegar_tarefa(v_atr, 9501); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a segunda pessoa recebe recusa: a tarefa ja foi pega');
+
+  -- Nao aparece mais como "nao pega".
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr),
+                        'tarefa pega sai da lista de "ninguem pegou"');
+
+  -- Entregar entra na copia, e a fila vira "feita".
+  v_ent := public.registrar_entrega(v_nova);
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'feita',
+                        'depois da entrega a fila mostra "feita"');
+
+  -- Revogar com entrega no caminho: recusado.
+  BEGIN PERFORM public.revogar_aceite(v_atr, v_hoje, 'pegou por engano'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao revoga o aceite com entrega pendente: recuse a entrega antes');
+
+  -- Revogar sem motivo: recusado.
+  PERFORM public.recusar_entrega(v_ent, 'foto ilegivel');
+  BEGIN PERFORM public.revogar_aceite(v_atr, v_hoje, '   '); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'revogar sem motivo e recusado');
+
+  -- Revogar de verdade: a tarefa volta a ficar disponivel.
+  PERFORM public.revogar_aceite(v_atr, v_hoje, 'trocamos quem faz');
+  PERFORM public.exigir((SELECT revogadoem IS NOT NULL AND motivorevogacao = 'trocamos quem faz'
+                           FROM public.missoesaceites
+                          WHERE atribuicaoid = v_atr AND dia = v_hoje AND revogadoem IS NOT NULL),
+                        'a revogacao guarda quando e por que');
+  PERFORM public.exigir((SELECT datafimvigencia FROM public.tarefasatribuidas WHERE atribuicaoid = v_nova) = v_hoje,
+                        'a copia de quem tinha pegado sai de cena');
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'para_pegar',
+                        'e a tarefa volta para a faixa "para pegar"');
+
+  -- E agora a outra pessoa da lista consegue pegar.
+  v_nova := public.pegar_tarefa(v_atr, 9501);
+  PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE atribuicaoid = v_nova) = 9501,
+                        'depois de revogado, outra pessoa da lista pega');
+  SELECT count(*) INTO v_n FROM public.missoesaceites WHERE atribuicaoid = v_atr AND dia = v_hoje;
+  PERFORM public.exigir(v_n = 2, 'o aceite revogado continua guardado ao lado do novo');
+END $$;
+
+-- Tarefa com dono: so ela pega; entregar vale como aceite.
+DO $$
+DECLARE v_atr integer; deu_erro boolean; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  v_atr := public.atribuir_tarefa(9601, 10, ARRAY[9503], 'Unica', NULL, now(), NULL);
+  PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE atribuicaoid = v_atr) = 9503
+                        AND NOT (SELECT compartilhada FROM public.tarefasatribuidas WHERE atribuicaoid = v_atr),
+                        'atribuir a uma pessoa continua criando tarefa com dono');
+  PERFORM public.exigir(NOT (SELECT aberta FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr),
+                        'tarefa com dono nao aparece como aberta');
+
+  BEGIN PERFORM public.pegar_tarefa(v_atr, 9501); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o PIN de outra pessoa nao pega a tarefa de quem tem dono');
+
+  -- Entregar sem ter pegado conta como aceite.
+  PERFORM public.registrar_entrega(v_atr);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.missoesaceites
+                                 WHERE atribuicaoid = v_atr AND dia = v_hoje
+                                   AND funcionarioid = 9503 AND revogadoem IS NULL),
+                        'entregar sem ter pegado vale como aceite');
+END $$;
+
+-- Quem pega ASSUME: a tarefa compartilhada pesa nos pontos possiveis de quem
+-- pegou, e em mais ninguem.
+DO $$
+DECLARE v_atr integer; v_nova integer;
+        ana_antes integer; ana_depois integer; bia_antes integer; bia_depois integer;
+        v_ano integer := extract(year FROM public.dia_em_sao_paulo(now()))::integer;
+        v_mes integer := extract(month FROM public.dia_em_sao_paulo(now()))::integer;
+BEGIN
+  SELECT coalesce(max(pontospossiveis), 0) INTO ana_antes
+    FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 9501;
+  SELECT coalesce(max(pontospossiveis), 0) INTO bia_antes
+    FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 9502;
+
+  v_atr := public.atribuir_tarefa(9602, 10, ARRAY[9501, 9502], 'Unica', NULL, now(), NULL);
+
+  -- Ninguem pegou: nao entra na nota de ninguem.
+  SELECT coalesce(max(pontospossiveis), 0) INTO ana_depois
+    FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 9501;
+  PERFORM public.exigir(ana_depois = ana_antes, 'tarefa que ninguem pegou nao entra na nota de ninguem');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr),
+                        'mas aparece para o gestor na lista de "ninguem pegou"');
+  PERFORM public.exigir((SELECT atribuidos FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr)
+                        = 'Ana S., Bia L.',
+                        'com o nome de quem estava atribuido');
+
+  -- Bia pega: os 4 pontos passam a pesar so para ela.
+  v_nova := public.pegar_tarefa(v_atr, 9502);
+  SELECT coalesce(max(pontospossiveis), 0) INTO bia_depois
+    FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 9502;
+  SELECT coalesce(max(pontospossiveis), 0) INTO ana_depois
+    FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 9501;
+  PERFORM public.exigir(bia_depois = bia_antes + 4, 'quem pega assume: a tarefa entra nos pontos possiveis dela');
+  PERFORM public.exigir(ana_depois = ana_antes, 'quem estava atribuida e nao pegou fica neutra');
+
+  -- Aprovada, conta na confiabilidade de quem pegou.
+  PERFORM public.aprovar_entrega(public.registrar_entrega(v_nova));
+  PERFORM public.exigir((SELECT pontosregulares
+                           FROM public.ranking_mensal_da_conta(1, v_ano, v_mes, NULL, public.dia_em_sao_paulo(now()))
+                          WHERE funcionarioid = 9502) >= 4,
+                        'e a entrega aprovada conta na confiabilidade dela');
+END $$;
+
+-- Missao da equipe: sem lista, qualquer pessoa da loja pega.
+DO $$
+DECLARE v_atr integer; v_n integer;
+BEGIN
+  v_atr := public.atribuir_tarefa(9600, 10, NULL, 'Diaria', NULL, NULL, '09:00');
+  SELECT count(*) INTO v_n FROM public.tarefascandidatos WHERE atribuicaoid = v_atr;
+  PERFORM public.exigir(v_n = 0, 'a missao da equipe nao tem lista de candidatos');
+  PERFORM public.exigir((SELECT atribuidos FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr)
+                        = 'toda a equipe da loja',
+                        'e aparece como aberta a toda a equipe da loja');
+  PERFORM public.pegar_tarefa(v_atr, 9503);
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'em_andamento',
+                        'qualquer pessoa da loja pega a missao');
+END $$;
+
+-- Isolamento: a conta B nao alcanca nada disso.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean; v_n integer; v_atr integer; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  SELECT count(*) INTO v_n FROM public.fila_da_loja(10);
+  PERFORM public.exigir(v_n = 0, 'B nao ve a fila de uma loja de A');
+  SELECT count(*) INTO v_n FROM public.tarefas_nao_pegas(10);
+  PERFORM public.exigir(v_n = 0, 'B nao ve as tarefas nao pegas de A');
+  SELECT count(*) INTO v_n FROM public.tarefascandidatos;
+  PERFORM public.exigir(v_n = 0, 'B nao le a lista de candidatos de A');
+
+  SELECT atribuicaoid INTO v_atr FROM public.tarefasatribuidas WHERE contaid = 1 AND tarefaid = 9602 LIMIT 1;
+  BEGIN PERFORM public.pegar_tarefa(coalesce(v_atr, -1), 9501); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao pega uma tarefa de A');
+
+  BEGIN PERFORM public.revogar_aceite(coalesce(v_atr, -1), v_hoje, 'invasao'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao revoga um aceite de A');
+
+  BEGIN PERFORM public.atribuir_tarefa(9600, 10, ARRAY[9501], 'Unica', NULL, now(), NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'B nao atribui tarefa de A para gente de A');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;
