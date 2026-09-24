@@ -5411,6 +5411,18 @@ export type Database = {
         Args: { p_contaid: number; p_evento: string; p_lojaid: number; p_quem: string }
         Returns: undefined
       }
+      tentativa_abrir_ex: {
+        Args: { p_chave: string; p_contaid: number; p_origem: string; p_tipo: string }
+        Returns: Json
+      }
+      marcar_senha_amao: {
+        Args: { p_amao: boolean; p_contaid: number; p_userid: string }
+        Returns: undefined
+      }
+      erros_de_login: {
+        Args: { p_chaves: string[] }
+        Returns: Json
+      }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number

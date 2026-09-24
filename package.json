@@ -31,6 +31,7 @@
   "devDependencies": {
     "@lovable.dev/vite-tanstack-config": "2.24.0",
     "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "^1.4.2",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^24.10.4",
     "@types/qrcode": "^1.5.6",

@@ -5380,7 +5380,8 @@ BEGIN
     'eh_admin_geral', 'diagnostico_do_sistema',
     -- Etapa 1.12 B1b: a visao do tablet.
     'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar',
-    'ficha_dos_tablets', 'registrar_evento_acesso_loja', 'fechamento_valendo'
+    'ficha_dos_tablets', 'registrar_evento_acesso_loja', 'fechamento_valendo',
+    'tentativa_abrir_ex', 'marcar_senha_amao', 'erros_de_login'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname = f) THEN
@@ -6047,6 +6048,130 @@ DO $$
 BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.acessoslojaeventos) = 0,
                         'o proprio tablet nao le o historico do acesso');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 50. Senha do tablet digitada pelo gestor (Etapa 1.12, parte B1)
+-- ===========================================================================
+-- A parte delicada: quando a senha passa a ser DIGITADA, ela vira adivinhavel
+-- e a trava precisa voltar. Mas bloquear devolveria o problema que fez a trava
+-- ser desligada na parte A (um engracadinho derruba o balcao de proposito).
+-- A saida e o ATRASO progressivo: freia quem adivinha e nunca tranca a loja.
+DO $$ BEGIN RAISE NOTICE '50. senha do tablet digitada pelo gestor'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v jsonb; deu_erro boolean;
+BEGIN
+  -- Marca de senha digitada: entra e sai.
+  PERFORM public.definir_senha_gestor('10100000-0000-0000-0000-000000000001', 1, 'pbkdf2$100000$aa$bb');
+  v := public.acesso_por_email('loja10.1@loja.stgame.com.br');
+  PERFORM public.exigir((v->>'senhamanual')::boolean = false,
+                        'senha sorteada pelo sistema nao e marcada como digitada');
+
+  PERFORM public.marcar_senha_amao('10100000-0000-0000-0000-000000000001', 1, true);
+  v := public.acesso_por_email('loja10.1@loja.stgame.com.br');
+  PERFORM public.exigir((v->>'senhamanual')::boolean, 'depois de digitada, o login sabe disso');
+
+  PERFORM public.marcar_senha_amao('10100000-0000-0000-0000-000000000001', 1, false);
+  PERFORM public.exigir((public.acesso_por_email('loja10.1@loja.stgame.com.br')->>'senhamanual')::boolean = false,
+                        'e "Gerar nova senha" tira a marca');
+  PERFORM public.marcar_senha_amao('10100000-0000-0000-0000-000000000001', 1, true);
+
+  -- Marcar senha de outra conta nao cola.
+  BEGIN PERFORM public.marcar_senha_amao('10100000-0000-0000-0000-000000000001', 2, true); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao da para marcar a senha de um acesso de outra conta');
+END $$;
+
+-- O ATRASO cresce a cada erro, e o ACERTO zera. E NUNCA bloqueia.
+DO $$
+DECLARE r jsonb; v_antes integer; v_depois integer; i integer; v_bloqueios integer := 0;
+BEGIN
+  DELETE FROM public.tentativasacesso WHERE tipo = 'lojamanual';
+
+  r := public.tentativa_abrir_ex(NULL, 'lojamanual', 'chave-loja', '7.7.7.7');
+  PERFORM public.exigir((r->>'esperar')::integer = 0, 'a primeira tentativa nao espera nada');
+  PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, false);
+
+  r := public.tentativa_abrir_ex(NULL, 'lojamanual', 'chave-loja', '7.7.7.7');
+  v_antes := (r->>'esperar')::integer;
+  PERFORM public.exigir(v_antes > 0, 'depois de um erro, a proxima ja espera');
+  PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, false);
+
+  r := public.tentativa_abrir_ex(NULL, 'lojamanual', 'chave-loja', '7.7.7.7');
+  v_depois := (r->>'esperar')::integer;
+  PERFORM public.exigir(v_depois > v_antes, 'e a cada erro ela espera mais');
+  PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, false);
+
+  -- 30 erros seguidos: continua respondendo, com teto. NUNCA "trancado".
+  FOR i IN 1..30 LOOP
+    r := public.tentativa_abrir_ex(NULL, 'lojamanual', 'chave-loja', '7.7.7.7');
+    IF (r->>'tentativaid') IS NULL THEN v_bloqueios := v_bloqueios + 1; END IF;
+    PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, false);
+  END LOOP;
+  PERFORM public.exigir(v_bloqueios = 0,
+                        'o engracadinho NAO derruba o tablet: 30 erros seguidos e nenhum bloqueio');
+  PERFORM public.exigir((r->>'esperar')::integer <= 10000, 'a espera tem teto de 10 segundos');
+
+  -- Quem sabe a senha entra na hora e zera tudo.
+  r := public.tentativa_abrir_ex(NULL, 'lojamanual', 'chave-loja', '7.7.7.7');
+  PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, true);
+  r := public.tentativa_abrir_ex(NULL, 'lojamanual', 'chave-loja', '7.7.7.7');
+  PERFORM public.exigir((r->>'esperar')::integer = 0,
+                        'um acerto zera a espera na hora (e so quem sabe a senha consegue zerar)');
+  PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, true);
+
+  DELETE FROM public.tentativasacesso WHERE tipo = 'lojamanual';
+END $$;
+
+-- A senha sorteada continua sem atraso nenhum.
+DO $$
+DECLARE r jsonb; i integer;
+BEGIN
+  DELETE FROM public.tentativasacesso WHERE tipo = 'tablet';
+  FOR i IN 1..10 LOOP
+    r := public.tentativa_abrir_ex(NULL, 'tablet', 'chave-sorteada', 'sem-ip');
+    PERFORM public.exigir((r->>'esperar')::integer = 0 AND (r->>'tentativaid') IS NOT NULL,
+                          'senha sorteada: sem atraso e sem bloqueio, como na parte A');
+    PERFORM public.tentativa_fechar((r->>'tentativaid')::bigint, false);
+  END LOOP;
+  DELETE FROM public.tentativasacesso WHERE tipo = 'tablet';
+END $$;
+
+-- As funcoes novas sao internas: so o servidor.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['marcar_senha_amao', 'tentativa_abrir_ex', 'erros_de_login'] LOOP
+    PERFORM public.exigir(
+      EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+               WHERE n.nspname = 'public' AND p.proname = f)
+      AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname = 'public' AND p.proname = f
+                         AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                              OR has_function_privilege('anon', p.oid, 'EXECUTE'))),
+      'usuario logado nao chama public.' || f);
+  END LOOP;
+  PERFORM public.exigir((SELECT count(*) FROM pg_tables WHERE schemaname = 'public'
+                          AND tablename = 'senhasgestor'
+                          AND has_table_privilege('authenticated', 'public.senhasgestor', 'SELECT')) = 0,
+                        'nem o master le a tabela de senhas');
+END $$;
+
+-- O proprio tablet tambem nao.
+SET teste.uid = '10100000-0000-0000-0000-000000000001';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('authenticated',
+                          'public.marcar_senha_amao(uuid, integer, boolean)', 'EXECUTE'),
+                        'o tablet nao marca a propria senha');
 END $$;
 
 RESET ROLE;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
-import { criarAcessoLoja, fichaDosTablets, redefinirSenhaLoja } from "@/servidor/acesso";
+import { criarAcessoLoja, definirSenhaDoTablet, fichaDosTablets, redefinirSenhaLoja } from "@/servidor/acesso";
 import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 
@@ -513,6 +513,7 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
   const qc = useQueryClient();
   const { lojas } = useLojaAtiva();
   const [senhaNova, setSenhaNova] = useState<{ usuario: string; senha: string; loja: string } | null>(null);
+  const [digitando, setDigitando] = useState<{ lojaid: number; nome: string } | null>(null);
 
   const conta = useQuery({
     queryKey: ["codigo-da-empresa"],
@@ -546,6 +547,18 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
     }),
     onSuccess: (r) => {
       setSenhaNova(r);
+      qc.invalidateQueries({ queryKey: ["ficha-dos-tablets"] });
+    },
+  });
+
+  const definir = useMutation({
+    mutationFn: async (p: { lojaid: number; nome: string; senha: string }) => ({
+      ...(await definirSenhaDoTablet({ data: { lojaid: p.lojaid, senha: p.senha } })),
+      loja: p.nome,
+    }),
+    onSuccess: (r) => {
+      setSenhaNova(r);
+      setDigitando(null);
       qc.invalidateQueries({ queryKey: ["ficha-dos-tablets"] });
     },
   });
@@ -668,11 +681,25 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
                           ? "nenhum aparelho aberto agora"
                           : `${f.aparelhos} ${f.aparelhos === 1 ? "aparelho aberto" : "aparelhos abertos"}`}
                       </p>
+                      <p className="text-xs text-muted-foreground">
+                        Senha {f.senhamanual ? "definida por você" : "sorteada pelo sistema"}
+                        {f.errosem24h > 0 && (
+                          <span className={f.errosem24h >= 10 ? "text-destructive" : ""}>
+                            {" "}· {f.errosem24h} {f.errosem24h === 1 ? "erro de senha" : "erros de senha"} nas
+                            últimas 24 h
+                          </span>
+                        )}
+                      </p>
                       {f.historico.length > 0 && (
                         <ul className="text-xs text-muted-foreground">
                           {f.historico.slice(0, 3).map((h, i) => (
                             <li key={i}>
-                              {h.evento === "criado" ? "Acesso criado" : "Senha nova gerada"} em{" "}
+                              {h.evento === "criado"
+                                ? "Acesso criado"
+                                : h.evento === "senha_amao"
+                                  ? "Senha definida"
+                                  : "Senha gerada pelo sistema"}{" "}
+                              em{" "}
                               {new Date(h.em).toLocaleString("pt-BR")}
                               {h.quem ? ` por ${h.quem}` : ""}
                             </li>
@@ -686,6 +713,14 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
                 </div>
 
                 {f ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    disabled={suspensa || definir.isPending}
+                    onClick={() => setDigitando({ lojaid: l.lojaid, nome: l.nome })}
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+                  >
+                    Definir senha
+                  </button>
                   <button
                     disabled={suspensa || redefinir.isPending}
                     onClick={() => {
@@ -699,10 +734,11 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
                         redefinir.mutate({ lojaid: l.lojaid, nome: l.nome });
                       }
                     }}
-                    className="shrink-0 rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
                   >
                     {redefinir.isPending ? "Gerando..." : "Gerar nova senha"}
                   </button>
+                  </div>
                 ) : (
                   <button
                     disabled={suspensa || criar.isPending}
@@ -717,7 +753,100 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
           );
         })}
       </ul>
+
+      {digitando && (
+        <JanelaDaSenha
+          loja={digitando.nome}
+          ocupado={definir.isPending}
+          erro={definir.isError ? (definir.error as Error).message : null}
+          fechar={() => { setDigitando(null); definir.reset(); }}
+          salvar={(senha) => definir.mutate({ ...digitando, senha })}
+        />
+      )}
     </section>
+  );
+}
+
+/** O gestor digita a senha do tablet. Não pede a senha atual: ele já é o master. */
+function JanelaDaSenha({
+  loja,
+  salvar,
+  fechar,
+  ocupado,
+  erro,
+}: {
+  loja: string;
+  salvar: (senha: string) => void;
+  fechar: () => void;
+  ocupado: boolean;
+  erro: string | null;
+}) {
+  const [senha, setSenha] = useState("");
+  const [mostrar, setMostrar] = useState(false);
+
+  function sortear() {
+    const letras = "abcdefghijkmnpqrstuvwxyz23456789";
+    const bytes = crypto.getRandomValues(new Uint8Array(14));
+    setSenha([...bytes].map((b) => letras[b % 32]).join(""));
+    setMostrar(true);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md space-y-3 rounded-2xl bg-card p-5">
+        <p className="text-lg font-semibold">Senha do tablet — {loja}</p>
+        <p className="text-xs text-muted-foreground">
+          Pelo menos 10 caracteres. Nada de sequências (12345), repetições, nem o nome da loja ou da
+          empresa. Ela fica guardada embaralhada: depois de salvar, nem você a vê de novo.
+        </p>
+
+        <div className="flex gap-2">
+          <input
+            type={mostrar ? "text" : "password"}
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            autoComplete="new-password"
+            placeholder="Digite a senha do tablet"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setMostrar((m) => !m)}
+            className="rounded-md border border-border px-3 py-2 text-sm"
+          >
+            {mostrar ? "Ocultar" : "Mostrar"}
+          </button>
+        </div>
+
+        <button type="button" onClick={sortear} className="rounded-md border border-border px-3 py-1 text-sm">
+          Gerar senha forte
+        </button>
+
+        <p className="text-xs text-destructive">
+          Ao salvar, os tablets desta loja que estiverem abertos vão precisar entrar de novo, com a
+          senha nova.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Senha digitada pode ser adivinhada, então o login desta loja passa a esperar cada vez mais
+          a cada erro (até 10 segundos). A loja nunca fica bloqueada — no pior caso, espera um pouco.
+        </p>
+
+        {erro && <p className="text-sm text-destructive">{erro}</p>}
+
+        <div className="flex gap-2">
+          <button
+            disabled={ocupado || senha.trim().length < 10}
+            onClick={() => salvar(senha)}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
+          >
+            {ocupado ? "Salvando..." : "Salvar senha"}
+          </button>
+          <button onClick={fechar} className="rounded-lg border border-border px-4 py-2 text-sm">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -123,6 +123,9 @@ jobs:
           bun-version: 1.4.2
       - name: Instalar (exatamente o bun.lock)
         run: bun install --frozen-lockfile
+      - name: Testes do servidor (regras que não são do banco)
+        # Só src/: supabase/functions/* são testes de Deno, que o bun não roda.
+        run: bun test src/
       - name: Build
         run: bun run build
       - name: Conferir que o servidor foi empacotado

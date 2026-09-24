@@ -20,7 +20,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/config-publica";
 import {
-  ERRO_TRAVADO, abrirTentativa, deHex, embaralhar, fecharTentativa,
+  ERRO_TRAVADO, abrirTentativa, conferirSenhaDoTablet, deHex, embaralhar, fecharTentativa,
   hex, origemDaChamada, resumoDoPin,
 } from "@/servidor/segredos";
 
@@ -269,14 +269,25 @@ export const entrarMaster = createServerFn({ method: "POST" })
 
     const { data: achado } = await supabaseAdmin.rpc("acesso_por_email", { p_email: email });
     const acesso = achado as
-      | { userid: string; senhahash: string | null; contaid: number | null; papel: string | null }
+      | {
+          userid: string;
+          senhahash: string | null;
+          contaid: number | null;
+          papel: string | null;
+          senhamanual?: boolean;
+        }
       | null;
 
-    // O tablet tem trava própria: só por origem. A senha dele é sorteada pelo
-    // servidor (impossível de adivinhar), e travar por e-mail deixaria a loja
-    // sem sistema no balcão por 15 minutos — o prejuízo iria para a vítima,
-    // não para quem ataca.
-    const tipo = acesso?.papel === "loja" ? "tablet" : "senha";
+    // A trava do tablet depende de COMO a senha foi feita:
+    // - sorteada pelo servidor (14 caracteres, impossível de adivinhar): só a
+    //   trava por origem. Travar por e-mail não compraria segurança e deixaria
+    //   a loja sem sistema no balcão por 15 minutos — o prejuízo iria para a
+    //   vítima, não para quem ataca;
+    // - DIGITADA pelo gestor: a senha passa a ser adivinhável, então a trava
+    //   volta — mas como ATRASO progressivo, não como bloqueio. Assim quem
+    //   adivinha é freado e a loja nunca fica sem sistema.
+    const tipo =
+      acesso?.papel === "loja" ? (acesso.senhamanual ? "lojamanual" : "tablet") : "senha";
     const tentativa = await abrirTentativa(null, tipo, chave, origem);
 
     // Caminho normal: o resumo é nosso.
@@ -781,11 +792,69 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
     if (erroInterna) throw new Error(`Não foi possível redefinir: ${erroInterna.message}`);
     // Derruba os tablets que estavam abertos com a senha antiga.
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
+    // Volta a ser senha sorteada: a marca sai e o login daquela loja volta ao
+    // comportamento sem atraso.
+    await supabaseAdmin.rpc("marcar_senha_amao", {
+      p_userid: acesso.userid, p_contaid: contaid, p_amao: false,
+    });
     await supabaseAdmin.rpc("registrar_evento_acesso_loja", {
       p_contaid: contaid, p_lojaid: data.lojaid, p_evento: "senha_nova", p_quem: userId,
     });
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
   });
+
+/**
+ * O gestor DIGITA a senha do tablet. Não pede a senha atual: quem chama já
+ * está logado como master (conferido no banco, pelo token).
+ *
+ * A senha continua guardada só como resumo — nem o gestor a vê depois, só na
+ * hora em que salva. E a loja fica marcada como "senha digitada": a partir
+ * daí o login dela passa pelo atraso progressivo.
+ */
+export const definirSenhaDoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { lojaid: number; senha: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    await exigirMaster(supabase);
+    const contaid = await contaDoMaster(supabase);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: acesso } = await supabaseAdmin
+      .from("contasusuarios")
+      .select("userid")
+      .eq("contaid", contaid)
+      .eq("lojaid", data.lojaid)
+      .single();
+    if (!acesso) throw new Error("Esta loja ainda não tem acesso.");
+
+    const { data: loja } = await supabaseAdmin
+      .from("lojas").select("nome").eq("contaid", contaid).eq("lojaid", data.lojaid).single();
+    const { data: conta } = await supabaseAdmin
+      .from("contas").select("codigo, nome").eq("contaid", contaid).single();
+
+    const senha = conferirSenhaDoTablet(data.senha, [loja?.nome, conta?.codigo, conta?.nome]);
+
+    const { error } = await supabaseAdmin.rpc("definir_senha_gestor", {
+      p_userid: acesso.userid, p_contaid: contaid, p_hash: await resumoDaSenha(senha),
+    });
+    if (error) throw new Error(`Não foi possível salvar a senha: ${error.message}`);
+
+    const { error: erroMarca } = await supabaseAdmin.rpc("marcar_senha_amao", {
+      p_userid: acesso.userid, p_contaid: contaid, p_amao: true,
+    });
+    if (erroMarca) throw new Error(`Não foi possível salvar a senha: ${erroMarca.message}`);
+
+    // A senha do Supabase já é a interna; nada a trocar lá. Só derruba quem
+    // estava aberto com a senha antiga.
+    await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
+    await supabaseAdmin.rpc("registrar_evento_acesso_loja", {
+      p_contaid: contaid, p_lojaid: data.lojaid, p_evento: "senha_amao", p_quem: userId,
+    });
+    return { usuario: emailDaLoja(data.lojaid, contaid), senha };
+  });
+
+
 
 /**
  * A ficha do tablet de cada loja: usuário, último uso, quantos aparelhos estão
@@ -802,7 +871,19 @@ export const fichaDosTablets = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin.rpc("ficha_dos_tablets", { p_contaid: contaid });
     if (error) throw new Error("Não foi possível ler a ficha dos tablets agora.");
-    return (data ?? []) as unknown as FichaDoTablet[];
+    const fichas = (data ?? []) as unknown as FichaDoTablet[];
+
+    // Erros de senha das últimas 24 h. A chave da trava é feita aqui (HMAC com
+    // a chave do servidor), então o banco não sabe montá-la: mandamos prontas.
+    const chaves = new Map<number, string>();
+    for (const f of fichas) {
+      chaves.set(f.lojaid, await embaralhar(`email:${emailDaLoja(f.lojaid, contaid)}`));
+    }
+    const { data: erros } = await supabaseAdmin.rpc("erros_de_login", {
+      p_chaves: [...chaves.values()],
+    });
+    const porChave = (erros ?? {}) as Record<string, number>;
+    return fichas.map((f) => ({ ...f, errosem24h: porChave[chaves.get(f.lojaid) ?? ""] ?? 0 }));
   });
 
 export type FichaDoTablet = {
@@ -811,7 +892,11 @@ export type FichaDoTablet = {
   usuario: string | null;
   ultimoacesso: string | null;
   aparelhos: number;
-  historico: { evento: "criado" | "senha_nova"; em: string; quem: string | null }[];
+  /** true quando a senha foi digitada pelo gestor (e não sorteada). */
+  senhamanual: boolean;
+  /** Erros de senha no login desta loja nas últimas 24 h. */
+  errosem24h: number;
+  historico: { evento: "criado" | "senha_nova" | "senha_amao"; em: string; quem: string | null }[];
 };
 
 // ---------------------------------------------------------------------------

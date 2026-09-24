@@ -55,16 +55,32 @@ export function origemDaChamada() {
   }
 }
 
+export type TipoDeTrava = "senha" | "pin" | "tablet" | "pintablet" | "lojamanual";
+
+/**
+ * Abre a tentativa e, quando o tipo usa ATRASO em vez de bloqueio, espera o
+ * tempo que o banco mandou antes de devolver. O calculo e feito la dentro, sob
+ * a mesma tranca que conta as tentativas: uma rajada simultanea nao escapa.
+ *
+ * O atraso existe para o login da loja com senha DIGITADA. Bloquear ali
+ * devolveria o problema que fez a trava ser desligada na parte A: um
+ * engracadinho errando de proposito deixaria o balcao sem sistema.
+ */
 export async function abrirTentativa(
   contaid: number | null,
-  tipo: "senha" | "pin" | "tablet" | "pintablet",
+  tipo: TipoDeTrava,
   chave: string,
   origem: string,
 ) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("tentativa_abrir", {
+  const { data: bruto, error } = await supabaseAdmin.rpc("tentativa_abrir_ex", {
     p_contaid: contaid as unknown as number, p_tipo: tipo, p_chave: chave, p_origem: origem,
   });
+  const resposta = bruto as { tentativaid: number | null; esperar: number } | null;
+  const data = resposta?.tentativaid ?? null;
+  if (resposta && resposta.esperar > 0) {
+    await new Promise((r) => setTimeout(r, Math.min(resposta.esperar, 10_000)));
+  }
   if (error) {
     // Função ausente = o banco não recebeu as migrações desta versão. Dizer
     // isso na tela evita ficar horas procurando onde está o erro.
@@ -82,4 +98,41 @@ export async function abrirTentativa(
 export async function fecharTentativa(tentativaid: number, sucesso: boolean) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   await supabaseAdmin.rpc("tentativa_fechar", { p_tentativaid: tentativaid, p_sucesso: sucesso });
+}
+
+/**
+ * Regras da senha digitada do tablet. Mínimo de 10 e nada de óbvio: sequência,
+ * repetição, palavras comuns, o nome da loja, o nome ou o código da empresa.
+ */
+export function conferirSenhaDoTablet(valor: string, proibidas: (string | null | undefined)[]) {
+  const v = (valor ?? "").trim();
+  if (v.length < 10) throw new Error("A senha do tablet precisa ter pelo menos 10 caracteres.");
+  if (v.length > 72) throw new Error("A senha do tablet é longa demais (máximo 72 caracteres).");
+  if (/^(.)\1+$/.test(v)) throw new Error("Não repita o mesmo caractere.");
+
+  const baixo = v.toLowerCase();
+  const sequencias = ["0123456789", "abcdefghijklmnopqrstuvwxyz", "qwertyuiop", "9876543210"];
+  for (const seq of sequencias) {
+    for (let i = 0; i + 4 <= seq.length; i++) {
+      if (baixo.includes(seq.slice(i, i + 5))) {
+        throw new Error("Essa senha é fácil demais: evite sequências como 12345 ou abcde.");
+      }
+    }
+  }
+  const comuns = ["senha", "password", "stgame", "tablet", "12345", "admin", "loja"];
+  if (comuns.some((c) => baixo.includes(c))) {
+    throw new Error("Essa senha é fácil demais. Evite palavras como 'senha', 'tablet' ou 'loja'.");
+  }
+  // Compara tambem sem espacos e sem pontuacao: "Gela Boca" tem de barrar
+  // "zzgelabocazz". (Achado pelo proprio teste desta regra.)
+  const soLetras = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const cru = soLetras(v);
+  for (const p of proibidas) {
+    const alvo = (p ?? "").trim().toLowerCase();
+    const alvoCru = soLetras(alvo);
+    if ((alvo.length >= 3 && baixo.includes(alvo)) || (alvoCru.length >= 3 && cru.includes(alvoCru))) {
+      throw new Error("A senha não pode conter o nome da loja nem o nome ou o código da empresa.");
+    }
+  }
+  return v;
 }

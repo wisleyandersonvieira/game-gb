@@ -28,5 +28,9 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "resolveJsonModule": true
-  }
+  },
+  "//": "Os arquivos .test.ts rodam no bun (bun test) e usam os tipos dele. Ligar os tipos do bun aqui mudaria o tipo de fetch no projeto inteiro.",
+  "exclude": [
+    "**/*.test.ts"
+  ]
 }

@@ -992,7 +992,7 @@ Tabela **nova**, **nível loja**. Quando o acesso do tablet foi criado e cada ve
 | eventoid | integer | ID automático |
 | contaid | integer | obrigatório; → contas; padrão `minha_conta()` |
 | lojaid | integer | obrigatório; → lojas (junto com contaid) |
-| evento | varchar(12) | `criado` ou `senha_nova` |
+| evento | varchar(12) | `criado`, `senha_nova` (sorteada pelo sistema) ou `senha_amao` (digitada pelo gestor) |
 | userid | uuid | → auth.users. Quem fez |
 | em | timestamptz | padrão now() |
 
