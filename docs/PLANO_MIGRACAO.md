@@ -454,6 +454,14 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
     - Menores: a missão voltou a ser anunciada no grupo depois de revogada, `tarefascandidatos.contaid` ganhou o padrão da casa, e um teste que passava por acidente (lia o id da conta A já dentro da sessão da conta B, e a RLS devolvia vazio) foi corrigido.
     - **1050 verificações, todas passando.**
   - [x] **Ranking lê o fechamento (decisão de 24/09/2026).** A tela **Ranking** recalculava qualquer mês ao vivo, então uma mudança de regra (como "quem pega assume") mexia em meses antigos e ela podia discordar da tela "Meses fechados". Agora: **mês já fechado vem do fechamento** (a mesma fonte da tela "Meses fechados", congelada); **mês aberto continua ao vivo**. A tela avisa quando o mês está fechado. Prova no teste: dezembro de 2026 está no futuro em relação ao "hoje" do teste, então o cálculo ao vivo devolveria zero linhas — vir preenchido, e igual ao fechamento pessoa por pessoa, é a prova de que ele lê o fechamento.
+  - [x] **Ficha do tablet (24/09/2026)** — pedido do Wisley: perder os dados de acesso do tablet deixava o gestor sem saída. Em **Lojas e links da TV**, cada loja com acesso mostra agora:
+    - o **usuário** do tablet, sempre à vista, com botão de copiar (antes ele só aparecia no instante da criação);
+    - **"Gerar nova senha"**, que sorteia outra, mostra uma vez e avisa antes que *os tablets abertos vão precisar entrar de novo*;
+    - **último uso** ("hoje 14:02") e **quantos aparelhos estão abertos** naquele acesso;
+    - o **histórico**: quando o acesso foi criado e cada senha gerada, com quem e quando (tabela `acessoslojaeventos`);
+    - **"Imprimir ficha da loja"**: um cartão com usuário, senha (só na hora em que acabou de ser gerada), código da empresa e link da equipe, para guardar no cofre.
+    - **A senha antiga continua impossível de exibir**, e assim fica: o banco guarda só o resumo dela (PBKDF2 com sal). Guardar senha recuperável seria um retrocesso — decisão confirmada pelo Wisley em 24/09/2026.
+    - Só o **master** vê e usa: a policy de `acessoslojaeventos` exige `sou_master()`, e `ficha_dos_tablets`/`registrar_evento_acesso_loja` recebem a conta, então só o servidor as chama. Teste de isolamento, **seção 49**: a conta A não vê o usuário do tablet de B, o próprio tablet não lê o histórico, e nenhuma das duas funções é executável por quem está logado. **1073 verificações, todas passando.**
   - [ ] **B2 — o resto do tablet:** mural com ciência, feedback, justificativa, solicitação, painel do dia.
   - [ ] **Falta antes de publicar a B1:** aplicar `supabase/aplicar-etapa-1.12-parte-B1.sql` no SQL Editor (depois da parte A), e conferir `/saude`.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.

@@ -17,7 +17,17 @@ CREATE SCHEMA auth;
 CREATE TABLE auth.users (
   id uuid PRIMARY KEY,
   email text,
-  email_confirmed_at timestamptz
+  email_confirmed_at timestamptz,
+  -- Como no Supabase real: a ficha do tablet mostra o ultimo uso.
+  last_sign_in_at timestamptz
+);
+
+-- Sessoes abertas, como no Supabase real: a ficha do tablet conta quantos
+-- aparelhos estao logados naquele acesso.
+CREATE TABLE auth.sessions (
+  id        uuid PRIMARY KEY,
+  user_id   uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  not_after timestamptz
 );
 
 -- No Supabase real, auth.uid() le o token JWT. Aqui le uma variavel de sessao.

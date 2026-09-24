@@ -4223,6 +4223,12 @@ export type Database = {
           },
         ]
       }
+      acessoslojaeventos: {
+        Row: { contaid: number; em: string; evento: string; eventoid: number; lojaid: number; userid: string | null }
+        Insert: { contaid?: number; em?: string; evento: string; eventoid?: number; lojaid: number; userid?: string | null }
+        Update: { contaid?: number; em?: string; evento?: string; eventoid?: number; lojaid?: number; userid?: string | null }
+        Relationships: []
+      }
       tarefascandidatos: {
         Row: { atribuicaoid: number; contaid: number; funcionarioid: number }
         Insert: { atribuicaoid: number; contaid?: number; funcionarioid: number }
@@ -5396,6 +5402,14 @@ export type Database = {
       fechamento_valendo: {
         Args: { p_ano: number; p_mes: number }
         Returns: number
+      }
+      ficha_dos_tablets: {
+        Args: { p_contaid: number }
+        Returns: Json
+      }
+      registrar_evento_acesso_loja: {
+        Args: { p_contaid: number; p_evento: string; p_lojaid: number; p_quem: string }
+        Returns: undefined
       }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }

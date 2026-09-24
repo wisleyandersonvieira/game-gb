@@ -4,7 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
-import { criarAcessoLoja, redefinirSenhaLoja } from "@/servidor/acesso";
+import { criarAcessoLoja, fichaDosTablets, redefinirSenhaLoja } from "@/servidor/acesso";
 import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 
@@ -504,7 +504,11 @@ function quandoFoi(iso: string | null) {
   })}`;
 }
 
-/* Acesso do tablet de cada loja (Etapa 1.12, parte A)                 */
+/* Acesso do tablet de cada loja (Etapa 1.12, partes A e B1)           */
+/*                                                                      */
+/* A senha NAO pode ser exibida de novo: o banco guarda so o resumo dela */
+/* (PBKDF2 com sal). Quem perdeu usa "Gerar nova senha". O usuario, sim, */
+/* fica sempre a vista — era ele que sumia e deixava o gestor sem saida. */
 function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
   const qc = useQueryClient();
   const { lojas } = useLojaAtiva();
@@ -519,13 +523,9 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
     },
   });
 
-  const acessos = useQuery({
-    queryKey: ["acessos-loja"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("contasusuarios").select("lojaid").eq("papel", "loja");
-      if (error) throw error;
-      return new Set((data ?? []).map((a) => a.lojaid));
-    },
+  const ficha = useQuery({
+    queryKey: ["ficha-dos-tablets"],
+    queryFn: () => fichaDosTablets(),
   });
 
   const criar = useMutation({
@@ -535,7 +535,7 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
     }),
     onSuccess: (r) => {
       setSenhaNova(r);
-      qc.invalidateQueries({ queryKey: ["acessos-loja"] });
+      qc.invalidateQueries({ queryKey: ["ficha-dos-tablets"] });
     },
   });
 
@@ -544,18 +544,32 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
       ...(await redefinirSenhaLoja({ data: { lojaid: loja.lojaid } })),
       loja: loja.nome,
     }),
-    onSuccess: (r) => setSenhaNova(r),
+    onSuccess: (r) => {
+      setSenhaNova(r);
+      qc.invalidateQueries({ queryKey: ["ficha-dos-tablets"] });
+    },
   });
 
   const endereco = conta.data?.codigo ? `${window.location.origin}/e/${conta.data.codigo}` : null;
+  const porLoja = new Map((ficha.data ?? []).map((f) => [f.lojaid, f]));
 
   return (
     <section className="space-y-3">
+      <style>{`
+        #ficha-impressa { position: absolute; left: -10000px; top: 0; }
+        @media print {
+          body * { visibility: hidden !important; }
+          #ficha-impressa, #ficha-impressa * { visibility: visible !important; }
+          #ficha-impressa { position: fixed; inset: 0; left: 0; padding: 24mm; background: #fff; color: #000; }
+        }
+      `}</style>
+
       <div>
         <h2 className="text-sm font-semibold">Acesso da loja (tablet) e da equipe</h2>
         <p className="text-xs text-muted-foreground">
-          O tablet do balcão entra com um acesso por loja. A senha aparece uma vez só, como o link de TV.
-          Se o tablet sumir, redefina a senha: os aparelhos abertos são desconectados na hora.
+          O tablet do balcão entra com um acesso por loja. O usuário fica sempre aqui; a senha aparece
+          uma vez só, porque é guardada embaralhada e não há como mostrá-la de novo. Perdeu a senha?
+          Gere outra.
         </p>
       </div>
 
@@ -577,56 +591,166 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
       )}
 
       {senhaNova && (
-        <div className="space-y-2 rounded-lg border border-primary bg-card p-3 text-sm">
+        <div className="space-y-2 rounded-lg border-2 border-primary bg-card p-3 text-sm">
           <p className="font-semibold">Acesso do tablet — {senhaNova.loja}</p>
-          <p>Usuário: <span className="font-mono">{senhaNova.usuario}</span></p>
-          <p>Senha: <span className="font-mono text-lg">{senhaNova.senha}</span></p>
-          <p className="text-xs text-muted-foreground">
-            Anote agora: esta senha não aparece de novo. Se perder, é só redefinir.
+          <p className="flex flex-wrap items-center gap-2">
+            Usuário: <span className="font-mono">{senhaNova.usuario}</span>
+            <Copiar texto={senhaNova.usuario} />
           </p>
-          <button onClick={() => setSenhaNova(null)} className="rounded-md border border-border px-3 py-1 text-sm">
-            Guardei
-          </button>
+          <p className="flex flex-wrap items-center gap-2">
+            Senha: <span className="font-mono text-lg">{senhaNova.senha}</span>
+            <Copiar texto={senhaNova.senha} />
+          </p>
+          <p className="text-xs text-destructive">
+            Anote ou imprima agora: esta senha não aparece de novo. Se perder, é só gerar outra.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => window.print()} className="rounded-md border border-border px-3 py-1 text-sm">
+              Imprimir ficha da loja
+            </button>
+            <button onClick={() => setSenhaNova(null)} className="rounded-md border border-border px-3 py-1 text-sm">
+              Guardei
+            </button>
+          </div>
         </div>
       )}
+
+      {senhaNova && (
+        <div id="ficha-impressa">
+          <h1 style={{ fontSize: "20pt", marginBottom: "4mm" }}>Ficha de acesso — {senhaNova.loja}</h1>
+          <p style={{ fontSize: "10pt", marginBottom: "8mm" }}>
+            {conta.data?.nome ?? ""} · gerada em {new Date().toLocaleString("pt-BR")}
+          </p>
+          <h2 style={{ fontSize: "12pt", marginTop: "6mm" }}>Tablet do balcão</h2>
+          <p style={{ fontSize: "12pt" }}>
+            Usuário: <strong style={{ fontFamily: "monospace" }}>{senhaNova.usuario}</strong>
+          </p>
+          <p style={{ fontSize: "12pt" }}>
+            Senha: <strong style={{ fontFamily: "monospace" }}>{senhaNova.senha}</strong>
+          </p>
+          <h2 style={{ fontSize: "12pt", marginTop: "6mm" }}>Equipe (celular de cada pessoa)</h2>
+          <p style={{ fontSize: "12pt" }}>
+            Código da empresa: <strong style={{ fontFamily: "monospace" }}>{conta.data?.codigo ?? ""}</strong>
+          </p>
+          <p style={{ fontSize: "12pt" }}>
+            Link da equipe: <strong style={{ fontFamily: "monospace" }}>{endereco ?? ""}</strong>
+          </p>
+          <p style={{ fontSize: "10pt", marginTop: "10mm" }}>
+            Guarde esta ficha no cofre ou na gaveta. A senha do tablet não pode ser consultada depois:
+            se esta folha se perder, gere outra senha no sistema.
+          </p>
+        </div>
+      )}
+
       {(criar.isError || redefinir.isError) && (
         <p className="text-sm text-destructive">{((criar.error ?? redefinir.error) as Error).message}</p>
       )}
+      {ficha.isError && <p className="text-sm text-destructive">{(ficha.error as Error).message}</p>}
 
       <ul className="space-y-2">
-        {lojas.map((l) => (
-          <li key={l.lojaid} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3">
-            <div>
-              <p className="font-medium">{l.nome}</p>
-              <p className="text-xs text-muted-foreground">
-                {acessos.data?.has(l.lojaid) ? "Acesso criado" : "Sem acesso de tablet"}
-              </p>
-            </div>
-            {acessos.data?.has(l.lojaid) ? (
-              <button
-                disabled={suspensa || redefinir.isPending}
-                onClick={() => {
-                  if (confirm(`Redefinir a senha do tablet da ${l.nome}? Os tablets abertos são desconectados.`)) {
-                    redefinir.mutate({ lojaid: l.lojaid, nome: l.nome });
-                  }
-                }}
-                className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
-              >
-                Redefinir senha
-              </button>
-            ) : (
-              <button
-                disabled={suspensa || criar.isPending}
-                onClick={() => criar.mutate({ lojaid: l.lojaid, nome: l.nome })}
-                className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
-              >
-                Criar acesso
-              </button>
-            )}
-          </li>
-        ))}
+        {lojas.map((l) => {
+          const f = porLoja.get(l.lojaid);
+          return (
+            <li key={l.lojaid} className="space-y-2 rounded-lg border border-border bg-card p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 space-y-1">
+                  <p className="font-medium">{l.nome}</p>
+                  {f ? (
+                    <>
+                      <p className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Usuário:</span>
+                        <span className="break-all font-mono text-xs">{f.usuario ?? "—"}</span>
+                        {f.usuario && <Copiar texto={f.usuario} />}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Último uso: {quando(f.ultimoacesso)} ·{" "}
+                        {f.aparelhos === 0
+                          ? "nenhum aparelho aberto agora"
+                          : `${f.aparelhos} ${f.aparelhos === 1 ? "aparelho aberto" : "aparelhos abertos"}`}
+                      </p>
+                      {f.historico.length > 0 && (
+                        <ul className="text-xs text-muted-foreground">
+                          {f.historico.slice(0, 3).map((h, i) => (
+                            <li key={i}>
+                              {h.evento === "criado" ? "Acesso criado" : "Senha nova gerada"} em{" "}
+                              {new Date(h.em).toLocaleString("pt-BR")}
+                              {h.quem ? ` por ${h.quem}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Sem acesso de tablet</p>
+                  )}
+                </div>
+
+                {f ? (
+                  <button
+                    disabled={suspensa || redefinir.isPending}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Gerar uma senha nova para o tablet da ${l.nome}?\n\n` +
+                            "Os tablets dessa loja que estiverem abertos vão precisar entrar de novo, " +
+                            "com a senha nova. A senha atual deixa de valer na hora.",
+                        )
+                      ) {
+                        redefinir.mutate({ lojaid: l.lojaid, nome: l.nome });
+                      }
+                    }}
+                    className="shrink-0 rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+                  >
+                    {redefinir.isPending ? "Gerando..." : "Gerar nova senha"}
+                  </button>
+                ) : (
+                  <button
+                    disabled={suspensa || criar.isPending}
+                    onClick={() => criar.mutate({ lojaid: l.lojaid, nome: l.nome })}
+                    className="shrink-0 rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+                  >
+                    {criar.isPending ? "Criando..." : "Criar acesso"}
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
+  );
+}
+
+/** "hoje 14:02", "ontem 09:30" ou a data inteira. */
+function quando(iso: string | null) {
+  if (!iso) return "nunca entrou";
+  const d = new Date(iso);
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const dia = d.toLocaleDateString("pt-BR");
+  const hoje = new Date().toLocaleDateString("pt-BR");
+  const ontem = new Date(Date.now() - 86400000).toLocaleDateString("pt-BR");
+  if (dia === hoje) return `hoje ${hora}`;
+  if (dia === ontem) return `ontem ${hora}`;
+  return `${dia} ${hora}`;
+}
+
+function Copiar({ texto }: { texto: string }) {
+  const [feito, setFeito] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(texto);
+          setFeito(true);
+          setTimeout(() => setFeito(false), 2000);
+        } catch {
+          setFeito(false);
+        }
+      }}
+      className="rounded-md border border-border px-2 py-0.5 text-xs"
+    >
+      {feito ? "Copiado!" : "Copiar"}
+    </button>
   );
 }
 

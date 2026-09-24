@@ -5379,7 +5379,8 @@ BEGIN
     'limpar_senha_gestor', 'publicar_politica_de_uso', 'sou_master', 'minha_conta',
     'eh_admin_geral', 'diagnostico_do_sistema',
     -- Etapa 1.12 B1b: a visao do tablet.
-    'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar'
+    'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar',
+    'ficha_dos_tablets', 'registrar_evento_acesso_loja', 'fechamento_valendo'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname = f) THEN
@@ -5957,5 +5958,98 @@ BEGIN
   PERFORM public.exigir(public.bot_texto_rotina('missao', 1, NULL, v_atr) IS NOT NULL,
                         'depois de revogada, a missao volta a ser anunciada');
 END $$;
+
+-- ===========================================================================
+-- 49. A ficha do tablet da loja (Etapa 1.12, parte B1)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '49. ficha do tablet da loja'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+-- O tablet da loja 10 (conta A) ja existe desde a secao 42. Aqui so damos a
+-- ele o que a ficha mostra: ultimo uso e aparelhos abertos.
+UPDATE auth.users SET email = 'loja10.1@loja.stgame.com.br', last_sign_in_at = now() - interval '2 hour'
+ WHERE id = '10100000-0000-0000-0000-000000000001';
+INSERT INTO auth.users (id, email, email_confirmed_at, last_sign_in_at) VALUES
+  ('b0000000-0000-0000-0000-0000000000bb', 'loja20.2@loja.stgame.com.br', now(), now() - interval '3 day')
+ON CONFLICT DO NOTHING;
+-- Tres sessoes do tablet de A, uma delas ja vencida: so as duas valendo contam.
+INSERT INTO auth.sessions (id, user_id, not_after) VALUES
+  ('a1111111-1111-1111-1111-111111111111', '10100000-0000-0000-0000-000000000001', NULL),
+  ('a2222222-2222-2222-2222-222222222222', '10100000-0000-0000-0000-000000000001', now() + interval '1 day'),
+  ('a3333333-3333-3333-3333-333333333333', '10100000-0000-0000-0000-000000000001', now() - interval '1 day'),
+  ('b1111111-1111-1111-1111-111111111111', 'b0000000-0000-0000-0000-0000000000bb', NULL)
+ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+  PERFORM public.criar_acesso_loja(2, 20, 'b0000000-0000-0000-0000-0000000000bb',
+                                   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  PERFORM public.registrar_evento_acesso_loja(1, 10, 'criado', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.registrar_evento_acesso_loja(2, 20, 'criado', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  PERFORM public.registrar_evento_acesso_loja(1, 10, 'senha_nova', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+END $$;
+
+DO $$
+DECLARE f jsonb; deu_erro boolean;
+BEGIN
+  f := public.ficha_dos_tablets(1);
+  PERFORM public.exigir(jsonb_array_length(f) = 1, 'a ficha traz a loja da propria conta');
+  PERFORM public.exigir(f->0->>'usuario' = 'loja10.1@loja.stgame.com.br',
+                        'e mostra o usuario do tablet (que antes so aparecia na criacao)');
+  PERFORM public.exigir((f->0->>'ultimoacesso') IS NOT NULL, 'com o ultimo uso');
+  -- 3 sessoes, uma ja vencida: so as duas valendo contam.
+  PERFORM public.exigir((f->0->>'aparelhos')::integer = 2, 'e quantos aparelhos estao abertos agora');
+  PERFORM public.exigir(jsonb_array_length(f->0->'historico') = 2,
+                        'o historico traz a criacao e a senha nova');
+  PERFORM public.exigir(f->0->'historico'->0->>'evento' = 'senha_nova', 'o mais recente vem primeiro');
+  PERFORM public.exigir(f->0->'historico'->0->>'quem' IS NOT NULL, 'dizendo quem gerou');
+
+  -- A conta A NAO enxerga a loja de B por esta porta.
+  PERFORM public.exigir(NOT (f::text LIKE '%loja20.2%'),
+                        'a ficha da conta A nao traz o usuario do tablet de B');
+  PERFORM public.exigir((public.ficha_dos_tablets(2)->0->>'usuario') = 'loja20.2@loja.stgame.com.br',
+                        'e a de B traz so a dela');
+
+  -- Registrar evento numa loja de outra conta nao cola.
+  BEGIN PERFORM public.registrar_evento_acesso_loja(2, 10, 'senha_nova', NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao da para registrar evento de uma loja que nao e da conta');
+END $$;
+
+-- Quem esta logado no navegador nao chama nenhuma das duas funcoes: elas
+-- recebem a conta, entao so o servidor as usa (regra da Etapa 1.6).
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['ficha_dos_tablets', 'registrar_evento_acesso_loja'] LOOP
+    PERFORM public.exigir(
+      EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+               WHERE n.nspname = 'public' AND p.proname = f)
+      AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname = 'public' AND p.proname = f
+                         AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                              OR has_function_privilege('anon', p.oid, 'EXECUTE'))),
+      'usuario logado nao chama public.' || f);
+  END LOOP;
+
+  -- O master le o proprio historico...
+  PERFORM public.exigir((SELECT count(*) FROM public.acessoslojaeventos WHERE lojaid = 10) = 2,
+                        'o master le o historico do acesso da propria loja');
+  PERFORM public.exigir((SELECT count(*) FROM public.acessoslojaeventos WHERE lojaid = 20) = 0,
+                        'e nada do historico da outra conta');
+END $$;
+
+-- ...e o proprio tablet (papel 'loja') nao le nada disso.
+SET teste.uid = '10100000-0000-0000-0000-000000000001';
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.acessoslojaeventos) = 0,
+                        'o proprio tablet nao le o historico do acesso');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

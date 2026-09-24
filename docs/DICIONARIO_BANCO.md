@@ -984,6 +984,22 @@ Em quais lojas cada funcionário trabalha. Tirar alguém de uma loja = `ativo = 
 | validador | boolean | obrigatório; padrão false. Pode aprovar e recusar entregas **desta loja** pelo Telegram e usar `/pendencias`, `/lancar` e `/status_meta` no grupo de gestão (Etapa 1.13A) |
 | criadoem | timestamptz | obrigatório; padrão now() |
 
+## acessoslojaeventos (Etapa 1.12 B1) — histórico do acesso do tablet
+Tabela **nova**, **nível loja**. Quando o acesso do tablet foi criado e cada vez que uma senha nova foi gerada.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| eventoid | integer | ID automático |
+| contaid | integer | obrigatório; → contas; padrão `minha_conta()` |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| evento | varchar(12) | `criado` ou `senha_nova` |
+| userid | uuid | → auth.users. Quem fez |
+| em | timestamptz | padrão now() |
+
+**Só o master lê** (a policy exige `sou_master()`): nem o gerente, nem o tablet, nem o administrador geral. Entra por `registrar_evento_acesso_loja`, que é interna (recebe a conta).
+
+A **senha do tablet não fica aqui nem em lugar nenhum**: o banco guarda só o resumo dela (PBKDF2 com sal, em `senhasgestor`). Não há como exibi-la de novo — quem perde usa "Gerar nova senha".
+
 ## tarefascandidatos (Etapa 1.12 B1a) — quem pode pegar a tarefa compartilhada
 Tabela **nova**, **nível conta**. Sem linhas na missão da equipe: ali qualquer pessoa da loja pode pegar.
 

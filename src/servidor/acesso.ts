@@ -742,6 +742,9 @@ export const criarAcessoLoja = createServerFn({ method: "POST" })
     const { error: erroInterna } = await supabaseAdmin.auth.admin.updateUserById(criado.user.id, {
       password: await senhaInterna(criado.user.id),
     });
+    await supabaseAdmin.rpc("registrar_evento_acesso_loja", {
+      p_contaid: contaid, p_lojaid: data.lojaid, p_evento: "criado", p_quem: userId,
+    });
     if (erroInterna) {
       await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
       throw new Error(`Não foi possível criar o acesso: ${erroInterna.message}`);
@@ -754,7 +757,7 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: { lojaid: number }) => d)
   .handler(async ({ data, context }) => {
-    const { supabase } = context as unknown as { supabase: ClienteDoUsuario };
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     await exigirMaster(supabase);
     const contaid = await contaDoMaster(supabase);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -778,8 +781,38 @@ export const redefinirSenhaLoja = createServerFn({ method: "POST" })
     if (erroInterna) throw new Error(`Não foi possível redefinir: ${erroInterna.message}`);
     // Derruba os tablets que estavam abertos com a senha antiga.
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
+    await supabaseAdmin.rpc("registrar_evento_acesso_loja", {
+      p_contaid: contaid, p_lojaid: data.lojaid, p_evento: "senha_nova", p_quem: userId,
+    });
     return { usuario: emailDaLoja(data.lojaid, contaid), senha };
   });
+
+/**
+ * A ficha do tablet de cada loja: usuário, último uso, quantos aparelhos estão
+ * abertos e o histórico. A senha NÃO entra: ela é guardada só como resumo
+ * (PBKDF2 com sal) e não existe jeito de exibi-la de novo — nem deve existir.
+ * Quem perdeu a senha usa "Gerar nova senha".
+ */
+export const fichaDosTablets = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context as unknown as { supabase: ClienteDoUsuario };
+    await exigirMaster(supabase);
+    const contaid = await contaDoMaster(supabase);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.rpc("ficha_dos_tablets", { p_contaid: contaid });
+    if (error) throw new Error("Não foi possível ler a ficha dos tablets agora.");
+    return (data ?? []) as unknown as FichaDoTablet[];
+  });
+
+export type FichaDoTablet = {
+  lojaid: number;
+  loja: string;
+  usuario: string | null;
+  ultimoacesso: string | null;
+  aparelhos: number;
+  historico: { evento: "criado" | "senha_nova"; em: string; quem: string | null }[];
+};
 
 // ---------------------------------------------------------------------------
 // Diagnóstico: o que está faltando para o sistema funcionar
