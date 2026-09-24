@@ -316,7 +316,8 @@ function Funcionarios() {
             cria a própria senha. Vale {codigoNovo.dias} dias e serve uma vez só.
           </p>
           <p className="text-sm text-muted-foreground">
-            Entregue à pessoa, junto com o link da equipe (Lojas → Link da equipe). No celular dela:
+            Entregue à pessoa, junto com o link da equipe (menu <strong>Lojas e links da TV</strong>).
+            No celular dela:
             abrir o link → aba <strong>1º acesso</strong> → CPF + este código → criar senha → escolher
             o PIN → aceitar a política.
           </p>

@@ -559,9 +559,15 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
         </p>
       </div>
 
-      {endereco && (
-        <div className="rounded-lg border border-border bg-card p-3 text-sm">
-          <p className="font-medium">Link da equipe</p>
+      {conta.data?.codigo && (
+        <div className="space-y-2 rounded-lg border border-border bg-card p-3 text-sm">
+          <p className="font-medium">Código da empresa</p>
+          <p className="font-mono text-2xl tracking-widest">{conta.data.codigo}</p>
+          <p className="text-xs text-muted-foreground">
+            É o que a equipe digita no primeiro campo da tela de entrada. Pode mostrar para quem quiser:
+            sozinho ele não abre nada — sem CPF e senha ninguém entra.
+          </p>
+          <p className="pt-1 font-medium">Link da equipe</p>
           <p className="text-xs text-muted-foreground">
             Imprima e cole no mural. Quem abrir este link já entra com o código da empresa preenchido:
             depois é só CPF e senha.
