@@ -860,6 +860,7 @@ Tabela **nova** (Etapa 1.10), **nível conta**. O checklist de cada pessoa. **Ú
 | dataagendamento | timestamptz |  |
 | descricaooverride | text |  |
 | origematribuicaoid | integer | → tarefasatribuidas.atribuicaoid |
+| compartilhada | boolean | padrão false. **Etapa 1.12 B1a.** Tarefa atribuída a várias pessoas: uma tarefa só, sem dono, e a lista de quem pode pegar está em `tarefascandidatos`. A primeira que pega ganha uma cópia no próprio nome (`origematribuicaoid` aponta para esta) |
 
 
 ---
@@ -982,6 +983,17 @@ Em quais lojas cada funcionário trabalha. Tirar alguém de uma loja = `ativo = 
 | ativo | boolean | obrigatório; padrão true |
 | validador | boolean | obrigatório; padrão false. Pode aprovar e recusar entregas **desta loja** pelo Telegram e usar `/pendencias`, `/lancar` e `/status_meta` no grupo de gestão (Etapa 1.13A) |
 | criadoem | timestamptz | obrigatório; padrão now() |
+
+## tarefascandidatos (Etapa 1.12 B1a) — quem pode pegar a tarefa compartilhada
+Tabela **nova**, **nível conta**. Sem linhas na missão da equipe: ali qualquer pessoa da loja pode pegar.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| contaid | integer | obrigatório; → contas |
+| atribuicaoid | integer | obrigatório; → tarefasatribuidas (junto com contaid) |
+| funcionarioid | integer | obrigatório; → funcionarios (junto com contaid) |
+
+Chave primária (`contaid`, `atribuicaoid`, `funcionarioid`). Entra por `atribuir_tarefa`.
 
 ## tarefaslojas
 Em quais lojas cada tarefa vale. Mesma regra: desativar, nunca apagar.
@@ -1195,10 +1207,20 @@ Medição de uso por dia: `contaid`, `lojaid`, `canal` (`telegram`/`whatsapp`), 
 Liga/desliga de cada rotina do bot, **por loja**. Tudo nasce ligado: só aparece aqui o que o master mudou. Colunas: `contaid`, `lojaid`, `rotina` (`inicio_jornada`, `lembrete3`, `lembrete6`, `fim_jornada`, `comunicado_novo`, `comunicado_lembrete`, `folga_drop`, `missao`), `ativo`, `alteradoem`, `alteradopor`. O navegador só lê; muda por `definir_rotina_mensagem(loja, rotina, ativo)`.
 
 ### missoesaceites
-Quem pegou cada missão em cada dia. A chave `(contaid, atribuicaoid, dia)` é o que garante **o primeiro que clicar**: dois cliques no mesmo instante só deixam um passar. Colunas: `funcionarioid`, `novaatribuicaoid` (a tarefa de hoje criada para quem pegou), `canal` (`app`/`telegram`), `aceitoem`.
+Quem pegou cada tarefa, em que dia e por onde. Desde a **Etapa 1.12 B1a** vale para os três casos: missão, tarefa compartilhada e tarefa com dono (entregar sem ter pegado grava o aceite).
 
-### Missão da equipe
-Não é tabela nova: é uma linha de **`tarefasatribuidas` sem `funcionarioid`**, com `lojaid` e `horariodisparo`. Quem aceita ganha uma tarefa `Unica` de hoje com `origematribuicaoid` apontando para a missão — por isso ela conta como **esforço extra** (entra nos pontos ganhos, não nos possíveis), igual à tarefa de quem está de folga. Entra por `pegar_missao(atribuicao, funcionario)`.
+Chave primária `aceiteid`; o que garante **o primeiro que pegar** é o índice único `(contaid, atribuicaoid, dia) WHERE revogadoem IS NULL`: dois toques no mesmo instante só deixam um passar, e o aceite **revogado** libera o dia sem apagar o histórico.
+
+Colunas: `funcionarioid`, `novaatribuicaoid` (a cópia criada para quem pegou; vazia na tarefa com dono), `canal` (`app`/`telegram`/`tablet`), `aceitoem`, `revogadoem`, `revogadopor`, `motivorevogacao`.
+
+### Missão da equipe e tarefa compartilhada
+Não são tabelas novas: são linhas de **`tarefasatribuidas` sem `funcionarioid`**.
+- **Missão da equipe:** com `horariodisparo` e sem candidatos — qualquer pessoa da loja que trabalha hoje pode pegar.
+- **Tarefa compartilhada (Etapa 1.12 B1a):** `compartilhada = true` e a lista de quem pode pegar em `tarefascandidatos`.
+
+Quem pega ganha uma tarefa `Unica` de hoje com `origematribuicaoid` apontando para a original. Desde a **Etapa 1.12 B1a**, ela conta nos **pontos possíveis de quem pegou** e a entrega aprovada conta na **confiabilidade** dela (antes era só esforço extra). Quem estava atribuído e não pegou fica neutro; o que ninguém pegou não entra na nota de ninguém. A tarefa recebida de quem está de folga continua sendo esforço extra: não tem aceite.
+
+Entra por `pegar_tarefa(atribuicao, funcionario)` (o bot continua chamando `pegar_missao`, que é um atalho para ela) e sai por `revogar_aceite(atribuicao, dia, motivo)`.
 
 ### Colunas novas
 - **`mensagensfila`**: `funcionarioid` (de quem é o aviso, para o limite diário e a folga), `automatica`, `naoreenviar` (rotina não é reenviada se falhar), `chave` (etiqueta única por conta: o banco recusa a segunda mensagem igual) e `juntarchave` (avisos que viram uma mensagem só). Situação nova **`guardada`**: aviso retido porque a pessoa está de folga ou afastada.

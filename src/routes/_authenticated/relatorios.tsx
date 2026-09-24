@@ -146,6 +146,23 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
     },
   });
 
+  // O outro lado das pendências: as tarefas abertas que ela ASSUMIU. Uma
+  // tarefa compartilhada só pesa na nota de quem pegou, então "atribuída" e
+  // "pega" não são a mesma conta.
+  const pegas = useQuery({
+    queryKey: ["pegas-pessoa", funcionarioid, de, ate],
+    enabled: escolhida && de !== "" && ate !== "",
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("tarefas_pegas_da_pessoa", {
+        p_funcionarioid: Number(funcionarioid),
+        p_de: de,
+        p_ate: ate,
+      });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const historico = useQuery({
     queryKey: ["historico-pessoa", funcionarioid],
     enabled: escolhida,
@@ -224,6 +241,31 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
               </div>
             </section>
           )}
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold">Tarefas que ela pegou</h2>
+            <p className="text-xs text-muted-foreground">
+              Tarefas abertas (compartilhadas ou missões da equipe) que ela assumiu no período. Não eram dela: ela
+              escolheu pegar, e a partir daí passaram a pesar na nota dela. O que já era dela está logo abaixo.
+            </p>
+            {pegas.isError && <p className="text-sm text-destructive">{(pegas.error as Error).message}</p>}
+            <TabelaResponsiva
+              linhas={pegas.data ?? []}
+              chave={(t) => `${t.dia}-${t.titulo}`}
+              vazio={pegas.isLoading ? "Carregando..." : "Ela não pegou nenhuma tarefa aberta neste período."}
+              colunas={[
+                { titulo: "Dia", valor: (t) => dia(t.dia), classe: () => "whitespace-nowrap text-muted-foreground" },
+                { titulo: "Tarefa", principal: true, valor: (t) => t.titulo },
+                { titulo: "Loja", valor: (t) => t.loja ?? "—", classe: () => "text-muted-foreground" },
+                { titulo: "Pontos", alinhar: "direita", valor: (t) => t.pontos },
+                {
+                  titulo: "Situação",
+                  valor: (t) => (t.revogadoem ? "Aceite revogado" : t.entregue ? "Entregue" : "Em andamento"),
+                  classe: (t) => (t.revogadoem ? "text-muted-foreground" : t.entregue ? "text-sucesso" : ""),
+                },
+              ]}
+            />
+          </section>
 
           <section className="space-y-2">
             <h2 className="text-lg font-semibold">O que ficou por fazer</h2>

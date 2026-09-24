@@ -62,7 +62,7 @@ Administrador geral (Wisley)
 | 1.10 | RH (onboarding, comunicados, documentos) | ✅ Concluída (22/09/2026) |
 | 1.10B | Reestruturação visual (tema, layout único, celular, tela Início) | ✅ Concluída |
 | 1.11 | Rotinas automáticas sem Telegram | ✅ Concluída (22/09/2026) |
-| 1.12 | **Visões LOJA e COLABORADOR** (tablet da loja e celular do colaborador) | 🟨 Parte A (acesso) pronta em 23/09/2026 · partes B (tablet), C (celular) e D (extras) a fazer |
+| 1.12 | **Visões LOJA e COLABORADOR** (tablet da loja e celular do colaborador) | 🟨 Parte A (acesso) pronta em 23/09/2026 · B1a (motor de "pegar") em 24/09/2026 · B1b (tablet), B2, C (celular) e D (extras) a fazer |
 | 1.13 | **Telegram e WhatsApp da plataforma** + cobrança por uso | 🟨 1.13A e 1.13B1 prontas (22/09/2026), aguardando o teste na loja · 1.13B2 e 1.13C a fazer |
 | 1.14 | Segurança final (endurecimento) | ⬜ |
 | **FASE 2** | **Expansão — adiada** | Nada daqui é construído sem pedido explícito do Wisley |
@@ -426,12 +426,23 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
   - [ ] **Conferir o Secret `SITE_URL` no Lovable:** precisa ser `https://stgame.com.br`, sem barra no fim. É ele que monta o link do convite e da troca de senha dos clientes.
     - Para quem não usa o terminal: **`supabase/aplicar-etapa-1.12-parte-A.sql`** é o mesmo conteúdo das 10 migrações desta etapa, num arquivo só, para colar no SQL Editor. Roda tudo junto ou nada, pode rodar duas vezes sem erro, e termina dizendo "tudo certo". Foi testado num banco igual ao do Supabase (sem a parte A): aplicou, e o teste de isolamento passou inteiro em cima dele.
   - [ ] **Falta cadastrar no Lovable:** `STGAME_PIN_PEPPER` (chave longa e aleatória). Sem ela, criar acesso, entrar e escolher PIN não funcionam. **Trocar essa chave depois obriga a refazer os acessos de todo mundo.**
-- [ ] **B — Tablet** (grande): painel, fila do dia, PIN, aceitar, entregar com foto, mural com ciência, feedback, justificativa, solicitação, modo quiosque, pareamento e corte de tablet.
+- **B — Tablet** (grande), dividida em duas entregas.
   - **Ritmo de atualização (decisão de 23/09/2026):** a fila do tablet atualiza a cada **15 segundos** (não 30) **e na hora, logo depois de qualquer ação feita nele** — assim a tarefa aceita some rápido da lista dos outros. No celular do colaborador, **30 segundos** está bom.
+  - [x] **B1a — o motor de "pegar" (24/09/2026)**, no banco e nas telas do gestor. Testável sem tablet.
+    - **Regra da fila (decisão de 24/09/2026).** Atribuir a **uma** pessoa continua como sempre: é dela, e não fazer pesa na nota dela. Atribuir a **várias** cria **UMA** tarefa sem dono, com a lista de quem pode pegar: a primeira que pega leva, some da lista das outras e passa a mostrar "com Maria S. desde 14h02". Missão da equipe continua aberta a qualquer pessoa da loja que trabalha hoje.
+    - **Quem pega, assume.** A tarefa aberta passa a pesar nos **pontos possíveis de quem pegou** (antes a missão era bônus sem risco). Quem estava atribuído e não pegou fica **neutro**. O que ninguém pegou **não entra na nota de ninguém** — e aparece no cartão "Ninguém pegou" do Início e na faixa "Para pegar" do Quadro.
+    - **Entregar sem ter pegado vale como aceite.** Pegar grava data e hora.
+    - **Revogar o aceite:** só o gestor, com motivo obrigatório; se já houver entrega, o banco manda recusar a entrega antes. O aceite revogado fica guardado ao lado do novo, e a tarefa volta para "para pegar".
+    - **Tela:** em Tarefas, a lista de uma pessoa virou seleção de várias; no Quadro, a "Fila de hoje" em três faixas com "Revogar o aceite"; no Início, o cartão "Ninguém pegou"; em Relatórios, "Tarefas que ela pegou" separado de "O que ficou por fazer".
+    - **Dois defeitos achados pelos próprios testes novos:** o canal `tablet` não cabia nas colunas de canal (a primeira entrega feita no tablet teria quebrado na B1b), e o índice que impede pegar duas vezes no dia também impedia pegar de novo **depois de revogado**.
+    - Teste de isolamento: **seção 45**, 1010 verificações, todas passando. A prova de corrida "dois cliques ao mesmo tempo" passou a exercitar a função nova (`pegar_tarefa`): de duas conexões simultâneas, exatamente uma leva.
+    - Para colar no SQL Editor: **`supabase/aplicar-etapa-1.12-parte-B1a.sql`** (aplicar depois da parte A; testado rodando duas vezes seguidas).
+  - [ ] **B1b — o tablet:** fila em três faixas, teclado do PIN, pegar, entregar com foto, modo quiosque, pareamento e corte de tablet.
+  - [ ] **B2 — o resto do tablet:** mural com ciência, feedback, justificativa, solicitação, painel do dia.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
 - [ ] **D — Extras** (pequeno): checklist de abertura/fechamento e aviso de tarefa parada.
 
-**Decisão de negócio ainda em aberto:** hoje a tarefa nasce **com dono** (o gestor atribui). A fila "livre para aceitar" supõe o contrário. Caminho proposto: continua como hoje e **só o que o gestor marcar como "livre" entra na fila de aceitar** (a missão da equipe, da 1.13B1, já funciona assim).
+**Decisão fechada em 24/09/2026 (era a pendência de negócio):** a tarefa continua nascendo **com dono**. O que entra na fila "para pegar" é a tarefa atribuída a **várias** pessoas (uma só tarefa, a primeira que pegar leva) e a **missão da equipe**. Ver a Etapa 1.12 B1a.
 
 ### Etapa 1.13 — Telegram e WhatsApp da plataforma + cobrança por uso
 > Dividida em três partes, cada uma testada na loja antes da próxima: **1.13A** base do bot · **1.13B** rotinas com mensagens · **1.13C** WhatsApp (API oficial da Meta) e onboarding pelo bot. Bot: **@STGameAppBot**, um só para todas as contas.
@@ -639,6 +650,7 @@ Ferramenta: **Claude Code no VS Code**, direto no repositório. Regras permanent
 | 22/09/2026 | Fechamento mensal: provisório nos dias 1 a 7, definitivo no dia 8; "Refazer" só pelo master, com motivo, guardando versões. Por loja, cada ponto conta na loja em que a tarefa foi feita; o geral soma todas. Sem pontos automáticos. |
 | 22/09/2026 | Conferência do livro nunca corrige sozinha. Limpeza só do registro de rotinas (180 dias). O papel do pg_cron ignora a RLS: toda função de rotina filtra a conta em todas as consultas e não é liberada para o navegador. |
 | 22/09/2026 | Produto renomeado para STGame; identidade visual aplicada (tokens em `src/styles/stgame-theme.css`). |
+| 24/09/2026 | **Etapa 1.12 B1a — regra da fila.** Atribuir a várias cria UMA tarefa sem dono; a primeira que pega leva. Atribuída a uma pessoa continua como sempre (não fazer pesa na nota dela) — o "neutro" vale só para tarefa aberta, senão ignorar a tarefa deixaria de custar e a confiabilidade mediria só o que a pessoa escolheu pegar. **Quem pega assume:** a tarefa aberta entra nos pontos possíveis de quem pegou (a missão deixou de ser bônus sem risco). Revogar o aceite é do gestor, com motivo. |
 | 23/09/2026 | **Comercialização + Stripe saiu da Fase 1 e virou a Etapa 2.0.** A Etapa 1.12 passa a ser as **Visões LOJA e COLABORADOR**; Telegram continua 1.13 (pausado e desligado por padrão) e Segurança continua 1.14. |
 | 23/09/2026 | **Etapa 1.12:** visão LOJA (tablet, um acesso por loja) e visão COLABORADOR (celular, login por CPF), **sem nenhuma notificação**, para reduzir risco trabalhista. Aceite de tarefa no tablet por PIN de 6 dígitos, único na conta, guardado com HMAC de chave só do servidor (busca direta, sem comparar um a um). Senha e PIN iniciais = 6 primeiros dígitos do CPF. `minha_conta()` responde nulo para os acessos novos, que só leem e gravam por funções em contexto de servidor. |
 | 23/09/2026 | **Etapa 1.12, parte A:** o PIN é embaralhado pelo **servidor** (HMAC com `STGAME_PIN_PEPPER`), não pelo banco: quem tiver só o banco não consegue testar número nenhum. Login por CPF usa e-mail interno montado pelo sistema, que não recebe e-mail. Trava de tentativas também no login do master. Correção de defeito da 1.13B1: aviso depois do fim do expediente esperava virar resumo de folga. |

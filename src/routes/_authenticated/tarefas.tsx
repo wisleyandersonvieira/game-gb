@@ -363,9 +363,11 @@ type Linha = {
 function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: string }) {
   const qc = useQueryClient();
   const [tarefaid, setTarefaid] = useState<number | "">("");
-  // "missao" = tarefa sem dono, que o bot manda ao grupo da equipe e o
-  // primeiro que clicar leva.
-  const [funcionarioid, setFuncionarioid] = useState<number | "" | "missao">("");
+  // Quem faz. Uma pessoa = tarefa com dono, como sempre foi. Várias = UMA
+  // tarefa compartilhada, que a primeira a pegar leva. Nenhuma + horário =
+  // missão da equipe, aberta a toda a loja.
+  const [selecionados, setSelecionados] = useState<number[]>([]);
+  const [missao, setMissao] = useState(false);
   const [horarioMissao, setHorarioMissao] = useState("10:00");
   const [frequencia, setFrequencia] = useState("Unica");
   const [data, setData] = useState(hojeEmSaoPaulo());
@@ -428,7 +430,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       let consulta = supabase
         .from("tarefasatribuidas")
         .select(
-          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia, horariodisparo",
+          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia, horariodisparo, compartilhada",
         )
         .eq("lojaid", lojaid)
         .order("atribuicaoid");
@@ -451,14 +453,37 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           [...new Set(linhas.map((l) => l.funcionarioid).filter((v): v is number => v !== null))],
         );
 
+      // Quem pode pegar cada tarefa compartilhada.
+      const idsCompartilhadas = linhas.filter((l) => l.compartilhada).map((l) => l.atribuicaoid);
+      const { data: candidatos } = idsCompartilhadas.length
+        ? await supabase
+            .from("tarefascandidatos")
+            .select("atribuicaoid, funcionarioid")
+            .in("atribuicaoid", idsCompartilhadas)
+        : { data: [] };
+      const { data: maisPessoas } = candidatos?.length
+        ? await supabase
+            .from("funcionarios")
+            .select("funcionarioid, nomecompleto")
+            .in("funcionarioid", [...new Set(candidatos.map((c) => c.funcionarioid))])
+        : { data: [] };
+
       const titulo = new Map((tarefas ?? []).map((t) => [t.tarefaid, t.titulo]));
-      const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
+      const nome = new Map(
+        [...(pessoas ?? []), ...(maisPessoas ?? [])].map((p) => [p.funcionarioid, p.nomecompleto]),
+      );
+      const daTarefa = new Map<number, string[]>();
+      for (const c of candidatos ?? []) {
+        const atual = daTarefa.get(c.atribuicaoid) ?? [];
+        atual.push(nome.get(c.funcionarioid) ?? "—");
+        daTarefa.set(c.atribuicaoid, atual);
+      }
 
       // A Semanal com vários dias vira várias linhas no banco, mas uma só na
       // tela: mesma tarefa, mesma pessoa, mesma frequência.
       const agrupadas = new Map<string, Linha>();
       for (const l of linhas) {
-        const chave = `${l.tarefaid}|${l.funcionarioid}|${l.tipofrequencia}|${l.datafimvigencia ?? "ativa"}`;
+        const chave = `${l.tarefaid}|${l.funcionarioid ?? `c${l.atribuicaoid}`}|${l.tipofrequencia}|${l.datafimvigencia ?? "ativa"}`;
         const atual = agrupadas.get(chave);
         if (atual) {
           atual.ids.push(l.atribuicaoid);
@@ -470,7 +495,9 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
             titulo: titulo.get(l.tarefaid) ?? `Tarefa ${l.tarefaid}`,
             nome: l.funcionarioid
               ? (nome.get(l.funcionarioid) ?? "—")
-              : `🚨 Missão da equipe${l.horariodisparo ? ` · ${l.horariodisparo.slice(0, 5)}` : ""}`,
+              : l.compartilhada
+                ? `👥 ${(daTarefa.get(l.atribuicaoid) ?? []).sort().join(", ")} (a primeira que pegar)`
+                : `🚨 Missão da equipe${l.horariodisparo ? ` · ${l.horariodisparo.slice(0, 5)}` : ""}`,
             tipofrequencia: l.tipofrequencia,
             dias: l.valorfrequencia !== null ? [l.valorfrequencia] : [],
             valor: l.valorfrequencia,
@@ -488,39 +515,43 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
 
   const atribuir = useMutation({
     mutationFn: async () => {
-      if (tarefaid === "" || funcionarioid === "") throw new Error("Escolha a tarefa e a pessoa.");
-      const missao = funcionarioid === "missao";
+      if (tarefaid === "") throw new Error("Escolha a tarefa.");
+      if (!missao && selecionados.length === 0) throw new Error("Escolha quem faz a tarefa.");
       if (missao && !horarioMissao) throw new Error("Escolha a hora em que a missão vai para o grupo.");
-
-      const base = {
-        tarefaid: Number(tarefaid),
-        funcionarioid: missao ? null : Number(funcionarioid),
-        lojaid,
-        tipofrequencia: frequencia,
-        horariodisparo: missao ? horarioMissao : null,
-      };
-
-      // Semanal com vários dias vira uma linha por dia, como no sistema antigo.
-      const linhas =
-        frequencia === "Semanal"
-          ? diasSemana.map((d) => ({ ...base, valorfrequencia: d }))
-          : frequencia === "Mensal"
-            ? [{ ...base, valorfrequencia: diaMes }]
-            : frequencia === "Unica"
-              ? [{ ...base, dataagendamento: new Date(`${data}T12:00:00-03:00`).toISOString() }]
-              : [base];
-
       if (frequencia === "Semanal" && diasSemana.length === 0) {
         throw new Error("Escolha pelo menos um dia da semana.");
       }
 
+      // O banco decide o formato: 1 pessoa = tarefa com dono; várias = uma
+      // tarefa compartilhada com lista; nenhuma = missão da equipe.
+      const base = {
+        p_tarefaid: Number(tarefaid),
+        p_lojaid: lojaid,
+        p_funcionarios: missao ? null : selecionados,
+        p_tipofrequencia: frequencia,
+        p_horariodisparo: missao ? horarioMissao : undefined,
+      };
+
+      // Semanal com vários dias vira uma atribuição por dia, como no antigo.
+      const pedidos =
+        frequencia === "Semanal"
+          ? diasSemana.map((d) => ({ ...base, p_valorfrequencia: d }))
+          : frequencia === "Mensal"
+            ? [{ ...base, p_valorfrequencia: diaMes }]
+            : frequencia === "Unica"
+              ? [{ ...base, p_dataagendamento: new Date(`${data}T12:00:00-03:00`).toISOString() }]
+              : [base];
+
       // Atribuir NÃO cria entrega. A entrega nasce quando a pessoa envia.
-      const { error } = await supabase.from("tarefasatribuidas").insert(linhas);
-      if (error) throw error;
+      for (const pedido of pedidos) {
+        const { error } = await supabase.rpc("atribuir_tarefa", pedido);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       setTarefaid("");
-      setFuncionarioid("");
+      setSelecionados([]);
+      setMissao(false);
       setDiasSemana([]);
       qc.invalidateQueries({ queryKey: ["atribuicoes", lojaid] });
     },
@@ -587,25 +618,6 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           </select>
 
           <select
-            required
-            value={funcionarioid}
-            onChange={(e) =>
-              setFuncionarioid(
-                e.target.value === "" ? "" : e.target.value === "missao" ? "missao" : Number(e.target.value),
-              )
-            }
-            className={campo}
-          >
-            <option value="">Escolha a pessoa...</option>
-            <option value="missao">🚨 Missão da equipe (o primeiro que pegar)</option>
-            {pessoas.map((p) => (
-              <option key={p.funcionarioid} value={p.funcionarioid}>
-                {p.nomecompleto}
-              </option>
-            ))}
-          </select>
-
-          <select
             value={frequencia}
             onChange={(e) => setFrequencia(e.target.value)}
             className={campo}
@@ -617,7 +629,52 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           </select>
         </div>
 
-        {funcionarioid === "missao" && (
+        <div className="space-y-2 rounded-lg border border-border p-3">
+          <p className="text-sm font-medium">Quem faz?</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={missao}
+              onChange={(e) => {
+                setMissao(e.target.checked);
+                if (e.target.checked) setSelecionados([]);
+              }}
+            />
+            🚨 Missão da equipe — aberta a qualquer pessoa da loja
+          </label>
+
+          {!missao && (
+            <>
+              <div className="max-h-48 space-y-1 overflow-y-auto">
+                {pessoas.map((p) => (
+                  <label key={p.funcionarioid} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selecionados.includes(p.funcionarioid)}
+                      onChange={(e) =>
+                        setSelecionados((atual) =>
+                          e.target.checked
+                            ? [...atual, p.funcionarioid]
+                            : atual.filter((x) => x !== p.funcionarioid),
+                        )
+                      }
+                    />
+                    {p.nomecompleto}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {selecionados.length === 0
+                  ? "Marque uma pessoa, ou marque várias para deixar a tarefa aberta entre elas."
+                  : selecionados.length === 1
+                    ? "Tarefa desta pessoa: só ela faz, e não fazer pesa na nota dela."
+                    : `Uma tarefa só, entre ${selecionados.length} pessoas: a primeira que pegar fica com ela e some da lista das outras. Quem não pegou fica neutro na nota.`}
+              </p>
+            </>
+          )}
+        </div>
+
+        {missao && (
           <div className="space-y-1 rounded-lg border border-azul/40 bg-azul-soft px-3 py-2">
             <label className="flex flex-wrap items-center gap-2 text-sm text-azul">
               A que horas o bot manda a missão ao grupo da equipe?
@@ -630,8 +687,8 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
               />
             </label>
             <p className="text-xs text-azul">
-              A missão não tem dono: o primeiro da equipe que tocar em "Eu aceito" fica com ela no dia. Vale como
-              esforço extra, igual à tarefa de quem está de folga.
+              A missão não tem dono: a primeira pessoa da equipe que pegar fica com ela no dia. Quem pega assume:
+              a tarefa passa a pesar na nota de quem pegou, e em mais ninguém.
             </p>
           </div>
         )}

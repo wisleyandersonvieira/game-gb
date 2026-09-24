@@ -59,6 +59,21 @@ function Inicio() {
     },
   });
 
+  // Tarefa compartilhada que ninguém pegou não entra na nota de ninguém:
+  // precisa aparecer aqui, senão passa em branco.
+  const naoPegas = useQuery({
+    queryKey: ["nao-pegas", lojaid],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc(
+        "tarefas_nao_pegas",
+        lojaid === null ? {} : { p_lojaid: lojaid },
+      );
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   function escolher(a: "todas" | "loja") {
     setAlcance(a);
     gravar(CHAVE_ALCANCE, a);
@@ -129,7 +144,7 @@ function Inicio() {
               }
             />
           )}
-          <Cartoes p={p} />
+          <Cartoes p={p} naoPegas={naoPegas.data?.length ?? 0} />
           {temDados ? (
             <Graficos p={p} />
           ) : (
@@ -164,7 +179,7 @@ function CartaoMeta({ titulo, meta }: { titulo: string; meta: PainelInicio["cart
   );
 }
 
-function Cartoes({ p }: { p: PainelInicio }) {
+function Cartoes({ p, naoPegas }: { p: PainelInicio; naoPegas: number }) {
   const c = p.cartoes;
   const t = c.tarefas;
   return (
@@ -184,6 +199,13 @@ function Cartoes({ p }: { p: PainelInicio }) {
         valor={c.validar}
         detalhe={c.validar === 0 ? "Tudo validado" : "Entregas para aprovar ou recusar"}
         tom={c.validar > 0 ? "pendente" : "sucesso"}
+        para="/painel"
+      />
+      <CartaoNumero
+        titulo="Ninguém pegou"
+        valor={naoPegas}
+        detalhe={naoPegas === 0 ? "Toda tarefa aberta foi assumida" : "Tarefas abertas que ninguém assumiu hoje"}
+        tom={naoPegas > 0 ? "pendente" : "sucesso"}
         para="/painel"
       />
       <CartaoNumero titulo="Agendamentos hoje" valor={c.agendahoje} detalhe="Confirmados e realizados" para="/agenda" />

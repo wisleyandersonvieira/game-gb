@@ -2953,31 +2953,43 @@ export type Database = {
       }
       missoesaceites: {
         Row: {
+          aceiteid: number
           aceitoem: string
           atribuicaoid: number
           canal: string
           contaid: number
           dia: string
           funcionarioid: number
+          motivorevogacao: string | null
           novaatribuicaoid: number | null
+          revogadoem: string | null
+          revogadopor: string | null
         }
         Insert: {
+          aceiteid?: number
           aceitoem?: string
           atribuicaoid: number
           canal?: string
           contaid: number
           dia: string
           funcionarioid: number
+          motivorevogacao?: string | null
           novaatribuicaoid?: number | null
+          revogadoem?: string | null
+          revogadopor?: string | null
         }
         Update: {
+          aceiteid?: number
           aceitoem?: string
           atribuicaoid?: number
           canal?: string
           contaid?: number
           dia?: string
           funcionarioid?: number
+          motivorevogacao?: string | null
           novaatribuicaoid?: number | null
+          revogadoem?: string | null
+          revogadopor?: string | null
         }
         Relationships: [
           {
@@ -3967,6 +3979,7 @@ export type Database = {
           atribuicaoid: number
           contaid: number
           dataaceite: string | null
+          compartilhada: boolean
           dataagendamento: string | null
           dataatribuicao: string | null
           datafimvigencia: string | null
@@ -3988,6 +4001,7 @@ export type Database = {
           atribuicaoid?: number
           contaid?: number
           dataaceite?: string | null
+          compartilhada?: boolean
           dataagendamento?: string | null
           dataatribuicao?: string | null
           datafimvigencia?: string | null
@@ -4009,6 +4023,7 @@ export type Database = {
           atribuicaoid?: number
           contaid?: number
           dataaceite?: string | null
+          compartilhada?: boolean
           dataagendamento?: string | null
           dataatribuicao?: string | null
           datafimvigencia?: string | null
@@ -4207,6 +4222,12 @@ export type Database = {
             referencedColumns: ["contaid", "tarefaid"]
           },
         ]
+      }
+      tarefascandidatos: {
+        Row: { atribuicaoid: number; contaid: number; funcionarioid: number }
+        Insert: { atribuicaoid: number; contaid?: number; funcionarioid: number }
+        Update: { atribuicaoid?: number; contaid?: number; funcionarioid?: number }
+        Relationships: []
       }
       tarefaslojas: {
         Row: {
@@ -4600,6 +4621,18 @@ export type Database = {
       arquivar_documento_pessoal: {
         Args: { p_documentoid: number }
         Returns: undefined
+      }
+      atribuir_tarefa: {
+        Args: {
+          p_dataagendamento?: string
+          p_funcionarios: number[] | null
+          p_horariodisparo?: string
+          p_lojaid: number
+          p_tarefaid: number
+          p_tipofrequencia: string
+          p_valorfrequencia?: number
+        }
+        Returns: number
       }
       atribuicoes_para_entregar: {
         Args: { p_lojaid: number }
@@ -5284,6 +5317,53 @@ export type Database = {
       pasta_de_agendamento_minha: {
         Args: { p_editavel: boolean; p_nome: string }
         Returns: boolean
+      }
+      fila_da_loja: {
+        Args: { p_lojaid: number }
+        Returns: {
+          aberta: boolean
+          atrasada: boolean
+          atribuicaoid: number
+          donoid: number | null
+          entregarid: number | null
+          pegaem: string | null
+          pontos: number
+          quempegou: number | null
+          quempegounome: string | null
+          situacao: string
+          tipofrequencia: string
+          titulo: string
+        }[]
+      }
+      pegar_tarefa: {
+        Args: { p_atribuicaoid: number; p_funcionarioid: number }
+        Returns: number
+      }
+      revogar_aceite: {
+        Args: { p_atribuicaoid: number; p_dia: string; p_motivo: string }
+        Returns: undefined
+      }
+      tarefas_nao_pegas: {
+        Args: { p_lojaid?: number }
+        Returns: {
+          atribuicaoid: number
+          atribuidos: string
+          loja: string
+          lojaid: number
+          pontos: number
+          titulo: string
+        }[]
+      }
+      tarefas_pegas_da_pessoa: {
+        Args: { p_ate: string; p_de: string; p_funcionarioid: number }
+        Returns: {
+          dia: string
+          entregue: boolean
+          loja: string | null
+          pontos: number
+          revogadoem: string | null
+          titulo: string
+        }[]
       }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }

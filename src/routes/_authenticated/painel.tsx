@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { FolgaDeHoje } from "@/painel/FolgaDeHoje";
+import { FilaDoDia } from "@/painel/FilaDoDia";
 import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/painel")({
@@ -75,6 +76,7 @@ function Quadro() {
         </p>
       }
     >
+      <FilaDoDia lojaid={lojaAtiva} />
       <RegistrarEntrega lojaid={lojaAtiva} />
       <FolgaDeHoje lojaid={lojaAtiva} />
       <Validacao lojaid={lojaAtiva} />

@@ -4566,7 +4566,8 @@ BEGIN
       'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso',
       -- Etapa 1.12 B1a: todas leem a conta de quem chamou (minha_conta ou
       -- minha_conta_editavel) e filtram por ela em cada tabela.
-      'pegar_tarefa', 'revogar_aceite', 'atribuir_tarefa', 'fila_da_loja', 'tarefas_nao_pegas'
+      'pegar_tarefa', 'revogar_aceite', 'atribuir_tarefa', 'fila_da_loja', 'tarefas_nao_pegas',
+      'tarefas_pegas_da_pessoa'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -5575,6 +5576,17 @@ BEGIN
                         'qualquer pessoa da loja pega a missao');
 END $$;
 
+-- Relatorio por pessoa: o que ela PEGOU, separado do que era dela.
+DO $$
+DECLARE v_n integer; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  SELECT count(*) INTO v_n FROM public.tarefas_pegas_da_pessoa(9502, v_hoje - 1, v_hoje);
+  PERFORM public.exigir(v_n >= 1, 'o relatorio da pessoa lista as tarefas abertas que ela pegou');
+  PERFORM public.exigir((SELECT count(*) FROM public.tarefas_pegas_da_pessoa(9503, v_hoje - 1, v_hoje)
+                          WHERE titulo = 'Conferir o freezer') = 0,
+                        'a tarefa que ja era dela nao aparece como "pega" (nao e o mesmo caso)');
+END $$;
+
 -- Isolamento: a conta B nao alcanca nada disso.
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
@@ -5586,6 +5598,8 @@ BEGIN
   PERFORM public.exigir(v_n = 0, 'B nao ve as tarefas nao pegas de A');
   SELECT count(*) INTO v_n FROM public.tarefascandidatos;
   PERFORM public.exigir(v_n = 0, 'B nao le a lista de candidatos de A');
+  SELECT count(*) INTO v_n FROM public.tarefas_pegas_da_pessoa(9502, v_hoje - 1, v_hoje);
+  PERFORM public.exigir(v_n = 0, 'B nao ve o que gente de A pegou');
 
   SELECT atribuicaoid INTO v_atr FROM public.tarefasatribuidas WHERE contaid = 1 AND tarefaid = 9602 LIMIT 1;
   BEGIN PERFORM public.pegar_tarefa(coalesce(v_atr, -1), 9501); deu_erro := false;

@@ -1,3 +1,17 @@
+-- =========================================================================
+-- STGame — Etapa 1.12, parte B1a: tarefa compartilhada, pegar e revogar.
+--
+-- Como usar: Supabase -> SQL Editor -> New query -> colar TUDO -> Run.
+-- Se der erro, NADA é aplicado (roda tudo junto ou nada): me mande a mensagem.
+-- Pode rodar duas vezes sem problema: tudo aqui confere antes de criar.
+--
+-- ATENÇÃO: aplique a parte A antes desta (supabase/aplicar-etapa-1.12-parte-A.sql).
+--
+-- Este arquivo é a migração 20260928100000_tarefa_compartilhada_e_aceite.sql.
+-- =========================================================================
+
+BEGIN;
+
 -- Etapa 1.12, parte B1a — tarefa compartilhada e o registro de "pegar".
 --
 -- Regra definida pelo Wisley em 24/09/2026:
@@ -759,3 +773,25 @@ $$;
 
 REVOKE ALL ON FUNCTION public.tarefas_pegas_da_pessoa(integer, date, date) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.tarefas_pegas_da_pessoa(integer, date, date) TO authenticated;
+
+-- =========================================================================
+-- Conferência final: se chegou aqui, está tudo no lugar.
+-- =========================================================================
+DO $verifica$
+DECLARE v_falta text[];
+BEGIN
+  SELECT coalesce(array_agg(f ORDER BY f), ARRAY[]::text[]) INTO v_falta
+    FROM unnest(ARRAY['pegar_tarefa', 'revogar_aceite', 'atribuir_tarefa', 'fila_da_loja',
+                      'tarefas_nao_pegas', 'tarefas_pegas_da_pessoa']) f
+   WHERE NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                      WHERE n.nspname = 'public' AND p.proname = f);
+  IF array_length(v_falta, 1) > 0 THEN
+    RAISE EXCEPTION 'Faltou criar: %', array_to_string(v_falta, ', ');
+  END IF;
+  IF to_regclass('public.tarefascandidatos') IS NULL THEN
+    RAISE EXCEPTION 'Faltou criar a tabela tarefascandidatos.';
+  END IF;
+  RAISE NOTICE 'tudo certo: a parte B1a foi aplicada.';
+END $verifica$;
+
+COMMIT;
