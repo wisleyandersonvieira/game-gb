@@ -35,9 +35,12 @@ export const Route = createFileRoute("/tablet")({
 
 const SEGUNDOS = 15;
 
+/** "14h37" — o jeito como a equipe fala a hora. */
 function hora(iso: string | null) {
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso)
+    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    .replace(":", "h");
 }
 
 type Acao =
@@ -214,6 +217,7 @@ function Coluna({
             <li key={i.atribuicaoid} className="space-y-2 rounded-xl bg-background p-3">
               <p className="text-lg font-medium">{i.titulo}</p>
               <Cronometro item={i} agora={agora} minutosParada={minutosParada} />
+              <QuemFez item={i} />
               <p className="text-sm text-muted-foreground">
                 {i.pontos} pontos
                 {!i.quempegounome && i.aberta && " · quem pegar primeiro leva"}
@@ -230,6 +234,29 @@ function Coluna({
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * "por Teste U. às 14h37 · aguardando o gestor". Só na faixa "Feitas hoje".
+ *
+ * A equipe precisa ver o que já rolou no dia e quem fez — antes o cartão
+ * mostrava só o título e os pontos. O nome vem da ENTREGA, então tarefa com
+ * dono único também aparece com nome.
+ */
+function QuemFez({ item }: { item: ItemDaFila }) {
+  if (item.situacao !== "feita" || !item.feitapor) return null;
+
+  const aprovada = item.feitasituacao === "Aprovada";
+  return (
+    <p className="text-sm">
+      por <strong>{item.feitapor}</strong>
+      {item.feitaem ? ` às ${hora(item.feitaem)}` : ""}
+      {" · "}
+      <span className={aprovada ? "text-sucesso" : "text-muted-foreground"}>
+        {aprovada ? "aprovada" : "aguardando o gestor"}
+      </span>
+    </p>
   );
 }
 

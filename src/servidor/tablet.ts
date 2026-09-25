@@ -37,6 +37,10 @@ export type ItemDaFila = {
   rodizio: boolean;
   /** A hora do servidor, para o aparelho acertar o relógio dele. */
   agora: string;
+  /** Quem entregou (nome curto), quando, e em que pé está a entrega. */
+  feitapor: string | null;
+  feitaem: string | null;
+  feitasituacao: "Pendente" | "Aprovada" | null;
 };
 
 /**

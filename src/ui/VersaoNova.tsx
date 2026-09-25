@@ -76,7 +76,9 @@ export function VersaoNova() {
   if (!nova) return null;
 
   return (
-    <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-3 bg-primary px-4 py-2 text-sm text-primary-foreground">
+    // sticky, não fixed: assim ela EMPURRA a tela para baixo em vez de tapar o
+    // título — no balcão, um aviso cobrindo a fila seria pior que o problema.
+    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-2 text-center text-sm text-primary-foreground">
       <span>Versão nova disponível.</span>
       <button
         onClick={() => window.location.reload()}

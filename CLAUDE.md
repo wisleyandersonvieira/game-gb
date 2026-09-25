@@ -66,6 +66,18 @@
 - Componentes pequenos. Adicione cada tela nova ao menu.
 - Antes de concluir, rode `bun run build` sem erros de TypeScript.
 
+## Como fechar uma entrega (obrigatório)
+Commit **não** é publicação: o Lovable publica do GitHub, e commit que não foi **enviado** não chega no ar. Isso já custou um dia de teste em 25/09/2026, com o Wisley procurando defeito numa tela que nunca tinha sido publicada.
+
+A mensagem final de **toda** entrega diz, sempre, nesta ordem:
+1. **`enviado ao GitHub: <commit>`** — enviado, não só commitado. Confira com `git status -sb` que não sobrou nada em `ahead`.
+2. **Quantas migrações** tem o arquivo de aplicar, e qual é o nome dele.
+3. **O que o Wisley precisa fazer, na ordem** (aplicar o SQL → publicar → conferir).
+
+Ele confere em `/saude` se a **versão no ar** é esse commit antes de testar qualquer coisa. A `/saude` mostra o commit e a hora do build, sem precisar de login.
+
+E **nunca junte numa entrega o que não foi testado junto**: um `git add -A` já levou para o ar, sem querer, um conserto pela metade que um agente de revisão tinha começado. Antes de commitar, olhe o `git status` e confirme que cada arquivo mexido é seu.
+
 ## Como se comunicar com o Wisley
 - Ele não é programador. Explique o que foi feito e o que testar em linguagem simples e passos curtos.
 - Decisões de negócio, layout ou prioridade são dele: pergunte antes (veja "Decisões em aberto" no plano).

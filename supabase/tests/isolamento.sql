@@ -5542,6 +5542,20 @@ BEGIN
   PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'feita',
                         'depois da entrega a fila mostra "feita"');
 
+  -- A faixa "Feitas hoje" do tablet mostra QUEM fez, a que horas e em que pe
+  -- esta a entrega. Antes trazia so o titulo e os pontos (25/09/2026).
+  PERFORM public.exigir((SELECT feitapor FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Bia L.',
+                        'a faixa "Feitas hoje" diz quem fez, no nome curto');
+  PERFORM public.exigir((SELECT feitaem IS NOT NULL FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr),
+                        'e a que horas');
+  PERFORM public.exigir((SELECT feitasituacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Pendente',
+                        'entrega nova aparece como "aguardando o gestor"');
+  -- Nenhuma tarefa que NAO esta feita pode mostrar nome de ninguem. Foi esta
+  -- prova que pegou a busca da entrega sem filtro de dia.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fila_da_loja(10)
+                                     WHERE situacao <> 'feita' AND feitapor IS NOT NULL),
+                        'tarefa que nao esta feita nao mostra o nome de ninguem');
+
   -- Revogar com entrega no caminho: recusado.
   BEGIN PERFORM public.revogar_aceite(v_atr, v_hoje, 'pegou por engano'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
@@ -6627,6 +6641,62 @@ BEGIN
                                    NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'nem entrega no nome dela');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ---------------------------------------------------------------------------
+-- 55. A faixa "Feitas hoje" tambem diz quem fez na tarefa COM DONO
+-- ---------------------------------------------------------------------------
+-- Este e o caso que o conserto de 25/09/2026 existe para resolver: tarefa com
+-- dono unico nao passa por missoesaceites, entao quempegounome vem vazio nela.
+-- Se o nome saisse do aceite, justo a tarefa com dono ficaria sem nome nenhum.
+-- Por isso o nome sai da ENTREGA.
+DO $$ BEGIN RAISE NOTICE '55. "Feitas hoje" diz quem fez tambem na tarefa com dono'; END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+DO $$
+DECLARE v_atr integer; v_ent integer;
+BEGIN
+  -- Uma pessoa so: a tarefa nasce COM DONO (nao e compartilhada).
+  v_atr := public.atribuir_tarefa(9602, 10, ARRAY[9503], 'Unica', NULL, now(), NULL);
+
+  PERFORM public.exigir((SELECT funcionarioid = 9503 AND NOT compartilhada
+                           FROM public.tarefasatribuidas WHERE atribuicaoid = v_atr),
+                        'tarefa de uma pessoa so continua nascendo com dono');
+  -- quempegounome vem do ACEITE. Sem aceite ele fica vazio (nome_curto de
+  -- nulo devolve texto vazio, nao nulo — e assim desde sempre).
+  PERFORM public.exigir((SELECT coalesce(quempegounome, '') = '' FROM public.fila_da_loja(10)
+                          WHERE atribuicaoid = v_atr),
+                        'tarefa com dono nao passa pelo aceite: quempegounome fica vazio');
+
+  v_ent := public.registrar_entrega(v_atr);
+
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'feita',
+                        'depois da entrega ela vai para "Feitas hoje"');
+  -- A prova do conserto: o nome aparece mesmo sem aceite nenhum.
+  PERFORM public.exigir((SELECT feitapor FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Caio M.',
+                        'e diz quem fez, mesmo sem aceite (o nome sai da entrega)');
+  PERFORM public.exigir((SELECT feitasituacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Pendente',
+                        'e que ela esta aguardando o gestor');
+
+  -- Depois que o gestor aprova, a faixa passa a dizer "aprovada".
+  PERFORM public.aprovar_entrega(v_ent);
+  PERFORM public.exigir((SELECT feitasituacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Aprovada',
+                        'depois de aprovada, a faixa diz "aprovada"');
+  PERFORM public.exigir((SELECT feitapor FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'Caio M.',
+                        'e continua dizendo quem fez');
+END $$;
+
+-- A loja da outra conta nao ve nada disso.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fila_da_loja(10)),
+                        'a conta B nao ve a fila da loja de A, nem quem fez');
 END $$;
 
 RESET ROLE;
