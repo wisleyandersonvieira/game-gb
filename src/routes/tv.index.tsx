@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { pedirCodigoDaTv, verSeParearam } from "@/servidor/tv";
 import { TelaDaTv } from "@/painel/TelaDaTv";
-import { Logo } from "@/ui/Logo";
+import { EstiloDaTv } from "@/painel/TelaDaTv";
 
 export const Route = createFileRoute("/tv/")({
   ssr: false,
@@ -76,7 +76,7 @@ function TvPareada() {
     setLink(null);
   }, []);
 
-  if (!pronto) return <main className="min-h-screen" />;
+  if (!pronto) return <main style={{ minHeight: "100vh", backgroundColor: "#0b1220" }} />;
   if (link) return <TelaDaTv codigo={link} aoPerderAcesso={perdeuAcesso} />;
 
   return <PedirPareamento aoParear={(t) => { guarde(GUARDADO.link, t); setLink(t); }} />;
@@ -85,18 +85,6 @@ function TvPareada() {
 function PedirPareamento({ aoParear }: { aoParear: (token: string) => void }) {
   const [segredo] = useState(segredoDoAparelho);
   const [erro, setErro] = useState(false);
-
-  // A TV tem paleta própria (escura), como o painel.
-  useEffect(() => {
-    const html = document.documentElement;
-    const eraEscuro = html.classList.contains("dark");
-    html.classList.add("tema-tv");
-    html.classList.remove("dark");
-    return () => {
-      html.classList.remove("tema-tv");
-      if (eraEscuro) html.classList.add("dark");
-    };
-  }, []);
 
   // O código. Vence em 10 minutos e é trocado sozinho — ninguém mexe na TV.
   const codigo = useQuery({
@@ -133,26 +121,32 @@ function PedirPareamento({ aoParear }: { aoParear: (token: string) => void }) {
   const texto = codigo.data?.codigo ?? "";
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8 text-center">
-      <Logo altura={48} />
-      <p className="text-3xl text-muted-foreground">Para ligar esta TV ao painel da loja:</p>
+    <div
+      className="tv-tela"
+      // Se a folha cair, isto continua valendo: e o minimo legivel.
+      style={{ backgroundColor: "#0b1220", color: "#f2f6fc", minHeight: "100vh", padding: "4%" }}
+    >
+      <EstiloDaTv />
+      <div className="tv-centro">
+        <p className="tv-legenda">Para ligar esta TV ao painel da loja:</p>
 
-      {/* Bem grande: tem que ser lido do outro lado do salão. */}
-      <p className="font-display text-[14vw] font-bold leading-none tracking-[0.15em] tabular-nums sm:text-[10rem]">
-        {texto || "••••••"}
-      </p>
+        {/* Bem grande: tem que ser lido do outro lado do salão. */}
+        <p className="tv-codigo" style={{ fontSize: "160px", margin: "24px 0" }}>
+          {texto || "••••••"}
+        </p>
 
-      <ol className="max-w-2xl space-y-2 text-2xl text-muted-foreground">
-        <li>1. No celular, entre no STGame como gestor.</li>
-        <li>2. Vá em Gestão → Lojas → Link de TV → Parear TV.</li>
-        <li>3. Digite o código acima, escolha a loja e dê um nome.</li>
-      </ol>
+        <ol className="tv-passos">
+          <li>1. No celular, entre no STGame como gestor.</li>
+          <li>2. Vá em Gestão &rarr; Lojas &rarr; Link de TV &rarr; Parear TV.</li>
+          <li>3. Digite o código acima, escolha a loja e dê um nome.</li>
+        </ol>
 
-      <p className="text-xl text-muted-foreground">
-        {erro
-          ? "Sem conexão. Tentando de novo…"
-          : "O código vale 10 minutos e é trocado sozinho. Não precisa mexer aqui."}
-      </p>
-    </main>
+        <p className="tv-aviso">
+          {erro
+            ? "Sem conexão. Tentando de novo..."
+            : "O código vale 10 minutos e é trocado sozinho. Não precisa mexer aqui."}
+        </p>
+      </div>
+    </div>
   );
 }

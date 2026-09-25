@@ -50,6 +50,11 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
+    // ALVO DE COMPILACAO. O padrao do Vite mira navegador de 2022 em diante,
+    // e a TV da loja e mais velha do que isso: o JavaScript novo demais nem
+    // roda, e a tela fica em branco. Chrome 87 e de 2020 e cobre as TVs que
+    // aparecem na loja, sem inchar o pacote como "es5" inflaria.
+    build: { target: ["chrome87", "safari14"] },
     // Vai para dentro do pacote: cada aba aberta sabe de que versao ela e.
     define: { __VERSAO__: JSON.stringify(VERSAO) },
     plugins: [

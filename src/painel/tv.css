@@ -1,0 +1,265 @@
+/* ===========================================================================
+   A FOLHA DE ESTILO DA TV. Escrita a mao, so com CSS antigo.
+
+   Por que ela existe: em 25/09/2026 a TV Samsung da loja mostrou a pagina SEM
+   ESTILO NENHUM — texto empilhado numa coluna, sem fundo, dava para ver a
+   parede atraves da tela. A causa: o Tailwind 4 envolve 100% do que gera em
+   @layer, e o navegador que nao conhece @layer descarta o BLOCO INTEIRO. Nao
+   e uma cor que se perde: e a folha toda.
+
+   REGRAS DESTE ARQUIVO (o teste em tv.test.ts reprova a entrega se alguem
+   desrespeitar, inclusive reimportando o Tailwind aqui):
+     - cores so em hexadecimal ou rgb();
+     - layout so em flexbox;
+     - PROIBIDO: oklch(), color-mix(), @layer, @container, :has(), aninhamento,
+       var() com fallback moderno, propriedades logicas.
+
+   A TV e o unico aparelho que a gente NAO escolhe. Aqui se escreve para o
+   navegador mais velho que possa aparecer, nao para o mais novo.
+   =========================================================================== */
+
+/* --- Base ---------------------------------------------------------------- */
+/* Fundo solido: sem isto, a TV mostra a parede atraves da tela. */
+html.tv, html.tv body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #0b1220;
+  color: #f2f6fc;
+  font-family: Helvetica, Arial, sans-serif;
+  /* A TV nao rola: o que nao couber, nao entra. */
+  overflow: hidden;
+}
+
+.tv-tela {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100vh;
+  /* Margem de seguranca: muita TV corta as beiradas (overscan). */
+  padding: 4% 4%;
+  display: flex;
+  flex-direction: column;
+  background-color: #0b1220;
+}
+
+/* --- Cabecalho ----------------------------------------------------------- */
+.tv-topo {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.tv-loja {
+  font-size: 76px;
+  line-height: 1.05;
+  font-weight: bold;
+  margin: 0;
+  color: #ffffff;
+}
+
+.tv-relogio {
+  font-size: 30px;
+  color: #a8b6cc;
+}
+
+.tv-relogio-erro {
+  color: #ff9d9d;
+}
+
+/* --- Barra de progresso -------------------------------------------------- */
+.tv-progresso {
+  margin-bottom: 28px;
+}
+
+.tv-progresso-texto {
+  font-size: 30px;
+  color: #a8b6cc;
+  margin: 0 0 10px 0;
+}
+
+.tv-barra {
+  width: 100%;
+  height: 34px;
+  background-color: #1c2740;
+  border-radius: 17px;
+  overflow: hidden;
+}
+
+.tv-barra-feita {
+  height: 34px;
+  background-color: #2ecc71;
+}
+
+/* --- Colunas ------------------------------------------------------------- */
+.tv-colunas {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  /* min-height 0 deixa a coluna encolher em vez de estourar a tela. */
+  min-height: 0;
+}
+
+.tv-coluna {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-right: 28px;
+  padding: 24px;
+  background-color: #131c30;
+  border-radius: 18px;
+}
+
+.tv-coluna-fim {
+  margin-right: 0;
+}
+
+.tv-coluna-titulo {
+  font-size: 34px;
+  font-weight: bold;
+  margin: 0 0 18px 0;
+  color: #ffffff;
+}
+
+.tv-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tv-item {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 2px solid #1c2740;
+}
+
+.tv-item-fim {
+  border-bottom: 0;
+}
+
+.tv-item-texto {
+  font-size: 30px;
+  color: #f2f6fc;
+  padding-right: 16px;
+}
+
+.tv-item-pessoa {
+  display: block;
+  font-size: 24px;
+  color: #a8b6cc;
+}
+
+.tv-item-pontos {
+  font-size: 30px;
+  font-weight: bold;
+  color: #7fd4ff;
+  white-space: nowrap;
+}
+
+.tv-atrasada {
+  color: #ff9d9d;
+}
+
+.tv-vazio {
+  font-size: 26px;
+  color: #7c8aa3;
+}
+
+/* Quando a lista nao cabe, a tela alterna entre as paginas sozinha. */
+.tv-paginas {
+  font-size: 24px;
+  color: #7c8aa3;
+  margin: 12px 0 0 0;
+}
+
+/* --- Podio --------------------------------------------------------------- */
+.tv-podio-linha {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  padding: 14px 0;
+}
+
+.tv-medalha {
+  font-size: 38px;
+  width: 64px;
+}
+
+.tv-podio-nome {
+  font-size: 30px;
+  flex: 1 1 auto;
+}
+
+/* --- Meta e agenda (as outras telas do rodizio) -------------------------- */
+.tv-centro {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.tv-numerao {
+  font-size: 180px;
+  line-height: 1;
+  font-weight: bold;
+  color: #ffffff;
+  margin: 0;
+}
+
+.tv-legenda {
+  font-size: 36px;
+  color: #a8b6cc;
+  margin: 18px 0 0 0;
+}
+
+.tv-bateu {
+  color: #2ecc71;
+}
+
+/* --- Tela do codigo de pareamento ---------------------------------------- */
+.tv-codigo {
+  font-size: 160px;
+  line-height: 1;
+  font-weight: bold;
+  letter-spacing: 18px;
+  color: #ffffff;
+  margin: 24px 0;
+}
+
+.tv-passos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 30px;
+  color: #a8b6cc;
+}
+
+.tv-passos li {
+  padding: 6px 0;
+}
+
+.tv-aviso {
+  font-size: 26px;
+  color: #7c8aa3;
+  margin-top: 24px;
+}
+
+/* --- Indisponivel -------------------------------------------------------- */
+.tv-recado {
+  font-size: 64px;
+  font-weight: bold;
+  color: #ffffff;
+  margin: 0;
+}
