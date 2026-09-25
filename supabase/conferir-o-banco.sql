@@ -150,7 +150,17 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (101, 'HORA', 'versao', 'o fuso da empresa chegou em TODA conta', 'aplicar-hora-de-liberacao.sql',
        NOT EXISTS (SELECT 1 FROM public.contas c
                     WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
-                                       WHERE g.contaid = c.contaid AND g.chave = 'FUSO_HORARIO')))
+                                       WHERE g.contaid = c.contaid AND g.chave = 'FUSO_HORARIO'))),
+  (110, 'ACEITE', 'versao', 'o tablet exige aceite antes de entregar', 'aplicar-aceite-e-som.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'visao_entregar') LIKE '%Aceite a tarefa%'),
+  (111, 'ACEITE', 'versao', 'o celular exige aceite antes de entregar', 'aplicar-aceite-e-som.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'eu_entregar') LIKE '%Aceite a tarefa%'),
+  (112, 'ACEITE', 'versao', 'a configuracao do som chegou em TODA conta', 'aplicar-aceite-e-som.sql',
+       NOT EXISTS (SELECT 1 FROM public.contas c
+                    WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
+                                       WHERE g.contaid = c.contaid AND g.chave = 'SOM_TAREFA_NOVA')))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

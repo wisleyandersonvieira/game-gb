@@ -13,6 +13,28 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { abrirTentativa, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
 import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
 
+/**
+ * Se o tablet toca som quando chega tarefa nova, e em que volume.
+ *
+ * Vem da CONTA, não do aparelho: a loja não precisa configurar nada. Ligado
+ * por padrão. Só o tablet recebe isto — o celular da pessoa, nunca.
+ */
+async function somDaConta(contaid: number): Promise<{ ligado: boolean; volume: number }> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("configuracoes")
+    .select("chave, valor")
+    .eq("contaid", contaid)
+    .in("chave", ["SOM_TAREFA_NOVA", "SOM_VOLUME"]);
+  const mapa = new Map((data ?? []).map((c) => [c.chave, c.valor]));
+  const volume = Number(mapa.get("SOM_VOLUME"));
+  return {
+    // Conta antiga que ainda não recebeu a chave: ligado, como o padrão.
+    ligado: (mapa.get("SOM_TAREFA_NOVA") ?? "1") !== "0",
+    volume: Number.isFinite(volume) ? volume : 50,
+  };
+}
+
 type ClienteDoUsuario = {
   rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
 };
@@ -117,6 +139,7 @@ export const filaDoTablet = createServerFn({ method: "GET" })
       loja: t.loja,
       minutosParada: Number(cfg?.valor ?? 30) || 30,
       itens: (data ?? []) as unknown as ItemDaFila[],
+      som: await somDaConta(t.contaid),
     };
   });
 

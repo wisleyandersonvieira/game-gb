@@ -8,7 +8,7 @@
 // tarefa que alguém acabou de pegar precisa sumir rápido da lista dos outros.
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { meuAcesso } from "@/integrations/supabase/destino";
 import {
@@ -19,6 +19,7 @@ import {
   type ItemDaFila,
 } from "@/servidor/tablet";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
+import { liberarSom, somLiberado, tarefasNovas, tocar } from "@/painel/somDaFila";
 
 export const Route = createFileRoute("/tablet")({
   ssr: false,
@@ -53,6 +54,12 @@ function Tablet() {
   const [acao, setAcao] = useState<Acao | null>(null);
   const [pedindoPin, setPedindoPin] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
+  // Som: o navegador só deixa tocar depois de alguém encostar na tela.
+  const [somPreso, setSomPreso] = useState(true);
+  // Cartões que acabaram de chegar: destacam por alguns segundos. É o aviso
+  // que vale enquanto o som estiver bloqueado.
+  const [novas, setNovas] = useState<number[]>([]);
+  const jaVistas = useRef<number[] | null>(null);
 
   const fila = useQuery({
     queryKey: ["fila-tablet"],
@@ -92,6 +99,30 @@ function Tablet() {
     },
   });
 
+  // TAREFA NOVA NA FILA: compara o que já estava na tela com o que chegou.
+  // Vale também para a tarefa que o horário programado acabou de liberar,
+  // porque ela só entra nesta lista quando libera.
+  const fila_itens = fila.data?.itens;
+  const som = fila.data?.som;
+  useEffect(() => {
+    if (!fila_itens) return;
+    const agora = fila_itens.filter((i) => i.situacao === "para_pegar" && i.liberada).map((i) => i.atribuicaoid);
+    const chegaram = tarefasNovas(jaVistas.current, agora);
+    jaVistas.current = agora;
+    if (chegaram.length === 0) return;
+
+    setNovas(chegaram);
+    // Uma vez só, por mais tarefas que tenham chegado juntas.
+    if (som?.ligado && somLiberado()) void tocar(som.volume);
+    const t = window.setTimeout(() => setNovas([]), 8000);
+    return () => window.clearTimeout(t);
+  }, [fila_itens, som]);
+
+  // Tenta liberar o som sozinho: em alguns aparelhos já vem liberado.
+  useEffect(() => {
+    void liberarSom().then((ok) => setSomPreso(!ok));
+  }, []);
+
   // O relógio anda sozinho aqui; a fila só conversa com o banco a cada 15 s.
   useRelogio();
   const itens = fila.data?.itens ?? [];
@@ -124,6 +155,17 @@ function Tablet() {
       {recado && (
         <p className="mb-3 rounded-lg border border-sucesso bg-card p-3 text-lg font-medium text-sucesso">{recado}</p>
       )}
+      {/* O navegador nao deixa tocar som sem um toque na tela. Enquanto isso,
+          o aviso de tarefa nova e so o destaque do cartao. */}
+      {fila.data?.som?.ligado && somPreso && (
+        <button
+          onClick={() => void liberarSom().then((ok) => setSomPreso(!ok))}
+          className="mb-3 rounded-xl border border-border px-4 py-3 text-lg"
+        >
+          🔔 Ativar som de tarefa nova
+        </button>
+      )}
+
       {fila.isError && <p className="mb-3 text-destructive">{(fila.error as Error).message}</p>}
       {agir.isError && <p className="mb-3 text-destructive">{(agir.error as Error).message}</p>}
 
@@ -134,19 +176,14 @@ function Tablet() {
           itens={paraPegar}
           agora={agora}
           minutosParada={minutosParada}
+          novas={novas}
         >
+          {/* So "Aceitar": ninguem entrega sem aceitar antes (25/09/2026). O
+              botao "Ja fiz: entregar" saiu, e o banco tambem recusa. */}
           {(i) => (
-            <>
-              <BotaoGrande onClick={() => { setAcao({ tipo: "pegar", item: i }); setPedindoPin(true); }}>
-                Pegar
-              </BotaoGrande>
-              <BotaoGrande
-                tom="claro"
-                onClick={() => setAcao({ tipo: "entregar", item: i, arquivo: null, observacao: "" })}
-              >
-                Já fiz: entregar
-              </BotaoGrande>
-            </>
+            <BotaoGrande onClick={() => { setAcao({ tipo: "pegar", item: i }); setPedindoPin(true); }}>
+              Aceitar
+            </BotaoGrande>
           )}
         </Coluna>
 
@@ -237,6 +274,7 @@ function Coluna({
   vazio,
   agora,
   minutosParada,
+  novas = [],
   children,
 }: {
   titulo: string;
@@ -244,6 +282,8 @@ function Coluna({
   vazio: string;
   agora: string | null;
   minutosParada: number;
+  /** Quais acabaram de chegar: destacam por alguns segundos. */
+  novas?: number[];
   children?: (i: ItemDaFila) => React.ReactNode;
 }) {
   return (
@@ -256,7 +296,14 @@ function Coluna({
       ) : (
         <ul className="space-y-3">
           {itens.map((i) => (
-            <li key={i.atribuicaoid} className="space-y-2 rounded-xl bg-background p-3">
+            <li
+              key={i.atribuicaoid}
+              className={
+                novas.indexOf(i.atribuicaoid) >= 0
+                  ? "space-y-2 rounded-xl bg-background p-3 ring-4 ring-primary"
+                  : "space-y-2 rounded-xl bg-background p-3"
+              }
+            >
               <p className="text-lg font-medium">{i.titulo}</p>
               <Cronometro item={i} agora={agora} minutosParada={minutosParada} />
               <QuemFez item={i} />

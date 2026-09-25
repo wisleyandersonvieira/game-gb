@@ -5842,13 +5842,19 @@ BEGIN
   PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas WHERE atribuicaoid = v_alvo) = 'Pendente',
                         'e nasce Pendente: o tablet nao aprova nada');
 
-  -- Entregar sem ter pegado vale como aceite.
+  -- REGRA NOVA (25/09/2026): entregar sem ter pegado NAO vale mais como
+  -- aceite. Antes valia; agora o caminho e sempre aceitar e depois entregar.
   v_atr := public.atribuir_tarefa(9601, 10, ARRAY[9501, 9503], 'Unica', NULL, now(), NULL);
+  BEGIN PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'entregar no tablet sem ter pegado e RECUSADO');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.missoesaceites
+                                     WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje),
+                        'e a recusa nao deixa aceite nenhum para tras');
+
+  -- Aceitando antes, entrega normalmente.
+  PERFORM public.pegar_tarefa(v_atr, 9503);
   PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL);
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.missoesaceites
-                                 WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje
-                                   AND funcionarioid = 9503 AND revogadoem IS NULL),
-                        'entregar no tablet sem ter pegado vale como aceite');
   SELECT count(*) INTO v_n FROM public.missoesaceites
    WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje AND revogadoem IS NULL;
   PERFORM public.exigir(v_n = 1, 'e so uma pessoa fica com ela');
@@ -6629,9 +6635,18 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'ninguem entrega a tarefa de outra pessoa pelo celular');
 
+  -- REGRA NOVA (25/09/2026): sem aceite, o celular tambem recusa.
+  BEGIN PERFORM public.eu_entregar(1, 9801, v_atr, NULL, NULL, NULL, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'sem aceite, o celular recusa a entrega');
+
+  -- O aceite e sempre no TABLET da loja.
+  PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet');
+  PERFORM public.pegar_tarefa(v_atr, 9801);
+
   v_id := public.eu_entregar(1, 9801, v_atr, '1/10/celular.jpg', 'feito', 'digital-abc', true);
   PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas WHERE entregaid = v_id) = 'Pendente',
-                        'a entrega pelo celular nasce Pendente para o gestor');
+                        'com o aceite, a entrega pelo celular nasce Pendente para o gestor');
   PERFORM public.exigir((SELECT semhorafoto FROM public.entregas WHERE entregaid = v_id),
                         'e fica marcada quando a foto nao trazia a hora');
   PERFORM public.exigir((SELECT canalenvio FROM public.entregas WHERE entregaid = v_id) = 'app',
@@ -6799,6 +6814,10 @@ END $$;
 DO $$
 DECLARE v_atr integer := current_setting('teste.c1_atr')::integer; v_id integer; deu_erro boolean;
 BEGIN
+  -- Aceite primeiro: desde 25/09/2026 ninguem entrega sem aceitar.
+  PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet');
+  PERFORM public.pegar_tarefa(v_atr, 9803);
+
   v_id := public.visao_entregar(1, 10, 9803, v_atr, '1/10/tablet-prova.jpg', NULL,
                                 'digital-do-tablet', true);
   PERFORM public.exigir((SELECT semhorafoto FROM public.entregas WHERE entregaid = v_id),
@@ -7229,5 +7248,106 @@ END $$;
 
 RESET ROLE;
 SET teste.uid = '';
+
+-- ===========================================================================
+-- 59. Ninguem entrega sem aceitar antes (Etapa 1.12)
+-- ===========================================================================
+-- Estas provas CHAMAM as funcoes direto, sem passar pela tela: esconder o
+-- botao nao resolveria, porque quem sabe mexer no navegador contorna.
+DO $$ BEGIN RAISE NOTICE '59. ninguem entrega sem aceitar antes'; END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+VALUES (9850, 1, 'Tarefa de dono unico', 7) ON CONFLICT DO NOTHING;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9850, 10) ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE v_atr integer;
+BEGIN
+  -- Uma pessoa so: a tarefa nasce COM DONO, o caso que antes nao passava pelo
+  -- aceite.
+  v_atr := public.atribuir_tarefa(9850, 10, ARRAY[9501], 'Diaria', NULL, NULL, NULL, NULL);
+  PERFORM set_config('teste.dono_atr', v_atr::text, false);
+  PERFORM public.exigir((SELECT funcionarioid = 9501 FROM public.tarefasatribuidas
+                          WHERE atribuicaoid = v_atr),
+                        'a tarefa de uma pessoa so continua nascendo com dono');
+  -- Sem aceite, ela aparece como "para pegar": o tablet mostra "Aceitar".
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'para_pegar',
+                        'sem aceite, a tarefa com dono aparece para ACEITAR, como as outras');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v_atr integer := current_setting('teste.dono_atr')::integer; deu_erro boolean; v_ent integer;
+BEGIN
+  -- (a) O TABLET recusa entregar sem aceite.
+  BEGIN PERFORM public.visao_entregar(1, 10, 9501, v_atr, NULL, NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o tablet RECUSA entregar sem aceite (antes isso valia como aceite)');
+
+  -- (b) O CELULAR recusa entregar sem aceite.
+  BEGIN PERFORM public.eu_entregar(1, 9501, v_atr, NULL, NULL, NULL, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'e o celular tambem recusa');
+
+  -- (c) Com o aceite, passa.
+  PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet');
+  PERFORM public.pegar_tarefa(v_atr, 9501);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.missoesaceites
+                                 WHERE contaid = 1 AND atribuicaoid = v_atr AND revogadoem IS NULL
+                                   AND funcionarioid = 9501),
+                        'aceitar tarefa de dono unico grava o aceite');
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'em_andamento',
+                        'e ela passa para "em andamento"');
+
+  -- (d) Quem NAO aceitou nao entrega, nem no tablet nem no celular.
+  BEGIN PERFORM public.visao_entregar(1, 10, 9502, v_atr, NULL, NULL); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem nao aceitou nao entrega (tablet)');
+  BEGIN PERFORM public.eu_entregar(1, 9502, v_atr, NULL, NULL, NULL, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem nao aceitou nao entrega (celular)');
+
+  -- (e) Quem aceitou entrega.
+  v_ent := public.visao_entregar(1, 10, 9501, v_atr, NULL, NULL);
+  PERFORM public.exigir(v_ent IS NOT NULL, 'quem aceitou entrega');
+  PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas WHERE entregaid = v_ent) = 'Pendente',
+                        'e a entrega nasce Pendente, como sempre');
+END $$;
+
+-- O GESTOR continua registrando entrega sem aceite: e outro ato, dele.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_atr integer; v_ent integer;
+BEGIN
+  v_atr := public.atribuir_tarefa(9850, 10, ARRAY[9502], 'Diaria', NULL, NULL, NULL, NULL);
+  v_ent := public.registrar_entrega(v_atr, 'lancado pelo gestor', NULL, false);
+  PERFORM public.exigir(v_ent IS NOT NULL,
+                        'o gestor continua registrando entrega pelo Quadro, sem aceite');
+END $$;
+
+-- O RODIZIO nao muda: aceitar tarefa de dono unico nao gera espera nem sofre
+-- espera. Sozinha na loja, ninguem trava.
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_atr integer := current_setting('teste.dono_atr')::integer;
+BEGIN
+  PERFORM public.exigir(public.rodizio_espera(1, 10, 9501, v_atr) = 0,
+                        'tarefa com dono unico nunca sofre a espera do rodizio');
+  -- E o aceite dela nao entra na conta de "quem pegou a ultima disputada".
+  PERFORM public.exigir(NOT EXISTS (
+    SELECT 1 FROM public.missoesaceites a
+      JOIN public.tarefasatribuidas ta ON ta.contaid = a.contaid AND ta.atribuicaoid = a.atribuicaoid
+     WHERE a.contaid = 1 AND ta.lojaid = 10 AND a.revogadoem IS NULL
+       AND ta.funcionarioid IS NOT NULL AND ta.atribuicaoid = v_atr
+       AND ta.funcionarioid IS NULL),
+    'e o aceite dela nao conta como "ultima tarefa disputada" para os colegas');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

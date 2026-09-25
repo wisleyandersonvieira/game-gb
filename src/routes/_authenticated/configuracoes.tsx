@@ -140,6 +140,28 @@ export const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
     ],
   },
   {
+    titulo: "Som do tablet",
+    aviso:
+      "Vale só para o tablet da loja. O celular da equipe nunca recebe aviso — a política de uso diz que o sistema não notifica o aparelho pessoal.",
+    itens: [
+      {
+        chave: "SOM_TAREFA_NOVA",
+        rotulo: "Tocar um som quando chega tarefa nova",
+        ajuda:
+          "O tablet toca um som curto quando aparece tarefa nova na fila, inclusive a que foi liberada pelo horário programado. Toca uma vez só, mesmo que cheguem várias juntas. Use 1 para ligar e 0 para desligar.",
+        tipo: "inteiro",
+        padrao: "1",
+      },
+      {
+        chave: "SOM_VOLUME",
+        rotulo: "Volume do som",
+        ajuda: "De 0 a 100. No balcão, 50 costuma bastar.",
+        tipo: "inteiro",
+        padrao: "50",
+      },
+    ],
+  },
+  {
     titulo: "Fuso horário da empresa",
     aviso:
       "Decide a que horas as tarefas com \"Disponível a partir de\" entram na fila. Uma loja em Campo Grande fica uma hora atrás de Brasília.",

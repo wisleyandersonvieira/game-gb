@@ -69,7 +69,11 @@ function Tarefas() {
                     {/* Antes da hora, a tarefa aparece mas ainda não dá para entregar. */}
                     {t.liberada ? f.texto : `a partir das ${hora(t.liberaas)}`}
                   </span>
-                  {t.liberada && (t.situacao === "a_fazer" || t.situacao === "recusada") ? (
+                  {/* Sem aceite no tablet, nao ha o que entregar: o banco
+                      recusa, e a tela diz por que. */}
+                  {t.liberada && !t.pegaem && (t.situacao === "a_fazer" || t.situacao === "recusada") ? (
+                    <span className="text-xs text-muted-foreground">Aceite no tablet da loja</span>
+                  ) : t.liberada && t.pegaem && (t.situacao === "a_fazer" || t.situacao === "recusada") ? (
                     <button
                       onClick={() => setEntregando(t)}
                       className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
