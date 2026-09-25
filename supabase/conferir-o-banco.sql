@@ -157,10 +157,12 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (111, 'ACEITE', 'versao', 'o celular exige aceite antes de entregar', 'aplicar-aceite-e-som.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'eu_entregar') LIKE '%Aceite a tarefa%'),
-  (112, 'ACEITE', 'versao', 'a configuracao do som chegou em TODA conta', 'aplicar-aceite-e-som.sql',
-       NOT EXISTS (SELECT 1 FROM public.contas c
-                    WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
-                                       WHERE g.contaid = c.contaid AND g.chave = 'SOM_TAREFA_NOVA'))),
+  -- Antes conferia a chave SOM_TAREFA_NOVA na conta. Em 25/09/2026 o som virou
+  -- configuracao POR LOJA, e as chaves da conta foram removidas.
+  (112, 'B2', 'versao', 'o som do tablet e configurado por loja', 'aplicar-som-por-loja.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'lojas'
+                  AND column_name = 'somrepetirminutos')),
   (120, 'B2', 'versao', 'o tablet abre pedido', 'aplicar-pedido-no-tablet.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'public' AND p.proname = 'visao_abrir_pedido')),

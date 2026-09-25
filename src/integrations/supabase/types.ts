@@ -2317,6 +2317,9 @@ export type Database = {
       }
       lojas: {
         Row: {
+          somrepetirminutos: number
+          somtarefanova: boolean
+          somvolume: number
           tvblocos: Json | null
           tvsegundos: number
           ativa: boolean
@@ -2331,6 +2334,9 @@ export type Database = {
           responsavelagendamentosid: number | null
         }
         Insert: {
+          somrepetirminutos?: number
+          somtarefanova?: boolean
+          somvolume?: number
           tvblocos?: Json | null
           tvsegundos?: number
           ativa?: boolean
@@ -2345,6 +2351,9 @@ export type Database = {
           responsavelagendamentosid?: number | null
         }
         Update: {
+          somrepetirminutos?: number
+          somtarefanova?: boolean
+          somvolume?: number
           tvblocos?: Json | null
           tvsegundos?: number
           ativa?: boolean
@@ -5532,6 +5541,15 @@ export type Database = {
       }
       eu_cancelar_resgate: {
         Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
+        Returns: undefined
+      }
+      salvar_som_da_loja: {
+        Args: {
+          p_ligado: boolean
+          p_lojaid: number
+          p_repetir: number
+          p_volume: number
+        }
         Returns: undefined
       }
       salvar_tv_da_loja: {

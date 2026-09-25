@@ -20,7 +20,15 @@ import {
   type ItemDaFila,
 } from "@/servidor/tablet";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
-import { liberarSom, somLiberado, tarefasNovas, tocar } from "@/painel/somDaFila";
+import {
+  decidirRepeticao,
+  liberarSom,
+  SEM_REPETICAO,
+  somLiberado,
+  tarefasNovas,
+  tocar,
+  type EstadoRepeticao,
+} from "@/painel/somDaFila";
 import { PedidoNoTablet } from "@/painel/PedidoNoTablet";
 import { MuralNoTablet } from "@/painel/MuralNoTablet";
 
@@ -63,6 +71,10 @@ function Tablet() {
   // que vale enquanto o som estiver bloqueado.
   const [novas, setNovas] = useState<number[]>([]);
   const jaVistas = useRef<number[] | null>(null);
+  // Onde cada tarefa parada está na conta das repetições. Fica em ref, e não
+  // em estado, porque mudá-lo NÃO precisa redesenhar a tela — e porque a
+  // decisão tem de ver o valor de agora, não o do desenho anterior.
+  const repeticao = useRef<EstadoRepeticao>(SEM_REPETICAO);
   // O menu do tablet. Hoje tem um item; mural, feedback, justificativa e
   // painel entram aqui quando existirem.
   const [menuAberto, setMenuAberto] = useState(false);
@@ -139,6 +151,38 @@ function Tablet() {
     if (som?.ligado && somLiberado()) void tocar(som.volume);
     const t = window.setTimeout(() => setNovas([]), 8000);
     return () => window.clearTimeout(t);
+  }, [fila_itens, som]);
+
+  // A REPETIÇÃO do aviso, enquanto ninguém aceita.
+  //
+  // Roda a cada resposta da fila (15 s), com a hora do SERVIDOR: relógio de
+  // tablet erra, e um tablet adiantado repetiria antes da hora. Quem decide é
+  // decidirRepeticao, que está separada para poder ser testada.
+  //
+  // Só repete com a tela aberta e o som já liberado — este efeito só existe
+  // enquanto a página está montada, e com o áudio preso continua valendo o
+  // botão "Ativar som" e o cartão destacado.
+  const primeiraFila = useRef(true);
+  useEffect(() => {
+    if (!fila_itens) return;
+    const agora = fila_itens[0]?.agora;
+    if (!agora) return;
+    const paradas = fila_itens
+      .filter((i) => i.situacao === "para_pegar" && i.liberada)
+      .map((i) => ({ atribuicaoid: i.atribuicaoid, disponiveldesde: i.disponiveldesde }));
+
+    const marcarSemTocar = primeiraFila.current || !som?.ligado || !somLiberado();
+    primeiraFila.current = false;
+
+    const r = decidirRepeticao({
+      agora: Date.parse(agora),
+      paradas,
+      intervaloMinutos: som?.repetirminutos ?? 0,
+      estado: repeticao.current,
+      marcarSemTocar,
+    });
+    repeticao.current = r.estado;
+    if (r.tocar && som) void tocar(som.volume);
   }, [fila_itens, som]);
 
   // Tenta liberar o som sozinho: em alguns aparelhos já vem liberado.

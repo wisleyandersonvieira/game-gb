@@ -4660,7 +4660,11 @@ BEGIN
       'alterar_hora_da_atribuicao',
       -- Etapa 1.12: le a conta de quem chamou e so configura a TV de loja
       -- DELA — a mesma familia de criar_link_tv e parear_tv.
-      'salvar_tv_da_loja'
+      'salvar_tv_da_loja',
+      -- Etapa 1.12: o som do tablet, por loja. Le a conta de quem chamou
+      -- (minha_conta_editavel) e so altera loja DELA — irma de
+      -- salvar_tv_da_loja, e provada na secao 66.
+      'salvar_som_da_loja'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -8028,6 +8032,105 @@ BEGIN
                         'o visitante sem login nao chama a contagem');
   PERFORM public.exigir(has_function_privilege('authenticated', 'public.contagem_solicitacoes()', 'EXECUTE'),
                         'o gestor logado chama a contagem');
+END $$;
+
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 66. O som do tablet, por LOJA (Etapa 1.12)
+-- ===========================================================================
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean; v_lig boolean; v_vol integer; v_rep integer;
+BEGIN
+  RAISE NOTICE '66. o som do tablet, por loja';
+
+  -- Loja nasce com o som ligado no medio, e sem repeticao.
+  SELECT somtarefanova, somvolume, somrepetirminutos INTO v_lig, v_vol, v_rep
+    FROM public.lojas WHERE lojaid = 10;
+  PERFORM public.exigir(v_lig, 'a loja nasce com o som ligado');
+  PERFORM public.exigir(v_vol = 19, 'e no volume medio');
+  PERFORM public.exigir(v_rep = 0, 'e sem repeticao: quem quiser, liga');
+
+  -- O gestor configura a SUA loja.
+  PERFORM public.salvar_som_da_loja(10, true, 45, 10);
+  SELECT somtarefanova, somvolume, somrepetirminutos INTO v_lig, v_vol, v_rep
+    FROM public.lojas WHERE lojaid = 10;
+  PERFORM public.exigir(v_lig AND v_vol = 45 AND v_rep = 10, 'o gestor configura o tablet da sua loja');
+
+  -- Cada loja e independente: mexer numa nao mexe na outra.
+  PERFORM public.exigir((SELECT somvolume FROM public.lojas WHERE lojaid = 11) = 19,
+                        'configurar uma loja nao mexe na outra da mesma conta');
+
+  -- Desligar o som e uma escolha valida.
+  PERFORM public.salvar_som_da_loja(10, false, 19, 0);
+  PERFORM public.exigir(NOT (SELECT somtarefanova FROM public.lojas WHERE lojaid = 10),
+                        'desligar o som da loja funciona');
+
+  -- Volume fora dos tres niveis: recusado. A tela escolhe nivel, nao numero.
+  BEGIN PERFORM public.salvar_som_da_loja(10, true, 87, 0); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'volume fora dos tres niveis e recusado');
+
+  -- Intervalo menor que 5 minutos: recusado pelo BANCO, nao pela tela.
+  BEGIN PERFORM public.salvar_som_da_loja(10, true, 19, 2); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'repetir a cada 2 minutos e recusado: o minimo e 5');
+
+  BEGIN PERFORM public.salvar_som_da_loja(10, true, 19, 7); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'intervalo que nao esta na lista e recusado');
+
+  -- E nem mexendo na coluna direto: o CHECK da tabela tambem barra.
+  BEGIN UPDATE public.lojas SET somrepetirminutos = 3 WHERE lojaid = 10; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a tabela barra intervalo invalido mesmo por UPDATE direto');
+
+  BEGIN UPDATE public.lojas SET somvolume = 140 WHERE lojaid = 10; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a tabela barra volume acima de 100');
+
+  -- Loja de outra conta: nao existe para quem pergunta.
+  BEGIN PERFORM public.salvar_som_da_loja(20, true, 45, 30); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a conta A nao configura o tablet da loja da conta B');
+
+  -- Conta nova nao recebe mais as chaves de som da conta: o som so se
+  -- configura por loja. (Nas contas que ja existiam as duas linhas continuam
+  -- na tabela porque o historico aponta para elas, mas ninguem as le.)
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoes
+                                     WHERE chave IN ('SOM_TAREFA_NOVA', 'SOM_VOLUME')),
+                        'conta nova nasce sem as chaves de som da conta');
+END $$;
+
+-- A conta B configura a sua, e nao ve nem altera a da conta A.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.salvar_som_da_loja(20, true, 10, 30);
+  PERFORM public.exigir((SELECT somvolume FROM public.lojas WHERE lojaid = 20) = 10,
+                        'a conta B configura o tablet da sua loja');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.lojas WHERE lojaid IN (10, 11)),
+                        'a conta B nao ve nem a configuracao de som das lojas de A');
+  BEGIN PERFORM public.salvar_som_da_loja(10, true, 45, 0); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a conta B nao configura o tablet da loja da conta A');
+END $$;
+
+RESET ROLE;
+
+-- O visitante sem login nao configura tablet de ninguem.
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('anon',
+                          'public.salvar_som_da_loja(integer, boolean, integer, integer)', 'EXECUTE'),
+                        'o visitante sem login nao configura tablet');
+  PERFORM public.exigir(has_function_privilege('authenticated',
+                          'public.salvar_som_da_loja(integer, boolean, integer, integer)', 'EXECUTE'),
+                        'o gestor logado configura o tablet da loja dele');
 END $$;
 
 SET teste.uid = '';

@@ -14,24 +14,30 @@ import { abrirTentativa, conferirPasse, emitirPasse, fecharTentativa, origemDaCh
 import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
 
 /**
- * Se o tablet toca som quando chega tarefa nova, e em que volume.
+ * Se o tablet toca som quando chega tarefa nova, em que volume, e de quantos
+ * em quantos minutos ele repete o aviso enquanto ninguém aceita.
  *
- * Vem da CONTA, não do aparelho: a loja não precisa configurar nada. Ligado
- * por padrão. Só o tablet recebe isto — o celular da pessoa, nunca.
+ * Vem da LOJA, não da conta e não do aparelho: uma loja de shopping com música
+ * alta e um quiosque silencioso não aceitam o mesmo volume, e quem regula é
+ * quem está lá, ouvindo. Só o tablet recebe isto — o celular da pessoa, nunca.
  */
-async function somDaConta(contaid: number): Promise<{ ligado: boolean; volume: number }> {
+async function somDaLoja(
+  contaid: number,
+  lojaid: number,
+): Promise<{ ligado: boolean; volume: number; repetirminutos: number }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin
-    .from("configuracoes")
-    .select("chave, valor")
+    .from("lojas")
+    .select("somtarefanova, somvolume, somrepetirminutos")
     .eq("contaid", contaid)
-    .in("chave", ["SOM_TAREFA_NOVA", "SOM_VOLUME"]);
-  const mapa = new Map((data ?? []).map((c) => [c.chave, c.valor]));
-  const volume = Number(mapa.get("SOM_VOLUME"));
+    .eq("lojaid", lojaid)
+    .maybeSingle();
   return {
-    // Conta antiga que ainda não recebeu a chave: ligado, como o padrão.
-    ligado: (mapa.get("SOM_TAREFA_NOVA") ?? "1") !== "0",
-    volume: Number.isFinite(volume) ? volume : 50,
+    // Loja que por algum motivo veio sem resposta: ligado no médio, como o
+    // padrão da coluna. O tablet nunca fica sem aviso por falta de dado.
+    ligado: data?.somtarefanova ?? true,
+    volume: data?.somvolume ?? 19,
+    repetirminutos: data?.somrepetirminutos ?? 0,
   };
 }
 
@@ -139,7 +145,7 @@ export const filaDoTablet = createServerFn({ method: "GET" })
       loja: t.loja,
       minutosParada: Number(cfg?.valor ?? 30) || 30,
       itens: (data ?? []) as unknown as ItemDaFila[],
-      som: await somDaConta(t.contaid),
+      som: await somDaLoja(t.contaid, t.lojaid),
     };
   });
 

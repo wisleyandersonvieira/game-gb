@@ -9,6 +9,7 @@ import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 import { ESTAVEL } from "@/ui/prazos";
 import { ConfigurarTv, type BlocosDaTv } from "@/lojas/ConfigurarTv";
+import { ConfigurarTablet } from "@/lojas/ConfigurarTablet";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
@@ -521,6 +522,8 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
   const { lojas } = useLojaAtiva();
   const [senhaNova, setSenhaNova] = useState<{ usuario: string; senha: string; loja: string } | null>(null);
   const [digitando, setDigitando] = useState<{ lojaid: number; nome: string } | null>(null);
+  // Qual loja está com a janela "Configurações" do tablet aberta.
+  const [configurando, setConfigurando] = useState<{ lojaid: number; nome: string } | null>(null);
 
   const conta = useQuery({
     queryKey: ["codigo-da-empresa"],
@@ -746,6 +749,13 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
                   >
                     {redefinir.isPending ? "Gerando..." : "Gerar nova senha"}
                   </button>
+                  <button
+                    disabled={suspensa}
+                    onClick={() => setConfigurando({ lojaid: l.lojaid, nome: l.nome })}
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-40"
+                  >
+                    Configurações
+                  </button>
                   </div>
                 ) : (
                   <button
@@ -761,6 +771,14 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
           );
         })}
       </ul>
+
+      {configurando && (
+        <ConfigurarTablet
+          lojaid={configurando.lojaid}
+          nome={configurando.nome}
+          fechar={() => setConfigurando(null)}
+        />
+      )}
 
       {digitando && (
         <JanelaDaSenha
