@@ -56,9 +56,36 @@ situacao AS (
            ELSE to_regclass('public.' || e.nome) IS NOT NULL
          END AS tem
     FROM esperado e
+),
+-- Existir não basta: várias funções FORAM SUBSTITUÍDAS por versões novas.
+-- Se só olhássemos o nome, uma função velha passaria por boa. Aqui olhamos
+-- também um pedaço do conteúdo que só a versão nova tem.
+versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
+  (60, 'B1', 'versao', 'meu_acesso responde "semlogin"', 'aplicar-etapa-1.12-parte-B1.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'meu_acesso'
+                  AND p.prosrc LIKE '%semlogin%')),
+  (61, 'B1', 'versao', 'acesso_por_email diz se a senha e digitada', 'aplicar-etapa-1.12-parte-B1.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'acesso_por_email'
+                  AND p.prosrc LIKE '%senhamanual%')),
+  (62, 'B1', 'versao', 'fila_da_loja tem o cronometro', 'aplicar-etapa-1.12-parte-B1.sql',
+       EXISTS (SELECT 1 FROM information_schema.parameters
+                WHERE specific_schema = 'public' AND parameter_name = 'disponiveldesde')),
+  (63, 'B1', 'versao', 'senhasgestor marca senha digitada', 'aplicar-etapa-1.12-parte-B1.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'senhasgestor'
+                  AND column_name = 'definidaamao')),
+  (64, 'B1', 'versao', 'configuracao do rodizio em toda conta', 'aplicar-etapa-1.12-parte-B1.sql',
+       NOT EXISTS (SELECT 1 FROM public.contas c
+                    WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
+                                       WHERE g.contaid = c.contaid
+                                         AND g.chave = 'MINUTOS_RODIZIO_ACEITE')))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",
        CASE WHEN tem THEN '' ELSE arquivo END AS "rode este arquivo"
-  FROM situacao
+  FROM (SELECT ordem, parte, tipo, nome, arquivo, tem FROM situacao
+        UNION ALL
+        SELECT ordem, parte, tipo, nome, arquivo, tem FROM versao) x
  ORDER BY tem, ordem;
