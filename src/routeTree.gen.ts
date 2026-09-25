@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
+import { Route as MedirRouteImport } from './routes/medir'
 import { Route as MeuAcessoRouteImport } from './routes/meu-acesso'
 import { Route as PrimeiroAcessoRouteImport } from './routes/primeiro-acesso'
 import { Route as SaudeRouteImport } from './routes/saude'
@@ -68,6 +69,11 @@ const AuthRoute = AuthRouteImport.update({
 const DefinirSenhaRoute = DefinirSenhaRouteImport.update({
   id: '/definir-senha',
   path: '/definir-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MedirRoute = MedirRouteImport.update({
+  id: '/medir',
+  path: '/medir',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MeuAcessoRoute = MeuAcessoRouteImport.update({
@@ -239,6 +245,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/medir': typeof MedirRoute
   '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
@@ -275,6 +282,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/medir': typeof MedirRoute
   '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
@@ -314,6 +322,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/medir': typeof MedirRoute
   '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
@@ -353,6 +362,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/definir-senha'
+    | '/medir'
     | '/meu-acesso'
     | '/primeiro-acesso'
     | '/saude'
@@ -389,6 +399,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/definir-senha'
+    | '/medir'
     | '/meu-acesso'
     | '/primeiro-acesso'
     | '/saude'
@@ -427,6 +438,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/definir-senha'
+    | '/medir'
     | '/meu-acesso'
     | '/primeiro-acesso'
     | '/saude'
@@ -466,6 +478,7 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   DefinirSenhaRoute: typeof DefinirSenhaRoute
+  MedirRoute: typeof MedirRoute
   MeuAcessoRoute: typeof MeuAcessoRoute
   PrimeiroAcessoRoute: typeof PrimeiroAcessoRoute
   SaudeRoute: typeof SaudeRoute
@@ -510,6 +523,13 @@ declare module '@tanstack/react-router' {
       path: '/definir-senha'
       fullPath: '/definir-senha'
       preLoaderRoute: typeof DefinirSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/medir': {
+      id: '/medir'
+      path: '/medir'
+      fullPath: '/medir'
+      preLoaderRoute: typeof MedirRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/meu-acesso': {
@@ -805,6 +825,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   DefinirSenhaRoute: DefinirSenhaRoute,
+  MedirRoute: MedirRoute,
   MeuAcessoRoute: MeuAcessoRoute,
   PrimeiroAcessoRoute: PrimeiroAcessoRoute,
   SaudeRoute: SaudeRoute,
