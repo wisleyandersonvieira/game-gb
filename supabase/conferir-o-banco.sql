@@ -76,11 +76,21 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        EXISTS (SELECT 1 FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = 'senhasgestor'
                   AND column_name = 'definidaamao')),
-  (64, 'B1', 'versao', 'configuracao do rodizio em toda conta', 'aplicar-etapa-1.12-parte-B1.sql',
-       NOT EXISTS (SELECT 1 FROM public.contas c
-                    WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
-                                       WHERE g.contaid = c.contaid
-                                         AND g.chave = 'MINUTOS_RODIZIO_ACEITE')))
+  (64, 'B1', 'versao', 'TODA configuracao padrao em TODA conta', 'aplicar-etapa-1.12-parte-B1.sql',
+       NOT EXISTS (
+         SELECT 1 FROM public.contas c
+         CROSS JOIN LATERAL (
+           SELECT (regexp_matches(p.prosrc, '\(p_contaid, ''([A-Z_]+)''', 'g'))[1] AS k
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public' AND p.proname = 'cria_configuracoes_padrao'
+         ) chaves
+         WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
+                            WHERE g.contaid = c.contaid AND g.chave = chaves.k))),
+  (65, 'B1', 'versao', 'conta nova ja nasce com as configuracoes (gatilho)', 'aplicar-etapa-1.12-parte-B1.sql',
+       EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'contas_configuracoes_padrao')),
+  (66, 'B1', 'funcao', 'rodizio_espera', 'aplicar-etapa-1.12-parte-B1.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'rodizio_espera'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

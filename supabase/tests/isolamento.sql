@@ -71,10 +71,12 @@ INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '2/20/foto-b.j
 
 RESET ROLE;
 -- Configuracoes so mudam por alterar_configuracao (Etapa 1.7): aqui, como
--- dono do banco, gravamos uma para cada conta.
+-- dono do banco, gravamos uma para cada conta. Desde 25/09/2026 a conta ja
+-- nasce com os padroes (gatilho em contas), entao aqui so ajustamos o valor.
 INSERT INTO public.configuracoes (contaid, chave, valor) VALUES
   (1, 'TAXA_CONVERSAO_PONTO_REAL', '0.03'),
-  (2, 'TAXA_CONVERSAO_PONTO_REAL', '0.05');
+  (2, 'TAXA_CONVERSAO_PONTO_REAL', '0.05')
+ON CONFLICT (contaid, chave) DO UPDATE SET valor = EXCLUDED.valor;
 DO $$ BEGIN RAISE NOTICE '--- dados criados: conta A e conta B ---'; END $$;
 
 -- ===========================================================================
@@ -1552,7 +1554,10 @@ BEGIN
   RAISE NOTICE '27. conquistas, relatorios e configuracoes de outro cliente';
   PERFORM public.exigir((SELECT count(*) FROM public.conquistas) = 0, 'B nao ve as conquistas de A');
   PERFORM public.exigir((SELECT count(*) FROM public.conquistasfuncionarios) = 0, 'B nao ve quem ganhou conquista em A');
-  PERFORM public.exigir((SELECT count(*) FROM public.configuracoeshistorico) = 0, 'B nao ve o historico de configuracoes de A');
+  -- B tem historico proprio (o valor da taxa dele foi ajustado no preparo):
+  -- a prova e que nenhuma linha de OUTRA conta aparece.
+  PERFORM public.exigir((SELECT count(*) FROM public.configuracoeshistorico WHERE contaid <> 2) = 0,
+                        'B nao ve o historico de configuracoes de A');
   UPDATE public.conquistas SET nome = 'INVADIDA';
   GET DIAGNOSTICS afetadas = ROW_COUNT;
   PERFORM public.exigir(afetadas = 0, 'B nao altera conquista de A');
@@ -6434,6 +6439,75 @@ BEGIN
   PERFORM public.exigir((SELECT valor FROM public.configuracoes
                           WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE') = '10',
                         'o tempo de rodizio de A continua o que era');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 53. Configuracao nova chega em TODA conta (25/09/2026)
+-- ===========================================================================
+-- Em 25/09/2026 a secao "Aceite de tarefas" apareceu vazia: a conta era
+-- anterior as chaves novas. Ja tinha acontecido antes. Estas provas fecham os
+-- dois lados: a migracao preenche todas as contas, e salvar cria a chave que
+-- faltar em vez de dar erro.
+DO $$ BEGIN RAISE NOTICE '53. configuracao nova em toda conta'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_faltando text;
+BEGIN
+  -- Toda chave que cria_configuracoes_padrao grava tem de existir em TODA
+  -- conta. A lista sai da propria funcao, entao acrescentar uma chave nova
+  -- sem preencher as contas existentes reprova aqui.
+  SELECT string_agg(DISTINCT c.contaid || ':' || k, ', ') INTO v_faltando
+    FROM public.contas c
+    CROSS JOIN LATERAL (
+      SELECT (regexp_matches(p.prosrc, '\(p_contaid, ''([A-Z_]+)''', 'g'))[1] AS k
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = 'cria_configuracoes_padrao'
+    ) chaves
+   WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
+                      WHERE g.contaid = c.contaid AND g.chave = chaves.k);
+  PERFORM public.exigir(v_faltando IS NULL,
+                        'toda chave de configuracao existe em toda conta (faltando: '
+                        || coalesce(v_faltando, '-') || ')');
+END $$;
+
+-- Salvar uma chave que a conta nao tem CRIA a chave, em vez de dar erro.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_antes integer; v_novo text;
+BEGIN
+  PERFORM set_config('teste.apagar_chave', 'MINUTOS_TAREFA_PARADA', false);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DELETE FROM public.configuracoes WHERE contaid = 1 AND chave = 'MINUTOS_TAREFA_PARADA';
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_novo text;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.configuracoes
+                          WHERE chave = 'MINUTOS_TAREFA_PARADA') = 0, 'a chave foi apagada, para o teste');
+  v_novo := public.alterar_configuracao('MINUTOS_TAREFA_PARADA', '45');
+  PERFORM public.exigir(v_novo = '45',
+                        'salvar uma configuracao que a conta nao tinha CRIA a chave, em vez de dar erro');
+  PERFORM public.exigir((SELECT valor FROM public.configuracoes
+                          WHERE chave = 'MINUTOS_TAREFA_PARADA') = '45', 'e o valor guardado e o que foi salvo');
+END $$;
+
+-- E a conta B nao ganhou nada disso.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.configuracoes WHERE contaid = 1) = 0,
+                        'B nao ve as configuracoes de A');
 END $$;
 
 RESET ROLE;

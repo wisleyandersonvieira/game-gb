@@ -19,10 +19,23 @@ const campo =
 const reais = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
-type Item = { chave: string; rotulo: string; ajuda: string; tipo: "taxa" | "inteiro" | "horario" | "texto"; unidade?: string };
+type Item = {
+  chave: string;
+  rotulo: string;
+  ajuda: string;
+  tipo: "taxa" | "inteiro" | "horario" | "texto";
+  unidade?: string;
+  /**
+   * O que mostrar quando a conta ainda não tem esta chave — conta criada
+   * antes da configuração existir. Sem isto a tela ficava VAZIA, e não havia
+   * como configurar (aconteceu em 25/09/2026 com "Aceite de tarefas").
+   * Tem de ser igual ao padrão da migração; o teste de servidor confere.
+   */
+  padrao: string;
+};
 
 /** O que aparece na tela. Os IDs das tarefas do sistema (TAREFA_*) ficam de fora: o sistema cuida deles. */
-const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
+export const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
   {
     titulo: "Pontos",
     itens: [
@@ -32,6 +45,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Usado no abate na comanda e nos valores em R$ do extrato. Mudar a taxa vale só para as próximas comandas.",
         tipo: "taxa",
         unidade: "R$",
+        padrao: "0.03",
       },
       {
         chave: "PONTOS_BONUS_FEEDBACK_DIARIO",
@@ -39,6 +53,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Pontos por enviar o feedback do dia. Começa a valer quando o módulo de feedbacks existir.",
         tipo: "inteiro",
         unidade: "pontos",
+        padrao: "5",
       },
       {
         chave: "PONTOS_BONUS_NOTA_FISCAL",
@@ -46,6 +61,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Pontos por enviar uma nota fiscal. Começa a valer com o módulo de estoque.",
         tipo: "inteiro",
         unidade: "pontos",
+        padrao: "10",
       },
     ],
   },
@@ -58,29 +74,33 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         rotulo: "Lista de tarefas do dia",
         ajuda: "A partir deste horário a lista do dia é gerada e, depois, ajustada a cada 5 minutos.",
         tipo: "horario",
+        padrao: "00:05",
       },
       {
         chave: "HORARIO_FECHAMENTO_MENSAL",
         rotulo: "Fechamento mensal do ranking",
         ajuda: "Dias 1 a 7: provisório, refeito todo dia. No dia 8 vira definitivo.",
         tipo: "horario",
+        padrao: "08:00",
       },
       {
         chave: "HORARIO_CONFERENCIA_LIVRO",
         rotulo: "Conferência do livro de pontos",
         ajuda: "Confere se o saldo de cada pessoa bate com o livro. Nunca corrige sozinha: só avisa.",
         tipo: "horario",
+        padrao: "03:00",
       },
       {
         chave: "HORARIO_DELEGACAO_FOLGA",
         rotulo: "Repasse automático das tarefas de folga (bot)",
         ajuda: "Hoje o repasse é feito no Quadro, pelo gestor.",
         tipo: "horario",
+        padrao: "09:05",
       },
-      { chave: "HORARIO_LEMBRETE_COMUNICADOS", rotulo: "Lembrete de comunicados não lidos", ajuda: "", tipo: "horario" },
-      { chave: "HORARIO_LEMBRETE_HOJE", rotulo: "Lembrete da agenda de hoje", ajuda: "", tipo: "horario" },
-      { chave: "HORARIO_LEMBRETE_DIARIO_AMANHA", rotulo: "Lembrete da agenda de amanhã", ajuda: "", tipo: "horario" },
-      { chave: "HORARIO_LEMBRETE_SEMANAL", rotulo: "Lembrete semanal da agenda", ajuda: "", tipo: "horario" },
+      { chave: "HORARIO_LEMBRETE_COMUNICADOS", rotulo: "Lembrete de comunicados não lidos", ajuda: "", tipo: "horario", padrao: "09:00" },
+      { chave: "HORARIO_LEMBRETE_HOJE", rotulo: "Lembrete da agenda de hoje", ajuda: "", tipo: "horario", padrao: "08:00" },
+      { chave: "HORARIO_LEMBRETE_DIARIO_AMANHA", rotulo: "Lembrete da agenda de amanhã", ajuda: "", tipo: "horario", padrao: "09:00" },
+      { chave: "HORARIO_LEMBRETE_SEMANAL", rotulo: "Lembrete semanal da agenda", ajuda: "", tipo: "horario", padrao: "08:00" },
     ],
   },
   {
@@ -92,12 +112,14 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         rotulo: "Começo do silêncio",
         ajuda: "A partir desta hora o bot não manda mensagem automática. Não vale dentro do turno da pessoa: quem trabalha à noite recebe normalmente.",
         tipo: "horario",
+        padrao: "22:00",
       },
       {
         chave: "HORARIO_SILENCIO_FIM",
         rotulo: "Fim do silêncio",
         ajuda: "A partir desta hora o bot volta a mandar.",
         tipo: "horario",
+        padrao: "07:00",
       },
       {
         chave: "MAX_MENSAGENS_AUTOMATICAS_DIA",
@@ -105,6 +127,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Conta só as mensagens automáticas. As respostas ao que a própria pessoa faz não contam.",
         tipo: "inteiro",
         unidade: "mensagens",
+        padrao: "8",
       },
       {
         chave: "MAX_TAREFAS_FOLGA_POR_PESSOA",
@@ -112,6 +135,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Quantas tarefas de quem está de folga uma pessoa pode pegar pelo grupo no mesmo dia.",
         tipo: "inteiro",
         unidade: "tarefas",
+        padrao: "3",
       },
     ],
   },
@@ -127,6 +151,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
           "Quem pegou a última tarefa disputada da loja espera este tempo antes de pegar outra, para dar chance aos colegas. Assim que outra pessoa pega alguma coisa, quem estava esperando é liberado na hora. Se a pessoa for a única disponível no dia, ela pega na hora. 0 desliga o rodízio.",
         tipo: "inteiro",
         unidade: "minutos",
+        padrao: "10",
       },
       {
         chave: "MINUTOS_TAREFA_PARADA",
@@ -135,6 +160,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
           "No tablet, o cronômetro do cartão muda de cor quando a tarefa passa deste tempo sem ninguém pegar.",
         tipo: "inteiro",
         unidade: "minutos",
+        padrao: "30",
       },
     ],
   },
@@ -147,6 +173,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         ajuda: "Diferença máxima entre a hora em que a foto foi tirada e o envio. Usada pelo bot.",
         tipo: "inteiro",
         unidade: "segundos",
+        padrao: "120",
       },
       {
         chave: "DIAS_GUARDAR_FOTO_ENTREGA",
@@ -155,6 +182,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
           "Passado esse prazo, o arquivo da foto é apagado automaticamente. A entrega, os pontos e o histórico ficam; a tela passa a mostrar \"foto removida por tempo\". Mínimo 90 dias.",
         tipo: "inteiro",
         unidade: "dias",
+        padrao: "180",
       },
     ],
   },
@@ -167,6 +195,7 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         rotulo: "Responsável pelos dados",
         ajuda: "Nome e contato de quem responde sobre dados pessoais (LGPD). Ex.: Maria Silva — rh@empresa.com.br",
         tipo: "texto",
+        padrao: "",
       },
     ],
   },
@@ -247,13 +276,16 @@ function Configuracoes() {
             <h2 className="text-lg font-semibold">{g.titulo}</h2>
             {g.aviso && <p className="text-xs text-muted-foreground">{g.aviso}</p>}
             {g.itens.map((item) => {
+              // A chave pode não existir nesta conta (criada antes da
+              // configuração). O campo aparece assim mesmo, com o padrão, e
+              // salvar cria a chave — alterar_configuracao cuida disso.
               const atual = configs.data.get(item.chave);
-              if (!atual) return null;
               return (
                 <Linha
                   key={item.chave}
                   item={item}
-                  valor={atual.valor ?? ""}
+                  valor={atual?.valor ?? item.padrao}
+                  nuncaSalvo={!atual}
                   podeAlterar={podeAlterar}
                   aoSalvar={() => {
                     for (const k of ["configuracoes", "configuracoes-historico", "minha-taxa", "extrato"]) {
@@ -304,11 +336,14 @@ function Configuracoes() {
 function Linha({
   item,
   valor,
+  nuncaSalvo,
   podeAlterar,
   aoSalvar,
 }: {
   item: Item;
   valor: string;
+  /** true quando a conta ainda não tem esta chave: o valor mostrado é o padrão. */
+  nuncaSalvo?: boolean;
   podeAlterar: boolean;
   aoSalvar: () => void;
 }) {
@@ -338,7 +373,9 @@ function Linha({
     },
   });
 
-  const mudou = texto.trim() !== paraTela(valor);
+  // Quando a chave nunca foi salva, o botão fica ativo já de cara: salvar é o
+  // que cria a configuração nesta conta.
+  const mudou = nuncaSalvo || texto.trim() !== paraTela(valor);
   const taxaPrevia = item.tipo === "taxa" ? Number(texto.replace(",", ".")) : NaN;
 
   return (
@@ -352,6 +389,9 @@ function Linha({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <label htmlFor={item.chave} className="font-medium">
           {item.rotulo}
+          {nuncaSalvo && (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">(ainda no padrão)</span>
+          )}
         </label>
         <div className="flex items-center gap-2">
           {item.unidade === "R$" && <span className="text-sm text-muted-foreground">R$</span>}

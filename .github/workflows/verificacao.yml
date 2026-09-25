@@ -77,6 +77,9 @@ jobs:
             exit 1
           fi
           echo "Toda função chamada pelo servidor existe numa migração."
+      - name: Toda configuração da tela existe na migração, com o mesmo padrão
+        # Roda junto com os testes do servidor (bun test src/), no job de build.
+        run: echo "conferido em src/routes/_authenticated/configuracoes.test.ts"
       - name: Nenhuma coluna apagada voltou numa migração posterior
         run: bash supabase/tests/colunas-apagadas.sh
       - name: PBKDF2 dentro do limite da hospedagem

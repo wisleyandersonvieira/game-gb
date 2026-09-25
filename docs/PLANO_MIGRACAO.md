@@ -488,6 +488,13 @@ Via **pg_cron** (a cada 5 minutos, função interna `rotinas_despachar`), **roda
     - **Decisão 4 do Wisley ficou sem onde encaixar:** não existe "hora limite" numa tarefa (só `horariodisparo`, que é quando a missão vai ao grupo, e `dataagendamento`, que é o dia). Não há prazo contra o qual encurtar a espera. Fica anotado para quando existir um prazo de verdade.
     - Teste de isolamento: **seção 52**, com todos os casos pedidos. **1142 verificações, todas passando.**
     - Para testar sem esperar: baixe o tempo para **1 minuto** em Configurações, ou rode **`supabase/simular-rodizio.sql`** no SQL Editor (empurra os aceites de hoje daquela loja 2 horas para trás). Testado nos dois caminhos: com a loja certa e com nome de loja errado.
+  - [x] **A configuração que faltava (25/09/2026)** — a seção "Aceite de tarefas" apareceu com o título e a explicação e **nenhum campo**. Três causas, e a de fundo é a que importa:
+    - **De aplicação:** a migração do rodízio ainda não tinha sido aplicada naquele banco.
+    - **De projeto:** a tela **escondia** o campo quando a chave não existia, e `alterar_configuracao` só sabia ALTERAR — criar era impossível. Agora a tela mostra o campo com o **valor padrão** (marcado "ainda no padrão") e salvar **cria** a chave.
+    - **De fundo:** não havia gatilho nenhum. `cria_configuracoes_padrao` só era chamada pela função que cadastra um cliente e por migrações de remendo — a garantia dependia de alguém lembrar, e já tinha falhado antes. **Agora existe gatilho em `contas`:** conta nova nasce com os padrões, e a migração preenche TODAS as contas existentes com TUDO o que faltar.
+    - **Duas verificações automáticas novas:** o teste de isolamento (**seção 53**) exige que toda chave que `cria_configuracoes_padrao` grava exista em toda conta — a lista sai da própria função, então acrescentar chave sem preencher as contas reprova; e `bun test` cruza a tela com a migração: todo campo tem padrão, todo campo existe na migração, e **o padrão da tela é igual ao da migração** (esse já pegou um erro meu: `HORARIO_SILENCIO_INICIO` estava 09:00 na tela e 22:00 no banco).
+    - O `/saude` e o `conferir-o-banco.sql` passaram a acusar configuração que não chegou em alguma conta.
+    - **1147 verificações no isolamento + 12 no servidor.**
   - [ ] **B2 — o resto do tablet:** mural com ciência, feedback, justificativa, solicitação, painel do dia.
   - [ ] **Falta antes de publicar a B1:** aplicar `supabase/aplicar-etapa-1.12-parte-B1.sql` no SQL Editor (depois da parte A), e conferir `/saude`.
 - [ ] **C — Celular** (médio): minhas tarefas, entrega com foto, saldo, extrato, conquistas, nota, ranking com "Nome I.", pedido de resgate, comunicados, documentos, canal confidencial, perfil.
