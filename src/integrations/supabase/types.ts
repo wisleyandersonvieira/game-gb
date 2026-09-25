@@ -2317,6 +2317,8 @@ export type Database = {
       }
       lojas: {
         Row: {
+          tvblocos: Json | null
+          tvsegundos: number
           ativa: boolean
           cidade: string | null
           contaid: number
@@ -2329,6 +2331,8 @@ export type Database = {
           responsavelagendamentosid: number | null
         }
         Insert: {
+          tvblocos?: Json | null
+          tvsegundos?: number
           ativa?: boolean
           cidade?: string | null
           contaid?: number
@@ -2341,6 +2345,8 @@ export type Database = {
           responsavelagendamentosid?: number | null
         }
         Update: {
+          tvblocos?: Json | null
+          tvsegundos?: number
           ativa?: boolean
           cidade?: string | null
           contaid?: number
@@ -5520,6 +5526,16 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
         Returns: undefined
       }
+      salvar_tv_da_loja: {
+        Args: {
+          p_blocos: Json
+          p_lojaid: number
+          p_segundos: number
+          p_valores: boolean
+        }
+        Returns: undefined
+      }
+      tv_blocos_padrao: { Args: Record<PropertyKey, never>; Returns: Json }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number

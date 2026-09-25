@@ -117,6 +117,7 @@ export const CONTRATO: Record<string, string[]> = {
   rodar_geracao_hoje: [],
   rotinas_resumo_admin: [],
   salvar_meta_do_mes: ["p_descricao", "p_lojaid", "p_mes", "p_nome", "p_pontos", "p_valor"],
+  salvar_tv_da_loja: ["p_blocos", "p_lojaid", "p_segundos", "p_valores"],
   senha_app_de: ["p_contaid", "p_cpf"],
   senha_app_do_funcionario: ["p_contaid", "p_funcionarioid"],
   situacao_dos_acessos: [],

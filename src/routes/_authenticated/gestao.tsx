@@ -8,6 +8,7 @@ import { criarAcessoLoja, definirSenhaDoTablet, fichaDosTablets, redefinirSenhaL
 import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 import { ESTAVEL } from "@/ui/prazos";
+import { ConfigurarTv, type BlocosDaTv } from "@/lojas/ConfigurarTv";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
@@ -29,6 +30,8 @@ function Gestao() {
   const qc = useQueryClient();
   const [form, setForm] = useState(FORM_VAZIO);
   const [editando, setEditando] = useState<number | null>(null);
+  // Qual loja está com a janela "Configurar TV" aberta.
+  const [configurandoTv, setConfigurandoTv] = useState<number | null>(null);
   const [abrirFormulario, setAbrirFormulario] = useState(false);
 
   const conta = useQuery({
@@ -48,7 +51,7 @@ function Gestao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lojas")
-        .select("lojaid, nome, cidade, endereco, ativa, gestorid, responsavelagendamentosid, mostrarvalorestv")
+        .select("lojaid, nome, cidade, endereco, ativa, gestorid, responsavelagendamentosid, mostrarvalorestv, tvblocos, tvsegundos")
         .order("nome");
       if (error) throw error;
       return data ?? [];
@@ -134,13 +137,6 @@ function Gestao() {
   });
 
   // Na TV, por padrão, a meta aparece só em porcentagem (os clientes veem a TV).
-  const alternarValoresTv = useMutation({
-    mutationFn: async ({ lojaid, mostrar }: { lojaid: number; mostrar: boolean }) => {
-      const { error } = await supabase.from("lojas").update({ mostrarvalorestv: mostrar }).eq("lojaid", lojaid);
-      if (error) throw error;
-    },
-    onSuccess: atualizarListas,
-  });
 
   const alternarAtiva = useMutation({
     mutationFn: async ({ lojaid, ativa }: { lojaid: number; ativa: boolean }) => {
@@ -338,15 +334,9 @@ function Gestao() {
                       ? (nomes.data?.get(l.responsavelagendamentosid) ?? "—")
                       : "não definido"}
                   </p>
-                  <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={l.mostrarvalorestv}
-                      disabled={suspensa || alternarValoresTv.isPending}
-                      onChange={(e) => alternarValoresTv.mutate({ lojaid: l.lojaid, mostrar: e.target.checked })}
-                    />
-                    Mostrar valores em R$ da meta na TV (desligado: a TV mostra só a porcentagem)
-                  </label>
+                  {/* A caixinha "Mostrar valores em R$" saiu daqui: agora ela
+                      mora em "Configurar TV", junto da meta, que é a única
+                      coisa a que ela se aplica. */}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -379,13 +369,17 @@ function Gestao() {
                   >
                     {l.ativa ? "Desativar" : "Reativar"}
                   </button>
+                  <button
+                    onClick={() => setConfigurandoTv(l.lojaid)}
+                    disabled={suspensa}
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
+                  >
+                    Configurar TV
+                  </button>
                 </div>
               </div>
             ))}
 
-            {alternarValoresTv.isError && (
-              <p className="text-sm text-destructive">{(alternarValoresTv.error as Error).message}</p>
-            )}
             {alternarAtiva.isError && (
               <p className="text-sm text-destructive">{(alternarAtiva.error as Error).message}</p>
             )}
@@ -394,6 +388,22 @@ function Gestao() {
               Desativar uma loja não apaga nada: o histórico dela continua guardado e ela pode
               ser reativada. Uma loja desativada não ocupa vaga no seu plano.
             </p>
+
+            {configurandoTv !== null &&
+              (() => {
+                const l = (lojas.data ?? []).find((x) => x.lojaid === configurandoTv);
+                if (!l) return null;
+                return (
+                  <ConfigurarTv
+                    lojaid={l.lojaid}
+                    nome={l.nome}
+                    blocos={(l.tvblocos as BlocosDaTv | null) ?? null}
+                    segundos={l.tvsegundos ?? 60}
+                    valores={l.mostrarvalorestv}
+                    fechar={() => setConfigurandoTv(null)}
+                  />
+                );
+              })()}
           </section>
 
           <ResumoDasLojas />

@@ -10,6 +10,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { repartir } from "./TelaDaTv";
 
 const RAIZ = join(import.meta.dir, "../..");
 const FOLHA = join(RAIZ, "src/painel/tv.css");
@@ -53,10 +54,31 @@ describe("a folha de estilo da TV", () => {
     expect(/html\.tv[^{]*\{[^}]*background-color:\s*#[0-9a-f]{6}/i.test(css)).toBe(true);
   });
 
-  it("o texto secundário nunca é menor que 24px", () => {
+  // O piso de 24px valia para o desenho antigo. O layout aprovado em
+  // 25/09/2026 usa RÓTULOS pequenos em maiúsculas com muito espaçamento entre
+  // letras — eles são etiqueta de coluna, não texto de leitura. Então o piso
+  // passou a valer por papel, que é mais honesto do que um número só.
+  function tamanhoDe(classe: string): number {
+    const bloco = css.slice(css.indexOf(classe));
+    const m = bloco.slice(0, bloco.indexOf("}")).match(/font-size:\s*(\d+)px/);
+    return m ? Number(m[1]) : 0;
+  }
+
+  it("o que a equipe lê de longe é grande", () => {
+    // O nome da tarefa e o nome no pódio.
+    expect(tamanhoDe(".tv-item-titulo")).toBeGreaterThanOrEqual(26);
+    expect(tamanhoDe(".tv-podio-nome")).toBeGreaterThanOrEqual(26);
+    // A linha secundária de cada item.
+    expect(tamanhoDe(".tv-item-linha")).toBeGreaterThanOrEqual(20);
+    expect(tamanhoDe(".tv-vazio")).toBeGreaterThanOrEqual(20);
+    // E o nome da loja, que é o maior de todos.
+    expect(tamanhoDe(".tv-loja")).toBeGreaterThanOrEqual(60);
+  });
+
+  it("nada na tela fica abaixo de 15px, nem as etiquetas", () => {
     const tamanhos = [...css.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1]));
     expect(tamanhos.length).toBeGreaterThan(5);
-    expect(Math.min(...tamanhos)).toBeGreaterThanOrEqual(24);
+    expect(Math.min(...tamanhos)).toBeGreaterThanOrEqual(15);
   });
 
   it("deixa margem de segurança nas bordas (a TV corta as beiradas)", () => {
@@ -105,5 +127,27 @@ describe("como um navegador antigo leria esta folha", () => {
       .split("}")
       .filter((bloco) => PROIBIDO.some((c) => c.acha.test(bloco)));
     expect(descartado).toEqual([]);
+  });
+});
+
+describe("como a TV reparte as colunas em telas", () => {
+  it("até 3 colunas cabem numa tela só, e aí não há troca", () => {
+    expect(repartir(["a"])).toEqual([["a"]]);
+    expect(repartir(["a", "b", "c"])).toEqual([["a", "b", "c"]]);
+  });
+
+  it("4 vira 2+2, 5 vira 3+2, 6 vira 3+3 — o mais equilibrado possível", () => {
+    expect(repartir(["a", "b", "c", "d"]).map((t) => t.length)).toEqual([2, 2]);
+    expect(repartir(["a", "b", "c", "d", "e"]).map((t) => t.length)).toEqual([3, 2]);
+    expect(repartir(["a", "b", "c", "d", "e", "f"]).map((t) => t.length)).toEqual([3, 3]);
+  });
+
+  it("nenhuma tela passa de 3 colunas, e nenhuma coluna se perde", () => {
+    for (let n = 1; n <= 6; n++) {
+      const cols = Array.from({ length: n }, (_, i) => String(i));
+      const telas = repartir(cols);
+      expect(telas.flat()).toEqual(cols);
+      for (const t of telas) expect(t.length).toBeLessThanOrEqual(3);
+    }
   });
 });

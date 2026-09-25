@@ -2,33 +2,30 @@
    A FOLHA DE ESTILO DA TV. Escrita a mao, so com CSS antigo.
 
    Por que ela existe: em 25/09/2026 a TV Samsung da loja mostrou a pagina SEM
-   ESTILO NENHUM — texto empilhado numa coluna, sem fundo, dava para ver a
-   parede atraves da tela. A causa: o Tailwind 4 envolve 100% do que gera em
-   @layer, e o navegador que nao conhece @layer descarta o BLOCO INTEIRO. Nao
-   e uma cor que se perde: e a folha toda.
+   ESTILO NENHUM. O Tailwind 4 envolve 100% do que gera em @layer, e o
+   navegador que nao conhece @layer descarta o BLOCO INTEIRO. Nao e uma cor que
+   se perde: e a folha toda.
 
    REGRAS DESTE ARQUIVO (o teste em tv.test.ts reprova a entrega se alguem
    desrespeitar, inclusive reimportando o Tailwind aqui):
      - cores so em hexadecimal ou rgb();
      - layout so em flexbox;
-     - PROIBIDO: oklch(), color-mix(), @layer, @container, :has(), aninhamento,
-       var() com fallback moderno, propriedades logicas.
+     - PROIBIDO: oklch(), color-mix(), @layer, @container, :has(), aninhamento.
 
-   A TV e o unico aparelho que a gente NAO escolhe. Aqui se escreve para o
-   navegador mais velho que possa aparecer, nao para o mais novo.
+   O VISUAL segue o layout aprovado pelo Wisley em 25/09/2026: fundo escuro
+   solido, SEM quadros nem molduras — a separacao e por espaco e por linhas
+   finas de 1 px.
    =========================================================================== */
 
 /* --- Base ---------------------------------------------------------------- */
-/* Fundo solido: sem isto, a TV mostra a parede atraves da tela. */
 html.tv, html.tv body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  background-color: #0b1220;
-  color: #f2f6fc;
-  font-family: Helvetica, Arial, sans-serif;
-  /* A TV nao rola: o que nao couber, nao entra. */
+  background-color: #0a1020;
+  color: #eef3fb;
+  font-family: Sora, Helvetica, Arial, sans-serif;
   overflow: hidden;
 }
 
@@ -40,66 +37,126 @@ html.tv, html.tv body {
   padding: 4% 4%;
   display: flex;
   flex-direction: column;
-  background-color: #0b1220;
+  background-color: #0a1020;
 }
 
-/* --- Cabecalho ----------------------------------------------------------- */
+/* --- Cabecalho: nunca sai da tela ---------------------------------------- */
 .tv-topo {
   display: flex;
   flex-direction: row;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 28px;
+  flex: 0 0 auto;
+}
+
+.tv-marca {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.tv-marca-quadro {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background-color: #2f6df6;
+  margin-right: 10px;
+}
+
+.tv-marca-nome {
+  font-size: 19px;
+  font-weight: 700;
+  color: #93a4c4;
+  letter-spacing: 0.02em;
 }
 
 .tv-loja {
-  font-size: 76px;
-  line-height: 1.05;
-  font-weight: bold;
+  font-size: 68px;
+  font-weight: 700;
+  line-height: 1.02;
   margin: 0;
   color: #ffffff;
 }
 
 .tv-relogio {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 58px;
+  line-height: 1;
+  color: #ffffff;
+  text-align: right;
+  letter-spacing: 0.02em;
+}
+
+.tv-data {
+  font-size: 20px;
+  color: #93a4c4;
+  text-align: right;
+  margin-top: 8px;
+}
+
+/* --- Faixas finas, lado a lado ------------------------------------------- */
+.tv-faixas {
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 auto;
+  margin-top: 34px;
+}
+
+.tv-faixa {
+  flex: 1 1 0;
+  margin-right: 56px;
+}
+
+.tv-faixa-fim {
+  margin-right: 0;
+}
+
+.tv-faixa-alto {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tv-faixa-texto {
+  font-size: 22px;
+  color: #93a4c4;
+}
+
+.tv-faixa-forte {
+  color: #eef3fb;
+  font-weight: 700;
+}
+
+.tv-faixa-numero {
   font-size: 30px;
-  color: #a8b6cc;
+  font-weight: 700;
 }
 
-.tv-relogio-erro {
-  color: #ff9d9d;
-}
-
-/* --- Barra de progresso -------------------------------------------------- */
-.tv-progresso {
-  margin-bottom: 28px;
-}
-
-.tv-progresso-texto {
-  font-size: 30px;
-  color: #a8b6cc;
-  margin: 0 0 10px 0;
-}
+.tv-verde  { color: #3ddc84; }
+.tv-azul   { color: #6f9bff; }
+.tv-ouro   { color: #f0b429; }
 
 .tv-barra {
   width: 100%;
-  height: 34px;
-  background-color: #1c2740;
-  border-radius: 17px;
+  height: 8px;
+  border-radius: 4px;
+  background-color: #17213a;
   overflow: hidden;
 }
 
-.tv-barra-feita {
-  height: 34px;
-  background-color: #2ecc71;
-}
+.tv-barra-verde { height: 8px; background-color: #3ddc84; border-radius: 4px; }
+.tv-barra-azul  { height: 8px; background-color: #6f9bff; border-radius: 4px; }
 
-/* --- Colunas ------------------------------------------------------------- */
+/* --- Colunas: separadas por linha fina de 1 px --------------------------- */
 .tv-colunas {
   display: flex;
   flex-direction: row;
   flex: 1 1 auto;
-  /* min-height 0 deixa a coluna encolher em vez de estourar a tela. */
   min-height: 0;
+  margin-top: 30px;
 }
 
 .tv-coluna {
@@ -108,21 +165,25 @@ html.tv, html.tv body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin-right: 28px;
-  padding: 24px;
-  background-color: #131c30;
-  border-radius: 18px;
+  padding-right: 34px;
+  border-right: 1px solid #1b2540;
 }
 
-.tv-coluna-fim {
-  margin-right: 0;
+.tv-coluna + .tv-coluna { padding-left: 34px; }
+.tv-coluna-fim { border-right: 0; padding-right: 0; }
+
+.tv-rotulo {
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #7d8fb3;
+  margin: 0 0 22px 0;
 }
 
-.tv-coluna-titulo {
-  font-size: 34px;
-  font-weight: bold;
-  margin: 0 0 18px 0;
-  color: #ffffff;
+.tv-rotulo-conta {
+  color: #eef3fb;
+  margin-left: 10px;
 }
 
 .tv-lista {
@@ -135,72 +196,122 @@ html.tv, html.tv body {
 }
 
 .tv-item {
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 14px 0;
-  border-bottom: 2px solid #1c2740;
+  padding: 0 0 16px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #16203a;
 }
 
-.tv-item-fim {
-  border-bottom: 0;
+.tv-item-fim { border-bottom: 0; }
+
+.tv-item-titulo {
+  font-size: 27px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 7px 0;
+  line-height: 1.15;
 }
 
-.tv-item-texto {
-  font-size: 30px;
-  color: #f2f6fc;
-  padding-right: 16px;
+.tv-item-linha {
+  font-size: 20px;
+  color: #93a4c4;
+  margin: 0;
 }
 
-.tv-item-pessoa {
-  display: block;
-  font-size: 24px;
-  color: #a8b6cc;
+/* O pontinho de estado. */
+.tv-ponto {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  margin-right: 9px;
+  vertical-align: middle;
 }
 
-.tv-item-pontos {
-  font-size: 30px;
-  font-weight: bold;
-  color: #7fd4ff;
-  white-space: nowrap;
+.tv-ponto-azul     { background-color: #6f9bff; }
+.tv-ponto-amarelo  { background-color: #f0b429; }
+.tv-ponto-vermelho { background-color: #ef5a5a; }
+.tv-ponto-verde    { background-color: #3ddc84; }
+
+.tv-pts {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  color: #7d8fb3;
 }
 
-.tv-atrasada {
-  color: #ff9d9d;
+.tv-mais {
+  font-size: 20px;
+  color: #7d8fb3;
+  padding-top: 4px;
 }
 
 .tv-vazio {
-  font-size: 26px;
-  color: #7c8aa3;
-}
-
-/* Quando a lista nao cabe, a tela alterna entre as paginas sozinha. */
-.tv-paginas {
-  font-size: 24px;
-  color: #7c8aa3;
-  margin: 12px 0 0 0;
+  font-size: 22px;
+  color: #6b7b99;
 }
 
 /* --- Podio --------------------------------------------------------------- */
-.tv-podio-linha {
+.tv-podio {
   display: flex;
   flex-direction: row;
   align-items: baseline;
-  padding: 14px 0;
+  padding: 0 0 15px 0;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #16203a;
 }
 
-.tv-medalha {
-  font-size: 38px;
-  width: 64px;
+.tv-podio-fim { border-bottom: 0; }
+
+.tv-podio-lugar {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 20px;
+  color: #5c6c8c;
+  width: 34px;
 }
 
 .tv-podio-nome {
-  font-size: 30px;
+  font-size: 27px;
+  font-weight: 700;
+  color: #ffffff;
   flex: 1 1 auto;
 }
 
-/* --- Meta e agenda (as outras telas do rodizio) -------------------------- */
+.tv-podio-pontos {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 25px;
+  color: #c3cfe4;
+}
+
+/* O dourado da marca so no primeiro lugar. */
+.tv-podio-primeiro .tv-podio-lugar,
+.tv-podio-primeiro .tv-podio-pontos { color: #f0b429; }
+
+/* --- Rodape: qual tela, com pontinhos ------------------------------------ */
+.tv-rodape {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 18px;
+  font-size: 16px;
+  color: #5c6c8c;
+}
+
+.tv-pontinho {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  margin-left: 7px;
+  background-color: #2a3654;
+}
+
+.tv-pontinho-aceso { background-color: #93a4c4; }
+
+/* --- A troca e um esmaecer suave, nunca rolagem nem deslize -------------- */
+.tv-troca { opacity: 1; transition: opacity 600ms ease-in-out; }
+.tv-troca-saindo { opacity: 0; }
+
+/* --- Centro (recados) ---------------------------------------------------- */
 .tv-centro {
   flex: 1 1 auto;
   display: flex;
@@ -210,56 +321,21 @@ html.tv, html.tv body {
   min-height: 0;
 }
 
-.tv-numerao {
-  font-size: 180px;
-  line-height: 1;
-  font-weight: bold;
-  color: #ffffff;
-  margin: 0;
-}
-
-.tv-legenda {
-  font-size: 36px;
-  color: #a8b6cc;
-  margin: 18px 0 0 0;
-}
-
-.tv-bateu {
-  color: #2ecc71;
-}
+.tv-numerao { font-size: 170px; line-height: 1; font-weight: 700; color: #ffffff; margin: 0; }
+.tv-legenda { font-size: 32px; color: #93a4c4; margin: 16px 0 0 0; }
+.tv-recado  { font-size: 58px; font-weight: 700; color: #ffffff; margin: 0; }
 
 /* --- Tela do codigo de pareamento ---------------------------------------- */
 .tv-codigo {
-  font-size: 160px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 150px;
   line-height: 1;
-  font-weight: bold;
+  font-weight: 700;
   letter-spacing: 18px;
   color: #ffffff;
   margin: 24px 0;
 }
 
-.tv-passos {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 30px;
-  color: #a8b6cc;
-}
-
-.tv-passos li {
-  padding: 6px 0;
-}
-
-.tv-aviso {
-  font-size: 26px;
-  color: #7c8aa3;
-  margin-top: 24px;
-}
-
-/* --- Indisponivel -------------------------------------------------------- */
-.tv-recado {
-  font-size: 64px;
-  font-weight: bold;
-  color: #ffffff;
-  margin: 0;
-}
+.tv-passos { list-style: none; margin: 0; padding: 0; font-size: 28px; color: #93a4c4; }
+.tv-passos li { padding: 6px 0; }
+.tv-aviso { font-size: 24px; color: #6b7b99; margin-top: 24px; }

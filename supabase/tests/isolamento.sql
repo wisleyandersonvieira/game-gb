@@ -4657,7 +4657,10 @@ BEGIN
       -- de criar_link_tv e revogar_link_tv, que ja estao nesta lista.
       'parear_tv',
       -- Etapa 1.12: le a conta de quem chamou e so altera atribuicao DELA.
-      'alterar_hora_da_atribuicao'
+      'alterar_hora_da_atribuicao',
+      -- Etapa 1.12: le a conta de quem chamou e so configura a TV de loja
+      -- DELA — a mesma familia de criar_link_tv e parear_tv.
+      'salvar_tv_da_loja'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -7682,6 +7685,130 @@ BEGIN
          AND has_function_privilege('authenticated', p.oid, 'EXECUTE')),
       'usuario logado nao chama public.' || f);
   END LOOP;
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 63. A TV configuravel por loja (Etapa 1.12)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '63. a TV configuravel por loja'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v jsonb;
+BEGIN
+  -- COMPATIBILIDADE: loja que nunca foi configurada mostra o conjunto de
+  -- antes — as duas faixas e tres colunas.
+  v := public.tv_blocos_da_loja(1, 10);
+  PERFORM public.exigir((v->>'barra')::boolean AND (v->>'meta')::boolean,
+                        'loja sem configuracao mostra as duas faixas, como antes');
+  PERFORM public.exigir((v->>'parafazer')::boolean AND (v->>'emvalidacao')::boolean
+                        AND (v->>'podiohoje')::boolean,
+                        'e as tres colunas de antes');
+  PERFORM public.exigir(NOT (v->>'emandamento')::boolean AND NOT (v->>'podiomes')::boolean,
+                        'os blocos novos nascem desmarcados: nada muda sem o gestor mandar');
+
+  -- Os dois blocos que faltavam existem agora, na MESMA consulta.
+  v := public.montar_painel(1, 10, true);
+  PERFORM public.exigir(v ? 'emandamento', 'o painel passou a trazer "em andamento"');
+  PERFORM public.exigir(v ? 'podiomes',    'e o podio do mes');
+  PERFORM public.exigir(v ? 'podio' AND v ? 'parafazer' AND v ? 'emvalidacao'
+                        AND v ? 'atividade' AND v ? 'progresso' AND v ? 'meta',
+                        'e continua trazendo os outros seis: tudo numa ida so');
+
+  -- A TV nao recebe nome inteiro de ninguem.
+  PERFORM public.exigir(NOT (v::text ILIKE '%Souza%') AND NOT (v::text ILIKE '%Lima%'),
+                        'a TV continua sem nome completo: so o primeiro nome e a inicial');
+END $$;
+
+-- O gestor salva o que a TV mostra.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.salvar_tv_da_loja(10,
+    '{"barra": false, "meta": true, "parafazer": true, "emandamento": true,
+      "emvalidacao": true, "atividade": true, "podiohoje": true, "podiomes": true}'::jsonb,
+    120, true);
+  PERFORM public.exigir((SELECT tvsegundos = 120 FROM public.lojas WHERE lojaid = 10),
+                        'o tempo da troca fica gravado');
+
+  -- Tempo invalido nao passa.
+  BEGIN PERFORM public.salvar_tv_da_loja(10, '{}'::jsonb, 45, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'tempo fora de 30, 60 ou 120 e recusado');
+
+  -- Loja de OUTRA conta: recusada.
+  BEGIN PERFORM public.salvar_tv_da_loja(20, '{}'::jsonb, 60, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem configura a TV de uma loja de outra conta');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.tv_blocos_da_loja(1, 10);
+  PERFORM public.exigir(NOT (v->>'barra')::boolean, 'o que o gestor desmarcou fica desmarcado');
+  PERFORM public.exigir((v->>'emandamento')::boolean AND (v->>'podiomes')::boolean,
+                        'e o que ele marcou passa a valer');
+  PERFORM public.exigir((v->>'valores')::boolean,
+                        'os valores em R$ so valem com a meta marcada, e aqui ela esta');
+
+END $$;
+
+-- Gravar e do GESTOR; ler o resultado e do servidor. Por isso os dois papeis
+-- se alternam daqui para baixo.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$ BEGIN
+  -- A caixinha dos valores NAO vale sozinha: sem meta, nao ha valor nenhum.
+  PERFORM public.salvar_tv_da_loja(10, '{"meta": false, "parafazer": true}'::jsonb, 60, true);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.tv_blocos_da_loja(1, 10);
+  PERFORM public.exigir(NOT (v->>'valores')::boolean,
+                        'sem a meta marcada, os valores em R$ nao aparecem');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$ BEGIN
+  -- TUDO DESMARCADO: a TV volta ao padrao, nunca fica em branco.
+  PERFORM public.salvar_tv_da_loja(10, '{}'::jsonb, 60, false);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.tv_blocos_da_loja(1, 10);
+  PERFORM public.exigir((v->>'parafazer')::boolean AND (v->>'podiohoje')::boolean,
+                        'desmarcando tudo, a TV volta ao conjunto padrao (nunca em branco)');
+END $$;
+
+-- A funcao recebe a conta: nunca liberada para quem esta logado.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.tv_blocos_da_loja(1, 10); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.tv_blocos_da_loja');
 END $$;
 
 RESET ROLE;

@@ -173,7 +173,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE n.nspname = 'public' AND p.proname = 'eu_pedir_resgate')),
   (131, 'C2', 'versao', 'a lista do gestor mostra de onde veio', 'aplicar-colaborador-pede-resgate.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'listar_trocas') LIKE '%origem%')
+         WHERE n.nspname = 'public' AND p.proname = 'listar_trocas') LIKE '%origem%'),
+  (140, 'TV2', 'versao', 'a TV e configuravel por loja', 'aplicar-tv-configuravel.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'lojas'
+                  AND column_name = 'tvblocos')),
+  (141, 'TV2', 'versao', 'o painel traz "em andamento" e o podio do mes', 'aplicar-tv-configuravel.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%podiomes%')
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",
