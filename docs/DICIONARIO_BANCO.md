@@ -1244,7 +1244,7 @@ Entra por `pegar_tarefa(atribuicao, funcionario)` (o bot continua chamando `pega
 - **`rotinasexecucoes.rotina`** aceita também `mensagens`.
 
 ### Configurações novas
-`HORARIO_SILENCIO_INICIO` (22:00) e `HORARIO_SILENCIO_FIM` (07:00) — o silêncio **não vale dentro do turno da pessoa**; `MAX_MENSAGENS_AUTOMATICAS_DIA` (8); `MAX_TAREFAS_FOLGA_POR_PESSOA` (3).
+`MINUTOS_RODIZIO_ACEITE` (10; 0 desliga) — rodízio no aceite: minutos que quem pegou a última tarefa disputada da loja espera antes de pegar outra; `MINUTOS_TAREFA_PARADA` (30) — a partir de quantos minutos o tablet marca a tarefa como parada; `HORARIO_SILENCIO_INICIO` (22:00) e `HORARIO_SILENCIO_FIM` (07:00) — o silêncio **não vale dentro do turno da pessoa**; `MAX_MENSAGENS_AUTOMATICAS_DIA` (8); `MAX_TAREFAS_FOLGA_POR_PESSOA` (3).
 
 ### Funções (todas internas ou só para o servidor)
 `jornada_da_pessoa(conta, pessoa, dia)` (o turno que começa no dia; entende o turno da noite), `bot_janela(conta, pessoa, agora)` (pode mandar agora? senão, quando), `no_silencio`, `bot_enviadas_hoje`, `rotina_mensagens(conta, agora)` (chamada pelo despachante a cada 5 minutos), `bot_texto_rotina` (monta a mensagem na hora de enviar; devolve vazio quando não faz mais sentido), `bot_resumo_ausencia`, `bot_marcar_bloqueio`, `bot_visto(chat)`, `bot_pegar_folga` e `bot_pegar_missao` (grupo da equipe). Para as telas: `definir_horario_equipe(pessoas[], entrada, saida)` e `definir_rotina_mensagem(loja, rotina, ativo)`.

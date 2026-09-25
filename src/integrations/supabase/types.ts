@@ -5328,18 +5328,34 @@ export type Database = {
         Args: { p_lojaid: number }
         Returns: {
           aberta: boolean
+          agora: string
           atrasada: boolean
           atribuicaoid: number
+          disponiveldesde: string | null
           donoid: number | null
           entregarid: number | null
           pegaem: string | null
           pontos: number
           quempegou: number | null
           quempegounome: string | null
+          rodizio: boolean
           situacao: string
           tipofrequencia: string
           titulo: string
         }[]
+      }
+      rodizio_espera: {
+        Args: {
+          p_atribuicaoid: number
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+        }
+        Returns: number
+      }
+      elegiveis_da_tarefa: {
+        Args: { p_atribuicaoid: number; p_contaid: number }
+        Returns: number
       }
       pegar_tarefa: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }

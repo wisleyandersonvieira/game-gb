@@ -6,6 +6,7 @@
 // o que ninguém pegou precisa aparecer aqui para o gestor decidir.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 
 type Item = {
   atribuicaoid: number;
@@ -20,6 +21,9 @@ type Item = {
   pegaem: string | null;
   situacao: "para_pegar" | "em_andamento" | "feita";
   atrasada: boolean;
+  disponiveldesde: string | null;
+  rodizio: boolean;
+  agora: string;
 };
 
 function hora(iso: string | null) {
@@ -54,7 +58,10 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
     },
   });
 
+  // O relógio anda sozinho; a fila só conversa com o banco quando precisa.
+  useRelogio();
   const lista = fila.data ?? [];
+  const agora = lista[0]?.agora ?? null;
   const faixa = (s: Item["situacao"]) => lista.filter((i) => i.situacao === s);
 
   return (
@@ -70,18 +77,24 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
       {revogar.isError && <p className="text-sm text-destructive">{(revogar.error as Error).message}</p>}
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Faixa titulo="Para pegar" itens={faixa("para_pegar")} vazio="Ninguém está esperando tarefa." />
+        <Faixa
+          titulo="Para pegar"
+          itens={faixa("para_pegar")}
+          vazio="Ninguém está esperando tarefa."
+          agora={agora}
+        />
         <Faixa
           titulo="Em andamento"
           itens={faixa("em_andamento")}
           vazio="Nada em andamento agora."
+          agora={agora}
           aoRevogar={(i) => {
             const motivo = prompt(`Por que está tirando "${i.titulo}" de ${i.quempegounome}?`);
             if (motivo && motivo.trim()) revogar.mutate({ atribuicaoid: i.atribuicaoid, motivo });
           }}
           revogando={revogar.isPending}
         />
-        <Faixa titulo="Feitas hoje" itens={faixa("feita")} vazio="Nada entregue ainda." />
+        <Faixa titulo="Feitas hoje" itens={faixa("feita")} vazio="Nada entregue ainda." agora={agora} />
       </div>
     </section>
   );
@@ -91,12 +104,14 @@ function Faixa({
   titulo,
   itens,
   vazio,
+  agora,
   aoRevogar,
   revogando,
 }: {
   titulo: string;
   itens: Item[];
   vazio: string;
+  agora: string | null;
   aoRevogar?: (i: Item) => void;
   revogando?: boolean;
 }) {
@@ -116,10 +131,11 @@ function Faixa({
               </p>
               <p className="text-xs text-muted-foreground">
                 {i.quempegounome
-                  ? `com ${i.quempegounome} desde ${hora(i.pegaem)}`
+                  ? `com ${i.quempegounome} ${faz(minutosDesde(i.pegaem, agora))} (desde ${hora(i.pegaem)})`
                   : i.aberta
-                    ? "aberta: a primeira que pegar leva"
+                    ? `aberta ${faz(minutosDesde(i.disponiveldesde, agora))}: a primeira que pegar leva`
                     : "com dono"}
+                {i.rodizio && i.situacao === "para_pegar" && " · rodízio ativo"}
                 {i.atrasada && " · atrasada"}
               </p>
               {aoRevogar && (

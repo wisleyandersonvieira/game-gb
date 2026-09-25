@@ -31,6 +31,12 @@ export type ItemDaFila = {
   pegaem: string | null;
   situacao: "para_pegar" | "em_andamento" | "feita";
   atrasada: boolean;
+  /** Desde quando está disponível HOJE. O cronômetro conta a partir daqui. */
+  disponiveldesde: string | null;
+  /** O rodízio está ligado e esta tarefa é disputada (aviso do cartão). */
+  rodizio: boolean;
+  /** A hora do servidor, para o aparelho acertar o relógio dele. */
+  agora: string;
 };
 
 /**
@@ -89,7 +95,20 @@ export const filaDoTablet = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin.rpc("visao_fila", { p_contaid: t.contaid, p_lojaid: t.lojaid });
     if (error) throw new Error("Não foi possível carregar a fila agora.");
-    return { loja: t.loja, itens: (data ?? []) as unknown as ItemDaFila[] };
+
+    // A partir de quantos minutos o cartão fica marcado como parado.
+    const { data: cfg } = await supabaseAdmin
+      .from("configuracoes")
+      .select("valor")
+      .eq("contaid", t.contaid)
+      .eq("chave", "MINUTOS_TAREFA_PARADA")
+      .maybeSingle();
+
+    return {
+      loja: t.loja,
+      minutosParada: Number(cfg?.valor ?? 30) || 30,
+      itens: (data ?? []) as unknown as ItemDaFila[],
+    };
   });
 
 export const pegarNoTablet = createServerFn({ method: "POST" })

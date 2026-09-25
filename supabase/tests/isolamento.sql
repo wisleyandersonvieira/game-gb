@@ -501,6 +501,12 @@ END $$;
 
 RESET ROLE;
 SELECT public.cria_configuracoes_padrao(1);
+-- O rodizio no aceite (Etapa 1.12, 25/09/2026) nasce ligado com 10 minutos.
+-- Nas secoes que NAO sao sobre ele, fica desligado, senao a mesma pessoa nao
+-- conseguiria pegar duas tarefas seguidas. A secao 52 liga e prova a regra.
+-- Apagar (em vez de alterar) nao mexe no historico de configuracoes, que
+-- outras secoes conferem; sem a chave, o rodizio fica desligado.
+DELETE FROM public.configuracoes WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
 SELECT public.cria_tarefas_do_sistema(1);
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -1462,6 +1468,7 @@ INSERT INTO auth.users (id, email, email_confirmed_at)
   VALUES ('12121212-1212-1212-1212-121212121212', 'gerente.a@exemplo.com', now());
 INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, '12121212-1212-1212-1212-121212121212', 'gerente');
 SELECT public.cria_configuracoes_padrao(2);
+DELETE FROM public.configuracoes WHERE contaid = 2 AND chave = 'MINUTOS_RODIZIO_ACEITE';
 
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -6242,6 +6249,191 @@ BEGIN
   PERFORM public.exigir(public.minha_conta() IS NULL, 'e tambem responde vazio');
   PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'o tablet nao le a equipe');
   PERFORM public.exigir((SELECT count(*) FROM public.contas) = 0, 'nem a conta');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 52. Rodizio no aceite de tarefas (Etapa 1.12, 25/09/2026)
+-- ===========================================================================
+-- Quem pegou a ULTIMA tarefa disputada da loja espera antes de pegar outra.
+-- Vale so para tarefa sem dono. E nunca deixa a loja parada.
+--
+-- rodizio_espera e elegiveis_da_tarefa recebem conta e loja, entao so o
+-- servidor as chama: aqui elas rodam com RESET ROLE (dono do banco).
+DO $$ BEGIN RAISE NOTICE '52. rodizio no aceite'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+-- Uma loja so para o rodizio, com tres pessoas que trabalham todo dia.
+-- A conta A esta no limite de lojas: amplia para caber esta.
+UPDATE public.contas SET limitelojas = limitelojas + 1 WHERE contaid = 1;
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE
+VALUES (12, 1, 'Loja do Rodizio') ON CONFLICT DO NOTHING;
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES
+  (9701, 1, 'Rapida Silva'), (9702, 1, 'Calma Souza'), (9703, 1, 'Media Lima') ON CONFLICT DO NOTHING;
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+  (1, 9701, 12), (1, 9702, 12), (1, 9703, 12) ON CONFLICT DO NOTHING;
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (9710, 1, 'Disputada A', 5), (9711, 1, 'Disputada B', 5), (9712, 1, 'Com dono', 5) ON CONFLICT DO NOTHING;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES
+  (1, 9710, 12), (1, 9711, 12), (1, 9712, 12) ON CONFLICT DO NOTHING;
+INSERT INTO public.configuracoes (contaid, chave, valor, descricao)
+VALUES (1, 'MINUTOS_RODIZIO_ACEITE', '10', 'rodizio') ON CONFLICT (contaid, chave) DO UPDATE SET valor = '10';
+
+-- --- A primeira pega; a mesma pessoa fica impedida na seguinte -------------
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE a integer; b integer; deu_erro boolean; msg text;
+BEGIN
+  a := public.atribuir_tarefa(9710, 12, ARRAY[9701, 9702, 9703], 'Diaria', NULL, NULL, NULL);
+  b := public.atribuir_tarefa(9711, 12, ARRAY[9701, 9702, 9703], 'Diaria', NULL, NULL, NULL);
+  PERFORM set_config('teste.rod_a', a::text, false);
+  PERFORM set_config('teste.rod_b', b::text, false);
+
+  PERFORM public.pegar_tarefa(a, 9701);
+
+  BEGIN PERFORM public.pegar_tarefa(b, 9701); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; msg := SQLERRM; END;
+  PERFORM public.exigir(deu_erro, 'quem pegou a ultima nao pega a proxima na hora');
+  PERFORM public.exigir(msg LIKE 'Você pegou a última tarefa%' AND msg LIKE '%min.%',
+                        'a mensagem diz o tempo que falta');
+  PERFORM public.exigir(msg NOT LIKE '%Calma%' AND msg NOT LIKE '%Media%' AND msg NOT LIKE '%Rapida%',
+                        'e nao cita o nome de colega nenhum');
+
+  -- Outra pessoa pega: a impedida e liberada NA HORA.
+  PERFORM public.pegar_tarefa(b, 9702);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE a integer := current_setting('teste.rod_a')::integer;
+        b integer := current_setting('teste.rod_b')::integer;
+BEGIN
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9701, b) = 0,
+                        'assim que outra pessoa pega, a impedida e liberada na hora');
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, a) > 0,
+                        'e quem acabou de pegar passa a ser a que espera');
+  PERFORM public.exigir(public.elegiveis_da_tarefa(1, a) = 3, 'as tres contam como elegiveis');
+
+  -- Unica elegivel: a trava nunca deixa a loja parada.
+  UPDATE public.funcionarios SET ativo = false WHERE contaid = 1 AND funcionarioid IN (9701, 9703);
+  PERFORM public.exigir(public.elegiveis_da_tarefa(1, a) = 1, 'sobrou uma elegivel');
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, a) = 0,
+                        'sendo a unica elegivel, ela pega na hora: a trava nao para a loja');
+  UPDATE public.funcionarios SET ativo = true WHERE contaid = 1 AND funcionarioid IN (9701, 9703);
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, a) > 0, 'com as outras de volta, a espera volta');
+
+  -- Tempo 0 desliga tudo.
+  UPDATE public.configuracoes SET valor = '0' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, a) = 0, 'com tempo 0, o rodizio fica desligado');
+  UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+
+  -- A marca de "ultimo" e POR LOJA.
+  PERFORM public.exigir(public.rodizio_espera(1, 10, 9702, a) = 0,
+                        'a marca de "ultimo" vale so na loja onde a pessoa pegou');
+
+  -- Passado o tempo, ela consegue de novo.
+  UPDATE public.missoesaceites SET aceitoem = now() - interval '11 minutes'
+   WHERE contaid = 1 AND funcionarioid = 9702;
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, a) = 0,
+                        'passado o tempo, quem tinha pegado consegue de novo');
+END $$;
+
+-- --- Dono unico nao entra; missao entra -----------------------------------
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE d integer; m integer;
+BEGIN
+  d := public.atribuir_tarefa(9712, 12, ARRAY[9702], 'Diaria', NULL, NULL, NULL);
+  m := public.atribuir_tarefa(9711, 12, NULL, 'Diaria', NULL, NULL, '07:00');
+  PERFORM set_config('teste.rod_d', d::text, false);
+  PERFORM set_config('teste.rod_m', m::text, false);
+  -- A Calma volta a ser "a ultima" pegando uma disputada NOVA (as anteriores
+  -- ja foram pegas hoje, e cada tarefa so e pega uma vez por dia).
+  PERFORM public.pegar_tarefa(
+    public.atribuir_tarefa(9710, 12, ARRAY[9701, 9702, 9703], 'Diaria', NULL, NULL, NULL), 9702);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE d integer := current_setting('teste.rod_d')::integer;
+        m integer := current_setting('teste.rod_m')::integer;
+BEGIN
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, d) = 0,
+                        'tarefa de dono unico nao entra no rodizio');
+  PERFORM public.exigir(public.rodizio_espera(1, 12, 9702, m) > 0,
+                        'a missao da equipe entra no rodizio');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  -- A dona unica pega a dela mesmo tendo acabado de pegar uma disputada.
+  PERFORM public.pegar_tarefa(current_setting('teste.rod_d')::integer, 9702);
+  PERFORM public.exigir(true, 'a dona pega a tarefa dela mesmo tendo pegado a ultima disputada');
+
+  BEGIN PERFORM public.pegar_tarefa(current_setting('teste.rod_m')::integer, 9702); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'e a impedida nao pega a missao');
+END $$;
+
+-- --- O cronometro: igual em qualquer aparelho -----------------------------
+-- instante_local e interna (so o servidor), entao esta parte roda como dono.
+-- A fila_da_loja em si e chamada pela tela; o dono tambem a enxerga.
+RESET ROLE;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f record; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  SELECT * INTO f FROM public.fila_da_loja(12)
+   WHERE atribuicaoid = current_setting('teste.rod_m')::integer;
+  PERFORM public.exigir(f.disponiveldesde = public.instante_local(v_hoje, '07:00'::time),
+                        'a missao das 07:00 conta o cronometro a partir das 07:00 de hoje');
+  PERFORM public.exigir(f.agora IS NOT NULL,
+                        'a fila manda a hora do servidor, para os tablets acertarem o relogio');
+  PERFORM public.exigir(f.rodizio, 'a tarefa disputada aparece com o aviso de rodizio');
+
+  SELECT * INTO f FROM public.fila_da_loja(12)
+   WHERE atribuicaoid = current_setting('teste.rod_d')::integer;
+  PERFORM public.exigir(NOT f.rodizio, 'tarefa com dono unico nao mostra aviso de rodizio');
+  PERFORM public.exigir(f.disponiveldesde = public.instante_local(v_hoje, '00:00'::time),
+                        'sem hora marcada, o cronometro conta do comeco do dia');
+END $$;
+
+-- --- Isolamento -----------------------------------------------------------
+-- Como usuario logado (o dono do banco ignora a RLS e nao provaria nada).
+SET ROLE authenticated;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.configuracoes
+                          WHERE chave = 'MINUTOS_RODIZIO_ACEITE' AND contaid = 1) = 0,
+                        'B nao le o tempo de rodizio de A');
+  -- B pode mexer no PROPRIO tempo; o que nao pode e encostar no de A.
+  BEGIN PERFORM public.alterar_configuracao('MINUTOS_RODIZIO_ACEITE', '99'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir((SELECT count(*) FROM public.fila_da_loja(12)) = 0, 'nem ve a fila da loja de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.missoesaceites WHERE contaid = 1) = 0,
+                        'nem quem pegou o que em A');
+END $$;
+
+-- Conferido de fora da RLS: o tempo de A continua o que era.
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT valor FROM public.configuracoes
+                          WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE') = '10',
+                        'o tempo de rodizio de A continua o que era');
 END $$;
 
 RESET ROLE;

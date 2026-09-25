@@ -18,6 +18,7 @@ import {
   pegarNoTablet,
   type ItemDaFila,
 } from "@/servidor/tablet";
+import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 
 export const Route = createFileRoute("/tablet")({
   ssr: false,
@@ -86,7 +87,11 @@ function Tablet() {
     },
   });
 
+  // O relógio anda sozinho aqui; a fila só conversa com o banco a cada 15 s.
+  useRelogio();
   const itens = fila.data?.itens ?? [];
+  const agora = itens[0]?.agora ?? null;
+  const minutosParada = fila.data?.minutosParada ?? 30;
   const faixa = (s: ItemDaFila["situacao"]) => itens.filter((i) => i.situacao === s);
 
   async function sair() {
@@ -115,7 +120,13 @@ function Tablet() {
       {agir.isError && <p className="mb-3 text-destructive">{(agir.error as Error).message}</p>}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Coluna titulo="Para pegar" vazio="Nada esperando." itens={faixa("para_pegar")}>
+        <Coluna
+          titulo="Para pegar"
+          vazio="Nada esperando."
+          itens={faixa("para_pegar")}
+          agora={agora}
+          minutosParada={minutosParada}
+        >
           {(i) => (
             <>
               <BotaoGrande onClick={() => { setAcao({ tipo: "pegar", item: i }); setPedindoPin(true); }}>
@@ -131,7 +142,13 @@ function Tablet() {
           )}
         </Coluna>
 
-        <Coluna titulo="Em andamento" vazio="Ninguém pegou nada ainda." itens={faixa("em_andamento")}>
+        <Coluna
+          titulo="Em andamento"
+          vazio="Ninguém pegou nada ainda."
+          itens={faixa("em_andamento")}
+          agora={agora}
+          minutosParada={minutosParada}
+        >
           {(i) => (
             <BotaoGrande onClick={() => setAcao({ tipo: "entregar", item: i, arquivo: null, observacao: "" })}>
               Entregar
@@ -139,7 +156,13 @@ function Tablet() {
           )}
         </Coluna>
 
-        <Coluna titulo="Feitas hoje" vazio="Nada entregue ainda." itens={faixa("feita")} />
+        <Coluna
+          titulo="Feitas hoje"
+          vazio="Nada entregue ainda."
+          itens={faixa("feita")}
+          agora={agora}
+          minutosParada={minutosParada}
+        />
       </div>
 
       {acao?.tipo === "entregar" && !pedindoPin && (
@@ -167,11 +190,15 @@ function Coluna({
   titulo,
   itens,
   vazio,
+  agora,
+  minutosParada,
   children,
 }: {
   titulo: string;
   itens: ItemDaFila[];
   vazio: string;
+  agora: string | null;
+  minutosParada: number;
   children?: (i: ItemDaFila) => React.ReactNode;
 }) {
   return (
@@ -186,18 +213,57 @@ function Coluna({
           {itens.map((i) => (
             <li key={i.atribuicaoid} className="space-y-2 rounded-xl bg-background p-3">
               <p className="text-lg font-medium">{i.titulo}</p>
+              <Cronometro item={i} agora={agora} minutosParada={minutosParada} />
               <p className="text-sm text-muted-foreground">
                 {i.pontos} pontos
-                {i.quempegounome && ` · com ${i.quempegounome} desde ${hora(i.pegaem)}`}
                 {!i.quempegounome && i.aberta && " · quem pegar primeiro leva"}
                 {i.atrasada && " · atrasada"}
               </p>
+              {i.rodizio && i.situacao === "para_pegar" && (
+                <p className="text-xs text-muted-foreground">
+                  🔄 Rodízio ativo: quem pegou a última espera um pouco.
+                </p>
+              )}
               {children?.(i)}
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * "disponível há 12 min" ou "com Maria S. há 20 min". Conta a partir da hora do
+ * SERVIDOR, não de quando a tela abriu: dois tablets mostram o mesmo número.
+ */
+function Cronometro({
+  item,
+  agora,
+  minutosParada,
+}: {
+  item: ItemDaFila;
+  agora: string | null;
+  minutosParada: number;
+}) {
+  if (item.situacao === "feita") return null;
+
+  if (item.situacao === "em_andamento") {
+    const m = minutosDesde(item.pegaem, agora);
+    return (
+      <p className="text-sm">
+        com <strong>{item.quempegounome}</strong> {faz(m)}
+      </p>
+    );
+  }
+
+  const m = minutosDesde(item.disponiveldesde, agora);
+  const parada = m !== null && m >= minutosParada;
+  return (
+    <p className={`text-sm font-medium ${parada ? "text-destructive" : "text-muted-foreground"}`}>
+      {parada && "⏰ "}
+      disponível {faz(m)}
+    </p>
   );
 }
 

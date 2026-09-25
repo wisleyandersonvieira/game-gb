@@ -116,6 +116,29 @@ const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
     ],
   },
   {
+    titulo: "Aceite de tarefas",
+    aviso:
+      "Vale só para tarefa atribuída a várias pessoas e para missão da equipe. Tarefa com dono único não muda.",
+    itens: [
+      {
+        chave: "MINUTOS_RODIZIO_ACEITE",
+        rotulo: "Tempo de espera para quem pegou a última tarefa",
+        ajuda:
+          "Quem pegou a última tarefa disputada da loja espera este tempo antes de pegar outra, para dar chance aos colegas. Assim que outra pessoa pega alguma coisa, quem estava esperando é liberado na hora. Se a pessoa for a única disponível no dia, ela pega na hora. 0 desliga o rodízio.",
+        tipo: "inteiro",
+        unidade: "minutos",
+      },
+      {
+        chave: "MINUTOS_TAREFA_PARADA",
+        rotulo: "Marcar tarefa como parada depois de",
+        ajuda:
+          "No tablet, o cronômetro do cartão muda de cor quando a tarefa passa deste tempo sem ninguém pegar.",
+        tipo: "inteiro",
+        unidade: "minutos",
+      },
+    ],
+  },
+  {
     titulo: "Fotos",
     itens: [
       {
