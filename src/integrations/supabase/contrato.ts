@@ -25,6 +25,7 @@ export const CONTRATO: Record<string, string[]> = {
   concluir_troca: ["p_resgateid"],
   conflitos_agendamento: ["p_dataevento", "p_ignorar", "p_lojaid"],
   conta_do_codigo: ["p_codigo"],
+  contagem_solicitacoes: [],
   cria_configuracoes_padrao: ["p_contaid"],
   cria_etapas_onboarding_padrao: ["p_contaid"],
   cria_produtos_do_sistema: ["p_contaid"],

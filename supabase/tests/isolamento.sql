@@ -7927,4 +7927,109 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 65. As marcacoes de quantidade em Solicitacoes (Etapa 1.12)
+-- ===========================================================================
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE b10a integer; b10e integer; b11 integer;
+        d10a integer; d10e integer; d11 integer;
+        s1 integer; s2 integer; s3 integer; s4 integer;
+BEGIN
+  RAISE NOTICE '65. as marcacoes de quantidade em solicitacoes';
+
+  -- A funcao nao recebe parametro nenhum, de proposito: quem filtra a conta e
+  -- a RLS da tabela. Se um dia alguem lhe der um contaid, este teste reprova.
+  PERFORM public.exigir((SELECT p.pronargs FROM pg_proc p
+                           JOIN pg_namespace n ON n.oid = p.pronamespace
+                          WHERE n.nspname = 'public' AND p.proname = 'contagem_solicitacoes') = 0,
+                        'a contagem nao recebe conta nem loja: nao ha o que forjar');
+
+  -- Ana passa a trabalhar tambem na segunda loja da conta.
+  INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11)
+    ON CONFLICT DO NOTHING;
+
+  SELECT coalesce(sum(quantos) FILTER (WHERE loja = 10 AND situacao = 'Aberta'), 0),
+         coalesce(sum(quantos) FILTER (WHERE loja = 10 AND situacao = 'Em andamento'), 0),
+         coalesce(sum(quantos) FILTER (WHERE loja = 11), 0)
+    INTO b10a, b10e, b11
+    FROM public.contagem_solicitacoes();
+
+  s1 := public.abrir_solicitacao(10, 100, 'Compra', 'Limpeza', 'Sabao', 2, 'un');
+  s2 := public.abrir_solicitacao(10, 100, 'Compra', 'Cozinha', 'Luva', 1, 'par');
+  PERFORM public.mudar_situacao_solicitacao(s2, 'Em andamento');
+  s3 := public.abrir_solicitacao(11, 100, 'Manutencao', 'Predial', 'Porta emperrada');
+  -- Esta some da contagem: quem ja foi resolvida nao espera ninguem.
+  s4 := public.abrir_solicitacao(10, 100, 'Compra', 'Outros', 'Caneta', 3, 'un');
+  PERFORM public.mudar_situacao_solicitacao(s4, 'Em andamento');
+  PERFORM public.mudar_situacao_solicitacao(s4, 'Concluída', 'comprado');
+
+  SELECT coalesce(sum(quantos) FILTER (WHERE loja = 10 AND situacao = 'Aberta'), 0),
+         coalesce(sum(quantos) FILTER (WHERE loja = 10 AND situacao = 'Em andamento'), 0),
+         coalesce(sum(quantos) FILTER (WHERE loja = 11), 0)
+    INTO d10a, d10e, d11
+    FROM public.contagem_solicitacoes();
+
+  PERFORM public.exigir(d10a = b10a + 1, 'a aba Aberta conta a nova solicitacao aberta');
+  PERFORM public.exigir(d10e = b10e + 1, 'a aba Em andamento conta a que entrou em andamento');
+  PERFORM public.exigir(d11  = b11  + 1, 'a outra loja da conta conta a sua');
+
+  -- Concluida e recusada nao entram em contagem nenhuma.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contagem_solicitacoes()
+                                     WHERE situacao NOT IN ('Aberta', 'Em andamento')),
+                        'concluida e recusada ficam fora da contagem');
+
+  -- O numero da bandeirinha do menu e a soma das duas situacoes, em todas as
+  -- lojas ativas: e o mesmo total que a tela mostra somando as abas.
+  PERFORM public.exigir((SELECT coalesce(sum(quantos), 0) FROM public.contagem_solicitacoes())
+                        = (SELECT count(*) FROM public.solicitacoesinternas s
+                             JOIN public.lojas l ON l.lojaid = s.lojaid AND l.ativa
+                            WHERE s.status IN ('Aberta', 'Em andamento')),
+                        'a bandeirinha do menu bate com a tabela inteira da conta');
+
+  -- Loja desativada some do seletor do topo: nao pode ficar cobrando o gestor.
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contagem_solicitacoes() WHERE loja = 11),
+                        'loja desativada nao conta: ela nem aparece no seletor');
+  UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.contagem_solicitacoes() WHERE loja = 11),
+                        'e volta a contar quando a loja e reativada');
+
+  -- E so as lojas da conta A aparecem.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contagem_solicitacoes() WHERE loja = 20),
+                        'a conta A nao conta a solicitacao da loja da conta B');
+END $$;
+
+-- A conta B conta as suas, e so as suas.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contagem_solicitacoes()
+                                     WHERE loja IN (10, 11)),
+                        'a conta B nao conta nada das lojas da conta A');
+END $$;
+
+-- Sem conta (tablet, colaborador, sessao sem dono) nao volta numero nenhum.
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contagem_solicitacoes()),
+                        'sessao sem conta nao recebe contagem de ninguem');
+END $$;
+
+RESET ROLE;
+
+-- O visitante sem login nao chama a contagem.
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.contagem_solicitacoes()', 'EXECUTE'),
+                        'o visitante sem login nao chama a contagem');
+  PERFORM public.exigir(has_function_privilege('authenticated', 'public.contagem_solicitacoes()', 'EXECUTE'),
+                        'o gestor logado chama a contagem');
+END $$;
+
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

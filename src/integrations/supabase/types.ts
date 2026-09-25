@@ -4954,6 +4954,14 @@ export type Database = {
         Args: { p_contaid: number; p_protocolo: string }
         Returns: Json
       }
+      contagem_solicitacoes: {
+        Args: never
+        Returns: {
+          loja: number
+          quantos: number
+          situacao: string
+        }[]
+      }
       conta_do_bot: { Args: never; Returns: number }
       conta_do_codigo: { Args: { p_codigo: string }; Returns: number }
       cpf_valido: { Args: { p_cpf: string }; Returns: boolean }

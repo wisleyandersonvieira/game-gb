@@ -3,11 +3,55 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
+import { Bandeirinha } from "@/ui/Layout";
+import { CHAVE_SOLICITACOES, daLoja, useContagemSolicitacoes } from "@/ui/pendencias";
 import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/solicitacoes")({
   component: Solicitacoes,
 });
+
+/**
+ * "2 nesta loja · 3 em outras lojas".
+ *
+ * A bandeirinha do menu soma todas as lojas; as abas contam só a loja do
+ * seletor. Sem esta linha os dois números parecem brigar. Cada loja é um
+ * botão: clicar troca o seletor do topo e a tela passa a ser dela.
+ */
+function Conciliacao({ lojaid }: { lojaid: number }) {
+  const { lojas, escolherLoja } = useLojaAtiva();
+  const contagem = useContagemSolicitacoes();
+  const aqui = daLoja(contagem, lojaid).aResolver;
+  const outras = contagem.total - aqui;
+  if (outras <= 0) return null;
+
+  const detalhe = lojas
+    .filter((l) => l.lojaid !== lojaid)
+    .map((l) => ({ loja: l, quantos: daLoja(contagem, l.lojaid).aResolver }))
+    .filter((x) => x.quantos > 0);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <span>
+        <strong className="text-foreground">{aqui}</strong> a resolver nesta loja
+      </span>
+      <span aria-hidden>·</span>
+      <span>
+        <strong className="text-foreground">{outras}</strong> em outras lojas:
+      </span>
+      {detalhe.map(({ loja, quantos }) => (
+        <button
+          key={loja.lojaid}
+          onClick={() => escolherLoja(loja.lojaid)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 hover:bg-muted"
+        >
+          {loja.nome}
+          <span className="font-semibold text-foreground">{quantos > 99 ? "99+" : quantos}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const campo =
   "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
@@ -25,6 +69,30 @@ const COR: Record<string, string> = {
   Concluída: "border-border text-muted-foreground",
   Recusada: "border-perigo/40 bg-perigo-soft text-perigo",
 };
+
+// Quais abas levam número, e de que cor. VERMELHO é cor de urgência: se tudo
+// for vermelho, nada chama atenção. Por isso só "A resolver" é vermelha; as
+// outras duas são uma contagem discreta. Para mudar de ideia, troque a linha
+// da aba aqui — não há nada espalhado pela tela. Aba fora desta lista não
+// mostra número nenhum.
+const NUMERO_NA_ABA: Record<string, "vermelho" | "cinza"> = {
+  abertas: "vermelho",
+  Aberta: "cinza",
+  "Em andamento": "cinza",
+};
+
+/** A contagem discreta das abas Aberta e Em andamento. Some quando zera. */
+function Discreta({ quantos }: { quantos: number }) {
+  if (quantos <= 0) return null;
+  return (
+    <span
+      aria-label={`${quantos} nesta situação`}
+      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
+    >
+      {quantos > 99 ? "99+" : quantos}
+    </span>
+  );
+}
 
 function dataHora(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", {
@@ -52,6 +120,7 @@ function Solicitacoes() {
             Pedidos de compra e de manutenção da loja <strong>{loja?.nome}</strong>. Por enquanto o gestor registra; com o bot,
             os líderes pedem direto (e a foto da manutenção vem junto).
           </p>
+          <Conciliacao lojaid={lojaAtiva} />
           <Abrir lojaid={lojaAtiva} />
           <Lista lojaid={lojaAtiva} />
         </>
@@ -108,6 +177,8 @@ function Abrir({ lojaid }: { lojaid: number }) {
       setQuantidade("");
       setUnidade("");
       qc.invalidateQueries({ queryKey: ["solicitacoes", lojaid] });
+      // Abrir, concluir ou recusar muda os números do menu e das abas.
+      qc.invalidateQueries({ queryKey: CHAVE_SOLICITACOES });
     },
   });
 
@@ -224,6 +295,10 @@ function Lista({ lojaid }: { lojaid: number }) {
   const [aberta, setAberta] = useState<number | null>(null);
   const [aviso, setAviso] = useState<{ texto: string; grave: boolean } | null>(null);
 
+  // Os números das abas são da loja que está na tela, porque é o que a tela
+  // mostra. Saem da mesma resposta que alimenta a bandeirinha do menu.
+  const aqui = daLoja(useContagemSolicitacoes(), lojaid);
+
   const dados = useQuery({
     queryKey: ["solicitacoes", lojaid],
     queryFn: async () => {
@@ -263,6 +338,8 @@ function Lista({ lojaid }: { lojaid: number }) {
     onSuccess: (status) => {
       setAviso({ texto: `Situação: ${status}.`, grave: false });
       qc.invalidateQueries({ queryKey: ["solicitacoes", lojaid] });
+      // Abrir, concluir ou recusar muda os números do menu e das abas.
+      qc.invalidateQueries({ queryKey: CHAVE_SOLICITACOES });
     },
     onError: (e) => setAviso({ texto: (e as Error).message, grave: true }),
   });
@@ -285,15 +362,22 @@ function Lista({ lojaid }: { lojaid: number }) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap gap-1">
-        {(["abertas", ...SITUACOES, "todas"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltro(f)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${filtro === f ? "bg-card font-semibold" : "text-muted-foreground"}`}
-          >
-            {f === "abertas" ? "A resolver" : f === "todas" ? "Todas" : f}
-          </button>
-        ))}
+        {(["abertas", ...SITUACOES, "todas"] as const).map((f) => {
+          const cor = NUMERO_NA_ABA[f];
+          const quantos =
+            f === "abertas" ? aqui.aResolver : f === "Aberta" ? aqui.abertas : f === "Em andamento" ? aqui.andamento : 0;
+          return (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm ${filtro === f ? "bg-card font-semibold" : "text-muted-foreground"}`}
+            >
+              {f === "abertas" ? "A resolver" : f === "todas" ? "Todas" : f}
+              {cor === "vermelho" && <Bandeirinha quantos={quantos} />}
+              {cor === "cinza" && <Discreta quantos={quantos} />}
+            </button>
+          );
+        })}
       </div>
 
       {aviso && (
