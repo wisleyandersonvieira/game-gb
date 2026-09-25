@@ -22,6 +22,7 @@ import {
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import { liberarSom, somLiberado, tarefasNovas, tocar } from "@/painel/somDaFila";
 import { PedidoNoTablet } from "@/painel/PedidoNoTablet";
+import { MuralNoTablet } from "@/painel/MuralNoTablet";
 
 export const Route = createFileRoute("/tablet")({
   ssr: false,
@@ -66,8 +67,10 @@ function Tablet() {
   // painel entram aqui quando existirem.
   const [menuAberto, setMenuAberto] = useState(false);
   // Quando a pessoa toca num item do menu, o PIN é pedido para ELE.
-  const [doMenu, setDoMenu] = useState<"pedido" | null>(null);
-  const [pedido, setPedido] = useState<{ nome: string; passe: string; funcionarioid: number } | null>(null);
+  const [doMenu, setDoMenu] = useState<"pedido" | "mural" | null>(null);
+  type Sessao = { nome: string; passe: string; funcionarioid: number };
+  const [pedido, setPedido] = useState<Sessao | null>(null);
+  const [mural, setMural] = useState<Sessao | null>(null);
 
   const fila = useQuery({
     queryKey: ["fila-tablet"],
@@ -109,9 +112,12 @@ function Tablet() {
 
   // O PIN do menu usa a MESMA modal e a MESMA trava do pegar tarefa.
   const abrirPedido = useMutation({
-    mutationFn: (pin: string) => conferirPinNoTablet({ data: { pin } }),
+    mutationFn: (pin: string) =>
+      conferirPinNoTablet({ data: { pin, assunto: doMenu === "mural" ? "mural" : "pedido" } }),
     onSuccess: (r) => {
-      setPedido({ nome: r.nome, passe: r.passe, funcionarioid: r.funcionarioid });
+      const sessao = { nome: r.nome, passe: r.passe, funcionarioid: r.funcionarioid };
+      if (doMenu === "mural") setMural(sessao);
+      else setPedido(sessao);
       setDoMenu(null);
     },
   });
@@ -181,6 +187,18 @@ function Tablet() {
             <>
               <div className="fixed inset-0 z-20" onClick={() => setMenuAberto(false)} />
               <ul className="absolute right-0 top-full z-30 mt-1 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+                <li>
+                  <button
+                    onClick={() => {
+                      setMenuAberto(false);
+                      abrirPedido.reset();
+                      setDoMenu("mural");
+                    }}
+                    className="min-h-[48px] w-full px-4 text-left text-lg"
+                  >
+                    Mural
+                  </button>
+                </li>
                 <li>
                   <button
                     onClick={() => {
@@ -286,10 +304,24 @@ function Tablet() {
         />
       )}
 
+      {mural && (
+        <MuralNoTablet
+          nome={mural.nome}
+          passe={mural.passe}
+          funcionarioid={mural.funcionarioid}
+          fechar={() => setMural(null)}
+          pronto={(texto) => {
+            setMural(null);
+            setRecado(texto);
+            setTimeout(() => setRecado(null), 6000);
+          }}
+        />
+      )}
+
       {/* O PIN do menu: MESMA modal, MESMA trava, erro dentro dela. */}
-      {doMenu === "pedido" && (
+      {doMenu !== null && (
         <TecladoDoPin
-          titulo="Quem está pedindo?"
+          titulo={doMenu === "mural" ? "Quem está lendo?" : "Quem está pedindo?"}
           ocupado={abrirPedido.isPending}
           erro={abrirPedido.isError ? (abrirPedido.error as Error).message : null}
           cancelar={() => {

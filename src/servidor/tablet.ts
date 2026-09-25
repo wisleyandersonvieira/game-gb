@@ -300,7 +300,11 @@ export const abrirPedidoNoTablet = createServerFn({ method: "POST" })
 /** Só confere o PIN e devolve o nome: é o que abre a tela do pedido. */
 export const conferirPinNoTablet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { pin: string }) => ({ pin: typeof d?.pin === "string" ? d.pin : "" }))
+  .validator((d: { pin: string; assunto?: string }) => ({
+    pin: typeof d?.pin === "string" ? d.pin : "",
+    // Só os assuntos que existem: o navegador não inventa um.
+    assunto: d?.assunto === "mural" ? "mural" : "pedido",
+  }))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const t = await tabletDoToken(supabase, userId);
@@ -309,7 +313,69 @@ export const conferirPinNoTablet = createServerFn({ method: "POST" })
     // número. Dois minutos cobrem os 90 segundos da tela com folga.
     return {
       nome: pessoa.nome,
-      passe: await emitirPasse(`pedido:${t.contaid}:${t.lojaid}`, String(pessoa.funcionarioid)),
+      // Um passe por ASSUNTO: o de pedido não abre o mural, e vice-versa.
+      passe: await emitirPasse(`${data.assunto}:${t.contaid}:${t.lojaid}`, String(pessoa.funcionarioid)),
       funcionarioid: pessoa.funcionarioid,
     };
+  });
+
+export type ComunicadoDoMural = {
+  assinaturaid: number;
+  titulo: string;
+  conteudo: string;
+  pontos: number;
+  quando: string;
+};
+
+/**
+ * O mural DELA: só os comunicados que ainda esperam ciência.
+ *
+ * Nada de lista dos colegas nem de histórico — o tablet é compartilhado, e o
+ * que aparece nele é visto por quem passa. Quem é a pessoa vem do PASSE que
+ * este servidor assinou depois de conferir o PIN.
+ */
+export const muralDoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { passe: string; funcionarioid: number }) => {
+    if (typeof d?.passe !== "string") throw new Error("Confirme o seu PIN de novo.");
+    if (!Number.isInteger(d?.funcionarioid)) throw new Error("Confirme o seu PIN de novo.");
+    return { passe: d.passe, funcionarioid: d.funcionarioid };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    await conferirPasse(data.passe, `mural:${t.contaid}:${t.lojaid}`, String(data.funcionarioid));
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: lista, error } = await supabaseAdmin.rpc("visao_mural", {
+      p_contaid: t.contaid, p_lojaid: t.lojaid, p_funcionarioid: data.funcionarioid,
+    });
+    if (error) throw new Error("Não foi possível abrir o mural agora.");
+    return (lista ?? []) as unknown as ComunicadoDoMural[];
+  });
+
+/** Dar ciência. Paga o bônus quando há, e nunca paga duas vezes. */
+export const darCienciaNoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { passe: string; funcionarioid: number; assinaturaid: number }) => {
+    if (typeof d?.passe !== "string") throw new Error("Confirme o seu PIN de novo.");
+    if (!Number.isInteger(d?.funcionarioid) || !Number.isInteger(d?.assinaturaid)) {
+      throw new Error("Comunicado não encontrado.");
+    }
+    return { passe: d.passe, funcionarioid: d.funcionarioid, assinaturaid: d.assinaturaid };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    await conferirPasse(data.passe, `mural:${t.contaid}:${t.lojaid}`, String(data.funcionarioid));
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: novo, error } = await supabaseAdmin.rpc("visao_dar_ciencia", {
+      p_contaid: t.contaid,
+      p_lojaid: t.lojaid,
+      p_funcionarioid: data.funcionarioid,
+      p_assinaturaid: data.assinaturaid,
+    });
+    if (error) throw new Error(error.message);
+    return { novo: novo === true };
   });

@@ -180,7 +180,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                   AND column_name = 'tvblocos')),
   (141, 'TV2', 'versao', 'o painel traz "em andamento" e o podio do mes', 'aplicar-tv-configuravel.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%podiomes%')
+         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%podiomes%'),
+  (150, 'B2', 'versao', 'o mural esta no tablet', 'aplicar-mural-no-tablet.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'visao_mural'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

@@ -7814,4 +7814,117 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 64. O MURAL no tablet (Etapa 1.12, parte B2)
+-- ===========================================================================
+-- O tablet e de todo mundo: ninguem pode ler o comunicado do colega nem dar
+-- ciencia no nome dele. As provas chamam a funcao direto, sem passar pela tela.
+DO $$ BEGIN RAISE NOTICE '64. o mural no tablet'; END $$;
+
+-- O fixture nasce no papel do SERVIDOR: o gestor nao escreve na tabela de
+-- comunicados direto, ele passa por publicar_comunicado.
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v_doc integer;
+BEGIN
+  INSERT INTO public.documentos (contaid, titulo, conteudo, pontosporciencia, status)
+  VALUES (1, 'Aviso do uniforme', 'Camisa nova a partir de segunda.', 5, 'Publicado')
+  RETURNING documentoid INTO v_doc;
+  PERFORM set_config('teste.mural_doc', v_doc::text, false);
+
+  -- Um comunicado para 9501 e outro para 9502: cada uma so pode ver o dela.
+  INSERT INTO public.documentosassinaturas (contaid, documentoid, funcionarioid, statusassinatura)
+  VALUES (1, v_doc, 9501, 'Pendente'), (1, v_doc, 9502, 'Pendente');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v jsonb; v_ass integer; v_outra integer; deu_erro boolean; v_saldo integer; v_novo boolean;
+BEGIN
+  SELECT assinaturaid INTO v_ass FROM public.documentosassinaturas
+   WHERE contaid = 1 AND funcionarioid = 9501
+     AND documentoid = current_setting('teste.mural_doc')::integer;
+  SELECT assinaturaid INTO v_outra FROM public.documentosassinaturas
+   WHERE contaid = 1 AND funcionarioid = 9502
+     AND documentoid = current_setting('teste.mural_doc')::integer;
+
+  -- O mural dela traz o dela.
+  v := public.visao_mural(1, 10, 9501);
+  PERFORM public.exigir(jsonb_array_length(v) >= 1, 'o mural traz o comunicado dela');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                 WHERE (x->>'assinaturaid')::integer = v_ass),
+                        'e e o dela mesma');
+  -- E NUNCA o do colega: o tablet e compartilhado.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                     WHERE (x->>'assinaturaid')::integer = v_outra),
+                        'e nunca o comunicado do colega');
+
+  -- Ninguem da ciencia no nome de outra pessoa.
+  BEGIN PERFORM public.visao_dar_ciencia(1, 10, 9501, v_outra); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem da ciencia no comunicado de outra pessoa');
+
+  -- Quem nao trabalha nesta loja nao abre o mural aqui.
+  BEGIN PERFORM public.visao_mural(1, 10, 9504); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem nao trabalha nesta loja nao abre o mural nela');
+
+  -- Dar ciencia paga o bonus, UMA vez.
+  SELECT saldopontos INTO v_saldo FROM public.funcionarios WHERE funcionarioid = 9501;
+  v_novo := public.visao_dar_ciencia(1, 10, 9501, v_ass);
+  PERFORM public.exigir(v_novo, 'a ciencia e registrada');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 9501)
+                        = v_saldo + 5,
+                        'e o bonus entra pelo livro de pontos');
+
+  -- De novo: nao paga outra vez.
+  v_novo := public.visao_dar_ciencia(1, 10, 9501, v_ass);
+  PERFORM public.exigir(NOT v_novo, 'dar ciencia de novo nao registra nada');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 9501)
+                        = v_saldo + 5,
+                        'e nao paga o bonus duas vezes');
+
+  -- Lido sai do mural: o tablet nao guarda historico.
+  v := public.visao_mural(1, 10, 9501);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                     WHERE (x->>'assinaturaid')::integer = v_ass),
+                        'o que ela leu sai do mural: nada de historico no tablet');
+
+  -- O livro fecha.
+  PERFORM public.exigir((SELECT coalesce(sum(pontos), 0) FROM public.movimentospontos
+                          WHERE contaid = 1 AND funcionarioid = 9501)
+                        = (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 9501),
+                        'o extrato dela fecha com o saldo');
+END $$;
+
+-- As duas funcoes recebem conta e loja: nunca liberadas para quem esta logado.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text; deu_erro boolean;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['visao_mural', 'visao_dar_ciencia'] LOOP
+    PERFORM public.exigir(NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = f
+         AND has_function_privilege('authenticated', p.oid, 'EXECUTE')),
+      'usuario logado nao chama public.' || f);
+  END LOOP;
+END $$;
+
+-- A conta B nao ve nada disso.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.documentos WHERE titulo = 'Aviso do uniforme'),
+                        'a conta B nao ve o comunicado da conta A');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

@@ -5536,6 +5536,19 @@ export type Database = {
         Returns: undefined
       }
       tv_blocos_padrao: { Args: Record<PropertyKey, never>; Returns: Json }
+      visao_mural: {
+        Args: { p_contaid: number; p_funcionarioid: number; p_lojaid: number }
+        Returns: Json
+      }
+      visao_dar_ciencia: {
+        Args: {
+          p_assinaturaid: number
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+        }
+        Returns: boolean
+      }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number
