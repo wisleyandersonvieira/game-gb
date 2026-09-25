@@ -209,3 +209,85 @@ export const meuExtrato = createServerFn({ method: "POST" })
     if (error) throw new Error("Não foi possível carregar o extrato agora.");
     return extrato as unknown as MeuExtrato;
   });
+
+export type PremioParaMim = { produtoid: number; nome: string; custo: number; estoque: number | null; cabe: boolean };
+export type CatalogoDela = { saldo: number; premios: PremioParaMim[] };
+
+export const meusPremios = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const p = await pessoaDoToken(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.rpc("eu_premios", {
+      p_contaid: p.contaid, p_funcionarioid: p.funcionarioid,
+    });
+    if (error) throw new Error("Não foi possível carregar os prêmios agora.");
+    return data as unknown as CatalogoDela;
+  });
+
+export type MeuResgate = {
+  resgateid: number;
+  nome: string;
+  pontos: number;
+  quando: string;
+  status: string;
+};
+
+export const meusResgates = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const p = await pessoaDoToken(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.rpc("eu_resgates", {
+      p_contaid: p.contaid, p_funcionarioid: p.funcionarioid,
+    });
+    if (error) throw new Error("Não foi possível carregar os seus pedidos agora.");
+    return (data ?? []) as unknown as MeuResgate[];
+  });
+
+/**
+ * Pedir resgate. Quem pede sai do TOKEN, nunca do navegador.
+ *
+ * O saldo e o estoque são conferidos no banco, no momento do pedido, lendo o
+ * livro de pontos — nunca um saldo que a tela calculou.
+ */
+export const pedirResgate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { produtoid?: number | null; valorreais?: number | null }) => ({
+    produtoid: Number.isInteger(d?.produtoid) ? (d.produtoid as number) : null,
+    valorreais:
+      typeof d?.valorreais === "number" && Number.isFinite(d.valorreais) ? d.valorreais : null,
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const p = await pessoaDoToken(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: id, error } = await supabaseAdmin.rpc("eu_pedir_resgate", {
+      p_contaid: p.contaid,
+      p_funcionarioid: p.funcionarioid,
+      p_produtoid: data.produtoid,
+      p_valorreais: data.valorreais,
+      p_lojaid: null,
+    });
+    // A mensagem do banco sobe inteira: ela diz o motivo (saldo, estoque,
+    // limite), e é o que a pessoa precisa ler.
+    if (error) throw new Error(error.message);
+    return { resgateid: id as number };
+  });
+
+/** Desistir enquanto está pendente: devolve pontos e estoque. */
+export const desistirDoResgate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { resgateid: number }) => ({ resgateid: d.resgateid }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const p = await pessoaDoToken(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.rpc("eu_cancelar_resgate", {
+      p_contaid: p.contaid, p_funcionarioid: p.funcionarioid, p_resgateid: data.resgateid,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });

@@ -3617,6 +3617,7 @@ export type Database = {
       }
       resgates: {
         Row: {
+          origem: string | null
           canceladopor: string | null
           contaid: number
           dataaprovacao: string | null
@@ -3640,6 +3641,7 @@ export type Database = {
           valorreais: number | null
         }
         Insert: {
+          origem?: string | null
           canceladopor?: string | null
           contaid?: number
           dataaprovacao?: string | null
@@ -3663,6 +3665,7 @@ export type Database = {
           valorreais?: number | null
         }
         Update: {
+          origem?: string | null
           canceladopor?: string | null
           contaid?: number
           dataaprovacao?: string | null
@@ -5500,6 +5503,22 @@ export type Database = {
           p_unidade?: string | null
         }
         Returns: number
+      }
+      eu_premios: { Args: { p_contaid: number; p_funcionarioid: number }; Returns: Json }
+      eu_resgates: { Args: { p_contaid: number; p_funcionarioid: number }; Returns: Json }
+      eu_pedir_resgate: {
+        Args: {
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid?: number | null
+          p_produtoid?: number | null
+          p_valorreais?: number | null
+        }
+        Returns: number
+      }
+      eu_cancelar_resgate: {
+        Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
+        Returns: undefined
       }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }

@@ -29,6 +29,7 @@ const DESTINOS = [
   { para: "/eu", nome: "Início", icone: "M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
   { para: "/eu/tarefas", nome: "Tarefas", icone: "M9 5h10M9 12h10M9 19h10M4 5l1 1 2-2M4 12l1 1 2-2M4 19l1 1 2-2" },
   { para: "/eu/extrato", nome: "Extrato", icone: "M4 5h16v14H4zM8 9h8M8 13h8M8 17h4" },
+  { para: "/eu/premios", nome: "Prêmios", icone: "M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7ZM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7Z" },
   { para: "/eu/perfil", nome: "Perfil", icone: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0" },
 ] as const;
 

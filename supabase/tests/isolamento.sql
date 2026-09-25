@@ -7527,4 +7527,139 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 62. O colaborador pede resgate pelo celular (Etapa 1.12, parte C2)
+-- ===========================================================================
+-- Isto mexe em PONTOS. As provas chamam a funcao direto, sem passar pela tela.
+DO $$ BEGIN RAISE NOTICE '62. o colaborador pede resgate'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE
+  v_saldo integer; v_id integer; deu_erro boolean; v_prod integer; v_caro integer;
+  v_antes integer; v_depois integer;
+BEGIN
+  -- Uma pessoa com saldo, e dois premios: um que cabe e um caro demais.
+  UPDATE public.funcionarios SET saldopontos = 0 WHERE contaid = 1 AND funcionarioid = 9801;
+  INSERT INTO public.movimentospontos (contaid, funcionarioid, tipo, pontos, descricao)
+  VALUES (1, 9801, 'ajuste_abertura', 100, 'saldo para o teste de resgate');
+  SELECT saldopontos INTO v_saldo FROM public.funcionarios WHERE funcionarioid = 9801;
+  PERFORM public.exigir(v_saldo = 100, 'o saldo veio do livro de pontos');
+
+  INSERT INTO public.produtosloja (produtoid, contaid, nome, custoempontos, estoquedisponivel, ativo)
+  OVERRIDING SYSTEM VALUE VALUES (9900, 1, 'Caneca', 30, 1, true) ON CONFLICT DO NOTHING;
+  INSERT INTO public.produtosloja (produtoid, contaid, nome, custoempontos, estoquedisponivel, ativo)
+  OVERRIDING SYSTEM VALUE VALUES (9901, 1, 'Bicicleta', 5000, 5, true) ON CONFLICT DO NOTHING;
+  v_prod := 9900; v_caro := 9901;
+
+  -- O catalogo dela: mostra o que cabe e o que nao cabe.
+  PERFORM public.exigir((public.eu_premios(1, 9801)->>'saldo')::integer = 100,
+                        'o catalogo traz o saldo do banco');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.eu_premios(1, 9801)->'premios') x
+                                 WHERE (x->>'produtoid')::integer = v_prod AND (x->>'cabe')::boolean),
+                        'a caneca cabe no saldo dela');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.eu_premios(1, 9801)->'premios') x
+                                 WHERE (x->>'produtoid')::integer = v_caro AND NOT (x->>'cabe')::boolean),
+                        'e a bicicleta aparece como fora do alcance');
+
+  -- PEDIR: nasce Pendente e os pontos SAEM na hora, pelo livro.
+  v_id := public.eu_pedir_resgate(1, 9801, v_prod);
+  PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = v_id) = 'Pendente',
+                        'o pedido nasce Pendente, esperando o gestor');
+  PERFORM public.exigir((SELECT origem FROM public.resgates WHERE resgateid = v_id) = 'colaborador',
+                        'e fica marcado como pedido pelo colaborador');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 9801) = 70,
+                        'os pontos saem no momento do pedido (reserva)');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.movimentospontos
+                                 WHERE resgateid = v_id AND pontos = -30),
+                        'e a saida esta no livro, como manda a regra');
+  PERFORM public.exigir((SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = v_prod) = 0,
+                        'o estoque tambem fica reservado');
+
+  -- DESISTIR devolve exatamente o que foi reservado.
+  PERFORM public.eu_cancelar_resgate(1, 9801, v_id);
+  PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = v_id) = 'Cancelado',
+                        'desistir cancela o pedido');
+  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 9801) = 100,
+                        'e devolve os pontos, sem sobra nem falta');
+  PERFORM public.exigir((SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = v_prod) = 1,
+                        'e o estoque volta');
+  PERFORM public.exigir((SELECT motivocancelamento FROM public.resgates WHERE resgateid = v_id)
+                        = 'cancelado pelo colaborador',
+                        'com o motivo registrado');
+  -- O livro fecha: a soma dos movimentos e o saldo.
+  PERFORM public.exigir((SELECT coalesce(sum(pontos), 0) FROM public.movimentospontos
+                          WHERE contaid = 1 AND funcionarioid = 9801)
+                        = (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 9801),
+                        'o extrato fecha com o saldo depois de pedir e desistir');
+
+  -- SALDO INSUFICIENTE diz quanto falta.
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, v_caro); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'sem saldo, o pedido e recusado');
+
+  -- PREMIO DE OUTRA CONTA: recusado.
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, 9902); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'premio que nao existe na conta dela e recusado');
+
+  -- VALOR INVALIDO no abate.
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, NULL, 0); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'abate de valor zero e recusado');
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, NULL, -5); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem valor negativo');
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, v_prod, 10); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'premio E valor ao mesmo tempo nao passa');
+
+  -- LIMITE DE PENDENTES.
+  UPDATE public.configuracoes SET valor = '2' WHERE contaid = 1 AND chave = 'MAX_RESGATES_PENDENTES';
+  UPDATE public.produtosloja SET estoquedisponivel = 10 WHERE produtoid = v_prod;
+  PERFORM public.eu_pedir_resgate(1, 9801, v_prod);
+  PERFORM public.eu_pedir_resgate(1, 9801, v_prod);
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, v_prod); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'no limite de pendentes, o pedido e recusado');
+  UPDATE public.configuracoes SET valor = '3' WHERE contaid = 1 AND chave = 'MAX_RESGATES_PENDENTES';
+END $$;
+
+-- Ninguem pede no nome de outra pessoa, e ninguem cancela pedido alheio.
+DO $$
+DECLARE v_id integer; deu_erro boolean;
+BEGIN
+  SELECT resgateid INTO v_id FROM public.resgates
+   WHERE contaid = 1 AND funcionarioid = 9801 AND status = 'Pendente' LIMIT 1;
+
+  BEGIN PERFORM public.eu_cancelar_resgate(1, 9501, v_id); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem cancela o pedido de outra pessoa');
+
+  -- Pessoa de outra conta: recusada.
+  BEGIN PERFORM public.eu_pedir_resgate(2, 9801, 9900); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao se pede resgate misturando conta e pessoa');
+END $$;
+
+-- As funcoes recebem a conta: nunca liberadas para quem esta logado.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text; deu_erro boolean;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['eu_premios', 'eu_resgates', 'eu_pedir_resgate', 'eu_cancelar_resgate'] LOOP
+    PERFORM public.exigir(NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = f
+         AND has_function_privilege('authenticated', p.oid, 'EXECUTE')),
+      'usuario logado nao chama public.' || f);
+  END LOOP;
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

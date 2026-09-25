@@ -84,6 +84,38 @@ rm -f /tmp/gamegb-sessao1.txt /tmp/gamegb-sessao2.txt
 saida_c="$(rodar "$RAIZ/supabase/tests/concorrencia_confere.sql" 2>&1)" && ok_c=1 || ok_c=0
 echo "$saida_c" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
 
+echo "==> colaborador pedindo resgate: dois toques, e estoque 1"
+rodar "$RAIZ/supabase/tests/concorrencia_resgate_colab_preparo.sql" >/dev/null
+docker cp "$RAIZ/supabase/tests/concorrencia_resgate_colab_sessao.sql" "$CONTAINER:/sessao_rc.sql" >/dev/null
+# (a) a MESMA pessoa tocando duas vezes
+docker exec "$CONTAINER" psql -U postgres -q -v pessoa=910 -v produto=910 -f /sessao_rc.sql >/tmp/gamegb-rc1.txt 2>&1 &
+pa=$!
+docker exec "$CONTAINER" psql -U postgres -q -v pessoa=910 -v produto=910 -f /sessao_rc.sql >/tmp/gamegb-rc2.txt 2>&1 &
+pb=$!
+wait "$pa" "$pb" || true
+rc_a=0
+for f in /tmp/gamegb-rc1.txt /tmp/gamegb-rc2.txt; do grep -q "ERROR" "$f" && rc_a=$((rc_a + 1)); done
+echo "    dois toques: conexao recusada $rc_a de 2"
+# (b) DUAS pessoas disputando o ultimo do estoque
+docker exec "$CONTAINER" psql -U postgres -q -v pessoa=912 -v produto=911 -f /sessao_rc.sql >/tmp/gamegb-rc3.txt 2>&1 &
+pc=$!
+docker exec "$CONTAINER" psql -U postgres -q -v pessoa=913 -v produto=911 -f /sessao_rc.sql >/tmp/gamegb-rc4.txt 2>&1 &
+pd=$!
+wait "$pc" "$pd" || true
+rc_b=0
+for f in /tmp/gamegb-rc3.txt /tmp/gamegb-rc4.txt; do grep -q "ERROR" "$f" && rc_b=$((rc_b + 1)); done
+echo "    estoque 1: conexao recusada $rc_b de 2"
+grep -h ERROR /tmp/gamegb-rc1.txt /tmp/gamegb-rc2.txt /tmp/gamegb-rc3.txt /tmp/gamegb-rc4.txt || true
+rm -f /tmp/gamegb-rc1.txt /tmp/gamegb-rc2.txt /tmp/gamegb-rc3.txt /tmp/gamegb-rc4.txt
+
+saida_rc="$(rodar "$RAIZ/supabase/tests/concorrencia_resgate_colab_confere.sql" 2>&1)" && ok_rc=1 || ok_rc=0
+echo "$saida_rc" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
+if [ "$ok_rc" != "1" ] || [ "$rc_a" != "1" ] || [ "$rc_b" != "1" ]; then
+  ok_c=0
+  saida_c="$saida_c
+$saida_rc"
+fi
+
 echo "==> duas aprovacoes ao mesmo tempo disputando a mesma conquista"
 rodar "$RAIZ/supabase/tests/concorrencia_conquista_preparo.sql" >/dev/null
 docker cp "$RAIZ/supabase/tests/concorrencia_conquista_sessao.sql" "$CONTAINER:/sessao_c.sql" >/dev/null

@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SeletorDeLoja } from "@/lojas/loja-ativa";
 import type { GrupoMenu, ItemMenu } from "./menu";
+import { useResgatesPendentes } from "./pendencias";
 import { carregarTemaDoUsuario, escolherTema, temaAtual, type Tema } from "./tema";
 import { useUsuario } from "./usuario";
 import { Logo, Simbolo } from "./Logo";
@@ -37,9 +38,25 @@ function BotaoTema() {
   );
 }
 
+/** A bandeirinha vermelha. Some sozinha quando zera. */
+export function Bandeirinha({ quantos }: { quantos: number }) {
+  if (quantos <= 0) return null;
+  return (
+    <span
+      aria-label={`${quantos} esperando`}
+      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-semibold text-destructive-foreground"
+    >
+      {quantos > 99 ? "99+" : quantos}
+    </span>
+  );
+}
+
 function ItemLateral({ item, caminho, recolhido }: { item: ItemMenu; caminho: string; recolhido: boolean }) {
   const eh = ativo(caminho, item.to);
   const Icone = item.icone;
+  // Só o menu Prêmios tem contador hoje.
+  const pendentes = useResgatesPendentes();
+  const quantos = item.to === "/premios" ? pendentes : 0;
   return (
     <Link
       to={item.to}
@@ -51,6 +68,10 @@ function ItemLateral({ item, caminho, recolhido }: { item: ItemMenu; caminho: st
     >
       <Icone className="h-5 w-5 shrink-0" aria-hidden />
       {!recolhido && <span className="truncate">{item.label}</span>}
+      {!recolhido && <Bandeirinha quantos={quantos} />}
+      {recolhido && quantos > 0 && (
+        <span className="absolute ml-6 -mt-4 h-2 w-2 rounded-full bg-destructive" aria-hidden />
+      )}
     </Link>
   );
 }

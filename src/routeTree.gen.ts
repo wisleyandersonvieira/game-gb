@@ -48,6 +48,7 @@ import { Route as ECodigoRouteImport } from './routes/e.$codigo'
 import { Route as EuIndexRouteImport } from './routes/eu/index'
 import { Route as EuExtratoRouteImport } from './routes/eu/extrato'
 import { Route as EuPerfilRouteImport } from './routes/eu/perfil'
+import { Route as EuPremiosRouteImport } from './routes/eu/premios'
 import { Route as EuTarefasRouteImport } from './routes/eu/tarefas'
 import { Route as TvIndexRouteImport } from './routes/tv.index'
 import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
@@ -254,6 +255,11 @@ const EuPerfilRoute = EuPerfilRouteImport.update({
   path: '/perfil',
   getParentRoute: () => EuRoute,
 } as any)
+const EuPremiosRoute = EuPremiosRouteImport.update({
+  id: '/premios',
+  path: '/premios',
+  getParentRoute: () => EuRoute,
+} as any)
 const EuTarefasRoute = EuTarefasRouteImport.update({
   id: '/tarefas',
   path: '/tarefas',
@@ -307,6 +313,7 @@ export interface FileRoutesByFullPath {
   '/e/$codigo': typeof ECodigoRoute
   '/eu/extrato': typeof EuExtratoRoute
   '/eu/perfil': typeof EuPerfilRoute
+  '/eu/premios': typeof EuPremiosRoute
   '/eu/tarefas': typeof EuTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
@@ -348,6 +355,7 @@ export interface FileRoutesByTo {
   '/e/$codigo': typeof ECodigoRoute
   '/eu/extrato': typeof EuExtratoRoute
   '/eu/perfil': typeof EuPerfilRoute
+  '/eu/premios': typeof EuPremiosRoute
   '/eu/tarefas': typeof EuTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
@@ -393,6 +401,7 @@ export interface FileRoutesById {
   '/e/$codigo': typeof ECodigoRoute
   '/eu/extrato': typeof EuExtratoRoute
   '/eu/perfil': typeof EuPerfilRoute
+  '/eu/premios': typeof EuPremiosRoute
   '/eu/tarefas': typeof EuTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
@@ -438,6 +447,7 @@ export interface FileRouteTypes {
     | '/e/$codigo'
     | '/eu/extrato'
     | '/eu/perfil'
+    | '/eu/premios'
     | '/eu/tarefas'
     | '/tv/$codigo'
     | '/admin/'
@@ -479,6 +489,7 @@ export interface FileRouteTypes {
     | '/e/$codigo'
     | '/eu/extrato'
     | '/eu/perfil'
+    | '/eu/premios'
     | '/eu/tarefas'
     | '/tv/$codigo'
     | '/admin'
@@ -523,6 +534,7 @@ export interface FileRouteTypes {
     | '/e/$codigo'
     | '/eu/extrato'
     | '/eu/perfil'
+    | '/eu/premios'
     | '/eu/tarefas'
     | '/tv/$codigo'
     | '/admin/'
@@ -822,6 +834,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EuPerfilRouteImport
       parentRoute: typeof EuRoute
     }
+    '/eu/premios': {
+      id: '/eu/premios'
+      path: '/premios'
+      fullPath: '/eu/premios'
+      preLoaderRoute: typeof EuPremiosRouteImport
+      parentRoute: typeof EuRoute
+    }
     '/eu/tarefas': {
       id: '/eu/tarefas'
       path: '/tarefas'
@@ -916,6 +935,7 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
 interface EuRouteChildren {
   EuExtratoRoute: typeof EuExtratoRoute
   EuPerfilRoute: typeof EuPerfilRoute
+  EuPremiosRoute: typeof EuPremiosRoute
   EuTarefasRoute: typeof EuTarefasRoute
   EuIndexRoute: typeof EuIndexRoute
 }
@@ -923,6 +943,7 @@ interface EuRouteChildren {
 const EuRouteChildren: EuRouteChildren = {
   EuExtratoRoute: EuExtratoRoute,
   EuPerfilRoute: EuPerfilRoute,
+  EuPremiosRoute: EuPremiosRoute,
   EuTarefasRoute: EuTarefasRoute,
   EuIndexRoute: EuIndexRoute,
 }

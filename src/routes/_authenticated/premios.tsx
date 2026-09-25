@@ -320,6 +320,8 @@ type Troca = {
   pessoa: string;
   premio: string;
   loja: string | null;
+  /** "colaborador" quando o pedido veio do celular. */
+  origem: string | null;
 };
 
 function ListaDeResgates() {
@@ -343,6 +345,7 @@ function ListaDeResgates() {
         pessoa: t.pessoa,
         premio: t.premio,
         loja: t.loja,
+        origem: t.origem,
       }));
     },
   });
@@ -415,6 +418,12 @@ function ListaDeResgates() {
             </p>
             <p className="text-sm text-muted-foreground">
               {r.pessoa} · −{r.pontosgastos} pontos · {dataHora(r.datasolicitacao)}
+              {/* Para o gestor saber que o pedido não foi ele quem lançou. */}
+              {r.origem === "colaborador" && (
+                <span className="ml-2 rounded-md border border-border px-2 py-0.5 text-xs">
+                  solicitado pelo colaborador
+                </span>
+              )}
               {r.loja && ` · ${r.loja}`}
             </p>
             {r.motivocancelamento && <p className="text-xs text-muted-foreground">Cancelado: {r.motivocancelamento}</p>}
