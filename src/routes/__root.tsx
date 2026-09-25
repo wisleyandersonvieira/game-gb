@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { OPERACIONAL } from "@/ui/prazos";
 import appCss from "@/styles.css?url";
 import { SCRIPT_TEMA } from "@/ui/tema";
 
@@ -33,7 +34,26 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
-  const [queryClient] = useState(() => new QueryClient());
+  // Antes não havia configuração nenhuma, e o padrão é "tudo vence na hora":
+  // cada troca de tela e cada volta para a aba refaziam TODAS as consultas.
+  // Media de 24/09/2026: resumo_das_lojas, que só existe numa tela, tinha sido
+  // chamada 163 vezes. Agora o padrão é conservador (30 s) e cada consulta
+  // ajusta o seu prazo (ver src/ui/prazos.ts).
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: OPERACIONAL,
+            gcTime: 5 * 60_000,
+            // Voltar para a aba não refaz tudo. Quem precisa disso (Início,
+            // tablet) liga por conta própria.
+            refetchOnWindowFocus: false,
+            retry: 1,
+          },
+        },
+      }),
+  );
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>

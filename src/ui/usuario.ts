@@ -16,7 +16,9 @@ export function useUsuario() {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   useEffect(() => {
     let vivo = true;
-    supabase.auth.getUser().then(({ data }) => vivo && setUsuario(ler(data.user)));
+    // getSession() é local: o Layout envolve todas as telas, e perguntar ao
+    // servidor aqui custava uma ida em cada troca de tela (25/09/2026).
+    supabase.auth.getSession().then(({ data }) => vivo && setUsuario(ler(data.session?.user)));
     const { data: escuta } = supabase.auth.onAuthStateChange((_e, sessao) => setUsuario(ler(sessao?.user)));
     return () => {
       vivo = false;

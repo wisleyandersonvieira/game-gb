@@ -10,6 +10,7 @@ import type { GrupoMenu, ItemMenu } from "./menu";
 import { carregarTemaDoUsuario, escolherTema, temaAtual, type Tema } from "./tema";
 import { useUsuario } from "./usuario";
 import { Logo, Simbolo } from "./Logo";
+import { ESTAVEL } from "@/ui/prazos";
 
 const CHAVE_RECOLHIDO = "gamegb.menurecolhido";
 
@@ -189,7 +190,9 @@ export function Layout({
   useEffect(() => setMais(false), [caminho]);
 
   const conta = useQuery({
+    // Aparece em toda tela e quase nunca muda.
     queryKey: ["nome-da-conta"],
+    staleTime: ESTAVEL,
     enabled: comLoja,
     queryFn: async () => {
       const { data } = await supabase.from("contas").select("nome").limit(1).maybeSingle();

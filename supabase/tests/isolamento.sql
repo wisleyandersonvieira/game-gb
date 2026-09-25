@@ -6177,4 +6177,74 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 51. O guardiao das telas do gestor, com UMA ida ao servidor (25/09/2026)
+-- ===========================================================================
+-- O guardiao deixou de perguntar ao servico de login antes de perguntar ao
+-- banco: agora meu_acesso() e a unica conferencia. Ela roda no banco, COM o
+-- token, entao confere melhor do que a tela conferia. Estas provas garantem
+-- que ninguem entra por engano.
+DO $$ BEGIN RAISE NOTICE '51. guardiao com uma ida so'; END $$;
+
+SET ROLE authenticated;
+
+-- Token invalido / vencido / ausente: auth.uid() vem vazio.
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'semlogin',
+                        'sem token valido, o banco diz "semlogin" (a tela manda para a entrada)');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0,
+                        'e sem token nao le funcionario nenhum');
+  PERFORM public.exigir((SELECT count(*) FROM public.entregas) = 0, 'nem entrega');
+  PERFORM public.exigir(public.minha_conta() IS NULL, 'nem tem conta');
+END $$;
+
+-- Token de alguem que existe no login mas nao tem vinculo nenhum.
+SET teste.uid = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+DO $$
+BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'nenhum',
+                        'token bom sem vinculo: "nenhum" (a tela manda para "sem acesso")');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0,
+                        'e nao le nada de conta nenhuma');
+  PERFORM public.exigir(public.minha_conta() IS NULL, 'nem tem conta');
+END $$;
+
+-- O master da conta A: entra, e so ve a conta dele.
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'master', 'o master e reconhecido');
+  PERFORM public.exigir(public.minha_conta() = 1, 'com a conta dele');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios WHERE contaid <> 1) = 0,
+                        'e nao alcanca a conta de ninguem mais');
+END $$;
+
+-- O COLABORADOR e o TABLET continuam sem as telas do gestor: para eles
+-- minha_conta() responde vazio, entao o banco nao entrega nada mesmo que
+-- alguem digitasse o endereco.
+SET teste.uid = '10100000-0000-0000-0000-000000000002';   -- colaborador da conta A
+DO $$
+BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'colaborador', 'o colaborador e reconhecido');
+  PERFORM public.exigir(public.minha_conta() IS NULL,
+                        'e para ele minha_conta() responde vazio: as telas do gestor ficam vazias');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'nao le a equipe');
+  PERFORM public.exigir((SELECT count(*) FROM public.entregas) = 0, 'nem as entregas');
+  PERFORM public.exigir((SELECT count(*) FROM public.fila_da_loja(10)) = 0, 'nem a fila da loja');
+END $$;
+
+SET teste.uid = '10100000-0000-0000-0000-000000000001';   -- tablet da loja 10
+DO $$
+BEGIN
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'loja', 'o tablet e reconhecido');
+  PERFORM public.exigir(public.minha_conta() IS NULL, 'e tambem responde vazio');
+  PERFORM public.exigir((SELECT count(*) FROM public.funcionarios) = 0, 'o tablet nao le a equipe');
+  PERFORM public.exigir((SELECT count(*) FROM public.contas) = 0, 'nem a conta');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

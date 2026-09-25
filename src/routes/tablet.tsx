@@ -22,8 +22,10 @@ import {
 export const Route = createFileRoute("/tablet")({
   ssr: false,
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/auth" });
+    // getSession() é local: não gasta uma ida ao servidor só para saber se
+    // existe token. Quem confere de verdade é meuAcesso(), no banco.
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw redirect({ to: "/auth" });
     const acesso = await meuAcesso();
     if (acesso.tipo !== "loja") throw redirect({ to: "/meu-acesso" });
   },

@@ -93,15 +93,15 @@ function Catalogo() {
   const catalogo = useQuery({
     queryKey: ["catalogo-tarefas"],
     queryFn: async () => {
-      const { data: tarefas, error } = await supabase
-        .from("tarefas")
-        .select("tarefaid, titulo, descricao, pontos, setor, ativa, sistema")
-        .order("titulo");
+      // As duas não dependem uma da outra: vão juntas.
+      const [{ data: tarefas, error }, { data: vinculos, error: erroVinculos }] = await Promise.all([
+        supabase
+          .from("tarefas")
+          .select("tarefaid, titulo, descricao, pontos, setor, ativa, sistema")
+          .order("titulo"),
+        supabase.from("tarefaslojas").select("tarefaid, lojaid, ativo"),
+      ]);
       if (error) throw error;
-
-      const { data: vinculos, error: erroVinculos } = await supabase
-        .from("tarefaslojas")
-        .select("tarefaid, lojaid, ativo");
       if (erroVinculos) throw erroVinculos;
 
       const porTarefa = new Map<number, number[]>();
@@ -404,23 +404,24 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   const opcoesFuncionarios = useQuery({
     queryKey: ["funcionarios-da-loja", lojaid],
     queryFn: async () => {
-      const { data: vinculos, error } = await supabase
+      // Uma ida só: o vínculo traz a pessoa junto. Antes eram duas em fila
+      // (buscar os vínculos, esperar, buscar as pessoas). O "!inner" e o
+      // filtro funcionarios.ativo mantêm exatamente a mesma regra de antes:
+      // vínculo ativo NESTA loja E pessoa ativa.
+      const { data, error } = await supabase
         .from("funcionarioslojas")
-        .select("funcionarioid")
+        .select("funcionarios!inner(funcionarioid, nomecompleto)")
         .eq("lojaid", lojaid)
-        .eq("ativo", true);
-      if (error) throw error;
-      const ids = (vinculos ?? []).map((v) => v.funcionarioid);
-      if (ids.length === 0) return [];
-
-      const { data: pessoas, error: erroPessoas } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto")
-        .in("funcionarioid", ids)
         .eq("ativo", true)
-        .order("nomecompleto");
-      if (erroPessoas) throw erroPessoas;
-      return pessoas ?? [];
+        .eq("funcionarios.ativo", true);
+      if (error) throw error;
+
+      type Pessoa = { funcionarioid: number; nomecompleto: string };
+      const pessoas = (data ?? [])
+        .map((v) => (v as unknown as { funcionarios: Pessoa }).funcionarios)
+        .filter((p): p is Pessoa => !!p);
+      pessoas.sort((a, b) => a.nomecompleto.localeCompare(b.nomecompleto, "pt-BR"));
+      return pessoas;
     },
   });
 
@@ -441,41 +442,41 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       const linhas = data ?? [];
       if (linhas.length === 0) return [] as Linha[];
 
-      const { data: tarefas } = await supabase
-        .from("tarefas")
-        .select("tarefaid, titulo")
-        .in("tarefaid", [...new Set(linhas.map((l) => l.tarefaid))]);
-      const { data: pessoas } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto")
-        .in(
-          "funcionarioid",
-          [...new Set(linhas.map((l) => l.funcionarioid).filter((v): v is number => v !== null))],
-        );
-
-      // Quem pode pegar cada tarefa compartilhada.
+      // As três dependem da lista acima, mas não uma da outra: vão juntas.
+      // Os candidatos já trazem o nome junto, então caiu também a quarta ida
+      // que existia só para buscar esses nomes (eram 4 em fila; agora é 1).
       const idsCompartilhadas = linhas.filter((l) => l.compartilhada).map((l) => l.atribuicaoid);
-      const { data: candidatos } = idsCompartilhadas.length
-        ? await supabase
-            .from("tarefascandidatos")
-            .select("atribuicaoid, funcionarioid")
-            .in("atribuicaoid", idsCompartilhadas)
-        : { data: [] };
-      const { data: maisPessoas } = candidatos?.length
-        ? await supabase
-            .from("funcionarios")
-            .select("funcionarioid, nomecompleto")
-            .in("funcionarioid", [...new Set(candidatos.map((c) => c.funcionarioid))])
-        : { data: [] };
+      type Pessoa = { funcionarioid: number; nomecompleto: string };
+      type Candidato = { atribuicaoid: number; funcionarios: Pessoa | null };
+
+      const [{ data: tarefas }, { data: pessoas }, { data: candidatos }] = await Promise.all([
+        supabase
+          .from("tarefas")
+          .select("tarefaid, titulo")
+          .in("tarefaid", [...new Set(linhas.map((l) => l.tarefaid))]),
+        supabase
+          .from("funcionarios")
+          .select("funcionarioid, nomecompleto")
+          .in(
+            "funcionarioid",
+            [...new Set(linhas.map((l) => l.funcionarioid).filter((v): v is number => v !== null))],
+          ),
+        // Quem pode pegar cada tarefa compartilhada, com o nome junto.
+        idsCompartilhadas.length
+          ? supabase
+              .from("tarefascandidatos")
+              .select("atribuicaoid, funcionarios(funcionarioid, nomecompleto)")
+              .in("atribuicaoid", idsCompartilhadas)
+          : Promise.resolve({ data: [] as unknown[] }),
+      ]);
 
       const titulo = new Map((tarefas ?? []).map((t) => [t.tarefaid, t.titulo]));
-      const nome = new Map(
-        [...(pessoas ?? []), ...(maisPessoas ?? [])].map((p) => [p.funcionarioid, p.nomecompleto]),
-      );
+      const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
       const daTarefa = new Map<number, string[]>();
-      for (const c of candidatos ?? []) {
+      for (const bruto of candidatos ?? []) {
+        const c = bruto as unknown as Candidato;
         const atual = daTarefa.get(c.atribuicaoid) ?? [];
-        atual.push(nome.get(c.funcionarioid) ?? "—");
+        atual.push(c.funcionarios?.nomecompleto ?? "—");
         daTarefa.set(c.atribuicaoid, atual);
       }
 

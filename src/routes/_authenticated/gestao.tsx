@@ -7,6 +7,7 @@ import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { criarAcessoLoja, definirSenhaDoTablet, fichaDosTablets, redefinirSenhaLoja } from "@/servidor/acesso";
 import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
+import { ESTAVEL } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
@@ -517,6 +518,7 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
 
   const conta = useQuery({
     queryKey: ["codigo-da-empresa"],
+    staleTime: ESTAVEL,
     queryFn: async () => {
       const { data, error } = await supabase.from("contas").select("codigo, nome").single();
       if (error) throw error;

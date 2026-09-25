@@ -7,6 +7,7 @@ import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { Justificar } from "@/pessoas/justificar";
 import { Pontos } from "@/ui/Pontos";
 import { Pagina } from "@/ui/Pagina";
+import { CADASTRO, DINHEIRO } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/relatorios")({
   component: Relatorios,
@@ -120,6 +121,7 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
 
   const pessoas = useQuery({
     queryKey: ["pessoas-relatorio"],
+    staleTime: CADASTRO,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("funcionarios")
@@ -180,13 +182,17 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
     queryKey: ["conquistas-pessoa", funcionarioid],
     enabled: escolhida,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("conquistasfuncionarios")
-        .select("conquistafuncionarioid, conquistaid, dataconquista, pontosbonus")
-        .eq("funcionarioid", Number(funcionarioid))
-        .order("dataconquista", { ascending: false });
+      // A lista de conquistas da pessoa e o catálogo de conquistas não
+      // dependem um do outro: vão juntos.
+      const [{ data, error }, { data: nomes }] = await Promise.all([
+        supabase
+          .from("conquistasfuncionarios")
+          .select("conquistafuncionarioid, conquistaid, dataconquista, pontosbonus")
+          .eq("funcionarioid", Number(funcionarioid))
+          .order("dataconquista", { ascending: false }),
+        supabase.from("conquistas").select("conquistaid, nome, icone"),
+      ]);
       if (error) throw error;
-      const { data: nomes } = await supabase.from("conquistas").select("conquistaid, nome, icone");
       const porId = new Map((nomes ?? []).map((c) => [c.conquistaid, c]));
       return (data ?? []).map((l) => ({
         ...l,
@@ -400,7 +406,9 @@ function PorTarefa({ de, ate }: { de: string; ate: string }) {
   const lojaFiltro = alcance === "loja" ? lojaAtiva : null;
 
   const analise = useQuery({
+    // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
     queryKey: ["analise-tarefas", de, ate, lojaFiltro],
+    ...DINHEIRO,
     enabled: de !== "" && ate !== "",
     queryFn: async () => {
       const { data, error } = await supabase.rpc("analise_de_tarefas", {

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { validarArquivo } from "@/rh/arquivos";
-import { dataHoraBr } from "@/rh/pdf";
+import { dataHoraBr } from "@/rh/datas";
 import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/documentos-pessoais")({

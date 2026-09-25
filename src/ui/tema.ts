@@ -33,7 +33,7 @@ export async function escolherTema(tema: Tema) {
 
 /** Ao entrar: o tema salvo no login manda. */
 export async function carregarTemaDoUsuario() {
-  const { data } = await supabase.auth.getUser();
-  const salvo = data.user?.user_metadata?.tema;
+  const { data } = await supabase.auth.getSession();
+  const salvo = data.session?.user?.user_metadata?.tema;
   if (salvo === "claro" || salvo === "escuro") aplicarTema(salvo);
 }

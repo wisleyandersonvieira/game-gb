@@ -19,6 +19,34 @@ export type Chamada = {
 const LIMITE = 500;
 export const chamadas: Chamada[] = [];
 
+// DESLIGADA por padrão (decisão do Wisley, 25/09/2026): no uso normal não
+// grava nada. Liga-se em /medir, e vale só neste aparelho e neste navegador.
+const CHAVE = "stgame.medir";
+let ligada = false;
+
+if (typeof window !== "undefined") {
+  try {
+    ligada = window.localStorage.getItem(CHAVE) === "1";
+  } catch {
+    ligada = false;
+  }
+}
+
+export function medicaoLigada() {
+  return ligada;
+}
+
+export function ligarMedicao(valor: boolean) {
+  ligada = valor;
+  try {
+    if (valor) window.localStorage.setItem(CHAVE, "1");
+    else window.localStorage.removeItem(CHAVE);
+  } catch {
+    // Navegador sem armazenamento: vale só até recarregar. Tudo bem.
+  }
+  if (!valor) limparMedicao();
+}
+
 function nomeDaChamada(url: string): { tipo: Chamada["tipo"]; nome: string } {
   try {
     const u = new URL(url, window.location.origin);
@@ -49,6 +77,7 @@ export function fetchMedido(original: typeof fetch = fetch): typeof fetch {
   return async (entrada: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url =
       typeof entrada === "string" ? entrada : entrada instanceof URL ? entrada.href : entrada.url;
+    if (!ligada) return original(entrada, init);
     const inicio = performance.now();
     try {
       return await original(entrada, init);

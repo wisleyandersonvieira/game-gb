@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { Pagina } from "@/ui/Pagina";
+import { CADASTRO, DINHEIRO } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/extrato")({
   component: Extrato,
@@ -54,6 +55,7 @@ function Extrato() {
 
   const pessoas = useQuery({
     queryKey: ["pessoas-extrato"],
+    staleTime: CADASTRO,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("funcionarios")
@@ -65,7 +67,9 @@ function Extrato() {
   });
 
   const extrato = useQuery({
+    // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
     queryKey: ["extrato", funcionarioid, de, ate],
+    ...DINHEIRO,
     enabled: funcionarioid !== "" && de !== "" && ate !== "",
     queryFn: async () => {
       const { data, error } = await supabase.rpc("extrato_pontos", {

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pagina } from "@/ui/Pagina";
+import { CADASTRO, DINHEIRO } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/metas")({
   component: Metas,
@@ -64,7 +65,9 @@ function atualizarTudo(qc: ReturnType<typeof useQueryClient>) {
 
 function useResumo(lojaid: number, mes: string) {
   return useQuery({
+    // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
     queryKey: ["metas-mes", lojaid, mes],
+    ...DINHEIRO,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("metas_do_mes", { p_lojaid: lojaid, p_mes: `${mes}-01` });
       if (error) throw error;
@@ -426,6 +429,7 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
 
   const modelos = useQuery({
     queryKey: ["metas-modelos", lojaid],
+    staleTime: CADASTRO,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("metasdiariasmodelos")

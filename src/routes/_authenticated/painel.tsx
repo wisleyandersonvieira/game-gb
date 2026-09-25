@@ -245,22 +245,26 @@ function Validacao({ lojaid }: { lojaid: number }) {
       const linhas = data ?? [];
       if (linhas.length === 0) return [];
 
-      const { data: tarefas } = await supabase
-        .from("tarefas")
-        .select("tarefaid, titulo, pontos")
-        .in("tarefaid", [...new Set(linhas.map((l) => l.tarefaid))]);
-      const { data: pessoas } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto")
-        .in("funcionarioid", [...new Set(linhas.map((l) => l.funcionarioid))]);
-
-      // Link temporário (1 hora). O bucket é privado: não existe link público.
+      // As três dependem da lista acima, mas não uma da outra: vão juntas.
+      // Em fila, eram três idas ao servidor; assim é uma só espera.
       const caminhos = linhas.map((l) => l.pathfotoevidencia).filter((c): c is string => !!c);
+      const [{ data: tarefas }, { data: pessoas }, assinadas] = await Promise.all([
+        supabase
+          .from("tarefas")
+          .select("tarefaid, titulo, pontos")
+          .in("tarefaid", [...new Set(linhas.map((l) => l.tarefaid))]),
+        supabase
+          .from("funcionarios")
+          .select("funcionarioid, nomecompleto")
+          .in("funcionarioid", [...new Set(linhas.map((l) => l.funcionarioid))]),
+        // Link temporário (1 hora). O bucket é privado: não há link público.
+        caminhos.length > 0
+          ? supabase.storage.from(BUCKET).createSignedUrls(caminhos, 3600)
+          : Promise.resolve({ data: [] as { path: string | null; signedUrl: string }[] }),
+      ]);
+
       const links = new Map<string, string>();
-      if (caminhos.length > 0) {
-        const { data: assinados } = await supabase.storage.from(BUCKET).createSignedUrls(caminhos, 3600);
-        for (const a of assinados ?? []) if (a.path && a.signedUrl) links.set(a.path, a.signedUrl);
-      }
+      for (const a of assinadas.data ?? []) if (a.path && a.signedUrl) links.set(a.path, a.signedUrl);
 
       const tarefa = new Map((tarefas ?? []).map((t) => [t.tarefaid, t]));
       const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));

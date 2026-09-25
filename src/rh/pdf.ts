@@ -2,21 +2,16 @@
 // Cabeçalho com o nome da conta (e da loja, quando houver); rodapé com
 // "Gerado em dd/mm/aaaa hh:mm por <usuário>". Nenhum PDF leva CPF.
 import { jsPDF } from "jspdf";
+import { dataHoraBr } from "@/rh/datas";
 import { supabase } from "@/integrations/supabase/client";
 
 const FUSO = "America/Sao_Paulo";
 const MARGEM = 18;
 const LARGURA = 210 - MARGEM * 2;
 
-export const dataHoraBr = (iso: string | Date) =>
-  new Date(iso).toLocaleString("pt-BR", {
-    timeZone: FUSO,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+// dataHoraBr mora em @/rh/datas: quem só precisa dela não deve baixar o
+// gerador de PDF junto. Reexportado aqui para não quebrar quem já usava.
+export { dataHoraBr };
 
 const reais = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 

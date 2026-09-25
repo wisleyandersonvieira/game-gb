@@ -1,11 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { CartaoNumero } from "@/ui/CartaoNumero";
 import { Carregando, ErroTela } from "@/ui/Estados";
-import { CaixaGrafico, GraficoEntregas, GraficoPontos, GraficoVendas } from "@/inicio/Graficos";
+// A biblioteca de gráficos (~330 KB) só é baixada quando há gráfico para
+// desenhar. Antes, ela vinha junto com o Início — a primeira tela do dia.
+const PainelDeGraficos = lazy(() => import("@/inicio/PainelDeGraficos"));
 import { Guia, guiaCompleto } from "@/inicio/Guia";
 import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, type PainelInicio } from "@/inicio/tipos";
@@ -146,7 +148,9 @@ function Inicio() {
           )}
           <Cartoes p={p} naoPegas={naoPegas.data?.length ?? 0} />
           {temDados ? (
-            <Graficos p={p} />
+            <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando os gráficos...</p>}>
+              <PainelDeGraficos p={p} />
+            </Suspense>
           ) : (
             !mostrarGuia && (
               <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -231,24 +235,6 @@ function Cartoes({ p, naoPegas }: { p: PainelInicio; naoPegas: number }) {
         tom={c.justificativas > 0 ? "pendente" : "neutro"}
         para="/justificativas"
       />
-    </div>
-  );
-}
-
-function Graficos({ p }: { p: PainelInicio }) {
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <div className="lg:col-span-2">
-        <CaixaGrafico titulo="Vendas do mês" descricao="Vendido por dia contra a meta do dia. Verde: meta batida.">
-          <GraficoVendas dados={p.vendas} hoje={p.hoje} />
-        </CaixaGrafico>
-      </div>
-      <CaixaGrafico titulo="Pontos por semana" descricao="Entraram (aprovações e bônus, já sem estornos) e saíram (resgates).">
-        <GraficoPontos dados={p.pontos} />
-      </CaixaGrafico>
-      <CaixaGrafico titulo="Entregas no mês" descricao="Aprovadas e recusadas, por semana.">
-        <GraficoEntregas dados={p.entregas} />
-      </CaixaGrafico>
     </div>
   );
 }

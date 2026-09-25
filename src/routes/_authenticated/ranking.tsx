@@ -6,6 +6,7 @@ import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { MesesFechados } from "@/ranking/MesesFechados";
 import { Pontos } from "@/ui/Pontos";
 import { Pagina } from "@/ui/Pagina";
+import { CADASTRO, DINHEIRO } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/ranking")({
   component: Ranking,
@@ -28,7 +29,9 @@ function Ranking() {
   const lojaFiltro = alcance === "loja" ? lojaAtiva : null;
 
   const ranking = useQuery({
+    // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
     queryKey: ["ranking", de, hoje, lojaFiltro],
+    ...DINHEIRO,
     enabled: lojaAtiva !== null && (periodo === "dia" || periodo === "mes"),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("ranking_pontos", {
@@ -43,6 +46,7 @@ function Ranking() {
 
   const master = useQuery({
     queryKey: ["sou-master"],
+    staleTime: CADASTRO,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("sou_master");
       if (error) throw error;
@@ -183,7 +187,9 @@ function NotaDoMes({ hoje, lojaid }: { hoje: string; lojaid: number | null }) {
   const semDias = mesCorrente && hoje.slice(8, 10) === "01";
 
   const nota = useQuery({
+    // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
     queryKey: ["ranking-mensal", mes, lojaid],
+    ...DINHEIRO,
     enabled: Boolean(ano && numeroMes),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("ranking_mensal", {

@@ -4,12 +4,27 @@
 // Como usar: entre normalmente, abra as telas que quiser medir (Início, Quadro,
 // Equipe, Tarefas, Metas, Agenda, Ranking, Extrato, Relatórios) e só então
 // abra /medir. A tabela mostra o que cada tela esperou.
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { chamadas, limparMedicao, resumir, type ResumoDaTela } from "@/medicao/registro";
+import { meuAcesso } from "@/integrations/supabase/destino";
+import {
+  chamadas, ligarMedicao, limparMedicao, medicaoLigada, resumir, type ResumoDaTela,
+} from "@/medicao/registro";
 
-export const Route = createFileRoute("/medir")({ ssr: false, component: Medir });
+export const Route = createFileRoute("/medir")({
+  ssr: false,
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }] }),
+  // Só o dono da conta. Os nomes das nossas consultas não são assunto de quem
+  // não entrou (pedido do Wisley, 25/09/2026).
+  beforeLoad: async () => {
+    const acesso = await meuAcesso();
+    if (acesso.tipo !== "master" && acesso.tipo !== "gerente" && acesso.tipo !== "admin") {
+      throw redirect({ to: acesso.tipo === "semlogin" ? "/auth" : "/sem-acesso" });
+    }
+  },
+  component: Medir,
+});
 
 const NOMES: Record<string, string> = {
   "/inicio": "Início",
@@ -43,6 +58,7 @@ function Medir() {
   const [resumo, setResumo] = useState<ResumoDaTela[]>([]);
   const [idaEVolta, setIdaEVolta] = useState<number[] | null>(null);
   const [medindo, setMedindo] = useState(false);
+  const [ligada, setLigada] = useState(medicaoLigada());
 
   /** Ida e volta até o Supabase: a mesma chamada, 7 vezes. */
   async function medirIdaEVolta() {
@@ -69,6 +85,20 @@ function Medir() {
           recarregar. Nada é enviado para lugar nenhum.
         </p>
       </div>
+
+      <section className="space-y-2 rounded-xl border-2 border-primary bg-card p-4">
+        <h2 className="font-semibold">A medição está {ligada ? "LIGADA" : "desligada"}</h2>
+        <p className="text-xs text-muted-foreground">
+          Desligada por padrão, para não pesar no uso normal. Ligue, navegue pelas telas que quer
+          medir e volte aqui. Vale só neste aparelho e neste navegador.
+        </p>
+        <button
+          onClick={() => { ligarMedicao(!ligada); setLigada(!ligada); setResumo([]); }}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          {ligada ? "Desligar medição" : "Ligar medição"}
+        </button>
+      </section>
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-4">
         <h2 className="font-semibold">1. Ida e volta até o banco</h2>

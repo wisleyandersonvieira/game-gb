@@ -89,17 +89,18 @@ function Funcionarios() {
   const equipe = useQuery({
     queryKey: ["equipe"],
     queryFn: async () => {
-      const { data: pessoas, error } = await supabase
-        .from("funcionarios")
-        .select(
-          "funcionarioid, nomecompleto, cpf, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, horarionotificacao, horariosaida",
-        )
-        .order("nomecompleto");
+      // As duas não dependem uma da outra: vão juntas. Em fila, eram duas
+      // idas ao servidor a cada abertura da tela (medido em 24/09/2026).
+      const [{ data: pessoas, error }, { data: vinculos, error: erroVinculos }] = await Promise.all([
+        supabase
+          .from("funcionarios")
+          .select(
+            "funcionarioid, nomecompleto, cpf, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, horarionotificacao, horariosaida",
+          )
+          .order("nomecompleto"),
+        supabase.from("funcionarioslojas").select("funcionarioid, lojaid, ativo, validador"),
+      ]);
       if (error) throw error;
-
-      const { data: vinculos, error: erroVinculos } = await supabase
-        .from("funcionarioslojas")
-        .select("funcionarioid, lojaid, ativo, validador");
       if (erroVinculos) throw erroVinculos;
 
       const porFuncionario = new Map<number, number[]>();

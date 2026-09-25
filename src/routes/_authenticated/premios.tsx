@@ -6,6 +6,7 @@ import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { pdfReciboResgate } from "@/rh/pdf";
 import { Pontos } from "@/ui/Pontos";
 import { Pagina } from "@/ui/Pagina";
+import { CADASTRO, DINHEIRO } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/premios")({
   component: Premios,
@@ -85,7 +86,9 @@ function Premios() {
 
 function usePessoas() {
   return useQuery({
+    // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
     queryKey: ["pessoas-saldo"],
+    ...DINHEIRO,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("funcionarios")
@@ -101,6 +104,7 @@ function usePessoas() {
 function usePremios() {
   return useQuery({
     queryKey: ["premios"],
+    staleTime: CADASTRO,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("produtosloja")

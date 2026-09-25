@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from "re
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { ESTAVEL } from "@/ui/prazos";
 
 export type Loja = {
   lojaid: number;
@@ -47,7 +48,9 @@ export function ProvedorLojaAtiva({ children }: { children: ReactNode }) {
   const [escolhida, setEscolhida] = useState<number | null>(() => lerEscolha());
 
   const consulta = useQuery({
+    // Lojas mudam quando VOCÊ muda: não faz sentido perguntar a cada tela.
     queryKey: ["lojas-ativas"],
+    staleTime: ESTAVEL,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lojas")
