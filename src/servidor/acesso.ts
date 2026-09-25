@@ -964,18 +964,30 @@ export const diagnostico = createServerFn({ method: "GET" })
 
   let banco: "ok" | "desatualizado" | "sem resposta" = "sem resposta";
   let faltando: string[] = [];
+  /** Funções cujo nome existe mas cujos parâmetros não são os que o app espera. */
+  let assinaturas: string[] = [];
   if (temChave) {
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data, error } = await supabaseAdmin.rpc("diagnostico_do_sistema");
+      const { CONTRATO } = await import("@/integrations/supabase/contrato");
+      // Quem sabe o que o aplicativo espera é o aplicativo: ele manda a lista
+      // de parâmetros de cada função que chama, e o banco responde o que não
+      // bate. Conferir só o NOME não bastava — foi uma função que mudou de
+      // parâmetros que quebrou a entrega no tablet em 25/09/2026.
+      const { data, error } = await supabaseAdmin.rpc("diagnostico_do_sistema", { p_esperado: CONTRATO });
       if (error) {
         // A própria função de diagnóstico não existe: o banco não recebeu as
         // atualizações desta versão.
         banco = error.message.includes("Could not find") || error.code === "PGRST202" ? "desatualizado" : "sem resposta";
       } else {
-        const d = data as { funcoesfaltando: string[]; tabelasfaltando: string[] };
+        const d = data as {
+          funcoesfaltando: string[];
+          tabelasfaltando: string[];
+          assinaturasdiferentes?: string[];
+        };
         faltando = [...(d?.funcoesfaltando ?? []), ...(d?.tabelasfaltando ?? [])];
-        banco = faltando.length === 0 ? "ok" : "desatualizado";
+        assinaturas = d?.assinaturasdiferentes ?? [];
+        banco = faltando.length === 0 && assinaturas.length === 0 ? "ok" : "desatualizado";
       }
     } catch {
       banco = "sem resposta";
@@ -986,5 +998,5 @@ export const diagnostico = createServerFn({ method: "GET" })
   // não são assunto de quem está passando na internet (25/09/2026).
   if (!detalhe) return { detalhe: false as const, banco };
 
-  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando };
+  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando, assinaturas };
 });

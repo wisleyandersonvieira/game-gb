@@ -116,7 +116,7 @@ function Saude() {
             />
             <Linha
               ok={d.data.banco === "ok"}
-              titulo="Banco de dados atualizado"
+              titulo="Banco de dados atualizado (nome e parâmetros de cada função)"
               ajuda={
                 d.data.banco === "desatualizado"
                   ? "O banco não recebeu as atualizações desta versão. Aplique as migrações (supabase db push)."
@@ -124,6 +124,22 @@ function Saude() {
               }
             />
           </ul>
+
+          {d.data.assinaturas.length > 0 && (
+            <div className="rounded-lg border border-destructive bg-card p-3">
+              <p className="text-sm font-medium">Funções com parâmetros diferentes do que o app espera:</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                O nome existe, mas os parâmetros mudaram. Aplique as migrações desta versão.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {d.data.assinaturas.map((a) => (
+                  <li key={a} className="break-words font-mono text-xs text-muted-foreground">
+                    {a}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {d.data.faltando.length > 0 && (
             <div className="rounded-lg border border-destructive bg-card p-3">

@@ -12,7 +12,6 @@ import {
   minhasTarefas,
   type MinhaTarefa,
 } from "@/servidor/colaborador";
-import { horaDaFoto, impressaoDigital } from "@/colaborador/foto";
 import { OPERACIONAL } from "@/ui/prazos";
 
 export const Route = createFileRoute("/eu/tarefas")({ component: Tarefas });
@@ -91,38 +90,30 @@ function Entregar({ tarefa, fechar }: { tarefa: MinhaTarefa; fechar: () => void 
   const qc = useQueryClient();
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [observacao, setObservacao] = useState("");
-  // A janela de 10 minutos começa quando a tela abre: a foto tem de ser desta
-  // entrega, não uma que ficou guardada.
-  const [abertaem] = useState(() => Date.now());
 
   const enviar = useMutation({
     mutationFn: async () => {
       let caminho: string | null = null;
-      let fotoidunico: string | null = null;
-      let horafoto: string | null = null;
+      let bilhete: string | null = null;
 
       if (arquivo) {
-        // A impressão digital e a hora saem do arquivo ANTES de ele subir.
-        fotoidunico = await impressaoDigital(arquivo);
-        const quando = await horaDaFoto(arquivo);
-        horafoto = quando ? quando.toISOString() : null;
-
         // A foto sobe direto para o Storage com uma autorização de prazo
-        // curto: a chave secreta nunca passa pelo celular.
+        // curto: a chave secreta nunca passa pelo celular. Quem olha a foto
+        // depois — a impressão digital e a hora em que ela foi tirada — é o
+        // SERVIDOR, que baixa o arquivo. Este aparelho não opina sobre ela.
         const a = await autorizacaoDeFotoDoCelular({ data: { atribuicaoid: tarefa.atribuicaoid } });
         const { error } = await supabase.storage.from("entregas").uploadToSignedUrl(a.caminho, a.token, arquivo);
         if (error) throw new Error("A foto não subiu. Tente de novo.");
         caminho = a.caminho;
+        bilhete = a.bilhete;
       }
 
       return await entregarPeloCelular({
         data: {
           atribuicaoid: tarefa.atribuicaoid,
           caminho,
+          bilhete,
           observacao: observacao.trim() || null,
-          fotoidunico,
-          horafoto,
-          abertaem,
         },
       });
     },

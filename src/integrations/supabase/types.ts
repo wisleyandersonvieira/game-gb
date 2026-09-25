@@ -5087,7 +5087,7 @@ export type Database = {
         Returns: boolean
       }
       dia_em_sao_paulo: { Args: { p_instante: string }; Returns: string }
-      diagnostico_do_sistema: { Args: never; Returns: Json }
+      diagnostico_do_sistema: { Args: { p_esperado?: Json }; Returns: Json }
       dias_guardar_foto: { Args: { p_contaid: number }; Returns: number }
       documento_rh_liberado: {
         Args: { p_acao: string; p_nome: string }
@@ -5412,9 +5412,11 @@ export type Database = {
           p_atribuicaoid: number
           p_caminho: string | null
           p_contaid: number
+          p_fotoidunico?: string | null
           p_funcionarioid: number
           p_lojaid: number
           p_observacao: string | null
+          p_semhorafoto?: boolean
         }
         Returns: number
       }

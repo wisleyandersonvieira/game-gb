@@ -50,7 +50,9 @@ WITH esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
   (70, 'C1',   'funcao', 'eu_inicio',                    'aplicar-etapa-1.12-parte-C.sql'),
   (71, 'C1',   'funcao', 'eu_tarefas',                   'aplicar-etapa-1.12-parte-C.sql'),
   (72, 'C1',   'funcao', 'eu_entregar',                  'aplicar-etapa-1.12-parte-C.sql'),
-  (73, 'C1',   'funcao', 'eu_extrato',                   'aplicar-etapa-1.12-parte-C.sql')
+  (73, 'C1',   'funcao', 'eu_extrato',                   'aplicar-etapa-1.12-parte-C.sql'),
+  -- Ajuste do tablet e consertos da revisao
+  (80, 'C1+',  'funcao', 'eu_confere_pessoa',            'aplicar-consertos-da-revisao-c1.sql')
 ),
 situacao AS (
   SELECT e.*,
@@ -106,7 +108,23 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (76, 'C1', 'versao', 'nenhuma funcao eu_* liberada para quem esta logado', 'aplicar-etapa-1.12-parte-C.sql',
        NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname LIKE 'eu\_%'
-                      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')))
+                      AND has_function_privilege('authenticated', p.oid, 'EXECUTE'))),
+  (81, 'C1+', 'versao', 'o tablet diz quem fez em "Feitas hoje"', 'aplicar-quem-fez-no-tablet.sql',
+       EXISTS (SELECT 1 FROM information_schema.parameters
+                WHERE specific_schema = 'public' AND parameter_name = 'feitapor')),
+  (82, 'C1+', 'versao', 'a /saude confere a assinatura das funcoes', 'aplicar-consertos-da-revisao-c1.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'diagnostico_do_sistema'
+                  AND p.prosrc LIKE '%assinaturasdiferentes%')),
+  (83, 'C1+', 'versao', 'a prova da foto e feita pelo servidor', 'aplicar-consertos-da-revisao-c1.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'eu_confere_pessoa')),
+  (84, 'C1+', 'versao', 'conta cancelada fecha tambem as leituras do celular', 'aplicar-consertos-da-revisao-c1.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'eu_confere_pessoa') LIKE '%cancelada%'),
+  (85, 'C1+', 'versao', 'o Inicio do colaborador passa pela conferencia unica', 'aplicar-consertos-da-revisao-c1.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'eu_inicio') LIKE '%eu_confere_pessoa%')
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

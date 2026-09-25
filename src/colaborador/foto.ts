@@ -81,11 +81,16 @@ export function lerHoraExif(v: DataView): Date | null {
       // "2026:09:26 14:02:33"
       const m = texto.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
       if (!m) return null;
-      // A hora do EXIF é a do relógio do aparelho, sem fuso: lemos como local.
-      const d = new Date(
+      // A hora do EXIF é a do RELÓGIO DO APARELHO, sem fuso nenhum. Montamos
+      // sempre com Date.UTC para o resultado NÃO depender de quem está lendo:
+      // isto roda no celular (São Paulo) e no servidor (Cloudflare, sempre
+      // UTC). Lendo como "local", o servidor entendia 14h02 do celular como
+      // 14h02 dele — três horas de diferença — e recusava TODA foto que
+      // trouxesse a hora. Quem compara é relogioDeSaoPaulo(), do outro lado.
+      const d = new Date(Date.UTC(
         Number(m[1]), Number(m[2]) - 1, Number(m[3]),
         Number(m[4]), Number(m[5]), Number(m[6]),
-      );
+      ));
       return Number.isNaN(d.getTime()) ? null : d;
     }
     if (marca === 0xda) return null; // começou a imagem: não há mais cabeçalho

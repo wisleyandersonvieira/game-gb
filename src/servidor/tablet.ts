@@ -11,6 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { abrirTentativa, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
 
 type ClienteDoUsuario = {
   rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
@@ -141,7 +142,11 @@ export const pegarNoTablet = createServerFn({ method: "POST" })
  */
 export const autorizacaoDeFoto = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .validator((d: { atribuicaoid: number }) => {
+    if (!Number.isInteger(d?.atribuicaoid) || d.atribuicaoid <= 0) throw new Error("Tarefa inválida.");
+    return { atribuicaoid: d.atribuicaoid };
+  })
+  .handler(async ({ data: { atribuicaoid }, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const t = await tabletDoToken(supabase, userId);
     const caminho = `${t.contaid}/${t.lojaid}/${crypto.randomUUID()}.jpg`;
@@ -149,16 +154,46 @@ export const autorizacaoDeFoto = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin.storage.from("entregas").createSignedUploadUrl(caminho);
     if (error || !data) throw new Error("Não foi possível preparar o envio da foto.");
-    return { caminho, url: data.signedUrl, token: data.token };
+
+    // O bilhete amarra o caminho a esta loja e a esta tarefa, por 10 minutos.
+    // Quem assina de verdade a entrega e o PIN; aqui o tablet nao e uma
+    // pessoa, entao a loja entra no lugar dela.
+    const bilhete = await emitirBilhete(caminho, atribuicaoid, -t.lojaid);
+    return { caminho, token: data.token, bilhete };
   });
 
 export const entregarNoTablet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { pin: string; atribuicaoid: number; caminho?: string | null; observacao?: string | null }) => d)
+  .validator(
+    (d: { pin: string; atribuicaoid: number; caminho?: string | null; bilhete?: string | null; observacao?: string | null }) => {
+      if (typeof d?.pin !== "string") throw new Error("PIN inválido.");
+      if (!Number.isInteger(d?.atribuicaoid) || d.atribuicaoid <= 0) throw new Error("Tarefa inválida.");
+      return {
+        pin: d.pin,
+        atribuicaoid: d.atribuicaoid,
+        caminho: typeof d.caminho === "string" ? d.caminho.slice(0, 300) : null,
+        bilhete: typeof d.bilhete === "string" ? d.bilhete.slice(0, 200) : null,
+        observacao: typeof d.observacao === "string" ? d.observacao.slice(0, 1000) : null,
+      };
+    },
+  )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const t = await tabletDoToken(supabase, userId);
     const pessoa = await pessoaDoPin(t, data.pin);
+
+    // A prova da foto sai do ARQUIVO, aqui no servidor — como no celular.
+    // Antes, o tablet nem mandava a impressao digital, entao a mesma foto
+    // provava duas tarefas por ali.
+    let fotoidunico: string | null = null;
+    let semhorafoto = false;
+    if (data.caminho) {
+      if (!data.bilhete) throw new Error("Envio de foto inválido.");
+      await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, -t.lojaid);
+      const prova = await provaDaFoto(data.caminho);
+      fotoidunico = prova.fotoidunico;
+      ({ semhorafoto } = await conferirHoraDaFoto(t.contaid, prova.horafoto));
+    }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.rpc("visao_entregar", {
@@ -166,8 +201,10 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
       p_lojaid: t.lojaid,
       p_funcionarioid: pessoa.funcionarioid,
       p_atribuicaoid: data.atribuicaoid,
-      p_caminho: data.caminho ?? null,
-      p_observacao: data.observacao ?? null,
+      p_caminho: data.caminho,
+      p_observacao: data.observacao,
+      p_fotoidunico: fotoidunico,
+      p_semhorafoto: semhorafoto,
     });
     if (error) throw new Error(error.message);
     return { nome: pessoa.nome };

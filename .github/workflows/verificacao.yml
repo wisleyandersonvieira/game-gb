@@ -130,7 +130,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Testes do servidor (regras que não são do banco)
         # Só src/: supabase/functions/* são testes de Deno, que o bun não roda.
-        run: bun test src/
+        run: TZ=UTC bun test src/   # UTC e o fuso do servidor em producao
       - name: Build
         run: bun run build
       - name: Conferir que o servidor foi empacotado
