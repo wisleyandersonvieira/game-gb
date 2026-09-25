@@ -7,7 +7,7 @@
 // esta tela mostra é só para a pessoa se orientar.
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   desistirDoResgate,
   meusPremios,
@@ -34,6 +34,7 @@ function Premios() {
   const qc = useQueryClient();
   const [aba, setAba] = useState<"catalogo" | "abate">("catalogo");
   const [valor, setValor] = useState("");
+  const [erroDoValor, setErroDoValor] = useState<string | null>(null);
 
   // Pontos nunca são reaproveitados: melhor esperar do que mostrar valor velho.
   const catalogo = useQuery({ queryKey: ["eu-premios"], queryFn: () => meusPremios(), ...DINHEIRO });
@@ -45,18 +46,54 @@ function Premios() {
     qc.invalidateQueries({ queryKey: ["eu-inicio"] });
   }
 
+  // Dois toques rápidos: desabilitar o botão depende de um REDESENHO, e dois
+  // toques na mesma fração de segundo passam antes dele. Esta trava é
+  // síncrona, então o segundo toque nunca chega a virar um pedido. O banco
+  // continua sendo a garantia final (trava por pessoa e FOR UPDATE), mas a
+  // pessoa também não vê dois pedidos iguais aparecerem.
+  const pedindo = useRef(false);
+
   const pedir = useMutation({
     mutationFn: (d: { produtoid?: number; valorreais?: number }) => pedirResgate({ data: d }),
+    onSettled: () => {
+      pedindo.current = false;
+    },
     onSuccess: () => {
       setValor("");
       atualizar();
     },
   });
 
+  function pedirUmaVez(d: { produtoid?: number; valorreais?: number }) {
+    if (pedindo.current) return;
+    pedindo.current = true;
+    pedir.mutate(d);
+  }
+
+  /** O valor digitado, ou null quando não dá para entender o que foi escrito. */
+  function valorDigitado(): number | null {
+    // Aceita "10", "10,50" e "10.50". Não aceita separador de milhar: melhor
+    // pedir para escrever de novo do que interpretar errado o que ela quis.
+    const limpo = valor.trim().replace(",", ".");
+    if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return null;
+    const n = Number(limpo);
+    return n > 0 ? n : null;
+  }
+
+  const desistindo = useRef(false);
   const desistir = useMutation({
     mutationFn: (resgateid: number) => desistirDoResgate({ data: { resgateid } }),
+    onSettled: () => {
+      desistindo.current = false;
+    },
     onSuccess: atualizar,
   });
+
+  function desistirUmaVez(resgateid: number) {
+    if (desistindo.current) return;
+    desistindo.current = true;
+    desistir.mutate(resgateid);
+  }
 
   const saldo = catalogo.data?.saldo ?? 0;
   const lista = catalogo.data?.premios ?? [];
@@ -108,7 +145,7 @@ function Premios() {
                 </p>
               </div>
               <button
-                onClick={() => pedir.mutate({ produtoid: p.produtoid })}
+                onClick={() => pedirUmaVez({ produtoid: p.produtoid })}
                 disabled={!p.cabe || pedir.isPending}
                 className="shrink-0 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-40"
               >
@@ -135,12 +172,21 @@ function Premios() {
             />
           </label>
           <button
-            onClick={() => pedir.mutate({ valorreais: Number(valor.replace(",", ".")) })}
+            onClick={() => {
+              const n = valorDigitado();
+              if (n === null) {
+                setErroDoValor("Digite um valor como 10,00.");
+                return;
+              }
+              setErroDoValor(null);
+              pedirUmaVez({ valorreais: n });
+            }}
             disabled={pedir.isPending || valor.trim() === ""}
             className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground disabled:opacity-60"
           >
             {pedir.isPending ? "Pedindo..." : "Pedir abate"}
           </button>
+          {erroDoValor && <p className="text-sm text-destructive">{erroDoValor}</p>}
           <p className="text-xs text-muted-foreground">
             O sistema converte em pontos pela taxa da sua empresa e confere o seu saldo.
           </p>
@@ -166,7 +212,7 @@ function Premios() {
               </span>
               {r.status === "Pendente" && (
                 <button
-                  onClick={() => desistir.mutate(r.resgateid)}
+                  onClick={() => desistirUmaVez(r.resgateid)}
                   disabled={desistir.isPending}
                   className="rounded-xl border border-border px-3 py-2 text-xs"
                 >

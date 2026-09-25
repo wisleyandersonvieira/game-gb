@@ -264,12 +264,25 @@ export const pedirResgate = createServerFn({ method: "POST" })
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const p = await pessoaDoToken(supabase, userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // A LOJA do pedido, quando não há dúvida: quem trabalha numa loja só tem
+    // o pedido atribuído a ela, e o gestor vê de onde veio na lista de
+    // resgates. Quem trabalha em várias fica sem loja, porque adivinhar seria
+    // pior do que deixar em branco. Quem decide é o servidor, nunca a tela.
+    const { data: lojas } = await supabaseAdmin
+      .from("funcionarioslojas")
+      .select("lojaid")
+      .eq("contaid", p.contaid)
+      .eq("funcionarioid", p.funcionarioid)
+      .eq("ativo", true);
+    const umaLojaSo = (lojas ?? []).length === 1 ? (lojas![0].lojaid as number) : null;
+
     const { data: id, error } = await supabaseAdmin.rpc("eu_pedir_resgate", {
       p_contaid: p.contaid,
       p_funcionarioid: p.funcionarioid,
       p_produtoid: data.produtoid,
       p_valorreais: data.valorreais,
-      p_lojaid: null,
+      p_lojaid: umaLojaSo,
     });
     // A mensagem do banco sobe inteira: ela diz o motivo (saldo, estoque,
     // limite), e é o que a pessoa precisa ler.
@@ -280,7 +293,10 @@ export const pedirResgate = createServerFn({ method: "POST" })
 /** Desistir enquanto está pendente: devolve pontos e estoque. */
 export const desistirDoResgate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { resgateid: number }) => ({ resgateid: d.resgateid }))
+  .validator((d: { resgateid: number }) => {
+    if (!Number.isInteger(d?.resgateid) || d.resgateid <= 0) throw new Error("Pedido não encontrado.");
+    return { resgateid: d.resgateid };
+  })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const p = await pessoaDoToken(supabase, userId);

@@ -7627,6 +7627,31 @@ BEGIN
   UPDATE public.configuracoes SET valor = '3' WHERE contaid = 1 AND chave = 'MAX_RESGATES_PENDENTES';
 END $$;
 
+-- A LOJA do pedido: entra quando a pessoa trabalha numa loja so, e fica vazia
+-- quando ela trabalha em varias — adivinhar seria pior. Quem decide e o
+-- servidor; aqui provamos que o banco aceita as duas formas e recusa loja que
+-- nao e dela.
+DO $$
+DECLARE v_id integer; deu_erro boolean;
+BEGIN
+  -- 9801 trabalha so na loja 10.
+  v_id := public.eu_pedir_resgate(1, 9801, NULL, 1, 10);
+  PERFORM public.exigir((SELECT lojaid = 10 FROM public.resgates WHERE resgateid = v_id),
+                        'com uma loja so, o pedido fica atribuido a ela');
+  PERFORM public.eu_cancelar_resgate(1, 9801, v_id);
+
+  -- Sem loja tambem vale: e o caso de quem trabalha em varias.
+  v_id := public.eu_pedir_resgate(1, 9801, NULL, 1, NULL);
+  PERFORM public.exigir((SELECT lojaid IS NULL FROM public.resgates WHERE resgateid = v_id),
+                        'sem loja tambem vale, para quem trabalha em varias');
+  PERFORM public.eu_cancelar_resgate(1, 9801, v_id);
+
+  -- Loja que nao e dela: recusada, mesmo sendo da mesma conta.
+  BEGIN PERFORM public.eu_pedir_resgate(1, 9801, NULL, 1, 11); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'loja onde ela nao trabalha e recusada');
+END $$;
+
 -- Ninguem pede no nome de outra pessoa, e ninguem cancela pedido alheio.
 DO $$
 DECLARE v_id integer; deu_erro boolean;
