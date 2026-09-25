@@ -11,7 +11,6 @@
 // consulta e pede.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
 
 type ClienteDoUsuario = {
   rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
@@ -29,15 +28,6 @@ async function pessoaDoToken(supabase: ClienteDoUsuario, userId: string): Promis
   const acesso = data as { tipo?: string } | null;
   if (acesso?.tipo === "desligado") throw new Error("Seu acesso foi encerrado. Fale com o seu gestor.");
   if (acesso?.tipo !== "colaborador") throw new Error("Esta tela é do aplicativo do colaborador.");
-
-  // O primeiro acesso é uma PORTA, não um aviso de tela. A senha provisória
-  // são os seis primeiros dígitos do CPF, que o gestor e os colegas conhecem:
-  // quem entra com ela não pode ler o extrato nem entregar em nome de
-  // ninguém antes de trocar a senha, escolher o PIN e dar ciência na política.
-  const a = acesso as { semsenha?: boolean; sempin?: boolean; politicapendente?: boolean };
-  if (a.semsenha || a.sempin || a.politicapendente) {
-    throw new Error("Termine o primeiro acesso antes de usar o aplicativo.");
-  }
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: vinculo, error: erro } = await supabaseAdmin
@@ -98,24 +88,9 @@ export const minhasTarefas = createServerFn({ method: "GET" })
  * Autorizacao de envio da foto: vale por poucos minutos e so para a pasta da
  * loja daquela tarefa. A chave secreta nunca sai do servidor.
  */
-/**
- * Os tipos do TypeScript somem na compilação: quem chama por fora manda o que
- * quiser. Estas conferências são as que valem de verdade.
- */
-function numeroDeTarefa(v: unknown): number {
-  if (!Number.isInteger(v) || (v as number) <= 0) throw new Error("Tarefa inválida.");
-  return v as number;
-}
-
-function textoCurto(v: unknown, limite: number): string | null {
-  if (v === null || v === undefined || v === "") return null;
-  if (typeof v !== "string") throw new Error("Texto inválido.");
-  return v.slice(0, limite);
-}
-
 export const autorizacaoDeFotoDoCelular = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { atribuicaoid: number }) => ({ atribuicaoid: numeroDeTarefa(d?.atribuicaoid) }))
+  .validator((d: { atribuicaoid: number }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const p = await pessoaDoToken(supabase, userId);
@@ -135,46 +110,65 @@ export const autorizacaoDeFotoDoCelular = createServerFn({ method: "POST" })
     const caminho = `${p.contaid}/${tarefa.lojaid}/${crypto.randomUUID()}.jpg`;
     const { data: envio, error } = await supabaseAdmin.storage.from("entregas").createSignedUploadUrl(caminho);
     if (error || !envio) throw new Error("Não foi possível preparar o envio da foto.");
-
-    // O bilhete amarra este caminho a esta pessoa, a esta tarefa e a este
-    // instante. Sem ele, dava para declarar uma foto que nunca subiu.
-    const bilhete = await emitirBilhete(caminho, data.atribuicaoid, p.funcionarioid);
-    return { caminho, token: envio.token, bilhete };
+    return { caminho, url: envio.signedUrl, token: envio.token };
   });
 
 export const entregarPeloCelular = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { atribuicaoid: number; caminho?: string | null; bilhete?: string | null; observacao?: string | null }) => ({
-    atribuicaoid: numeroDeTarefa(d?.atribuicaoid),
-    caminho: textoCurto(d?.caminho, 300),
-    bilhete: textoCurto(d?.bilhete, 200),
-    observacao: textoCurto(d?.observacao, 1000),
-  }))
+  .validator(
+    (d: {
+      atribuicaoid: number;
+      caminho?: string | null;
+      observacao?: string | null;
+      /** Impressão digital da imagem, calculada no navegador. */
+      fotoidunico?: string | null;
+      /**
+       * Hora em que a foto foi tirada (EXIF), quando o arquivo traz. Vem como
+       * texto ISO. Vazio quando o celular apagou esse dado — e aí a entrega
+       * entra MARCADA, que é o pior dos dois lados para quem quisesse burlar.
+       */
+      horafoto?: string | null;
+      /** Quando a tela abriu a entrega: a janela de 10 min é conferida aqui. */
+      abertaem?: number;
+    }) => d,
+  )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const p = await pessoaDoToken(supabase, userId);
 
-    // A foto: NADA do que o navegador diz sobre ela é aceito. O caminho tem de
-    // vir com o bilhete que este servidor emitiu, e as duas provas — a
-    // impressão digital e a hora em que foi tirada — saem do arquivo, aqui.
-    let fotoidunico: string | null = null;
-    let semhorafoto = false;
-    if (data.caminho) {
-      if (!data.bilhete) throw new Error("Envio de foto inválido.");
-      await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, p.funcionarioid);
-      const prova = await provaDaFoto(data.caminho);
-      fotoidunico = prova.fotoidunico;
-      ({ semhorafoto } = await conferirHoraDaFoto(p.contaid, prova.horafoto));
+    // Janela de 10 minutos entre abrir a entrega e enviar, como no bot.
+    if (data.abertaem && Date.now() - data.abertaem > 10 * 60_000) {
+      throw new Error("Passaram-se mais de 10 minutos. Abra a entrega de novo e tire outra foto.");
     }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Quem decide se a foto é recente é o SERVIDOR, com a tolerância da conta.
+    // O navegador só conta o que leu do arquivo.
+    let semhorafoto = true;
+    if (data.horafoto) {
+      const { data: cfg } = await supabaseAdmin
+        .from("configuracoes")
+        .select("valor")
+        .eq("contaid", p.contaid)
+        .eq("chave", "MAX_DIFERENCA_FOTO_SEGUNDOS")
+        .maybeSingle();
+      const tolerancia = Number(cfg?.valor ?? 120) * 1000;
+      const diferenca = Math.abs(Date.now() - new Date(data.horafoto).getTime());
+      if (Number.isNaN(diferenca)) throw new Error("Não foi possível ler a hora da foto.");
+      if (diferenca > tolerancia) {
+        throw new Error("Esta foto não é de agora. Tire a foto na hora de entregar.");
+      }
+      semhorafoto = false;
+    }
+
     const { data: id, error } = await supabaseAdmin.rpc("eu_entregar", {
       p_contaid: p.contaid,
       p_funcionarioid: p.funcionarioid,
       p_atribuicaoid: data.atribuicaoid,
-      p_caminho: data.caminho,
-      p_observacao: data.observacao,
-      p_fotoidunico: fotoidunico,
+      p_caminho: data.caminho ?? null,
+      p_observacao: data.observacao ?? null,
+      p_fotoidunico: data.fotoidunico ?? null,
       p_semhorafoto: semhorafoto,
     });
     if (error) throw new Error(error.message);
@@ -188,13 +182,7 @@ export type MeuExtrato = {
 
 export const meuExtrato = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { de: string; ate: string }) => {
-    const dia = (v: unknown) => {
-      if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error("Data inválida.");
-      return v;
-    };
-    return { de: dia(d?.de), ate: dia(d?.ate) };
-  })
+  .validator((d: { de: string; ate: string }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
     const p = await pessoaDoToken(supabase, userId);

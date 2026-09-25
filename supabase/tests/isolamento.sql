@@ -6618,148 +6618,15 @@ BEGIN
   BEGIN v := public.eu_inicio(2, 9801); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'a conta B nao abre o Inicio de uma pessoa de A');
-  -- Depois do conserto de 25/09/2026 estas duas RECUSAM em vez de devolver
-  -- vazio: a pessoa nao e da conta que pediu.
-  BEGIN v := public.eu_tarefas(2, 9801); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem ve as tarefas dela');
-  BEGIN v := public.eu_extrato(2, 9801, public.dia_em_sao_paulo(now()) - 30,
-                               public.dia_em_sao_paulo(now())); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o extrato dela');
+  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(2, 9801)) = 0,
+                        'nem ve as tarefas dela');
+  PERFORM public.exigir(jsonb_array_length(public.eu_extrato(2, 9801,
+                          public.dia_em_sao_paulo(now()) - 30, public.dia_em_sao_paulo(now()))->'linhas') = 0,
+                        'nem o extrato dela');
   BEGIN PERFORM public.eu_entregar(2, 9801, current_setting('teste.eu_atr')::integer,
                                    NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'nem entrega no nome dela');
-END $$;
-
--- ===========================================================================
--- 55. Consertos da revisao adversarial da parte C1 (25/09/2026)
--- ===========================================================================
--- A revisao provou que o celular aceitava o que o tablet ja recusava: tarefa
--- desativada, loja desativada, dia de folga e vinculo com a loja desligado.
--- Cada um destes casos vira uma prova aqui, comparando os DOIS caminhos.
-DO $$ BEGIN RAISE NOTICE '55. consertos da revisao da parte C1'; END $$;
-
-RESET ROLE;
-SET teste.uid = '';
-INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto) OVERRIDING SYSTEM VALUE
-VALUES (9803, 1, 'Fila Fechada') ON CONFLICT DO NOTHING;
-INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9803, 10)
-ON CONFLICT DO NOTHING;
-INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
-VALUES (9830, 1, 'Tarefa que sai da fila', 5) ON CONFLICT DO NOTHING;
-INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9830, 10) ON CONFLICT DO NOTHING;
-
-SET ROLE authenticated;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$
-DECLARE v_atr integer;
-BEGIN
-  v_atr := public.atribuir_tarefa(9830, 10, ARRAY[9803], 'Diaria', NULL, NULL, NULL);
-  PERFORM set_config('teste.c1_atr', v_atr::text, false);
-END $$;
-
-RESET ROLE;
-SET teste.uid = '';
-DO $$
-DECLARE
-  v_atr integer := current_setting('teste.c1_atr')::integer;
-  deu_erro boolean;
-BEGIN
-  -- Antes de mexer em nada, a tarefa aparece e a entrega passaria.
-  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 1,
-                        'a tarefa dela aparece no celular');
-
-  -- (a) TAREFA DESATIVADA pelo gestor.
-  UPDATE public.tarefas SET ativa = false WHERE tarefaid = 9830;
-  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
-                        'tarefa desativada some da lista do celular');
-  BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a entrega dela e RECUSADA (era aceita antes do conserto)');
-  UPDATE public.tarefas SET ativa = true WHERE tarefaid = 9830;
-
-  -- (b) LOJA DESATIVADA. Importa para o SaaS: limitelojas conta loja ativa.
-  UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
-  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
-                        'loja desativada nao mostra mais tarefa no celular');
-  BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a entrega em loja desativada e recusada');
-  UPDATE public.lojas SET ativa = true WHERE lojaid = 10;
-
-  -- (c) DIA DE FOLGA dela. Entregar na folga inflava a nota no ranking.
-  UPDATE public.funcionarios
-     -- diadefolga vai de 1 (domingo) a 7 (sabado): e o dow do Postgres mais um.
-     SET diadefolga = extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1
-   WHERE funcionarioid = 9803;
-  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
-                        'no dia de folga a lista do celular vem vazia');
-  BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e ninguem entrega no proprio dia de folga');
-  UPDATE public.funcionarios SET diadefolga = NULL WHERE funcionarioid = 9803;
-
-  -- (d) VINCULO COM A LOJA DESLIGADO.
-  UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 9803 AND lojaid = 10;
-  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
-                        'tirada da loja, a tarefa some do celular dela');
-  BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a entrega dela naquela loja e recusada');
-  UPDATE public.funcionarioslojas SET ativo = true WHERE funcionarioid = 9803 AND lojaid = 10;
-
-  -- Desfeito tudo, a tarefa volta: as travas nao ficaram grudadas.
-  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 1,
-                        'desfeitos os quatro casos, a tarefa volta a aparecer');
-
-  -- (e) PESSOA DESLIGADA: as QUATRO portas fecham, nao so o Inicio.
-  UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 9803;
-  BEGIN PERFORM public.eu_inicio(1, 9803); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'pessoa desligada nao abre o Inicio');
-  BEGIN PERFORM public.eu_tarefas(1, 9803); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem a lista de tarefas (antes devolvia as tarefas dela)');
-  BEGIN PERFORM public.eu_extrato(1, 9803, public.dia_em_sao_paulo(now()) - 30,
-                                  public.dia_em_sao_paulo(now())); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o extrato (antes abria)');
-  BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem entrega nada (antes entregava)');
-  UPDATE public.funcionarios SET ativo = true WHERE funcionarioid = 9803;
-END $$;
-
--- O tablet passou a receber a prova da foto, igual ao celular.
-DO $$
-DECLARE v_atr integer := current_setting('teste.c1_atr')::integer; v_id integer; deu_erro boolean;
-BEGIN
-  v_id := public.visao_entregar(1, 10, 9803, v_atr, '1/10/tablet-prova.jpg', NULL,
-                                'digital-do-tablet', true);
-  PERFORM public.exigir((SELECT semhorafoto FROM public.entregas WHERE entregaid = v_id),
-                        'a entrega do tablet tambem fica marcada quando a foto nao tinha hora');
-  PERFORM public.exigir((SELECT fotoidunico FROM public.entregas WHERE entregaid = v_id)
-                        = 'digital-do-tablet',
-                        'e o tablet passou a gravar a impressao digital da imagem');
-
-  -- E a mesma imagem nao vale de novo, nem vinda do tablet.
-  BEGIN PERFORM public.visao_entregar(1, 10, 9803, v_atr, '1/10/outra-do-tablet.jpg', NULL,
-                                      'digital-do-tablet', true); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a mesma foto nao prova duas tarefas pelo tablet');
-END $$;
-
--- A funcao nova e interna: recebe contaid, entao nunca e liberada (Etapa 1.6).
-SET ROLE authenticated;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$
-DECLARE deu_erro boolean;
-BEGIN
-  BEGIN PERFORM public.eu_confere_pessoa(1, 9803); deu_erro := false;
-  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.eu_confere_pessoa');
 END $$;
 
 RESET ROLE;

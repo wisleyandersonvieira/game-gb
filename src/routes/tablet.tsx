@@ -67,16 +67,14 @@ function Tablet() {
       // A foto sobe direto para o Storage com uma autorização de prazo curto:
       // a chave secreta nunca passa por aqui.
       let caminho: string | null = null;
-      let bilhete: string | null = null;
       if (acao.arquivo) {
-        const a = await autorizacaoDeFoto({ data: { atribuicaoid: acao.item.atribuicaoid } });
+        const a = await autorizacaoDeFoto();
         const { error } = await supabase.storage.from("entregas").uploadToSignedUrl(a.caminho, a.token, acao.arquivo);
         if (error) throw new Error("A foto não subiu. Tente de novo.");
         caminho = a.caminho;
-        bilhete = a.bilhete;
       }
       return await entregarNoTablet({
-        data: { pin, atribuicaoid: acao.item.atribuicaoid, caminho, bilhete, observacao: acao.observacao || null },
+        data: { pin, atribuicaoid: acao.item.atribuicaoid, caminho, observacao: acao.observacao || null },
       });
     },
     onSuccess: (r) => {
