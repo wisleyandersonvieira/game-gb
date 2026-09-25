@@ -888,6 +888,11 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
   const [nome, setNome] = useState("");
   const [novoLink, setNovoLink] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  // Revogado nao fica misturado com o que vale: entra atras de "Ver revogados".
+  const [verRevogados, setVerRevogados] = useState(false);
+  // O link comprido sai da frente: o caminho normal agora e parear por codigo.
+  const [verLinkCompleto, setVerLinkCompleto] = useState(false);
+  const [codigo, setCodigo] = useState("");
 
   const links = useQuery({
     queryKey: ["links-tv"],
@@ -917,6 +922,23 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
     },
   });
 
+  const parear = useMutation({
+    mutationFn: async () => {
+      if (lojaid === "") throw new Error("Escolha a loja.");
+      const limpo = codigo.trim().toUpperCase().replace(/\s/g, "");
+      if (limpo.length !== 6) throw new Error("O código tem 6 caracteres.");
+      const { error } = await supabase.rpc("parear_tv", {
+        p_codigo: limpo, p_lojaid: lojaid, p_nome: nome,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setCodigo("");
+      setNome("");
+      qc.invalidateQueries({ queryKey: ["links-tv"] });
+    },
+  });
+
   const revogar = useMutation({
     mutationFn: async (linktvid: number) => {
       const { error } = await supabase.rpc("revogar_link_tv", { p_linktvid: linktvid });
@@ -926,19 +948,82 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
   });
 
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? "loja desativada";
-  const lista = links.data ?? [];
+  const todos = links.data ?? [];
+  const lista = todos.filter((k) => !k.revogadoem);
+  const revogados = todos.filter((k) => k.revogadoem);
 
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-sm font-semibold">Links de TV</h2>
+        <h2 className="text-sm font-semibold">TVs da loja</h2>
         <p className="text-xs text-muted-foreground">
-          Abra o link no navegador da TV da loja. Ele mostra só o painel daquela loja, sem login e
-          sem poder mudar nada. Se a TV sair da loja, revogue o link.
+          Na TV, abra <span className="font-mono">stgame.com.br/tv</span>. Ela mostra um código de 6
+          letras e números. Digite esse código aqui embaixo e a TV entra sozinha. Ela mostra só o
+          painel daquela loja, sem login e sem poder mudar nada.
         </p>
       </div>
 
+      {/* PAREAR: o caminho normal. O link comprido ficou atrás de um botão. */}
       <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          parear.mutate();
+        }}
+        className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-4"
+      >
+        <input
+          required
+          placeholder="Código da TV"
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+          maxLength={6}
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          className={`${campo} w-36 text-center font-mono text-lg tracking-widest`}
+        />
+        <select
+          required
+          value={lojaid}
+          onChange={(e) => setLojaid(e.target.value === "" ? "" : Number(e.target.value))}
+          className={campo}
+        >
+          <option value="">Loja...</option>
+          {lojas.map((l) => (
+            <option key={l.lojaid} value={l.lojaid}>
+              {l.nome}
+            </option>
+          ))}
+        </select>
+        <input
+          required
+          placeholder="Nome (ex.: TV do balcão)"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          className={campo}
+        />
+        <button
+          type="submit"
+          disabled={parear.isPending || suspensa}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          {parear.isPending ? "Pareando..." : "Parear TV"}
+        </button>
+        {parear.isError && <p className="w-full text-sm text-destructive">{(parear.error as Error).message}</p>}
+        {parear.isSuccess && (
+          <p className="w-full text-sm text-sucesso">TV pareada. Ela entra em alguns segundos.</p>
+        )}
+      </form>
+
+      <button
+        onClick={() => setVerLinkCompleto((v) => !v)}
+        className="text-xs text-muted-foreground underline underline-offset-2"
+      >
+        {verLinkCompleto ? "Esconder o link completo" : "Ver link completo"}
+      </button>
+
+      <form
+        hidden={!verLinkCompleto}
         onSubmit={(e) => {
           e.preventDefault();
           criar.mutate();
@@ -1015,19 +1100,15 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
           >
             <div>
-              <p className={`font-medium ${k.revogadoem ? "text-muted-foreground line-through" : ""}`}>{k.nome}</p>
+              <p className="font-medium">{k.nome}</p>
               <p className="text-sm text-muted-foreground">
                 {nomeDaLoja(k.lojaid)} ·{" "}
-                {k.revogadoem ? (
-                  "revogado"
-                ) : (
-                  <span className={quandoFoi(k.ultimouso) === "no ar agora" ? "text-sucesso" : undefined}>
-                    {quandoFoi(k.ultimouso)}
-                  </span>
-                )}
+                <span className={quandoFoi(k.ultimouso) === "no ar agora" ? "text-sucesso" : undefined}>
+                  {quandoFoi(k.ultimouso)}
+                </span>
               </p>
             </div>
-            {!k.revogadoem && (
+            {(
               <button
                 onClick={() => {
                   if (window.confirm(`Revogar "${k.nome}"? A TV mostra "Painel indisponível" em até 30 segundos.`)) {
@@ -1043,10 +1124,34 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
           </div>
         ))}
         {lista.length === 0 && !links.isLoading && (
-          <p className="text-sm text-muted-foreground">Nenhum link de TV criado ainda.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma TV ligada ainda.</p>
         )}
         {revogar.isError && <p className="text-sm text-destructive">{(revogar.error as Error).message}</p>}
       </div>
+
+      {/* Revogado nao fica no meio do que vale. Fica aqui, ao alcance. */}
+      {revogados.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setVerRevogados((v) => !v)}
+            className="text-xs text-muted-foreground underline underline-offset-2"
+          >
+            {verRevogados ? "Esconder revogados" : `Ver revogados (${revogados.length})`}
+          </button>
+          {verRevogados &&
+            revogados.map((k) => (
+              <div
+                key={k.linktvid}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
+              >
+                <div>
+                  <p className="font-medium text-muted-foreground line-through">{k.nome}</p>
+                  <p className="text-sm text-muted-foreground">{nomeDaLoja(k.lojaid)} · revogado</p>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
     </section>
   );
 }

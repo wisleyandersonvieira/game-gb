@@ -55,7 +55,7 @@ export function origemDaChamada() {
   }
 }
 
-export type TipoDeTrava = "senha" | "pin" | "tablet" | "pintablet" | "lojamanual";
+export type TipoDeTrava = "senha" | "pin" | "tablet" | "pintablet" | "lojamanual" | "tvcodigo";
 
 /**
  * Abre a tentativa e, quando o tipo usa ATRASO em vez de bloqueio, espera o

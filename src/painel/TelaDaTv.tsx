@@ -1,0 +1,154 @@
+// O painel que a TV mostra. Sem login, so leitura, sem dado pessoal.
+//
+// Tudo chega por uma unica funcao do banco (painel_da_tv), que recebe o codigo
+// do link. Link revogado, loja desativada ou conta suspensa: "Painel
+// indisponivel" — a mesma resposta para os tres, sem dizer por que.
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { hora, PainelDaLoja, type DadosPainel } from "@/painel/PainelDaLoja";
+import { soltarFogosUmaVezPorDia } from "@/painel/fogos";
+import { TelaDaMeta } from "@/painel/MetaDaLoja";
+import { TelaDaAgenda } from "@/painel/AgendaDaLoja";
+
+const ATUALIZAR_A_CADA = 30_000;
+/** Rodízio de telas: painel da loja → meta → agenda, 30 segundos cada (só as que têm conteúdo). */
+const TROCAR_TELA_A_CADA = 30_000;
+
+type Resposta = ({ disponivel: true } & DadosPainel) | { disponivel: false };
+
+/**
+ * O painel da TV. Serve aos dois caminhos: o link comprido de sempre
+ * (/tv/<codigo>) e a TV pareada por codigo curto (/tv), que guarda o mesmo
+ * tipo de codigo no proprio aparelho.
+ *
+ * `aoPerderAcesso` existe para o pareamento: quando o gestor revoga, o painel
+ * passa a responder "indisponivel" e a TV precisa VOLTAR SOZINHA para a tela
+ * do codigo, sem ninguem ir ate la.
+ */
+export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderAcesso?: () => void }) {
+  const [dica, setDica] = useState(true);
+  const [tela, setTela] = useState(0);
+
+  const painel = useQuery({
+    queryKey: ["tv", codigo],
+    refetchInterval: ATUALIZAR_A_CADA,
+    refetchIntervalInBackground: true,
+    retry: true,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("painel_da_tv", { p_codigo: codigo });
+      if (error) throw error;
+      return data as unknown as Resposta;
+    },
+  });
+
+  // A TV tem paleta própria (escura), independente do tema de quem usa o app.
+  useEffect(() => {
+    const html = document.documentElement;
+    const eraEscuro = html.classList.contains("dark");
+    html.classList.add("tema-tv");
+    html.classList.remove("dark");
+    return () => {
+      html.classList.remove("tema-tv");
+      if (eraEscuro) html.classList.add("dark");
+    };
+  }, []);
+
+  // Mantém a tela acesa (celulares e TVs com navegador que suportam).
+  useEffect(() => {
+    let trava: { release: () => Promise<void> } | null = null;
+    const pedir = async () => {
+      try {
+        trava = await (navigator as any).wakeLock?.request("screen");
+      } catch {
+        /* sem suporte: a tela pode apagar sozinha */
+      }
+    };
+    pedir();
+    const aoVoltar = () => document.visibilityState === "visible" && pedir();
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => {
+      document.removeEventListener("visibilitychange", aoVoltar);
+      trava?.release().catch(() => {});
+    };
+  }, []);
+
+  // A dica de tela cheia some sozinha.
+  useEffect(() => {
+    const t = window.setTimeout(() => setDica(false), 8000);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const r = painel.data;
+  const dados = r && r.disponivel ? r : null;
+
+  useEffect(() => {
+    if (!dados) return;
+    const { total, aprovadas } = dados.progresso;
+    if (total > 0 && aprovadas >= total) soltarFogosUmaVezPorDia(`tv-${dados.loja}`, dados.hoje);
+    if (dados.meta?.dia?.bateu) soltarFogosUmaVezPorDia(`tv-${dados.loja}-meta`, dados.hoje);
+  }, [dados]);
+
+  // Rodízio: entram só as telas com conteúdo.
+  const telas = ["painel", ...(dados?.meta ? ["meta"] : []), ...((dados?.agenda ?? []).length > 0 ? ["agenda"] : [])];
+  const quantas = telas.length;
+  useEffect(() => {
+    setTela(0);
+    if (quantas < 2) return;
+    const t = window.setInterval(() => setTela((v) => (v + 1) % quantas), TROCAR_TELA_A_CADA);
+    return () => window.clearInterval(t);
+  }, [quantas]);
+  const atual = telas[tela % quantas] ?? "painel";
+
+  // Tocar em qualquer lugar liga a tela cheia (o navegador exige um toque).
+  function telaCheia() {
+    setDica(false);
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  }
+
+  // Revogada: avisa quem cuida do pareamento e sai da frente.
+  useEffect(() => {
+    if (r && !r.disponivel) aoPerderAcesso?.();
+  }, [r, aoPerderAcesso]);
+
+  if (r && !r.disponivel) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-8 text-center">
+        <div className="space-y-3">
+          <p className="text-5xl font-bold">Painel indisponível</p>
+          <p className="text-xl text-muted-foreground">Peça um link novo ao responsável pela loja.</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main onClick={telaCheia} className="min-h-screen cursor-none space-y-8 p-8">
+      <header className="flex flex-wrap items-baseline justify-between gap-4">
+        <h1 className="text-5xl font-bold">{dados?.loja ?? "Carregando..."}</h1>
+        <p className={`text-2xl ${painel.isError ? "text-destructive" : "text-muted-foreground"}`}>
+          {painel.isError
+            ? "Sem conexão. Tentando de novo..."
+            : dados
+              ? `Atualizado às ${hora(dados.atualizadoem)}`
+              : ""}
+        </p>
+      </header>
+
+      {dados &&
+        (atual === "meta" && dados.meta ? (
+          <TelaDaMeta meta={dados.meta} />
+        ) : atual === "agenda" ? (
+          <TelaDaAgenda agenda={dados.agenda} />
+        ) : (
+          <PainelDaLoja dados={dados} tv />
+        ))}
+
+      {dica && (
+        <p className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-card px-4 py-2 text-lg text-muted-foreground">
+          Toque na tela para tela cheia
+        </p>
+      )}
+    </main>
+  );
+}

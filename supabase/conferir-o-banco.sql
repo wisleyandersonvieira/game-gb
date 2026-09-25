@@ -51,6 +51,11 @@ WITH esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
   (71, 'C1',   'funcao', 'eu_tarefas',                   'aplicar-etapa-1.12-parte-C.sql'),
   (72, 'C1',   'funcao', 'eu_entregar',                  'aplicar-etapa-1.12-parte-C.sql'),
   (73, 'C1',   'funcao', 'eu_extrato',                   'aplicar-etapa-1.12-parte-C.sql'),
+  -- TV por codigo curto
+  (90, 'TV',   'funcao', 'tv_novo_codigo',               'aplicar-tv-por-codigo.sql'),
+  (91, 'TV',   'funcao', 'parear_tv',                    'aplicar-tv-por-codigo.sql'),
+  (92, 'TV',   'funcao', 'tv_buscar_link',               'aplicar-tv-por-codigo.sql'),
+  (93, 'TV',   'tabela', 'codigostv',                    'aplicar-tv-por-codigo.sql'),
   -- Ajuste do tablet e consertos da revisao
   (80, 'C1+',  'funcao', 'eu_confere_pessoa',            'aplicar-consertos-da-revisao-c1.sql')
 ),
@@ -124,7 +129,13 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
          WHERE n.nspname = 'public' AND p.proname = 'eu_confere_pessoa') LIKE '%cancelada%'),
   (85, 'C1+', 'versao', 'o Inicio do colaborador passa pela conferencia unica', 'aplicar-consertos-da-revisao-c1.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'eu_inicio') LIKE '%eu_confere_pessoa%')
+         WHERE n.nspname = 'public' AND p.proname = 'eu_inicio') LIKE '%eu_confere_pessoa%'),
+  (94, 'TV', 'versao', 'a trava conhece o pareamento da TV', 'aplicar-tv-por-codigo.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'tentativa_abrir_ex') LIKE '%tvcodigo%'),
+  (95, 'TV', 'versao', 'ninguem le a tabela dos codigos pelo navegador', 'aplicar-tv-por-codigo.sql',
+       to_regclass('public.codigostv') IS NOT NULL
+       AND NOT has_table_privilege('authenticated', 'public.codigostv', 'SELECT'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

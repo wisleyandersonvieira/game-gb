@@ -49,6 +49,7 @@ import { Route as EuIndexRouteImport } from './routes/eu/index'
 import { Route as EuExtratoRouteImport } from './routes/eu/extrato'
 import { Route as EuPerfilRouteImport } from './routes/eu/perfil'
 import { Route as EuTarefasRouteImport } from './routes/eu/tarefas'
+import { Route as TvIndexRouteImport } from './routes/tv.index'
 import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
 
 const IndexRoute = IndexRouteImport.update({
@@ -258,6 +259,11 @@ const EuTarefasRoute = EuTarefasRouteImport.update({
   path: '/tarefas',
   getParentRoute: () => EuRoute,
 } as any)
+const TvIndexRoute = TvIndexRouteImport.update({
+  id: '/tv/',
+  path: '/tv/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TvCodigoRoute = TvCodigoRouteImport.update({
   id: '/tv/$codigo',
   path: '/tv/$codigo',
@@ -305,6 +311,7 @@ export interface FileRoutesByFullPath {
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
   '/eu/': typeof EuIndexRoute
+  '/tv/': typeof TvIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -345,6 +352,7 @@ export interface FileRoutesByTo {
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
   '/eu': typeof EuIndexRoute
+  '/tv': typeof TvIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -389,6 +397,7 @@ export interface FileRoutesById {
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
   '/eu/': typeof EuIndexRoute
+  '/tv/': typeof TvIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -433,6 +442,7 @@ export interface FileRouteTypes {
     | '/tv/$codigo'
     | '/admin/'
     | '/eu/'
+    | '/tv/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -473,6 +483,7 @@ export interface FileRouteTypes {
     | '/tv/$codigo'
     | '/admin'
     | '/eu'
+    | '/tv'
   id:
     | '__root__'
     | '/'
@@ -516,6 +527,7 @@ export interface FileRouteTypes {
     | '/tv/$codigo'
     | '/admin/'
     | '/eu/'
+    | '/tv/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -532,6 +544,7 @@ export interface RootRouteChildren {
   TabletRoute: typeof TabletRoute
   ECodigoRoute: typeof ECodigoRoute
   TvCodigoRoute: typeof TvCodigoRoute
+  TvIndexRoute: typeof TvIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -816,6 +829,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EuTarefasRouteImport
       parentRoute: typeof EuRoute
     }
+    '/tv/': {
+      id: '/tv/'
+      path: '/tv'
+      fullPath: '/tv/'
+      preLoaderRoute: typeof TvIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tv/$codigo': {
       id: '/tv/$codigo'
       path: '/tv/$codigo'
@@ -923,6 +943,7 @@ const rootRouteChildren: RootRouteChildren = {
   TabletRoute: TabletRoute,
   ECodigoRoute: ECodigoRoute,
   TvCodigoRoute: TvCodigoRoute,
+  TvIndexRoute: TvIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

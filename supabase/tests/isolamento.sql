@@ -2433,9 +2433,18 @@ BEGIN
   SELECT string_agg(DISTINCT k, ',') INTO sobra
     FROM jsonb_array_elements(tv->'agenda') i, jsonb_object_keys(i) k WHERE k NOT IN ('quando', 'tipo');
   PERFORM public.exigir(sobra IS NULL, 'na TV cada agendamento tem so hora e tipo' || coalesce(' (sobrou: ' || sobra || ')', ''));
+  -- O valor NAO e procurado como texto solto: "777" aparecia por acaso nos
+  -- microssegundos do carimbo de hora e o teste reprovava sozinho, sem defeito
+  -- nenhum (25/09/2026). O que importa e que nao exista CHAVE de valor.
   PERFORM public.exigir(tv::text NOT LIKE '%Joaquim%' AND tv::text NOT LIKE '%Maria%' AND tv::text NOT LIKE '%98765432100%'
-                        AND tv::text NOT LIKE '%11977776666%' AND tv::text NOT LIKE '%Segredo%' AND tv::text NOT LIKE '%777%',
-                        'a TV nao recebe nome, CPF, telefone, observacoes nem valor');
+                        AND tv::text NOT LIKE '%11977776666%' AND tv::text NOT LIKE '%Segredo%',
+                        'a TV nao recebe nome, CPF, telefone nem observacoes');
+  SELECT string_agg(DISTINCT k, ',') INTO sobra
+    FROM jsonb_array_elements(tv->'agenda') i, jsonb_object_keys(i) k
+   WHERE k IN ('valor', 'valorprevisto', 'nome', 'cpf', 'telefone', 'observacoes', 'funcionarioid', 'clienteid');
+  PERFORM public.exigir(sobra IS NULL,
+                        'e nenhum agendamento da TV traz valor nem dado de pessoa'
+                        || coalesce(' (sobrou: ' || sobra || ')', ''));
 
   sobra := public.remover_anexo_agendamento(current_setting('teste.anexo')::integer);
   PERFORM public.exigir(sobra LIKE '1/10/%'
@@ -4642,7 +4651,11 @@ BEGIN
       -- Etapa 1.12 B1a: todas leem a conta de quem chamou (minha_conta ou
       -- minha_conta_editavel) e filtram por ela em cada tabela.
       'pegar_tarefa', 'revogar_aceite', 'atribuir_tarefa', 'fila_da_loja', 'tarefas_nao_pegas',
-      'tarefas_pegas_da_pessoa'
+      'tarefas_pegas_da_pessoa',
+      -- Etapa 1.12: parear a TV le a conta de quem chamou
+      -- (minha_conta_editavel) e confere a loja contra ela — a mesma familia
+      -- de criar_link_tv e revogar_link_tv, que ja estao nesta lista.
+      'parear_tv'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -6913,5 +6926,173 @@ END $$;
 
 RESET ROLE;
 SET teste.uid = '';
+
+-- ===========================================================================
+-- 57. A TV entra por CODIGO CURTO (Etapa 1.12)
+-- ===========================================================================
+-- A linha do codigo nasce SEM CONTA: quando a TV pede o codigo, ninguem sabe
+-- ainda de que empresa ela e. Por isso as provas aqui olham com atencao para
+-- o momento do pareamento, que e quando a conta entra.
+DO $$ BEGIN RAISE NOTICE '57. a TV entra por codigo curto'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE
+  v_cod   text;
+  v_cod2  text;
+  v_r     jsonb;
+  deu_erro boolean;
+BEGIN
+  -- A TV pede o codigo. O segredo do aparelho e o que a identifica depois.
+  v_cod := public.tv_novo_codigo(repeat('a', 64));
+  PERFORM public.exigir(length(v_cod) = 6, 'o codigo tem 6 caracteres');
+  PERFORM public.exigir(v_cod !~ '[OIS015]',
+                        'o codigo nao usa as letras e numeros que se confundem (O/0, I/1, S/5)');
+  PERFORM public.exigir(v_cod = upper(v_cod), 'o codigo e sempre em maiusculas');
+
+  -- Dois aparelhos nunca recebem o mesmo codigo.
+  v_cod2 := public.tv_novo_codigo(repeat('b', 64));
+  PERFORM public.exigir(v_cod2 <> v_cod, 'dois aparelhos recebem codigos diferentes');
+
+  -- Antes de parear, a TV so ouve "espere".
+  v_r := public.tv_buscar_link(repeat('a', 64));
+  PERFORM public.exigir(v_r->>'situacao' = 'esperando', 'antes de parear, a TV espera');
+
+  -- Segredo que ninguem pediu nao recebe nada.
+  v_r := public.tv_buscar_link(repeat('c', 64));
+  PERFORM public.exigir(v_r->>'situacao' = 'sem_codigo', 'segredo desconhecido nao recebe link');
+
+  -- A linha nasce SEM conta: e o ponto delicado deste desenho.
+  PERFORM public.exigir((SELECT contaid IS NULL FROM public.codigostv WHERE codigo = v_cod),
+                        'a linha do codigo nasce sem conta nenhuma');
+END $$;
+
+-- O gestor da conta A pareia.
+-- O codigo e lido AQUI, no papel do servidor: o gestor nunca le esta tabela.
+DO $$ BEGIN
+  PERFORM set_config('teste.tvcod',
+                     (SELECT codigo FROM public.codigostv WHERE segredohash = repeat('a', 64)), false);
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_cod text := current_setting('teste.tvcod'); deu_erro boolean;
+BEGIN
+  -- Loja de OUTRA conta: recusado.
+  BEGIN PERFORM public.parear_tv(v_cod, 20, 'TV roubada'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem pareia uma TV numa loja de outra conta');
+
+  -- Sem nome: recusado.
+  BEGIN PERFORM public.parear_tv(v_cod, 10, '   '); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a TV precisa de um nome');
+
+  -- Codigo que nao existe: recusado.
+  BEGIN PERFORM public.parear_tv('ZZZZZZ', 10, 'TV do balcao'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'codigo inventado nao pareia nada');
+
+  -- Agora o certo.
+  PERFORM public.parear_tv(v_cod, 10, 'TV do balcao');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.linkstv
+                                 WHERE contaid = 1 AND lojaid = 10 AND nome = 'TV do balcao'
+                                   AND revogadoem IS NULL),
+                        'o pareamento cria o link da TV na loja escolhida');
+
+  -- O mesmo codigo nao serve duas vezes.
+  BEGIN PERFORM public.parear_tv(v_cod, 10, 'TV clonada'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o codigo e de uso unico: nao pareia de novo');
+END $$;
+
+-- A conta B nao alcanca nada disso.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.linkstv WHERE nome = 'TV do balcao'),
+                        'a conta B nao ve a TV da conta A');
+  BEGIN PERFORM public.tv_buscar_link(repeat('a', 64)); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.tv_buscar_link');
+  BEGIN PERFORM public.tv_novo_codigo(repeat('d', 64)); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.tv_novo_codigo');
+  -- A tabela dos codigos NEGA a leitura para quem esta logado: nem o dono da
+  -- conta a alcanca. E mais forte do que "devolve vazio".
+  BEGIN PERFORM 1 FROM public.codigostv; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem le a tabela dos codigos pelo navegador (nem o dono)');
+END $$;
+
+-- A TV busca o link: sai UMA vez, e some da linha.
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v_r jsonb; v_token text;
+BEGIN
+  v_r := public.tv_buscar_link(repeat('a', 64));
+  PERFORM public.exigir(v_r->>'situacao' = 'pareada', 'depois de pareada, a TV recebe o link');
+  v_token := v_r->>'token';
+  PERFORM public.exigir(length(v_token) = 64, 'o link tem o mesmo tamanho do link comprido de sempre');
+
+  -- E o link nao fica parado na tabela.
+  PERFORM public.exigir((SELECT token IS NULL FROM public.codigostv WHERE segredohash = repeat('a', 64)),
+                        'o link e apagado da linha assim que a TV o recebe');
+
+  -- Segunda vez nao devolve nada.
+  v_r := public.tv_buscar_link(repeat('a', 64));
+  PERFORM public.exigir(v_r->>'situacao' = 'ja_entregue', 'o link so sai uma vez');
+
+  -- E o link funciona de verdade no painel da TV.
+  PERFORM public.exigir((public.painel_da_tv(v_token)->>'disponivel')::boolean,
+                        'o link do pareamento abre o painel da loja');
+
+  -- Revogado: a TV perde o painel e volta para a tela do codigo.
+  UPDATE public.linkstv SET revogadoem = now() WHERE nome = 'TV do balcao';
+  PERFORM public.exigir(NOT (public.painel_da_tv(v_token)->>'disponivel')::boolean,
+                        'revogada, a TV para de receber o painel');
+END $$;
+
+-- Codigo vencido nao pareia, e a TV pede outro.
+DO $$
+DECLARE v_cod text; v_r jsonb; deu_erro boolean;
+BEGIN
+  v_cod := public.tv_novo_codigo(repeat('e', 64));
+  UPDATE public.codigostv SET expiraem = now() - interval '1 minute' WHERE codigo = v_cod;
+  v_r := public.tv_buscar_link(repeat('e', 64));
+  PERFORM public.exigir(v_r->>'situacao' = 'vencido', 'codigo vencido avisa a TV para pedir outro');
+END $$;
+
+DO $$ BEGIN
+  PERFORM set_config('teste.tvcod2',
+                     (SELECT codigo FROM public.codigostv WHERE segredohash = repeat('e', 64)), false);
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_cod text := current_setting('teste.tvcod2'); deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.parear_tv(v_cod, 10, 'TV atrasada'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'codigo vencido nao pareia');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- A trava de tentativas conhece o pareamento da TV.
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.tentativa_abrir_ex(NULL, 'tvcodigo', repeat('f', 64), 'teste');
+  PERFORM public.exigir((v->>'tentativaid') IS NOT NULL, 'a trava aceita o tipo "tvcodigo"');
+  PERFORM public.tentativa_fechar((v->>'tentativaid')::bigint, true);
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

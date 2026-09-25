@@ -5468,6 +5468,15 @@ export type Database = {
         }
         Returns: number
       }
+      tv_novo_codigo: {
+        Args: { p_minutos?: number; p_segredohash: string }
+        Returns: string
+      }
+      tv_buscar_link: { Args: { p_segredohash: string }; Returns: Json }
+      parear_tv: {
+        Args: { p_codigo: string; p_lojaid: number; p_nome: string }
+        Returns: undefined
+      }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number
