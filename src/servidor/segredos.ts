@@ -145,3 +145,36 @@ export function conferirSenhaDoTablet(valor: string, proibidas: (string | null |
   }
   return v;
 }
+
+/**
+ * Um PASSE curto: prova que este servidor conferiu algo agora há pouco.
+ *
+ * Serve para o tablet não precisar guardar o PIN na tela enquanto a pessoa
+ * preenche um formulário. O PIN é conferido uma vez, sai um passe assinado, e
+ * o passe é que volta no Salvar. Vale poucos minutos, e o prazo é medido pelo
+ * relógio do SERVIDOR.
+ */
+export async function emitirPasse(assunto: string, quem: string): Promise<string> {
+  const em = Date.now();
+  return `${em}.${await embaralhar(`passe:${assunto}:${quem}:${em}`)}`;
+}
+
+/** Recusa passe forjado, mexido ou vencido. `minutos` é o prazo. */
+export async function conferirPasse(
+  passe: string,
+  assunto: string,
+  quem: string,
+  minutos = 2,
+): Promise<void> {
+  const [quando, assinatura] = (passe ?? "").split(".");
+  const em = Number(quando);
+  if (!Number.isFinite(em) || !assinatura) throw new Error("Confirme o seu PIN de novo.");
+  if (Date.now() - em > minutos * 60_000) throw new Error("Passou do tempo. Confirme o seu PIN de novo.");
+  if (em > Date.now() + 60_000) throw new Error("Confirme o seu PIN de novo.");
+
+  const esperada = await embaralhar(`passe:${assunto}:${quem}:${em}`);
+  if (assinatura.length !== esperada.length) throw new Error("Confirme o seu PIN de novo.");
+  let diferenca = 0;
+  for (let i = 0; i < assinatura.length; i++) diferenca |= assinatura.charCodeAt(i) ^ esperada.charCodeAt(i);
+  if (diferenca !== 0) throw new Error("Confirme o seu PIN de novo.");
+}

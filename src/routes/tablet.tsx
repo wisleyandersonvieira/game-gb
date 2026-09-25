@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { meuAcesso } from "@/integrations/supabase/destino";
 import {
   autorizacaoDeFoto,
+  conferirPinNoTablet,
   entregarNoTablet,
   filaDoTablet,
   pegarNoTablet,
@@ -20,6 +21,7 @@ import {
 } from "@/servidor/tablet";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import { liberarSom, somLiberado, tarefasNovas, tocar } from "@/painel/somDaFila";
+import { PedidoNoTablet } from "@/painel/PedidoNoTablet";
 
 export const Route = createFileRoute("/tablet")({
   ssr: false,
@@ -60,6 +62,12 @@ function Tablet() {
   // que vale enquanto o som estiver bloqueado.
   const [novas, setNovas] = useState<number[]>([]);
   const jaVistas = useRef<number[] | null>(null);
+  // O menu do tablet. Hoje tem um item; mural, feedback, justificativa e
+  // painel entram aqui quando existirem.
+  const [menuAberto, setMenuAberto] = useState(false);
+  // Quando a pessoa toca num item do menu, o PIN é pedido para ELE.
+  const [doMenu, setDoMenu] = useState<"pedido" | null>(null);
+  const [pedido, setPedido] = useState<{ nome: string; passe: string; funcionarioid: number } | null>(null);
 
   const fila = useQuery({
     queryKey: ["fila-tablet"],
@@ -96,6 +104,15 @@ function Tablet() {
       setPedindoPin(false);
       qc.invalidateQueries({ queryKey: ["fila-tablet"] });
       setTimeout(() => setRecado(null), 6000);
+    },
+  });
+
+  // O PIN do menu usa a MESMA modal e a MESMA trava do pegar tarefa.
+  const abrirPedido = useMutation({
+    mutationFn: (pin: string) => conferirPinNoTablet({ data: { pin } }),
+    onSuccess: (r) => {
+      setPedido({ nome: r.nome, passe: r.passe, funcionarioid: r.funcionarioid });
+      setDoMenu(null);
     },
   });
 
@@ -145,10 +162,41 @@ function Tablet() {
       <header className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
         <h1 className="font-display text-lg font-semibold">{fila.data?.loja ?? "Tablet da loja"}</h1>
         <p className="text-xs text-muted-foreground">Toque na tarefa e confirme com o seu PIN.</p>
-        {/* 48px de altura: o dedo, às vezes molhado, continua acertando. */}
-        <button onClick={sair} className="min-h-[48px] rounded-lg border border-border px-4 text-sm">
-          Sair
-        </button>
+        <div className="relative flex items-center gap-2">
+          {/* 48px de altura: o dedo, às vezes molhado, continua acertando. */}
+          <button
+            onClick={() => setMenuAberto((v) => !v)}
+            aria-label="Menu"
+            className="min-h-[48px] rounded-lg border border-border px-4 text-xl"
+          >
+            ☰
+          </button>
+          <button onClick={sair} className="min-h-[48px] rounded-lg border border-border px-4 text-sm">
+            Sair
+          </button>
+
+          {/* O menu cresce quando a funcionalidade existir: nada de item
+              desativado nem "em breve". */}
+          {menuAberto && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setMenuAberto(false)} />
+              <ul className="absolute right-0 top-full z-30 mt-1 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+                <li>
+                  <button
+                    onClick={() => {
+                      setMenuAberto(false);
+                      abrirPedido.reset();
+                      setDoMenu("pedido");
+                    }}
+                    className="min-h-[48px] w-full px-4 text-left text-lg"
+                  >
+                    Solicitações
+                  </button>
+                </li>
+              </ul>
+            </>
+          )}
+        </div>
       </header>
 
       {recado && (
@@ -221,6 +269,34 @@ function Tablet() {
           mudar={setAcao}
           cancelar={() => setAcao(null)}
           confirmar={() => setPedindoPin(true)}
+        />
+      )}
+
+      {pedido && (
+        <PedidoNoTablet
+          nome={pedido.nome}
+          passe={pedido.passe}
+          funcionarioid={pedido.funcionarioid}
+          fechar={() => setPedido(null)}
+          pronto={(texto) => {
+            setPedido(null);
+            setRecado(texto);
+            setTimeout(() => setRecado(null), 6000);
+          }}
+        />
+      )}
+
+      {/* O PIN do menu: MESMA modal, MESMA trava, erro dentro dela. */}
+      {doMenu === "pedido" && (
+        <TecladoDoPin
+          titulo="Quem está pedindo?"
+          ocupado={abrirPedido.isPending}
+          erro={abrirPedido.isError ? (abrirPedido.error as Error).message : null}
+          cancelar={() => {
+            abrirPedido.reset();
+            setDoMenu(null);
+          }}
+          enviar={(pin) => abrirPedido.mutate(pin)}
         />
       )}
 

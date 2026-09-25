@@ -7414,4 +7414,117 @@ END $$;
 
 UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
 
+-- ===========================================================================
+-- 61. Pedido aberto no tablet (Etapa 1.12, parte B2)
+-- ===========================================================================
+-- Estas provas CHAMAM a funcao direto, sem passar pela tela: o que garante que
+-- ninguem grava pedido no nome de outra pessoa nem em outra loja e o BANCO.
+DO $$ BEGIN RAISE NOTICE '61. pedido aberto no tablet'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v_id integer; deu_erro boolean; v_n integer;
+BEGIN
+  -- O caminho feliz: gente da loja 10, compra.
+  v_id := public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Detergente', 2, 'litros', 'acabou hoje');
+  PERFORM public.exigir(v_id IS NOT NULL, 'o pedido de compra e aberto');
+  PERFORM public.exigir((SELECT status FROM public.solicitacoesinternas WHERE solicitacaoid = v_id) = 'Aberta',
+                        'e nasce em "Aberta", para o gestor ver');
+  PERFORM public.exigir((SELECT lojaid = 10 AND funcionarioid = 9501 AND contaid = 1
+                           FROM public.solicitacoesinternas WHERE solicitacaoid = v_id),
+                        'na loja do tablet e no nome de quem digitou o PIN');
+  PERFORM public.exigir((SELECT categoria IS NULL FROM public.solicitacoesinternas WHERE solicitacaoid = v_id),
+                        'sem categoria: o tablet nao pergunta');
+  PERFORM public.exigir((SELECT observacao = 'acabou hoje' FROM public.solicitacoesinternas
+                          WHERE solicitacaoid = v_id),
+                        'a observacao fica gravada');
+
+  -- Manutencao nao leva quantidade.
+  v_id := public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'A porta do freezer nao fecha');
+  PERFORM public.exigir((SELECT quantidade IS NULL FROM public.solicitacoesinternas WHERE solicitacaoid = v_id),
+                        'manutencao nao leva quantidade');
+
+  -- NO NOME DE OUTRA PESSOA: recusado. 9504 trabalha na loja 11.
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9504, 'Compra', 'Sabao'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao se abre pedido no nome de quem nao trabalha nesta loja');
+
+  -- EM OUTRA LOJA: recusado (a loja 20 e da conta B).
+  BEGIN PERFORM public.visao_abrir_pedido(1, 20, 9501, 'Compra', 'Sabao'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem numa loja de outra conta');
+
+  -- Obrigatorios e limites.
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', '   ', 1); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o item e obrigatorio');
+
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', ''); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a descricao da manutencao tambem e obrigatoria');
+
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Sabao', 0); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quantidade zero nao passa');
+
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Sabao', -3); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem quantidade negativa');
+
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', NULL, 1); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'compra sem item nao passa');
+
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', repeat('x', 600), 1); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'texto grande demais e recusado');
+
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Outra coisa', 'Sabao'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'tipo inventado nao passa');
+
+  -- LIMITE POR HORA: a loja nao enche a tela do gestor sem querer.
+  -- Solicitacao nao se apaga (o banco impede, e faz bem). Entao o limite e
+  -- ajustado ao que ja existe: mais dois cabem, o terceiro nao.
+  SELECT count(*) INTO v_n FROM public.solicitacoesinternas s
+   WHERE s.contaid = 1 AND s.lojaid = 10 AND s.datasolicitacao > now() - interval '1 hour';
+  UPDATE public.configuracoes SET valor = (v_n + 2)::text
+   WHERE contaid = 1 AND chave = 'MAX_PEDIDOS_LOJA_HORA';
+
+  PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'um');
+  PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'dois');
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'tres'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'passado o limite da hora, a loja espera um pouco');
+  PERFORM public.exigir((SELECT count(*) FROM public.solicitacoesinternas s
+                          WHERE s.contaid = 1 AND s.lojaid = 10
+                            AND s.datasolicitacao > now() - interval '1 hour') = v_n + 2,
+                        'e o pedido que passou do limite nao entrou');
+  UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'MAX_PEDIDOS_LOJA_HORA';
+END $$;
+
+-- A funcao recebe conta e loja: nunca e liberada para quem esta logado.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Sabao', 1); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.visao_abrir_pedido');
+END $$;
+
+-- A conta B nao ve os pedidos da A.
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.solicitacoesinternas WHERE lojaid = 10),
+                        'a conta B nao ve os pedidos da loja de A');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

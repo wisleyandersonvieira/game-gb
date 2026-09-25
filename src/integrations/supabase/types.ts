@@ -3855,6 +3855,7 @@ export type Database = {
       }
       solicitacoesinternas: {
         Row: {
+          observacao: string | null
           atualizadoem: string
           caminhofoto: string | null
           categoria: string | null
@@ -3873,6 +3874,7 @@ export type Database = {
           unidade: string | null
         }
         Insert: {
+          observacao?: string | null
           atualizadoem?: string
           caminhofoto?: string | null
           categoria?: string | null
@@ -3891,6 +3893,7 @@ export type Database = {
           unidade?: string | null
         }
         Update: {
+          observacao?: string | null
           atualizadoem?: string
           caminhofoto?: string | null
           categoria?: string | null
@@ -5484,6 +5487,19 @@ export type Database = {
       parear_tv: {
         Args: { p_codigo: string; p_lojaid: number; p_nome: string }
         Returns: undefined
+      }
+      visao_abrir_pedido: {
+        Args: {
+          p_contaid: number
+          p_descricao: string
+          p_funcionarioid: number
+          p_lojaid: number
+          p_observacao?: string | null
+          p_quantidade?: number | null
+          p_tipo: string
+          p_unidade?: string | null
+        }
+        Returns: number
       }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }

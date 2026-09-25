@@ -10,7 +10,7 @@
 // guardado em lugar nenhum — vem no pedido, e some quando ele acaba.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { abrirTentativa, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+import { abrirTentativa, conferirPasse, emitirPasse, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
 import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
 
 /**
@@ -235,4 +235,81 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message);
     return { nome: pessoa.nome };
+  });
+
+/**
+ * Abrir pedido (compra ou manutenção) pelo tablet.
+ *
+ * QUEM PEDIU e EM QUE LOJA saem daqui: a loja vem do tablet pareado e a pessoa
+ * vem do PIN que este servidor conferiu. O navegador manda só o que a pessoa
+ * digitou — nunca quem ela é.
+ *
+ * Usa a MESMA trava de tentativas do pegar tarefa: não existe um caminho de
+ * PIN separado.
+ */
+export const abrirPedidoNoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (d: {
+      passe: string;
+      funcionarioid: number;
+      tipo: "Compra" | "Manutencao";
+      descricao?: string | null;
+      quantidade?: number | null;
+      unidade?: string | null;
+      observacao?: string | null;
+    }) => {
+      if (typeof d?.passe !== "string") throw new Error("Confirme o seu PIN de novo.");
+      if (!Number.isInteger(d?.funcionarioid)) throw new Error("Confirme o seu PIN de novo.");
+      if (d?.tipo !== "Compra" && d?.tipo !== "Manutencao") throw new Error("Escolha Compra ou Manutenção.");
+      return {
+        passe: d.passe,
+        funcionarioid: d.funcionarioid,
+        tipo: d.tipo,
+        descricao: typeof d.descricao === "string" ? d.descricao.slice(0, 500) : "",
+        // Número de verdade: texto vira nulo, e o banco recusa.
+        quantidade: typeof d.quantidade === "number" && Number.isFinite(d.quantidade) ? d.quantidade : null,
+        unidade: typeof d.unidade === "string" ? d.unidade.slice(0, 20) : null,
+        observacao: typeof d.observacao === "string" ? d.observacao.slice(0, 500) : null,
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    // O passe prova que ESTE servidor conferiu o PIN desta pessoa, neste
+    // tablet, há poucos minutos. Trocar o número aqui não adianta: a
+    // assinatura não bate.
+    await conferirPasse(data.passe, `pedido:${t.contaid}:${t.lojaid}`, String(data.funcionarioid));
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.rpc("visao_abrir_pedido", {
+      p_contaid: t.contaid,
+      p_lojaid: t.lojaid,
+      p_funcionarioid: data.funcionarioid,
+      p_tipo: data.tipo,
+      p_descricao: data.descricao,
+      p_quantidade: data.quantidade,
+      p_unidade: data.unidade,
+      p_observacao: data.observacao,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });
+
+/** Só confere o PIN e devolve o nome: é o que abre a tela do pedido. */
+export const conferirPinNoTablet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { pin: string }) => ({ pin: typeof d?.pin === "string" ? d.pin : "" }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    const t = await tabletDoToken(supabase, userId);
+    const pessoa = await pessoaDoPin(t, data.pin);
+    // O passe substitui o PIN enquanto a pessoa preenche: a tela não guarda o
+    // número. Dois minutos cobrem os 90 segundos da tela com folga.
+    return {
+      nome: pessoa.nome,
+      passe: await emitirPasse(`pedido:${t.contaid}:${t.lojaid}`, String(pessoa.funcionarioid)),
+      funcionarioid: pessoa.funcionarioid,
+    };
   });

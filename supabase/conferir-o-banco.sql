@@ -160,7 +160,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (112, 'ACEITE', 'versao', 'a configuracao do som chegou em TODA conta', 'aplicar-aceite-e-som.sql',
        NOT EXISTS (SELECT 1 FROM public.contas c
                     WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
-                                       WHERE g.contaid = c.contaid AND g.chave = 'SOM_TAREFA_NOVA')))
+                                       WHERE g.contaid = c.contaid AND g.chave = 'SOM_TAREFA_NOVA'))),
+  (120, 'B2', 'versao', 'o tablet abre pedido', 'aplicar-pedido-no-tablet.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'visao_abrir_pedido')),
+  (121, 'B2', 'versao', 'o pedido guarda a observacao', 'aplicar-pedido-no-tablet.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'solicitacoesinternas'
+                  AND column_name = 'observacao'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

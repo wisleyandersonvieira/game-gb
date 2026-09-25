@@ -205,6 +205,8 @@ type Solicitacao = {
   motivorecusa: string | null;
   datasolicitacao: string;
   funcionarioid: number | null;
+  /** O que a pessoa escreveu junto do pedido. Vazio nos pedidos antigos. */
+  observacao: string | null;
 };
 
 type Mudanca = {
@@ -227,7 +229,7 @@ function Lista({ lojaid }: { lojaid: number }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("solicitacoesinternas")
-        .select("solicitacaoid, tipo, categoria, descricao, quantidade, unidade, status, motivorecusa, datasolicitacao, funcionarioid")
+        .select("solicitacaoid, tipo, categoria, descricao, quantidade, unidade, status, motivorecusa, datasolicitacao, funcionarioid, observacao")
         .eq("lojaid", lojaid)
         .order("datasolicitacao", { ascending: false })
         .limit(300);
@@ -313,10 +315,13 @@ function Lista({ lojaid }: { lojaid: number }) {
                 <span className={`ml-2 rounded-md border px-2 py-0.5 text-xs font-normal ${COR[s.status] ?? ""}`}>{s.status}</span>
               </p>
               <p className="text-sm text-muted-foreground">
+                {/* Os pedidos antigos continuam mostrando a categoria; os do
+                    tablet vêm sem, porque ele não pergunta. */}
                 {s.categoria && `${s.categoria} · `}
                 {s.funcionarioid ? dados.data?.nome.get(s.funcionarioid) : "—"} · {dataHora(s.datasolicitacao)}
               </p>
             </div>
+            {s.observacao && <p className="text-sm">“{s.observacao}”</p>}
             {s.motivorecusa && <p className="text-xs text-destructive">Recusada: {s.motivorecusa}</p>}
             <div className="flex flex-wrap gap-2">
               {s.status === "Aberta" && (
