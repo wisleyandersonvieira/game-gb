@@ -9,6 +9,7 @@ import { useState } from "react";
 import { OPERACIONAL } from "@/ui/prazos";
 import appCss from "@/styles.css?url";
 import { SCRIPT_TEMA } from "@/ui/tema";
+import { VersaoNova } from "@/ui/VersaoNova";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -62,6 +63,9 @@ function RootLayout() {
       </head>
       <body>
         <QueryClientProvider client={queryClient}>
+          {/* Fica acima de TUDO (gestor, tablet e celular): quem estiver com a
+              aba aberta desde antes da publicação precisa saber. */}
+          <VersaoNova />
           <Outlet />
         </QueryClientProvider>
         <Scripts />

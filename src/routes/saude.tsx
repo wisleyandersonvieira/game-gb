@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { diagnostico } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
+import { VERSAO, versaoEmTexto } from "@/ui/versao";
 
 export const Route = createFileRoute("/saude")({
   ssr: false,
@@ -47,6 +48,19 @@ function Saude() {
       <p className="text-sm text-muted-foreground">
         Esta tela não mostra nenhum segredo: só diz o que está configurado e o que falta.
       </p>
+
+      {/* A VERSÃO NO AR. Vem gravada dentro do próprio pacote, no build, então
+          é impossível ela discordar do que está publicado: se esta página
+          carregou, é esta a versão que está servindo. */}
+      <div className="rounded-lg border border-border bg-card p-3">
+        <p className="text-sm font-medium">Versão no ar</p>
+        <p className="mt-1 font-mono text-xs break-words text-muted-foreground">{versaoEmTexto(VERSAO)}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Se este commit não for o último que você publicou, o que está no ar é uma versão antiga —
+          publique de novo. Esta tela é a única que sabe disso: as outras linhas abaixo falam do
+          <strong className="font-medium"> banco</strong>, não do aplicativo.
+        </p>
+      </div>
 
       {d.isLoading && <p className="text-sm text-muted-foreground">Conferindo…</p>}
       {d.isError && <p className="text-sm text-destructive">{(d.error as Error).message}</p>}
