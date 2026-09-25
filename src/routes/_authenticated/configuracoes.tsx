@@ -140,6 +140,21 @@ export const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
     ],
   },
   {
+    titulo: "Fuso horário da empresa",
+    aviso:
+      "Decide a que horas as tarefas com \"Disponível a partir de\" entram na fila. Uma loja em Campo Grande fica uma hora atrás de Brasília.",
+    itens: [
+      {
+        chave: "FUSO_HORARIO",
+        rotulo: "Fuso horário",
+        ajuda:
+          "Escreva como o computador conhece: America/Sao_Paulo (Brasília), America/Campo_Grande (MS), America/Manaus (AM), America/Rio_Branco (AC). Se digitar um fuso que não existe, o sistema recusa.",
+        tipo: "texto",
+        padrao: "America/Sao_Paulo",
+      },
+    ],
+  },
+  {
     titulo: "Aceite de tarefas",
     aviso:
       "Vale só para tarefa atribuída a várias pessoas e para missão da equipe. Tarefa com dono único não muda.",

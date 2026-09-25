@@ -42,6 +42,10 @@ export type ItemDaFila = {
   feitapor: string | null;
   feitaem: string | null;
   feitasituacao: "Pendente" | "Aprovada" | null;
+  /** false enquanto não chegou a hora de liberação. */
+  liberada: boolean;
+  /** Quando ela libera hoje. Vazio = o dia todo. */
+  liberaas: string | null;
 };
 
 /**

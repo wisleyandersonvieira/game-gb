@@ -98,6 +98,9 @@ function Tablet() {
   const agora = itens[0]?.agora ?? null;
   const minutosParada = fila.data?.minutosParada ?? 30;
   const faixa = (s: ItemDaFila["situacao"]) => itens.filter((i) => i.situacao === s);
+  // Antes da hora a tarefa nao entra na fila de pegar: fica na lista de baixo.
+  const paraPegar = faixa("para_pegar").filter((i) => i.liberada);
+  const aindaNao = faixa("para_pegar").filter((i) => !i.liberada);
 
   async function sair() {
     await supabase.auth.signOut();
@@ -128,7 +131,7 @@ function Tablet() {
         <Coluna
           titulo="Para pegar"
           vazio="Nada esperando."
-          itens={faixa("para_pegar")}
+          itens={paraPegar}
           agora={agora}
           minutosParada={minutosParada}
         >
@@ -170,6 +173,8 @@ function Tablet() {
         />
       </div>
 
+      <AindaNaoLiberadas itens={aindaNao} />
+
       {acao?.tipo === "entregar" && !pedindoPin && (
         <Entregar
           acao={acao}
@@ -188,6 +193,41 @@ function Tablet() {
         />
       )}
     </main>
+  );
+}
+
+/**
+ * "Ainda nao liberadas (2)" — abre e mostra cada uma com a hora.
+ *
+ * Elas NAO entram na fila de pegar: o botao nem existe aqui. A equipe ve o que
+ * vem por ai, e quando chega a hora a tarefa entra sozinha na fila, porque a
+ * fila e conferida a cada 15 segundos.
+ */
+function AindaNaoLiberadas({ itens }: { itens: ItemDaFila[] }) {
+  const [aberta, setAberta] = useState(false);
+  if (itens.length === 0) return null;
+
+  return (
+    <section className="mt-4 rounded-2xl border border-border bg-card p-3">
+      <button
+        onClick={() => setAberta((v) => !v)}
+        className="flex w-full items-center justify-between text-lg font-semibold"
+      >
+        <span>
+          Ainda não liberadas <span className="text-muted-foreground">({itens.length})</span>
+        </span>
+        <span className="text-muted-foreground">{aberta ? "▲" : "▼"}</span>
+      </button>
+      {aberta && (
+        <ul className="mt-2 space-y-2">
+          {itens.map((i) => (
+            <li key={i.atribuicaoid} className="rounded-xl bg-background px-3 py-2 text-lg">
+              {i.titulo} <span className="text-muted-foreground">— a partir das {hora(i.liberaas)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

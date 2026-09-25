@@ -65,8 +65,11 @@ function Tarefas() {
                   {t.pegaem ? ` · você pegou às ${hora(t.pegaem)}` : ""}
                 </p>
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${f.cor}`}>{f.texto}</span>
-                  {t.situacao === "a_fazer" || t.situacao === "recusada" ? (
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${f.cor}`}>
+                    {/* Antes da hora, a tarefa aparece mas ainda não dá para entregar. */}
+                    {t.liberada ? f.texto : `a partir das ${hora(t.liberaas)}`}
+                  </span>
+                  {t.liberada && (t.situacao === "a_fazer" || t.situacao === "recusada") ? (
                     <button
                       onClick={() => setEntregando(t)}
                       className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"

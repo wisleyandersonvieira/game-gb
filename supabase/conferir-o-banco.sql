@@ -56,6 +56,10 @@ WITH esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
   (91, 'TV',   'funcao', 'parear_tv',                    'aplicar-tv-por-codigo.sql'),
   (92, 'TV',   'funcao', 'tv_buscar_link',               'aplicar-tv-por-codigo.sql'),
   (93, 'TV',   'tabela', 'codigostv',                    'aplicar-tv-por-codigo.sql'),
+  -- Hora de liberacao da tarefa
+  (96, 'HORA', 'funcao', 'instante_na_conta',            'aplicar-hora-de-liberacao.sql'),
+  (97, 'HORA', 'funcao', 'fuso_da_conta',                'aplicar-hora-de-liberacao.sql'),
+  (98, 'HORA', 'funcao', 'alterar_hora_da_atribuicao',   'aplicar-hora-de-liberacao.sql'),
   -- Ajuste do tablet e consertos da revisao
   (80, 'C1+',  'funcao', 'eu_confere_pessoa',            'aplicar-consertos-da-revisao-c1.sql')
 ),
@@ -135,7 +139,18 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
          WHERE n.nspname = 'public' AND p.proname = 'tentativa_abrir_ex') LIKE '%tvcodigo%'),
   (95, 'TV', 'versao', 'ninguem le a tabela dos codigos pelo navegador', 'aplicar-tv-por-codigo.sql',
        to_regclass('public.codigostv') IS NOT NULL
-       AND NOT has_table_privilege('authenticated', 'public.codigostv', 'SELECT'))
+       AND NOT has_table_privilege('authenticated', 'public.codigostv', 'SELECT')),
+  (99, 'HORA', 'versao', 'a tarefa pode ter hora de liberacao', 'aplicar-hora-de-liberacao.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'tarefasatribuidas'
+                  AND column_name = 'disponivelapartir')),
+  (100, 'HORA', 'versao', 'a fila sabe o que ja liberou', 'aplicar-hora-de-liberacao.sql',
+       EXISTS (SELECT 1 FROM information_schema.parameters
+                WHERE specific_schema = 'public' AND parameter_name = 'liberada')),
+  (101, 'HORA', 'versao', 'o fuso da empresa chegou em TODA conta', 'aplicar-hora-de-liberacao.sql',
+       NOT EXISTS (SELECT 1 FROM public.contas c
+                    WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes g
+                                       WHERE g.contaid = c.contaid AND g.chave = 'FUSO_HORARIO')))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

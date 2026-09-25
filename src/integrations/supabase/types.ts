@@ -3978,6 +3978,7 @@ export type Database = {
       }
       tarefasatribuidas: {
         Row: {
+          disponivelapartir: string | null
           agendamentoid: number | null
           atribuicaoid: number
           contaid: number
@@ -4000,6 +4001,7 @@ export type Database = {
           valorfrequencia: number | null
         }
         Insert: {
+          disponivelapartir?: string | null
           agendamentoid?: number | null
           atribuicaoid?: number
           contaid?: number
@@ -4022,6 +4024,7 @@ export type Database = {
           valorfrequencia?: number | null
         }
         Update: {
+          disponivelapartir?: string | null
           agendamentoid?: number | null
           atribuicaoid?: number
           contaid?: number
@@ -4631,9 +4634,14 @@ export type Database = {
         Args: { p_documentoid: number }
         Returns: undefined
       }
+      alterar_hora_da_atribuicao: {
+        Args: { p_atribuicaoid: number; p_hora: string | null }
+        Returns: undefined
+      }
       atribuir_tarefa: {
         Args: {
           p_dataagendamento?: string
+          p_disponivelapartir?: string | null
           p_funcionarios: number[] | null
           p_horariodisparo?: string
           p_lojaid: number

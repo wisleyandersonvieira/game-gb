@@ -79,6 +79,10 @@ export type MinhaTarefa = {
   /** Hora em que ela pegou a tarefa no tablet. Vazio na tarefa que já é dela. */
   pegaem: string | null;
   situacao: "a_fazer" | "esperando" | "aprovada" | "recusada";
+  /** false enquanto não chegou a hora de liberação. */
+  liberada: boolean;
+  /** Quando ela libera hoje. Vazio = o dia todo. */
+  liberaas: string | null;
 };
 
 export const minhasTarefas = createServerFn({ method: "GET" })

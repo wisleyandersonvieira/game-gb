@@ -4655,7 +4655,9 @@ BEGIN
       -- Etapa 1.12: parear a TV le a conta de quem chamou
       -- (minha_conta_editavel) e confere a loja contra ela — a mesma familia
       -- de criar_link_tv e revogar_link_tv, que ja estao nesta lista.
-      'parear_tv'
+      'parear_tv',
+      -- Etapa 1.12: le a conta de quem chamou e so altera atribuicao DELA.
+      'alterar_hora_da_atribuicao'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -7094,5 +7096,138 @@ BEGIN
   PERFORM public.exigir((v->>'tentativaid') IS NOT NULL, 'a trava aceita o tipo "tvcodigo"');
   PERFORM public.tentativa_fechar((v->>'tentativaid')::bigint, true);
 END $$;
+
+-- ===========================================================================
+-- 58. "Disponivel a partir de": a tarefa so entra na fila na hora combinada
+-- ===========================================================================
+-- O ponto sensivel e o FUSO: a hora e a da empresa, nao a do servidor. Este
+-- teste roda num Postgres em UTC, entao uma tarefa marcada para as 15h tem de
+-- liberar as 18h UTC — e nao as 15h UTC.
+DO $$ BEGIN RAISE NOTICE '58. hora de liberacao da tarefa'; END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+VALUES (9840, 1, 'Limpar buffet', 8) ON CONFLICT DO NOTHING;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9840, 10) ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE
+  v_sem  integer;
+  v_cedo integer;
+  v_tarde integer;
+  v_hoje date := public.dia_em_sao_paulo(now());
+  deu_erro boolean;
+  v_liberaas timestamptz;
+BEGIN
+  -- COMPATIBILIDADE: sem hora, tudo como sempre foi.
+  v_sem := public.atribuir_tarefa(9840, 10, ARRAY[9501], 'Diaria', NULL, NULL, NULL, NULL);
+  PERFORM public.exigir((SELECT liberada FROM public.fila_da_loja(10) WHERE atribuicaoid = v_sem),
+                        'tarefa SEM hora continua liberada o dia todo');
+  PERFORM public.exigir((SELECT liberaas IS NULL FROM public.fila_da_loja(10) WHERE atribuicaoid = v_sem),
+                        'e nao tem hora de liberacao nenhuma');
+
+  -- Uma hora que ja passou: liberada.
+  v_cedo := public.atribuir_tarefa(9840, 10, ARRAY[9502], 'Diaria', NULL, NULL, NULL, '00:01'::time);
+  PERFORM public.exigir((SELECT liberada FROM public.fila_da_loja(10) WHERE atribuicaoid = v_cedo),
+                        'passada a hora, a tarefa esta liberada');
+
+  -- Uma hora que ainda nao chegou: aparece na fila, mas NAO liberada.
+  v_tarde := public.atribuir_tarefa(9840, 10, ARRAY[9503], 'Diaria', NULL, NULL, NULL, '23:59'::time);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.fila_da_loja(10) WHERE atribuicaoid = v_tarde),
+                        'antes da hora a tarefa continua aparecendo (para a lista "ainda nao liberadas")');
+  PERFORM public.exigir(NOT (SELECT liberada FROM public.fila_da_loja(10) WHERE atribuicaoid = v_tarde),
+                        'mas vem marcada como NAO liberada');
+
+  -- O cronometro comeca na hora da liberacao, nao a meia-noite: senao ela
+  -- nasceria vermelha, com o dia inteiro de "parada".
+  SELECT disponiveldesde, liberaas INTO v_liberaas, v_liberaas
+    FROM public.fila_da_loja(10) WHERE atribuicaoid = v_tarde;
+  PERFORM public.exigir((SELECT disponiveldesde = liberaas FROM public.fila_da_loja(10)
+                          WHERE atribuicaoid = v_tarde),
+                        'o cronometro conta a partir da hora de liberacao, nao do inicio do dia');
+
+  -- Ninguem pega antes da hora.
+  BEGIN PERFORM public.pegar_tarefa(v_tarde, 9503); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem pega a tarefa antes da hora');
+
+  -- Mas pega a que ja liberou.
+  PERFORM public.exigir((SELECT liberada FROM public.fila_da_loja(10) WHERE atribuicaoid = v_cedo),
+                        'a que ja liberou continua podendo ser pega');
+
+  -- O gestor muda a hora sem encerrar e criar de novo.
+  PERFORM public.alterar_hora_da_atribuicao(v_tarde, '00:01'::time);
+  PERFORM public.exigir((SELECT liberada FROM public.fila_da_loja(10) WHERE atribuicaoid = v_tarde),
+                        'mudando a hora, a tarefa libera na hora (sem encerrar e recriar)');
+  PERFORM public.alterar_hora_da_atribuicao(v_tarde, NULL);
+  PERFORM public.exigir((SELECT liberaas IS NULL FROM public.fila_da_loja(10) WHERE atribuicaoid = v_tarde),
+                        'e da para tirar a hora, voltando ao dia todo');
+
+  -- Atribuicao de outra conta nao se altera.
+  BEGIN PERFORM public.alterar_hora_da_atribuicao(-1, '10:00'::time); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao se altera a hora de atribuicao que nao existe');
+END $$;
+
+-- O FUSO. Esta e a prova que o Wisley pediu: num servidor em UTC, as 15h da
+-- loja NAO sao as 15h do servidor.
+--
+-- Roda no papel do SERVIDOR: fuso_da_conta e instante_na_conta recebem a
+-- conta, entao nunca sao liberadas para quem esta logado (regra da Etapa 1.6).
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE
+  v_hoje date := public.dia_em_sao_paulo(now());
+  v_brasilia timestamptz;
+  v_campo    timestamptz;
+BEGIN
+  PERFORM public.exigir(public.fuso_da_conta(1) = 'America/Sao_Paulo',
+                        'o fuso padrao da conta e Brasilia');
+
+  v_brasilia := public.instante_na_conta(1, v_hoje, '15:00'::time);
+  PERFORM public.exigir(to_char(v_brasilia AT TIME ZONE 'UTC', 'HH24:MI') = '18:00',
+                        '15h em Brasilia e 18h UTC (o servidor nao confunde os dois)');
+
+  -- Campo Grande fica uma hora atras: 15h la e 19h UTC.
+  UPDATE public.configuracoes SET valor = 'America/Campo_Grande'
+   WHERE contaid = 1 AND chave = 'FUSO_HORARIO';
+  PERFORM public.exigir(public.fuso_da_conta(1) = 'America/Campo_Grande',
+                        'a conta pode escolher outro fuso');
+  v_campo := public.instante_na_conta(1, v_hoje, '15:00'::time);
+  PERFORM public.exigir(v_campo <> v_brasilia,
+                        'trocando o fuso, a MESMA hora vira outro instante (era o risco de fixar Brasilia)');
+  PERFORM public.exigir(v_campo > v_brasilia,
+                        'e Campo Grande libera DEPOIS de Brasilia, porque fica uma hora atras');
+
+  UPDATE public.configuracoes SET valor = 'America/Sao_Paulo'
+   WHERE contaid = 1 AND chave = 'FUSO_HORARIO';
+END $$;
+
+-- Fuso invalido nao entra: erraria todas as liberacoes, em silencio. Esta
+-- parte e do GESTOR, que e quem mexe em Configuracoes.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.alterar_configuracao('FUSO_HORARIO', 'Marte/Olympus'); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'fuso que nao existe e recusado');
+  PERFORM public.exigir((SELECT valor FROM public.configuracoes
+                          WHERE contaid = 1 AND chave = 'FUSO_HORARIO') = 'America/Sao_Paulo',
+                        'e o fuso bom continua valendo');
+  -- A funcao do fuso recebe a conta: nunca e liberada para quem esta logado.
+  BEGIN PERFORM public.fuso_da_conta(1); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.fuso_da_conta');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

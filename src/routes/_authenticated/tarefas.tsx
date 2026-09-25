@@ -348,6 +348,12 @@ function Catalogo() {
 /* Atribuições: quem faz o quê, nesta loja                             */
 /* ------------------------------------------------------------------ */
 
+/** "15:00:00" vira "15h"; "15:30:00" vira "15h30". */
+export function horaCurta(hora: string): string {
+  const [h, m] = hora.split(":");
+  return m && m !== "00" ? `${h}h${m}` : `${h}h`;
+}
+
 type Linha = {
   chave: string;
   ids: number[];
@@ -357,6 +363,8 @@ type Linha = {
   dias: number[];
   valor: number | null;
   dataagendamento: string | null;
+  /** Hora local da empresa a partir da qual a tarefa entra na fila. */
+  disponivelapartir: string | null;
   encerradaEm: string | null;
 };
 
@@ -369,6 +377,8 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   const [selecionados, setSelecionados] = useState<number[]>([]);
   const [missao, setMissao] = useState(false);
   const [horarioMissao, setHorarioMissao] = useState("10:00");
+  // "Disponível a partir de": vazio = o dia todo, como sempre foi.
+  const [disponivelApartir, setDisponivelApartir] = useState("");
   const [frequencia, setFrequencia] = useState("Unica");
   const [data, setData] = useState(hojeEmSaoPaulo());
   const [diasSemana, setDiasSemana] = useState<number[]>([]);
@@ -431,7 +441,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       let consulta = supabase
         .from("tarefasatribuidas")
         .select(
-          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia, horariodisparo, compartilhada",
+          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia, horariodisparo, compartilhada, disponivelapartir",
         )
         .eq("lojaid", lojaid)
         .order("atribuicaoid");
@@ -493,6 +503,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           agrupadas.set(chave, {
             chave,
             ids: [l.atribuicaoid],
+            disponivelapartir: l.disponivelapartir,
             titulo: titulo.get(l.tarefaid) ?? `Tarefa ${l.tarefaid}`,
             nome: l.funcionarioid
               ? (nome.get(l.funcionarioid) ?? "—")
@@ -531,6 +542,8 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
         p_funcionarios: missao ? null : selecionados,
         p_tipofrequencia: frequencia,
         p_horariodisparo: missao ? horarioMissao : undefined,
+        // Vazio vira null: o banco entende "o dia todo".
+        p_disponivelapartir: disponivelApartir || null,
       };
 
       // Semanal com vários dias vira uma atribuição por dia, como no antigo.
@@ -554,6 +567,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       setSelecionados([]);
       setMissao(false);
       setDiasSemana([]);
+      setDisponivelApartir("");
       qc.invalidateQueries({ queryKey: ["atribuicoes", lojaid] });
     },
   });
@@ -570,6 +584,21 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
     onSuccess: () => qc.invalidateQueries({ queryKey: ["atribuicoes", lojaid] }),
   });
 
+  // Mudar a hora sem encerrar e criar de novo: encerrar perderia o histórico.
+  const mudarHora = useMutation({
+    mutationFn: async ({ ids, hora }: { ids: number[]; hora: string | null }) => {
+      // Semanal com vários dias são várias atribuições: todas mudam juntas.
+      for (const id of ids) {
+        const { error } = await supabase.rpc("alterar_hora_da_atribuicao", {
+          p_atribuicaoid: id,
+          p_hora: hora,
+        });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["atribuicoes", lojaid] }),
+  });
+
   function descrever(l: Linha) {
     if (l.tipofrequencia === "Diaria") return "Todo dia";
     if (l.tipofrequencia === "Semanal") {
@@ -581,6 +610,11 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       return `Uma vez, em ${new Date(l.dataagendamento).toLocaleDateString("pt-BR")}`;
     }
     return "Uma vez";
+  }
+
+  /** "Todo dia · a partir das 15h" */
+  function descreverComHora(l: Linha) {
+    return descrever(l) + (l.disponivelapartir ? ` · a partir das ${horaCurta(l.disponivelapartir)}` : "");
   }
 
   const tarefas = opcoesTarefas.data ?? [];
@@ -694,6 +728,33 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           </div>
         )}
 
+        {/* Vale para tarefa que repete e para tarefa de data única. */}
+        <div className="space-y-1">
+          <label className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            Disponível a partir de:
+            <input
+              type="time"
+              value={disponivelApartir}
+              onChange={(e) => setDisponivelApartir(e.target.value)}
+              className={campo}
+            />
+            {disponivelApartir && (
+              <button
+                type="button"
+                onClick={() => setDisponivelApartir("")}
+                className="text-xs underline underline-offset-2"
+              >
+                limpar
+              </button>
+            )}
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Vazio = o dia todo, como é hoje. Com hora, a tarefa só entra na fila do tablet a partir
+            dela — útil para a tarefa que só faz sentido depois do almoço. A hora é a da sua
+            empresa (o fuso fica em Configurações).
+          </p>
+        </div>
+
         {frequencia === "Unica" && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             No dia:
@@ -798,7 +859,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
             <div className="min-w-0">
               <p className={`font-medium ${l.encerradaEm ? "text-muted-foreground" : ""}`}>{l.titulo}</p>
               <p className="text-sm text-muted-foreground">
-                {l.nome} · {descrever(l)}
+                {l.nome} · {descreverComHora(l)}
               </p>
             </div>
             {l.encerradaEm ? (
@@ -806,13 +867,36 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
                 Encerrada em {new Date(`${l.encerradaEm}T12:00:00`).toLocaleDateString("pt-BR")}
               </span>
             ) : (
-              <button
-                onClick={() => encerrar.mutate(l.ids)}
-                disabled={encerrar.isPending}
-                className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-60"
-              >
-                Encerrar
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    const atual = l.disponivelapartir ? l.disponivelapartir.slice(0, 5) : "";
+                    const digitado = window.prompt(
+                      "A partir de que horas esta tarefa fica disponível?\n" +
+                        "Use hh:mm (ex.: 15:00). Deixe vazio para o dia todo.",
+                      atual,
+                    );
+                    if (digitado === null) return;
+                    const limpo = digitado.trim();
+                    if (limpo !== "" && !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(limpo)) {
+                      window.alert("Horário inválido. Use hh:mm, entre 00:00 e 23:59.");
+                      return;
+                    }
+                    mudarHora.mutate({ ids: l.ids, hora: limpo === "" ? null : limpo });
+                  }}
+                  disabled={mudarHora.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-60"
+                >
+                  Mudar horário
+                </button>
+                <button
+                  onClick={() => encerrar.mutate(l.ids)}
+                  disabled={encerrar.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-60"
+                >
+                  Encerrar
+                </button>
+              </div>
             )}
           </div>
         ))}
@@ -825,6 +909,9 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
 
         {encerrar.isError && (
           <p className="text-sm text-destructive">{(encerrar.error as Error).message}</p>
+        )}
+        {mudarHora.isError && (
+          <p className="text-sm text-destructive">{(mudarHora.error as Error).message}</p>
         )}
 
         <p className="text-xs text-muted-foreground">
