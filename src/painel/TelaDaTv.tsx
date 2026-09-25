@@ -48,8 +48,15 @@ export function EstiloDaTv() {
   // alcanca as telas do gestor.
   useEffect(() => {
     document.documentElement.className += " tv";
+    // Pelo JAVASCRIPT, e nao so pela folha: se o CSS cair inteiro, a margem
+    // do corpo deixaria uma faixa branca no alto da TV. O JavaScript roda
+    // mesmo nas TVs onde o CSS moderno nao roda — foi o que se viu na loja.
+    document.body.style.margin = "0";
+    document.body.style.backgroundColor = "#0b1220";
     return () => {
       document.documentElement.className = document.documentElement.className.replace(" tv", "");
+      document.body.style.margin = "";
+      document.body.style.backgroundColor = "";
     };
   }, []);
   return <style dangerouslySetInnerHTML={{ __html: tvCss }} />;
