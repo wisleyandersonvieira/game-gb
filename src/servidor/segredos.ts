@@ -76,7 +76,7 @@ export async function abrirTentativa(
   const { data: bruto, error } = await supabaseAdmin.rpc("tentativa_abrir_ex", {
     p_contaid: contaid as unknown as number, p_tipo: tipo, p_chave: chave, p_origem: origem,
   });
-  const resposta = bruto as { tentativaid: number | null; esperar: number } | null;
+  const resposta = bruto as { tentativaid: number | null; esperar: number; minutos?: number } | null;
   const data = resposta?.tentativaid ?? null;
   if (resposta && resposta.esperar > 0) {
     await new Promise((r) => setTimeout(r, Math.min(resposta.esperar, 10_000)));
@@ -91,7 +91,16 @@ export async function abrirTentativa(
     }
     throw new Error("Não foi possível conferir o acesso agora.");
   }
-  if (data === null || data === undefined) throw new Error(ERRO_TRAVADO);
+  if (data === null || data === undefined) {
+    // Com os minutos, quando o banco souber dizer: no balcão, "espere um
+    // pouco" deixa a pessoa sem saber se são segundos ou horas.
+    const m = resposta?.minutos;
+    throw new Error(
+      m && m > 0
+        ? `Muitas tentativas. Aguarde ${m} ${m === 1 ? "minuto" : "minutos"} e tente de novo.`
+        : ERRO_TRAVADO,
+    );
+  }
   return data as number;
 }
 

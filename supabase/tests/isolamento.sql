@@ -7350,4 +7350,68 @@ BEGIN
     'e o aceite dela nao conta como "ultima tarefa disputada" para os colegas');
 END $$;
 
+-- ===========================================================================
+-- 60. O erro do PIN diz o MOTIVO de verdade (Etapa 1.12)
+-- ===========================================================================
+-- No balcao, "erro ao processar" deixa a pessoa olhando o teclado. Cada recusa
+-- tem de dizer o que aconteceu.
+DO $$ BEGIN RAISE NOTICE '60. o erro do PIN diz o motivo'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- Esta secao e sobre MENSAGENS. O rodizio sai da frente para nao recusar o
+-- aceite por outro motivo (e o rodizio tem a secao 52 so dele).
+UPDATE public.configuracoes SET valor = '0' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+
+DO $$
+DECLARE v_atr integer; v_msg text;
+BEGIN
+  PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet');
+  v_atr := public.atribuir_tarefa(9601, 10, ARRAY[9501, 9502], 'Unica', NULL, now(), NULL, NULL);
+  PERFORM public.pegar_tarefa(v_atr, 9501);
+
+  -- Outra pessoa tenta pegar a mesma: a mensagem diz QUEM pegou.
+  BEGIN
+    PERFORM public.pegar_tarefa(v_atr, 9502);
+    v_msg := '(nao recusou)';
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM;
+  END;
+  PERFORM public.exigir(v_msg LIKE '%ja foi pega hoje por%' OR v_msg LIKE '%já foi pega hoje por%',
+                        'quem chega depois ouve que a tarefa ja foi pega');
+  PERFORM public.exigir(v_msg LIKE '%Ana S.%',
+                        'e a mensagem diz o NOME de quem pegou primeiro');
+
+  -- Quem nao esta na lista da tarefa ouve o motivo certo, nao "erro".
+  BEGIN
+    PERFORM public.pegar_tarefa(v_atr, 9503);
+    v_msg := '(nao recusou)';
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM;
+  END;
+  PERFORM public.exigir(v_msg LIKE '%outra pessoa%' OR v_msg LIKE '%ja foi pega%' OR v_msg LIKE '%já foi pega%',
+                        'quem nao esta na tarefa ouve o motivo, e nao "erro ao processar"');
+END $$;
+
+-- A trava passa a dizer QUANTOS MINUTOS faltam.
+DO $$
+DECLARE v jsonb; i integer;
+BEGIN
+  DELETE FROM public.tentativasacesso WHERE tipo = 'pintablet';
+  -- 20 erros fecham a trava do PIN do tablet.
+  FOR i IN 1..20 LOOP
+    INSERT INTO public.tentativasacesso (contaid, tipo, chave, origem, sucesso)
+    VALUES (1, 'pintablet', repeat('z', 64), 'teste', false);
+  END LOOP;
+
+  v := public.tentativa_abrir_ex(1, 'pintablet', repeat('z', 64), 'teste');
+  PERFORM public.exigir((v->>'tentativaid') IS NULL, 'com 20 erros, a trava fecha');
+  PERFORM public.exigir((v->>'minutos')::integer > 0,
+                        'e a trava diz quantos minutos faltam (era so "espere um pouco")');
+  PERFORM public.exigir((v->>'minutos')::integer <= 24 * 60,
+                        'e o tempo nunca passa de um dia');
+  DELETE FROM public.tentativasacesso WHERE tipo = 'pintablet';
+END $$;
+
+UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

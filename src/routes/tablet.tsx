@@ -139,15 +139,14 @@ function Tablet() {
   }
 
   return (
-    <main className="min-h-screen bg-background p-4">
-      <header className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">{fila.data?.loja ?? "Tablet da loja"}</h1>
-          <p className="text-xs text-muted-foreground">
-            Toque na tarefa e confirme com o seu PIN. A lista atualiza sozinha.
-          </p>
-        </div>
-        <button onClick={sair} className="rounded-lg border border-border px-3 py-2 text-sm">
+    <main className="min-h-screen bg-background p-3">
+      {/* Cabeçalho enxuto: o nome da loja e a instrução na MESMA linha. O que
+          importa na tela é a fila, não o título. */}
+      <header className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
+        <h1 className="font-display text-lg font-semibold">{fila.data?.loja ?? "Tablet da loja"}</h1>
+        <p className="text-xs text-muted-foreground">Toque na tarefa e confirme com o seu PIN.</p>
+        {/* 48px de altura: o dedo, às vezes molhado, continua acertando. */}
+        <button onClick={sair} className="min-h-[48px] rounded-lg border border-border px-4 text-sm">
           Sair
         </button>
       </header>
@@ -167,7 +166,11 @@ function Tablet() {
       )}
 
       {fila.isError && <p className="mb-3 text-destructive">{(fila.error as Error).message}</p>}
-      {agir.isError && <p className="mb-3 text-destructive">{(agir.error as Error).message}</p>}
+      {/* A faixa do topo continua para o aviso geral, mas enquanto a modal do
+          PIN estiver aberta o erro aparece LA DENTRO — atras dela ninguem ve. */}
+      {agir.isError && !pedindoPin && (
+        <p className="mb-3 text-destructive">{(agir.error as Error).message}</p>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Coluna
@@ -225,7 +228,12 @@ function Tablet() {
         <TecladoDoPin
           titulo={acao?.tipo === "pegar" ? "Quem está pegando?" : "Quem está entregando?"}
           ocupado={agir.isPending}
-          cancelar={() => { setPedindoPin(false); if (acao?.tipo === "pegar") setAcao(null); }}
+          erro={agir.isError ? (agir.error as Error).message : null}
+          cancelar={() => {
+            agir.reset();
+            setPedindoPin(false);
+            if (acao?.tipo === "pegar") setAcao(null);
+          }}
           enviar={(pin) => agir.mutate(pin)}
         />
       )}
@@ -287,33 +295,34 @@ function Coluna({
   children?: (i: ItemDaFila) => React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-card p-3">
-      <h2 className="mb-2 text-lg font-semibold">
+    <section className="rounded-2xl border border-border bg-card p-2">
+      <h2 className="mb-1.5 px-1 text-base font-semibold">
         {titulo} <span className="text-muted-foreground">({itens.length})</span>
       </h2>
       {itens.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{vazio}</p>
+        <p className="px-1 text-xs text-muted-foreground">{vazio}</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-2">
           {itens.map((i) => (
             <li
               key={i.atribuicaoid}
               className={
                 novas.indexOf(i.atribuicaoid) >= 0
-                  ? "space-y-2 rounded-xl bg-background p-3 ring-4 ring-primary"
-                  : "space-y-2 rounded-xl bg-background p-3"
+                  ? "space-y-1 rounded-xl bg-background p-2 ring-4 ring-primary"
+                  : "space-y-1 rounded-xl bg-background p-2"
               }
             >
-              <p className="text-lg font-medium">{i.titulo}</p>
+              {/* O título continua legível de pé; o resto encolheu. */}
+              <p className="text-base font-medium leading-snug">{i.titulo}</p>
               <Cronometro item={i} agora={agora} minutosParada={minutosParada} />
               <QuemFez item={i} />
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {i.pontos} pontos
                 {!i.quempegounome && i.aberta && " · quem pegar primeiro leva"}
                 {i.atrasada && " · atrasada"}
               </p>
               {i.rodizio && i.situacao === "para_pegar" && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[11px] leading-tight text-muted-foreground">
                   🔄 Rodízio ativo: quem pegou a última espera um pouco.
                 </p>
               )}
@@ -395,7 +404,9 @@ function BotaoGrande({
   return (
     <button
       onClick={onClick}
-      className={`w-full rounded-xl px-4 py-3 text-lg font-medium ${
+      // O cartão encolheu, o botão NÃO: 48px de altura e largura cheia. O
+      // tablet é usado com o dedo, às vezes com a mão molhada.
+      className={`min-h-[48px] w-full rounded-xl px-4 text-lg font-medium ${
         tom === "forte" ? "bg-primary text-primary-foreground" : "border border-border"
       }`}
     >
@@ -459,13 +470,22 @@ function TecladoDoPin({
   cancelar,
   enviar,
   ocupado,
+  erro,
 }: {
   titulo: string;
   cancelar: () => void;
   enviar: (pin: string) => void;
   ocupado: boolean;
+  /** O motivo da recusa. Aparece DENTRO da modal: atrás dela ninguém vê. */
+  erro: string | null;
 }) {
   const [pin, setPin] = useState("");
+
+  // Deu erro: apaga os pontinhos e deixa pronto para digitar de novo. A modal
+  // continua aberta — só fecha quando dá certo ou em Cancelar.
+  useEffect(() => {
+    if (erro) setPin("");
+  }, [erro]);
 
   function tocar(d: string) {
     if (ocupado) return;
@@ -481,6 +501,13 @@ function TecladoDoPin({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="w-full max-w-xs space-y-4 rounded-2xl bg-card p-5 text-center">
         <p className="text-xl font-semibold">{titulo}</p>
+
+        {/* Espaço RESERVADO: a modal não pula de tamanho quando o texto
+            aparece. min-h cabe duas linhas. */}
+        <p className="flex min-h-[2.75rem] items-center justify-center text-sm font-medium text-destructive">
+          {erro ?? ""}
+        </p>
+
         <div className="flex justify-center gap-2">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <span
