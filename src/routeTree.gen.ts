@@ -14,8 +14,8 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DefinirSenhaRouteImport } from './routes/definir-senha'
+import { Route as EuRouteImport } from './routes/eu'
 import { Route as MedirRouteImport } from './routes/medir'
-import { Route as MeuAcessoRouteImport } from './routes/meu-acesso'
 import { Route as PrimeiroAcessoRouteImport } from './routes/primeiro-acesso'
 import { Route as SaudeRouteImport } from './routes/saude'
 import { Route as SemAcessoRouteImport } from './routes/sem-acesso'
@@ -45,6 +45,10 @@ import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticate
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminPerfilRouteImport } from './routes/admin/perfil'
 import { Route as ECodigoRouteImport } from './routes/e.$codigo'
+import { Route as EuIndexRouteImport } from './routes/eu/index'
+import { Route as EuExtratoRouteImport } from './routes/eu/extrato'
+import { Route as EuPerfilRouteImport } from './routes/eu/perfil'
+import { Route as EuTarefasRouteImport } from './routes/eu/tarefas'
 import { Route as TvCodigoRouteImport } from './routes/tv.$codigo'
 
 const IndexRoute = IndexRouteImport.update({
@@ -71,14 +75,14 @@ const DefinirSenhaRoute = DefinirSenhaRouteImport.update({
   path: '/definir-senha',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EuRoute = EuRouteImport.update({
+  id: '/eu',
+  path: '/eu',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MedirRoute = MedirRouteImport.update({
   id: '/medir',
   path: '/medir',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MeuAcessoRoute = MeuAcessoRouteImport.update({
-  id: '/meu-acesso',
-  path: '/meu-acesso',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrimeiroAcessoRoute = PrimeiroAcessoRouteImport.update({
@@ -234,6 +238,26 @@ const ECodigoRoute = ECodigoRouteImport.update({
   path: '/e/$codigo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EuIndexRoute = EuIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EuRoute,
+} as any)
+const EuExtratoRoute = EuExtratoRouteImport.update({
+  id: '/extrato',
+  path: '/extrato',
+  getParentRoute: () => EuRoute,
+} as any)
+const EuPerfilRoute = EuPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => EuRoute,
+} as any)
+const EuTarefasRoute = EuTarefasRouteImport.update({
+  id: '/tarefas',
+  path: '/tarefas',
+  getParentRoute: () => EuRoute,
+} as any)
 const TvCodigoRoute = TvCodigoRouteImport.update({
   id: '/tv/$codigo',
   path: '/tv/$codigo',
@@ -245,8 +269,8 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/eu': typeof EuRouteWithChildren
   '/medir': typeof MedirRoute
-  '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
@@ -275,15 +299,18 @@ export interface FileRoutesByFullPath {
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
   '/e/$codigo': typeof ECodigoRoute
+  '/eu/extrato': typeof EuExtratoRoute
+  '/eu/perfil': typeof EuPerfilRoute
+  '/eu/tarefas': typeof EuTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
+  '/eu/': typeof EuIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
   '/medir': typeof MedirRoute
-  '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
@@ -312,8 +339,12 @@ export interface FileRoutesByTo {
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
   '/e/$codigo': typeof ECodigoRoute
+  '/eu/extrato': typeof EuExtratoRoute
+  '/eu/perfil': typeof EuPerfilRoute
+  '/eu/tarefas': typeof EuTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin': typeof AdminIndexRoute
+  '/eu': typeof EuIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -322,8 +353,8 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/definir-senha': typeof DefinirSenhaRoute
+  '/eu': typeof EuRouteWithChildren
   '/medir': typeof MedirRoute
-  '/meu-acesso': typeof MeuAcessoRoute
   '/primeiro-acesso': typeof PrimeiroAcessoRoute
   '/saude': typeof SaudeRoute
   '/sem-acesso': typeof SemAcessoRoute
@@ -352,8 +383,12 @@ export interface FileRoutesById {
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
   '/e/$codigo': typeof ECodigoRoute
+  '/eu/extrato': typeof EuExtratoRoute
+  '/eu/perfil': typeof EuPerfilRoute
+  '/eu/tarefas': typeof EuTarefasRoute
   '/tv/$codigo': typeof TvCodigoRoute
   '/admin/': typeof AdminIndexRoute
+  '/eu/': typeof EuIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -362,8 +397,8 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/definir-senha'
+    | '/eu'
     | '/medir'
-    | '/meu-acesso'
     | '/primeiro-acesso'
     | '/saude'
     | '/sem-acesso'
@@ -392,15 +427,18 @@ export interface FileRouteTypes {
     | '/tarefas'
     | '/admin/perfil'
     | '/e/$codigo'
+    | '/eu/extrato'
+    | '/eu/perfil'
+    | '/eu/tarefas'
     | '/tv/$codigo'
     | '/admin/'
+    | '/eu/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/definir-senha'
     | '/medir'
-    | '/meu-acesso'
     | '/primeiro-acesso'
     | '/saude'
     | '/sem-acesso'
@@ -429,8 +467,12 @@ export interface FileRouteTypes {
     | '/tarefas'
     | '/admin/perfil'
     | '/e/$codigo'
+    | '/eu/extrato'
+    | '/eu/perfil'
+    | '/eu/tarefas'
     | '/tv/$codigo'
     | '/admin'
+    | '/eu'
   id:
     | '__root__'
     | '/'
@@ -438,8 +480,8 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/definir-senha'
+    | '/eu'
     | '/medir'
-    | '/meu-acesso'
     | '/primeiro-acesso'
     | '/saude'
     | '/sem-acesso'
@@ -468,8 +510,12 @@ export interface FileRouteTypes {
     | '/_authenticated/tarefas'
     | '/admin/perfil'
     | '/e/$codigo'
+    | '/eu/extrato'
+    | '/eu/perfil'
+    | '/eu/tarefas'
     | '/tv/$codigo'
     | '/admin/'
+    | '/eu/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -478,8 +524,8 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   DefinirSenhaRoute: typeof DefinirSenhaRoute
+  EuRoute: typeof EuRouteWithChildren
   MedirRoute: typeof MedirRoute
-  MeuAcessoRoute: typeof MeuAcessoRoute
   PrimeiroAcessoRoute: typeof PrimeiroAcessoRoute
   SaudeRoute: typeof SaudeRoute
   SemAcessoRoute: typeof SemAcessoRoute
@@ -525,18 +571,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DefinirSenhaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/eu': {
+      id: '/eu'
+      path: '/eu'
+      fullPath: '/eu'
+      preLoaderRoute: typeof EuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/medir': {
       id: '/medir'
       path: '/medir'
       fullPath: '/medir'
       preLoaderRoute: typeof MedirRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/meu-acesso': {
-      id: '/meu-acesso'
-      path: '/meu-acesso'
-      fullPath: '/meu-acesso'
-      preLoaderRoute: typeof MeuAcessoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/primeiro-acesso': {
@@ -742,6 +788,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ECodigoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/eu/': {
+      id: '/eu/'
+      path: '/'
+      fullPath: '/eu/'
+      preLoaderRoute: typeof EuIndexRouteImport
+      parentRoute: typeof EuRoute
+    }
+    '/eu/extrato': {
+      id: '/eu/extrato'
+      path: '/extrato'
+      fullPath: '/eu/extrato'
+      preLoaderRoute: typeof EuExtratoRouteImport
+      parentRoute: typeof EuRoute
+    }
+    '/eu/perfil': {
+      id: '/eu/perfil'
+      path: '/perfil'
+      fullPath: '/eu/perfil'
+      preLoaderRoute: typeof EuPerfilRouteImport
+      parentRoute: typeof EuRoute
+    }
+    '/eu/tarefas': {
+      id: '/eu/tarefas'
+      path: '/tarefas'
+      fullPath: '/eu/tarefas'
+      preLoaderRoute: typeof EuTarefasRouteImport
+      parentRoute: typeof EuRoute
+    }
     '/tv/$codigo': {
       id: '/tv/$codigo'
       path: '/tv/$codigo'
@@ -819,14 +893,30 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
   AdminRouteRouteChildren,
 )
 
+interface EuRouteChildren {
+  EuExtratoRoute: typeof EuExtratoRoute
+  EuPerfilRoute: typeof EuPerfilRoute
+  EuTarefasRoute: typeof EuTarefasRoute
+  EuIndexRoute: typeof EuIndexRoute
+}
+
+const EuRouteChildren: EuRouteChildren = {
+  EuExtratoRoute: EuExtratoRoute,
+  EuPerfilRoute: EuPerfilRoute,
+  EuTarefasRoute: EuTarefasRoute,
+  EuIndexRoute: EuIndexRoute,
+}
+
+const EuRouteWithChildren = EuRoute._addFileChildren(EuRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   DefinirSenhaRoute: DefinirSenhaRoute,
+  EuRoute: EuRouteWithChildren,
   MedirRoute: MedirRoute,
-  MeuAcessoRoute: MeuAcessoRoute,
   PrimeiroAcessoRoute: PrimeiroAcessoRoute,
   SaudeRoute: SaudeRoute,
   SemAcessoRoute: SemAcessoRoute,

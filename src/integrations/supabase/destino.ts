@@ -1,6 +1,6 @@
 import { supabase } from "./client";
 
-export type Destino = "/admin" | "/inicio" | "/primeiro-acesso" | "/meu-acesso" | "/tablet" | "/sem-acesso" | "/auth";
+export type Destino = "/admin" | "/inicio" | "/primeiro-acesso" | "/eu" | "/tablet" | "/sem-acesso" | "/auth";
 
 export type Acesso = {
   /**
@@ -63,7 +63,7 @@ export function destinoDoAcesso(a: Acesso): Destino {
   if (a.tipo === "master" || a.tipo === "gerente") return "/inicio";
   if (a.tipo === "colaborador") {
     // Primeiro acesso: trocar a senha, escolher o PIN e dar ciencia na politica.
-    return a.semsenha || a.sempin || a.politicapendente ? "/primeiro-acesso" : "/meu-acesso";
+    return a.semsenha || a.sempin || a.politicapendente ? "/primeiro-acesso" : "/eu";
   }
   if (a.tipo === "loja") return "/tablet";
   return "/sem-acesso";

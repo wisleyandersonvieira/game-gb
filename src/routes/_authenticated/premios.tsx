@@ -217,8 +217,10 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
 
       {pessoa && (
         <p className={`text-sm ${pessoa.saldopontos < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+          {/* Saldo NUNCA em reais: ponto é reconhecimento, não salário (política
+              de uso). O valor em dinheiro só aparece no momento do abate,
+              logo abaixo, quando ele vai de fato ser usado. */}
           Saldo de {pessoa.nomecompleto}: <strong>{pessoa.saldopontos} pontos</strong>
-          {taxa.data ? ` (${reais(pessoa.saldopontos * taxa.data)})` : ""}
           {pessoa.saldopontos < 0 && " — saldo negativo, não pode resgatar."}
         </p>
       )}

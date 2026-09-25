@@ -77,7 +77,7 @@ function PrimeiroAcesso() {
         <Logo altura={40} />
         <p className="font-display text-xl">Tudo pronto, {a.nome}!</p>
         <button
-          onClick={() => navigate({ to: "/meu-acesso" })}
+          onClick={() => navigate({ to: "/eu" })}
           className="rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground"
         >
           Continuar

@@ -28,7 +28,7 @@ export const Route = createFileRoute("/tablet")({
     const { data } = await supabase.auth.getSession();
     if (!data.session) throw redirect({ to: "/auth" });
     const acesso = await meuAcesso();
-    if (acesso.tipo !== "loja") throw redirect({ to: "/meu-acesso" });
+    if (acesso.tipo !== "loja") throw redirect({ to: "/sem-acesso" });
   },
   component: Tablet,
 });

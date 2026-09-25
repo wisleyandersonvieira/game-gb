@@ -46,6 +46,8 @@ type Entrega = {
   foto: string | null;
   /** Foto apagada pelo prazo da conta (a entrega e os pontos continuam valendo). */
   fotoExpirada: boolean;
+  /** O arquivo não trazia a hora em que a foto foi tirada. Quem decide é você. */
+  semHoraDaFoto: boolean;
 };
 
 function Quadro() {
@@ -228,6 +230,8 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
 function Validacao({ lojaid }: { lojaid: number }) {
   const qc = useQueryClient();
   const [aviso, setAviso] = useState<{ texto: string; grave: boolean } | null>(null);
+  // "Só as sem hora da foto": para conferir de uma vez as que pedem atenção.
+  const [soSemHora, setSoSemHora] = useState(false);
 
   const quadro = useQuery({
     queryKey: ["quadro", lojaid],
@@ -236,7 +240,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
       const { data, error } = await supabase
         .from("entregas")
         .select(
-          "entregaid, tarefaid, funcionarioid, statusvalidacao, dataenvio, dataaprovacao, datarecusa, dataestorno, pontosganhos, observacao, motivorecusa, motivoestorno, pathfotoevidencia, fotoexpiradaem",
+          "entregaid, tarefaid, funcionarioid, statusvalidacao, dataenvio, dataaprovacao, datarecusa, dataestorno, pontosganhos, observacao, motivorecusa, motivoestorno, pathfotoevidencia, fotoexpiradaem, semhorafoto",
         )
         .eq("lojaid", lojaid)
         .or(`statusvalidacao.eq.Pendente,dataenvio.gte.${desde}`)
@@ -276,6 +280,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
         nome: nome.get(l.funcionarioid) ?? "—",
         foto: l.pathfotoevidencia ? (links.get(l.pathfotoevidencia) ?? null) : null,
         fotoExpirada: l.fotoexpiradaem !== null,
+        semHoraDaFoto: l.semhorafoto === true,
       }));
     },
   });
@@ -334,7 +339,10 @@ function Validacao({ lojaid }: { lojaid: number }) {
   });
 
   const todas = quadro.data ?? [];
-  const pendentes = todas.filter((e) => e.statusvalidacao === "Pendente");
+  const pendentes = todas
+    .filter((e) => e.statusvalidacao === "Pendente")
+    .filter((e) => !soSemHora || e.semHoraDaFoto);
+  const semHora = todas.filter((e) => e.statusvalidacao === "Pendente" && e.semHoraDaFoto).length;
   const aprovadas = todas.filter((e) => e.statusvalidacao === "Aprovada");
   const recusadas = todas.filter((e) => e.statusvalidacao === "Recusada" || e.statusvalidacao === "Estornada");
 
@@ -355,6 +363,12 @@ function Validacao({ lojaid }: { lojaid: number }) {
 
       <div className="grid gap-4 md:grid-cols-3">
         <Coluna titulo="Pendentes" quantidade={pendentes.length}>
+          {semHora > 0 && (
+            <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+              <input type="checkbox" checked={soSemHora} onChange={(ev) => setSoSemHora(ev.target.checked)} />
+              Mostrar só as sem hora da foto ({semHora})
+            </label>
+          )}
           {pendentes.map((e) => (
             <Cartao key={e.entregaid} e={e}>
               <div className="flex flex-wrap gap-2">
@@ -439,6 +453,11 @@ function Cartao({ e, children }: { e: Entrega; children: React.ReactNode }) {
       {!e.foto && e.fotoExpirada && (
         <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
           Foto removida por tempo. A entrega e os pontos continuam valendo.
+        </p>
+      )}
+      {e.semHoraDaFoto && (
+        <p className="rounded-md border border-perigo/40 bg-perigo-soft px-3 py-2 text-xs font-medium text-perigo">
+          Sem hora da foto: o celular não gravou quando a foto foi tirada. Confira antes de aprovar.
         </p>
       )}
       <div>

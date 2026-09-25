@@ -45,7 +45,12 @@ WITH esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
   (42, 'B1',   'funcao', 'erros_de_login',               'aplicar-etapa-1.12-parte-B1.sql'),
   -- B1: rodizio no aceite
   (50, 'B1',   'funcao', 'rodizio_espera',               'aplicar-etapa-1.12-parte-B1.sql'),
-  (51, 'B1',   'funcao', 'elegiveis_da_tarefa',          'aplicar-etapa-1.12-parte-B1.sql')
+  (51, 'B1',   'funcao', 'elegiveis_da_tarefa',          'aplicar-etapa-1.12-parte-B1.sql'),
+  -- C1: o celular do colaborador
+  (70, 'C1',   'funcao', 'eu_inicio',                    'aplicar-etapa-1.12-parte-C.sql'),
+  (71, 'C1',   'funcao', 'eu_tarefas',                   'aplicar-etapa-1.12-parte-C.sql'),
+  (72, 'C1',   'funcao', 'eu_entregar',                  'aplicar-etapa-1.12-parte-C.sql'),
+  (73, 'C1',   'funcao', 'eu_extrato',                   'aplicar-etapa-1.12-parte-C.sql')
 ),
 situacao AS (
   SELECT e.*,
@@ -90,7 +95,18 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'contas_configuracoes_padrao')),
   (66, 'B1', 'funcao', 'rodizio_espera', 'aplicar-etapa-1.12-parte-B1.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'rodizio_espera'))
+                WHERE n.nspname = 'public' AND p.proname = 'rodizio_espera')),
+  (74, 'C1', 'versao', 'entregas marca a foto sem hora', 'aplicar-etapa-1.12-parte-C.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'entregas'
+                  AND column_name = 'semhorafoto')),
+  (75, 'C1', 'versao', 'registrar_entrega ficou UMA so (a de 6 parametros)', 'aplicar-etapa-1.12-parte-C.sql',
+       1 = (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'public' AND p.proname = 'registrar_entrega')),
+  (76, 'C1', 'versao', 'nenhuma funcao eu_* liberada para quem esta logado', 'aplicar-etapa-1.12-parte-C.sql',
+       NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.proname LIKE 'eu\_%'
+                      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

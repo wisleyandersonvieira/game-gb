@@ -5393,7 +5393,9 @@ BEGIN
     -- Etapa 1.12 B1b: a visao do tablet.
     'visao_fila', 'visao_pessoa_do_pin', 'visao_pegar', 'visao_entregar',
     'ficha_dos_tablets', 'registrar_evento_acesso_loja', 'fechamento_valendo',
-    'tentativa_abrir_ex', 'marcar_senha_amao', 'erros_de_login'
+    'tentativa_abrir_ex', 'marcar_senha_amao', 'erros_de_login',
+    -- Etapa 1.12 C1: a visao do celular do colaborador.
+    'eu_inicio', 'eu_tarefas', 'eu_entregar', 'eu_extrato'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname = f) THEN
@@ -6508,6 +6510,123 @@ DO $$
 BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.configuracoes WHERE contaid = 1) = 0,
                         'B nao ve as configuracoes de A');
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 54. A visao do COLABORADOR no celular (Etapa 1.12, parte C1)
+-- ===========================================================================
+-- Estas provas CHAMAM cada funcao, nao so conferem que ela existe: o Postgres
+-- so reclama de coluna errada na hora de rodar. (Foi assim que 'motivo' em vez
+-- de 'descricao' passou despercebido em 26/09/2026.)
+DO $$ BEGIN RAISE NOTICE '54. visao do colaborador (celular)'; END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+-- Uma pessoa com saldo, uma tarefa dela e um movimento no livro.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto) OVERRIDING SYSTEM VALUE
+VALUES (9801, 1, 'Celular Silva') ON CONFLICT DO NOTHING;
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9801, 10)
+ON CONFLICT DO NOTHING;
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+VALUES (9810, 1, 'Tarefa do celular', 7) ON CONFLICT DO NOTHING;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9810, 10) ON CONFLICT DO NOTHING;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_atr integer;
+BEGIN
+  v_atr := public.atribuir_tarefa(9810, 10, ARRAY[9801], 'Diaria', NULL, NULL, NULL);
+  PERFORM set_config('teste.eu_atr', v_atr::text, false);
+END $$;
+
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v jsonb; v_atr integer := current_setting('teste.eu_atr')::integer; v_id integer; deu_erro boolean;
+BEGIN
+  -- Inicio: nome curto, saldo em pontos, e NADA de dinheiro.
+  v := public.eu_inicio(1, 9801);
+  PERFORM public.exigir(v->>'nome' = 'Celular S.', 'o Inicio traz o nome curto');
+  PERFORM public.exigir((v->>'saldo') IS NOT NULL, 'e o saldo em pontos');
+  PERFORM public.exigir(NOT (v::text ILIKE '%reais%') AND NOT (v::text ILIKE '%R$%')
+                        AND NOT (v ? 'taxa') AND NOT (v ? 'valor'),
+                        'o Inicio do colaborador NAO devolve valor em dinheiro');
+
+  -- Minhas tarefas: so o que e dela.
+  v := public.eu_tarefas(1, 9801);
+  PERFORM public.exigir(jsonb_array_length(v) >= 1, 'as tarefas dela aparecem');
+  PERFORM public.exigir(v->0->>'situacao' = 'a_fazer', 'e comecam como "a fazer"');
+
+  -- Entregar: a tarefa tem de ser dela.
+  BEGIN PERFORM public.eu_entregar(1, 9502, v_atr, NULL, NULL, NULL, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem entrega a tarefa de outra pessoa pelo celular');
+
+  v_id := public.eu_entregar(1, 9801, v_atr, '1/10/celular.jpg', 'feito', 'digital-abc', true);
+  PERFORM public.exigir((SELECT statusvalidacao FROM public.entregas WHERE entregaid = v_id) = 'Pendente',
+                        'a entrega pelo celular nasce Pendente para o gestor');
+  PERFORM public.exigir((SELECT semhorafoto FROM public.entregas WHERE entregaid = v_id),
+                        'e fica marcada quando a foto nao trazia a hora');
+  PERFORM public.exigir((SELECT canalenvio FROM public.entregas WHERE entregaid = v_id) = 'app',
+                        'o celular do colaborador conta como "app"');
+
+  -- A mesma imagem nao vale duas vezes.
+  BEGIN PERFORM public.eu_entregar(1, 9801, v_atr, '1/10/outra.jpg', NULL, 'digital-abc', false);
+    deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a mesma foto nao prova duas tarefas, nem com outro nome de arquivo');
+
+  -- Depois de entregar, a tarefa muda de situacao para ela.
+  v := public.eu_tarefas(1, 9801);
+  PERFORM public.exigir(v->0->>'situacao' = 'esperando', 'entregue, a tarefa fica "esperando" o gestor');
+
+  -- Extrato: sai do livro de pontos, e sem dinheiro.
+  v := public.eu_extrato(1, 9801, public.dia_em_sao_paulo(now()) - 30, public.dia_em_sao_paulo(now()));
+  PERFORM public.exigir(v ? 'saldo' AND v ? 'linhas', 'o extrato traz saldo e linhas');
+  PERFORM public.exigir(NOT (v::text ILIKE '%R$%') AND NOT (v ? 'taxa'),
+                        'e NUNCA o valor em reais');
+END $$;
+
+-- Nenhuma eu_* devolve dado de colega, e nenhuma e chamavel por quem esta logado.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['eu_inicio', 'eu_tarefas', 'eu_extrato', 'eu_entregar'] LOOP
+    PERFORM public.exigir(
+      EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+               WHERE n.nspname = 'public' AND p.proname = f)
+      AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname = 'public' AND p.proname = f
+                         AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                              OR has_function_privilege('anon', p.oid, 'EXECUTE'))),
+      'usuario logado nao chama public.' || f);
+  END LOOP;
+END $$;
+
+-- Isolamento: a conta B nao alcanca a pessoa de A por estas portas.
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v jsonb; deu_erro boolean;
+BEGIN
+  BEGIN v := public.eu_inicio(2, 9801); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a conta B nao abre o Inicio de uma pessoa de A');
+  PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(2, 9801)) = 0,
+                        'nem ve as tarefas dela');
+  PERFORM public.exigir(jsonb_array_length(public.eu_extrato(2, 9801,
+                          public.dia_em_sao_paulo(now()) - 30, public.dia_em_sao_paulo(now()))->'linhas') = 0,
+                        'nem o extrato dela');
+  BEGIN PERFORM public.eu_entregar(2, 9801, current_setting('teste.eu_atr')::integer,
+                                   NULL, NULL, NULL, false); deu_erro := false;
+  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem entrega no nome dela');
 END $$;
 
 RESET ROLE;

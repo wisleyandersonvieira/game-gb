@@ -1251,6 +1251,7 @@ export type Database = {
           observacao: string | null
           pathfotoevidencia: string | null
           pontosganhos: number | null
+          semhorafoto: boolean
           recusadopor: string | null
           statusvalidacao: string
           tarefaid: number
@@ -1281,6 +1282,7 @@ export type Database = {
           observacao?: string | null
           pathfotoevidencia?: string | null
           pontosganhos?: number | null
+          semhorafoto?: boolean
           recusadopor?: string | null
           statusvalidacao?: string
           tarefaid: number
@@ -1311,6 +1313,7 @@ export type Database = {
           observacao?: string | null
           pathfotoevidencia?: string | null
           pontosganhos?: number | null
+          semhorafoto?: boolean
           recusadopor?: string | null
           statusvalidacao?: string
           tarefaid?: number
@@ -5439,6 +5442,30 @@ export type Database = {
         Args: { p_chaves: string[] }
         Returns: Json
       }
+      eu_inicio: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: Json
+      }
+      eu_tarefas: {
+        Args: { p_contaid: number; p_funcionarioid: number }
+        Returns: Json
+      }
+      eu_extrato: {
+        Args: { p_ate: string; p_contaid: number; p_de: string; p_funcionarioid: number }
+        Returns: Json
+      }
+      eu_entregar: {
+        Args: {
+          p_atribuicaoid: number
+          p_caminho: string | null
+          p_contaid: number
+          p_funcionarioid: number
+          p_fotoidunico: string | null
+          p_observacao: string | null
+          p_semhorafoto: boolean
+        }
+        Returns: number
+      }
       pegar_missao: {
         Args: { p_atribuicaoid: number; p_funcionarioid: number }
         Returns: number
@@ -5609,6 +5636,8 @@ export type Database = {
           p_atribuicaoid: number
           p_observacao?: string
           p_pathfoto?: string
+          p_fotoidunico?: string | null
+          p_semhorafoto?: boolean
         }
         Returns: number
       }
