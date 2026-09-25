@@ -50,6 +50,7 @@
 - **Todo ponto que entra ou sai passa por `movimentospontos`, na mesma operação que altera o saldo. Nenhuma função futura (bônus de feedback, meta, nota fiscal, conquistas) pode mexer no saldo de outro jeito.** Na prática: grave o movimento, e o gatilho do livro atualiza `saldopontos`/`pontostotal`. Qualquer outro `UPDATE`/`INSERT` que mude o saldo é recusado pelo banco, até para o dono. Movimento nunca se altera nem se apaga: corrige-se com outro movimento. O teste de isolamento reprova qualquer caminho que altere o saldo sem gravar o movimento.
 - Nada de IDs fixos no código: parâmetros e IDs especiais ficam em `configuracoes` (por conta).
 - Toda mudança de estrutura é uma **nova** migração (nunca edite uma já aplicada). Depois dela, regenere `src/integrations/supabase/types.ts`.
+- **Ao recriar uma função (`CREATE OR REPLACE`), parta da versão MAIS RECENTE dela**, não da primeira. Ache todas com `grep -rln "FUNCTION public.<nome>" supabase/migrations/`, copie a da migração de data mais alta, aplique só a sua mudança e **confira o `diff`** antes de fechar. Copiar uma versão antiga desfaz consertos e ressuscita colunas já apagadas — aconteceu duas vezes (23 e 25/09/2026). A verificação `supabase/tests/colunas-apagadas.sh` (roda no `rodar.sh` e no GitHub) barra o caso da coluna ressuscitada, mas ela não pega conserto de lógica desfeito: o `diff` é seu.
 - Operações com pontos ou saldo são atômicas, em funções SQL (RPC).
 
 ## Ordem de trabalho (decisões do Wisley)

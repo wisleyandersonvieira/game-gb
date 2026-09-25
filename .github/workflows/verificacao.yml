@@ -77,6 +77,8 @@ jobs:
             exit 1
           fi
           echo "Toda função chamada pelo servidor existe numa migração."
+      - name: Nenhuma coluna apagada voltou numa migração posterior
+        run: bash supabase/tests/colunas-apagadas.sh
       - name: PBKDF2 dentro do limite da hospedagem
         run: |
           # A Cloudflare (hospedagem do Lovable) recusa PBKDF2 acima de 100.000

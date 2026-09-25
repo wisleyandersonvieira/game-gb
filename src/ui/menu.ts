@@ -1,7 +1,29 @@
 // O menu do sistema: um lugar só, igual em todas as telas.
 import {
-  CalendarDays, ChartColumn, CircleUser, ClipboardCheck, FileQuestionMark, FolderLock, Gift, House, ListChecks, Lock,
-  Medal, Megaphone, MessageSquare, MonitorPlay, Receipt, Settings, Store, Target, Trophy, UserPlus, Users, Wrench, Building2,
+  Building2,
+  CalendarDays,
+  ChartColumn,
+  CircleUser,
+  ClipboardCheck,
+  FileQuestionMark,
+  FolderLock,
+  Gauge,
+  Gift,
+  House,
+  ListChecks,
+  Lock,
+  Medal,
+  Megaphone,
+  MessageSquare,
+  MonitorPlay,
+  Receipt,
+  Settings,
+  Store,
+  Target,
+  Trophy,
+  UserPlus,
+  Users,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -54,6 +76,9 @@ export const MENU_MASTER: GrupoMenu[] = [
       { to: "/gestao", label: "Lojas e links da TV", icone: Store },
       { to: "/configuracoes", label: "Configurações", icone: Settings },
       { to: "/perfil", label: "Meu perfil", icone: CircleUser },
+      // Só aparece para o dono da conta (este menu é o do master). Serve para
+      // chegar em /medir SEM recarregar a página, senão a medição se perde.
+      { to: "/medir", label: "Medir desempenho", icone: Gauge },
     ],
   },
 ];

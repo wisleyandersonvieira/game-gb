@@ -34,6 +34,13 @@ rodar() {
   docker exec "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -f "/$(basename "$1")"
 }
 
+echo "==> conferindo que nenhuma coluna apagada voltou numa migracao posterior"
+if ! bash "$RAIZ/supabase/tests/colunas-apagadas.sh"; then
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (coluna apagada ressuscitada)"
+  exit 1
+fi
+
 echo "==> simulando o ambiente do Supabase (auth, storage, papeis)"
 rodar "$RAIZ/supabase/tests/_ambiente_local.sql" >/dev/null
 

@@ -908,7 +908,42 @@ export type FichaDoTablet = {
  * ou "não tem". Existe porque uma publicação sem as atualizações do banco
  * deixava todo mundo de fora com uma mensagem que não dizia o motivo.
  */
-export const diagnostico = createServerFn({ method: "GET" }).handler(async () => {
+/** Compara segredos sem o tempo da resposta dizer quantos caracteres batiam. */
+function segredoConfere(dado: string, esperado: string) {
+  if (!esperado || dado.length !== esperado.length) return false;
+  let diferenca = 0;
+  for (let i = 0; i < dado.length; i++) diferenca |= dado.charCodeAt(i) ^ esperado.charCodeAt(i);
+  return diferenca === 0;
+}
+
+/** É o dono da conta? Conferido NO BANCO, com o token que o navegador mandou. */
+async function ehDonoPeloToken(token?: string) {
+  if (!token) return false;
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const cliente = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data } = await cliente.rpc("meu_acesso");
+    const tipo = (data as { tipo?: string } | null)?.tipo;
+    return tipo === "master" || tipo === "gerente" || tipo === "admin";
+  } catch {
+    return false;
+  }
+}
+
+export const diagnostico = createServerFn({ method: "GET" })
+  .validator((d: { token?: string; chave?: string } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+  // Quem vê o DETALHE (nomes de função e de segredo): o dono da conta, ou
+  // quem passar a chave STGAME_SAUDE_CHAVE no endereço. A chave existe para o
+  // dia em que NINGUÉM consegue entrar — que foi o que aconteceu em
+  // 23/09/2026 e é a razão de esta tela existir.
+  const detalhe =
+    (await ehDonoPeloToken(data.token)) ||
+    segredoConfere(data.chave ?? "", process.env["STGAME_SAUDE_CHAVE"] ?? "");
+
   const temPepper = !!process.env["STGAME_PIN_PEPPER"] && process.env["STGAME_PIN_PEPPER"]!.length >= 16;
 
   // Conta de senha DE VERDADE: a hospedagem tem limites próprios (já recusou
@@ -947,5 +982,9 @@ export const diagnostico = createServerFn({ method: "GET" }).handler(async () =>
     }
   }
 
-  return { temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando };
+  // Sem login e sem a chave: só o estado geral. Nome de função e de segredo
+  // não são assunto de quem está passando na internet (25/09/2026).
+  if (!detalhe) return { detalhe: false as const, banco };
+
+  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando };
 });

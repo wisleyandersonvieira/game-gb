@@ -9,7 +9,8 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { meuAcesso } from "@/integrations/supabase/destino";
 import {
-  chamadas, ligarMedicao, limparMedicao, medicaoLigada, resumir, type ResumoDaTela,
+  chamadas, ligarMedicao, limparMedicao, medicaoLigada, resumir, telasGravadas,
+  type ResumoDaTela,
 } from "@/medicao/registro";
 
 export const Route = createFileRoute("/medir")({
@@ -59,6 +60,9 @@ function Medir() {
   const [idaEVolta, setIdaEVolta] = useState<number[] | null>(null);
   const [medindo, setMedindo] = useState(false);
   const [ligada, setLigada] = useState(medicaoLigada());
+  // As chamadas ficam guardadas na sessão do navegador, então já existem aqui
+  // mesmo que você tenha chegado digitando o endereço.
+  const [resumoInicial] = useState(() => resumir());
 
   /** Ida e volta até o Supabase: a mesma chamada, 7 vezes. */
   async function medirIdaEVolta() {
@@ -74,7 +78,7 @@ function Medir() {
   }
 
   const mediana = idaEVolta ? idaEVolta[Math.floor(idaEVolta.length / 2)] : null;
-  const ordenado = [...resumo].sort((a, b) => b.parede - a.parede);
+  const ordenado = [...(resumo.length ? resumo : resumoInicial)].sort((a, b) => b.parede - a.parede);
 
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-6">
@@ -90,7 +94,14 @@ function Medir() {
         <h2 className="font-semibold">A medição está {ligada ? "LIGADA" : "desligada"}</h2>
         <p className="text-xs text-muted-foreground">
           Desligada por padrão, para não pesar no uso normal. Ligue, navegue pelas telas que quer
-          medir e volte aqui. Vale só neste aparelho e neste navegador.
+          medir e volte aqui <strong>pelo menu</strong> (Conta → Medir desempenho). Vale só neste
+          aparelho e nesta aba, e sobrevive a recarregar a página.
+        </p>
+        <p className="text-sm">
+          Já gravadas: <strong>{telasGravadas()} telas</strong>, {chamadas.length} chamadas.
+          {ligada && telasGravadas() === 0 && (
+            <span className="text-muted-foreground"> Navegue por uma tela e volte aqui.</span>
+          )}
         </p>
         <button
           onClick={() => { ligarMedicao(!ligada); setLigada(!ligada); setResumo([]); }}

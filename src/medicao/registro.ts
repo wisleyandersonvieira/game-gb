@@ -17,7 +17,40 @@ export type Chamada = {
 };
 
 const LIMITE = 500;
-export const chamadas: Chamada[] = [];
+const GUARDADO = "stgame.medir.chamadas";
+
+/**
+ * As chamadas gravadas. Ficam também na SESSÃO do navegador, para sobreviver a
+ * recarregar a página e a abrir /medir digitando o endereço — foi assim que a
+ * primeira coleta se perdeu (25/09/2026). Somem ao fechar a aba.
+ */
+export const chamadas: Chamada[] = carregarGuardado();
+
+function carregarGuardado(): Chamada[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const bruto = window.sessionStorage.getItem(GUARDADO);
+    const lista = bruto ? (JSON.parse(bruto) as Chamada[]) : [];
+    return Array.isArray(lista) ? lista.slice(-LIMITE) : [];
+  } catch {
+    return [];
+  }
+}
+
+let gravacaoMarcada = false;
+function guardarDepois() {
+  if (gravacaoMarcada || typeof window === "undefined") return;
+  gravacaoMarcada = true;
+  // Junta as gravações: escrever a cada chamada custaria caro numa rajada.
+  setTimeout(() => {
+    gravacaoMarcada = false;
+    try {
+      window.sessionStorage.setItem(GUARDADO, JSON.stringify(chamadas));
+    } catch {
+      // Sessão cheia ou bloqueada: a medição continua valendo em memória.
+    }
+  }, 800);
+}
 
 // DESLIGADA por padrão (decisão do Wisley, 25/09/2026): no uso normal não
 // grava nada. Liga-se em /medir, e vale só neste aparelho e neste navegador.
@@ -85,12 +118,23 @@ export function fetchMedido(original: typeof fetch = fetch): typeof fetch {
       const { tipo, nome } = nomeDaChamada(url);
       chamadas.push({ tela: window.location.pathname, tipo, nome, inicio, fim: performance.now() });
       if (chamadas.length > LIMITE) chamadas.splice(0, chamadas.length - LIMITE);
+      guardarDepois();
     }
   };
 }
 
 export function limparMedicao() {
   chamadas.length = 0;
+  try {
+    window.sessionStorage.removeItem(GUARDADO);
+  } catch {
+    // Sem armazenamento: já basta ter limpado a memória.
+  }
+}
+
+/** Quantas telas diferentes já foram gravadas (para saber se está capturando). */
+export function telasGravadas() {
+  return new Set(chamadas.map((c) => c.tela)).size;
 }
 
 export type ResumoDaTela = {

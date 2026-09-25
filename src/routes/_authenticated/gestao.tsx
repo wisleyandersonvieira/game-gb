@@ -11,10 +11,6 @@ import { ESTAVEL } from "@/ui/prazos";
 
 export const Route = createFileRoute("/_authenticated/gestao")({
   ssr: false,
-  beforeLoad: async () => {
-    const { data: conta } = await supabase.rpc("minha_conta");
-    if (conta === null || conta === undefined) throw redirect({ to: "/sem-acesso" });
-  },
   component: Gestao,
 });
 

@@ -5,6 +5,7 @@
 // de fora — inclusive o administrador — com uma mensagem que não dizia o motivo.
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { diagnostico } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
 
@@ -27,7 +28,17 @@ function Linha({ ok, titulo, ajuda }: { ok: boolean; titulo: string; ajuda: stri
 }
 
 function Saude() {
-  const d = useQuery({ queryKey: ["diagnostico"], queryFn: () => diagnostico() });
+  // O token vai junto para o servidor conferir NO BANCO se quem pediu é o dono
+  // da conta. A chave do endereço (?chave=...) é a saída para o dia em que
+  // ninguém consegue entrar — foi para isso que esta tela nasceu.
+  const d = useQuery({
+    queryKey: ["diagnostico"],
+    queryFn: async () => {
+      const { data: sessao } = await supabase.auth.getSession();
+      const chave = new URLSearchParams(window.location.search).get("chave") ?? undefined;
+      return diagnostico({ data: { token: sessao.session?.access_token, chave } });
+    },
+  });
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-4 p-6">
@@ -40,7 +51,29 @@ function Saude() {
       {d.isLoading && <p className="text-sm text-muted-foreground">Conferindo…</p>}
       {d.isError && <p className="text-sm text-destructive">{(d.error as Error).message}</p>}
 
-      {d.data && (
+      {/* Sem login e sem a chave: só o estado geral. */}
+      {d.data && !d.data.detalhe && (
+        <div
+          className={`rounded-lg border p-3 text-sm ${
+            d.data.banco === "ok" ? "border-sucesso" : "border-destructive"
+          } bg-card`}
+        >
+          <p className="font-medium">
+            {d.data.banco === "ok"
+              ? "No ar: o sistema está respondendo e o banco está atualizado."
+              : d.data.banco === "desatualizado"
+                ? "O banco não recebeu as atualizações desta versão."
+                : "O servidor não está conseguindo falar com o banco."}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Entre como dono da conta para ver o detalhe. Se ninguém estiver conseguindo entrar,
+            acrescente <span className="font-mono">?chave=…</span> ao endereço, com a chave
+            cadastrada em STGAME_SAUDE_CHAVE.
+          </p>
+        </div>
+      )}
+
+      {d.data?.detalhe && (
         <>
           <ul className="space-y-2">
             <Linha
