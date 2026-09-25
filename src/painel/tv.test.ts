@@ -54,31 +54,43 @@ describe("a folha de estilo da TV", () => {
     expect(/html\.tv[^{]*\{[^}]*background-color:\s*#[0-9a-f]{6}/i.test(css)).toBe(true);
   });
 
-  // O piso de 24px valia para o desenho antigo. O layout aprovado em
-  // 25/09/2026 usa RÓTULOS pequenos em maiúsculas com muito espaçamento entre
-  // letras — eles são etiqueta de coluna, não texto de leitura. Então o piso
-  // passou a valer por papel, que é mais honesto do que um número só.
-  function tamanhoDe(classe: string): number {
-    const bloco = css.slice(css.indexOf(classe));
-    const m = bloco.slice(0, bloco.indexOf("}")).match(/font-size:\s*(\d+)px/);
-    return m ? Number(m[1]) : 0;
+  // PISO DE TAMANHO (decisao do Wisley, 25/09/2026): nada abaixo de 20px pode
+  // ser INFORMACAO. Abaixo disso so rotulo em maiuscula espacada e o
+  // indicador de tela, e nunca abaixo de 16px.
+  //
+  // Confere SELETOR POR SELETOR, e nao um minimo geral: assim um tamanho
+  // baixado sem querer aparece aqui, com o nome de quem baixou.
+  const PODEM_SER_MENORES = [".tv-rotulo", ".tv-rodape"];
+
+  /** Cada regra da folha, com o tamanho que ela define. */
+  function tamanhos(): { seletor: string; px: number }[] {
+    const achados: { seletor: string; px: number }[] = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      const fs = m[2].match(/font-size:\s*(\d+)px/);
+      if (fs) achados.push({ seletor: m[1].trim().split(/\s+/).join(" "), px: Number(fs[1]) });
+    }
+    return achados;
   }
 
-  it("o que a equipe lê de longe é grande", () => {
-    // O nome da tarefa e o nome no pódio.
-    expect(tamanhoDe(".tv-item-titulo")).toBeGreaterThanOrEqual(26);
-    expect(tamanhoDe(".tv-podio-nome")).toBeGreaterThanOrEqual(26);
-    // A linha secundária de cada item.
-    expect(tamanhoDe(".tv-item-linha")).toBeGreaterThanOrEqual(20);
-    expect(tamanhoDe(".tv-vazio")).toBeGreaterThanOrEqual(20);
-    // E o nome da loja, que é o maior de todos.
-    expect(tamanhoDe(".tv-loja")).toBeGreaterThanOrEqual(60);
+  it("nenhuma INFORMAÇÃO fica abaixo de 20px", () => {
+    const pequenos = tamanhos()
+      .filter((t) => t.px < 20)
+      .filter((t) => !PODEM_SER_MENORES.some((p) => t.seletor.startsWith(p)))
+      .map((t) => `${t.seletor} (${t.px}px)`);
+    expect(pequenos).toEqual([]);
   });
 
-  it("nada na tela fica abaixo de 15px, nem as etiquetas", () => {
-    const tamanhos = [...css.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1]));
-    expect(tamanhos.length).toBeGreaterThan(5);
-    expect(Math.min(...tamanhos)).toBeGreaterThanOrEqual(15);
+  it("nem rótulo nem indicador ficam abaixo de 16px", () => {
+    const tudo = tamanhos();
+    expect(tudo.length).toBeGreaterThan(10);
+    expect(Math.min(...tudo.map((t) => t.px))).toBeGreaterThanOrEqual(16);
+  });
+
+  it("o que a equipe lê de longe continua grande", () => {
+    const de = (sel: string) => tamanhos().find((t) => t.seletor === sel)?.px ?? 0;
+    expect(de(".tv-item-titulo")).toBeGreaterThanOrEqual(26);
+    expect(de(".tv-podio-nome")).toBeGreaterThanOrEqual(26);
+    expect(de(".tv-loja")).toBeGreaterThanOrEqual(60);
   });
 
   it("deixa margem de segurança nas bordas (a TV corta as beiradas)", () => {

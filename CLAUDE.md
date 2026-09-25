@@ -66,6 +66,11 @@
 - Componentes pequenos. Adicione cada tela nova ao menu.
 - Antes de concluir, rode `bun run build` sem erros de TypeScript.
 
+## O STGame não controla jornada
+O sistema **não** acompanha entrada e saída de turno, e nenhuma tela mostra "quem está na loja agora". Isso é posição de produto, para reduzir risco trabalhista — a mesma razão de não existir notificação no aparelho pessoal.
+
+Na prática: não construa contagem de presença, relógio de ponto, "na equipe agora" nem nada que se pareça, em tela nenhuma — e menos ainda na TV, que fica à vista de todos. Se um pedido levar a isso, diga antes de implementar. (Recusado em 25/09/2026, na faixa de números do rodapé da TV.)
+
 ## Como fechar uma entrega (obrigatório)
 Commit **não** é publicação: o Lovable publica do GitHub, e commit que não foi **enviado** não chega no ar. Isso já custou um dia de teste em 25/09/2026, com o Wisley procurando defeito numa tela que nunca tinha sido publicada.
 

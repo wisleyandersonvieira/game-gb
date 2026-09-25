@@ -15,6 +15,16 @@
    O VISUAL segue o layout aprovado pelo Wisley em 25/09/2026: fundo escuro
    solido, SEM quadros nem molduras — a separacao e por espaco e por linhas
    finas de 1 px.
+
+   PISO DE TAMANHO (decisao do Wisley, 25/09/2026). A TV e lida de longe:
+
+     - NADA ABAIXO DE 20px pode ser INFORMACAO. Nome, pessoa, hora, pontos e
+       contagens ficam em 20px ou mais.
+     - Abaixo de 20px so pode ficar ROTULO em maiuscula espacada (.tv-rotulo)
+       e o INDICADOR de tela (.tv-rodape), e mesmo esses nunca abaixo de 16px.
+
+   O teste em tv.test.ts confere isso seletor por seletor: quem baixar um
+   tamanho sem querer descobre na hora, e nao na loja.
    =========================================================================== */
 
 /* --- Base ---------------------------------------------------------------- */
@@ -65,7 +75,7 @@ html.tv, html.tv body {
 }
 
 .tv-marca-nome {
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
   color: #93a4c4;
   letter-spacing: 0.02em;
