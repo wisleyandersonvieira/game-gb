@@ -5417,7 +5417,9 @@ BEGIN
     'ficha_dos_tablets', 'registrar_evento_acesso_loja', 'fechamento_valendo',
     'tentativa_abrir_ex', 'marcar_senha_amao', 'erros_de_login',
     -- Etapa 1.12 C1: a visao do celular do colaborador.
-    'eu_inicio', 'eu_tarefas', 'eu_entregar', 'eu_extrato'
+    'eu_inicio', 'eu_tarefas', 'eu_entregar', 'eu_extrato',
+    -- O PIN do tablet numa ida so (26/09/2026).
+    'visao_tablet_do_usuario', 'visao_conferir_pin', 'visao_pegar_com_pin', 'visao_entregar_com_pin'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname = f) THEN
@@ -8134,5 +8136,147 @@ BEGIN
 END $$;
 
 SET teste.uid = '';
+
+-- ===========================================================================
+-- 67. O PIN do tablet numa ida so ao banco (26/09/2026)
+-- ===========================================================================
+-- Aceitar e entregar pelo tablet passaram a ser UMA funcao: trava, PIN,
+-- regra e gravacao na mesma transacao, com a fila de volta. Aqui se prova que
+-- nada de seguranca ficou pelo caminho: a trava conta tudo (inclusive quando a
+-- regra recusa), o PIN de uma conta nao vale na outra, e as funcoes so sao
+-- chamadas pelo servidor.
+DO $$ BEGIN RAISE NOTICE '67. o PIN do tablet numa ida so'; END $$;
+
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES
+  (9767, 1, 'Olga Sessenta'), (9768, 1, 'Paulo Sessenta');
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9767, 10), (1, 9768, 10);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (9767, 1, 'Tarefa 67', 3);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9767, 10);
+DO $$
+BEGIN
+  -- O tablet da loja 10 e o que a secao 44 criou (um acesso por loja).
+  PERFORM public.definir_pin(1, 9767, repeat('1', 64), false);
+  PERFORM public.definir_pin(1, 9768, repeat('2', 64), false);
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM set_config('teste.atr67',
+    public.atribuir_tarefa(9767, 10, ARRAY[9767, 9768], 'Unica', NULL, now(), NULL)::text, false);
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE
+  v jsonb; v_atr integer := current_setting('teste.atr67')::integer;
+  v_antes integer; v_n integer;
+  v_chave text := repeat('c', 64);
+  v_fn text;
+BEGIN
+  -- Quem e o tablet: pelo usuario, e so se for de loja ativa.
+  v := public.visao_tablet_do_usuario('10100000-0000-0000-0000-000000000001');
+  PERFORM public.exigir((v->>'contaid')::integer = 1 AND (v->>'lojaid')::integer = 10,
+                        'o servidor descobre a loja do tablet pelo usuario do token');
+  PERFORM public.exigir(public.visao_tablet_do_usuario('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') IS NULL,
+                        'o login do gestor nao passa por tablet');
+  PERFORM public.exigir((public.visao_tablet_do_usuario('b0000000-0000-0000-0000-0000000000bb')->>'contaid')::integer = 2,
+                        'o tablet da conta B e da conta B, nunca da A');
+  UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
+  PERFORM public.exigir(public.visao_tablet_do_usuario('10100000-0000-0000-0000-000000000001') IS NULL,
+                        'loja desativada: o tablet cai na hora');
+  UPDATE public.lojas SET ativa = true WHERE lojaid = 10;
+
+  -- PIN errado: recusa com a mensagem unica, e a tentativa FICA gravada.
+  SELECT count(*) INTO v_antes FROM public.tentativasacesso WHERE tipo = 'pintablet' AND chave = v_chave;
+  v := public.visao_pegar_com_pin(1, 10, repeat('9', 64), v_chave, 'sem-ip', v_atr);
+  PERFORM public.exigir(v = '{"pinerrado": true}'::jsonb, 'PIN errado: so "nao reconhecido", sem mais nada');
+  PERFORM public.exigir(NOT v ? 'tempos', 'e no erro nao volta tempo nenhum');
+  SELECT count(*) INTO v_n FROM public.tentativasacesso
+   WHERE tipo = 'pintablet' AND chave = v_chave AND NOT sucesso;
+  PERFORM public.exigir(v_n = v_antes + 1, 'o PIN errado conta na trava');
+
+  -- O PIN de uma conta nao vale no tablet da outra, nem passando a loja de A.
+  PERFORM public.exigir(public.visao_pegar_com_pin(2, 20, repeat('1', 64), v_chave, 'sem-ip', v_atr) ? 'pinerrado',
+                        'o PIN de A nao vale no tablet de B');
+  PERFORM public.exigir(public.visao_pegar_com_pin(2, 10, repeat('1', 64), v_chave, 'sem-ip', v_atr) ? 'pinerrado',
+                        'nem o tablet de B passando a loja de A');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.missoesaceites WHERE atribuicaoid = v_atr),
+                        'e nada foi aceito por esses caminhos');
+
+  -- O PIN certo: aceita, e a fila ja volta com o cartao no lugar novo.
+  v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', v_atr);
+  PERFORM public.exigir(v->>'nome' = 'Olga S.', 'o PIN certo aceita, em nome de quem digitou');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v->'fila') f
+                                 WHERE (f->>'atribuicaoid')::integer = v_atr
+                                   AND f->>'situacao' = 'em_andamento'),
+                        'a fila volta ja atualizada, com a tarefa em andamento');
+  PERFORM public.exigir(v ? 'tempos', 'e com os tempos de cada etapa, para a medicao');
+  PERFORM public.exigir((SELECT canal FROM public.missoesaceites WHERE contaid = 1 AND atribuicaoid = v_atr
+                            AND revogadoem IS NULL) = 'tablet', 'registrado como aceite do tablet');
+  PERFORM public.exigir((SELECT sucesso FROM public.tentativasacesso WHERE tipo = 'pintablet' AND chave = v_chave
+                          ORDER BY tentativaid DESC LIMIT 1), 'a tentativa com o PIN certo fecha como sucesso');
+
+  -- A REGRA recusa (ja foi pega), e mesmo assim a tentativa fica gravada: o
+  -- erro volta como resposta, e nao como excecao que desfaria a transacao.
+  SELECT count(*) INTO v_antes FROM public.tentativasacesso WHERE tipo = 'pintablet' AND chave = v_chave;
+  v := public.visao_pegar_com_pin(1, 10, repeat('2', 64), v_chave, 'sem-ip', v_atr);
+  PERFORM public.exigir(v->>'erro' LIKE 'Esta tarefa já foi pega hoje por Olga S.%',
+                        'a regra de sempre recusa, com o motivo');
+  PERFORM public.exigir((SELECT count(*) FROM public.tentativasacesso WHERE tipo = 'pintablet' AND chave = v_chave)
+                          = v_antes + 1, 'e a tentativa continua contada');
+
+  -- Entregar: o PIN de outra pessoa nao entrega o que ela nao aceitou.
+  v := public.visao_entregar_com_pin(1, 10, repeat('2', 64), v_chave, 'sem-ip', v_atr, NULL, NULL, NULL, true);
+  PERFORM public.exigir(v->>'erro' = 'Esta tarefa é de outra pessoa.', 'o PIN de outra pessoa nao entrega');
+  v := public.visao_entregar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', v_atr, NULL, 'feito', NULL, true);
+  PERFORM public.exigir(v->>'nome' = 'Olga S.', 'quem aceitou entrega com o PIN dela, numa ida so');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v->'fila') f
+                                 WHERE (f->>'atribuicaoid')::integer = v_atr AND f->>'situacao' = 'feita'),
+                        'e a fila volta com a tarefa em Feitas');
+
+  -- A trava continua contando TUDO, inclusive a rajada: cinco erros seguidos
+  -- em 15 minutos fecham o tablet (a regra de sempre), e ai nem o PIN certo
+  -- passa. Com a porta fechada nada e gravado, como antes.
+  v_chave := repeat('d', 64);
+  FOR i IN 1..8 LOOP
+    v := public.visao_conferir_pin(1, 10, repeat('9', 64), v_chave, 'sem-ip');
+  END LOOP;
+  PERFORM public.exigir((SELECT count(*) FROM public.tentativasacesso
+                          WHERE tipo = 'pintablet' AND chave = v_chave AND NOT sucesso) = 5,
+                        'as tentativas rapidas contam uma a uma ate a trava fechar');
+  PERFORM public.exigir(v = '{"travado": true, "minutos": null}'::jsonb, 'e a sexta em diante encontra a trava fechada');
+  v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', v_atr);
+  PERFORM public.exigir((v->>'travado')::boolean, 'travado: nem o PIN certo passa');
+  PERFORM public.exigir(NOT v ? 'nome' AND NOT v ? 'fila', 'e com a trava fechada nao volta nome nem fila');
+
+  -- Nenhuma migracao futura pode trazer de volta a comparacao que varria
+  -- (CREATE OR REPLACE a partir de uma versao antiga).
+  SELECT pg_get_functiondef('public.visao_pessoa_do_pin(integer, integer, text)'::regprocedure) INTO v_fn;
+  PERFORM public.exigir(v_fn LIKE '%p_pinhash::bpchar%', 'a busca do PIN compara no tipo da coluna (usa o indice)');
+  SELECT pg_get_functiondef('public.tentativa_abrir_ex(integer, text, text, text)'::regprocedure) INTO v_fn;
+  PERFORM public.exigir(v_fn NOT LIKE '%IS NOT DISTINCT FROM p_contaid%',
+                        'a trava nao volta a varrer as tentativas de todas as contas');
+END $$;
+
+-- Tudo isso e so do servidor: nem o visitante nem quem esta logado chama.
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY[
+    'public.visao_tablet_do_usuario(uuid)',
+    'public.visao_conferir_pin(integer, integer, text, text, text)',
+    'public.visao_pegar_com_pin(integer, integer, text, text, text, integer)',
+    'public.visao_entregar_com_pin(integer, integer, text, text, text, integer, text, text, text, boolean)',
+    'public.ms_entre(timestamp with time zone, timestamp with time zone)'
+  ] LOOP
+    PERFORM public.exigir(NOT has_function_privilege('anon', f, 'EXECUTE')
+                          AND NOT has_function_privilege('authenticated', f, 'EXECUTE'),
+                          f || ': nem visitante nem usuario logado chamam');
+    PERFORM public.exigir(has_function_privilege('service_role', f, 'EXECUTE'), f || ': o servidor chama');
+  END LOOP;
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

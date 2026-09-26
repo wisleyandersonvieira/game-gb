@@ -91,17 +91,17 @@ export async function abrirTentativa(
     }
     throw new Error("Não foi possível conferir o acesso agora.");
   }
-  if (data === null || data === undefined) {
-    // Com os minutos, quando o banco souber dizer: no balcão, "espere um
-    // pouco" deixa a pessoa sem saber se são segundos ou horas.
-    const m = resposta?.minutos;
-    throw new Error(
-      m && m > 0
-        ? `Muitas tentativas. Aguarde ${m} ${m === 1 ? "minuto" : "minutos"} e tente de novo.`
-        : ERRO_TRAVADO,
-    );
-  }
+  if (data === null || data === undefined) throw new Error(mensagemDaTrava(resposta?.minutos));
   return data as number;
+}
+
+/**
+ * Com os minutos, quando o banco souber dizer: no balcão, "espere um pouco"
+ * deixa a pessoa sem saber se são segundos ou horas.
+ */
+export function mensagemDaTrava(minutos?: number | null) {
+  const m = minutos ?? 0;
+  return m > 0 ? `Muitas tentativas. Aguarde ${m} ${m === 1 ? "minuto" : "minutos"} e tente de novo.` : ERRO_TRAVADO;
 }
 
 export async function fecharTentativa(tentativaid: number, sucesso: boolean) {

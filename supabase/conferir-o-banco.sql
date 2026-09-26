@@ -185,7 +185,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
          WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%podiomes%'),
   (150, 'B2', 'versao', 'o mural esta no tablet', 'aplicar-mural-no-tablet.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'visao_mural'))
+                WHERE n.nspname = 'public' AND p.proname = 'visao_mural')),
+  (160, 'B2', 'versao', 'o PIN do tablet confere numa ida so', 'aplicar-pin-do-tablet-numa-ida.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'visao_pegar_com_pin'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

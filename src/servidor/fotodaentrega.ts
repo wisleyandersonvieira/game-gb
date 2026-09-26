@@ -116,7 +116,16 @@ export async function provaDosBytes(bytes: ArrayBuffer): Promise<ProvaDaFoto> {
  */
 export async function conferirHoraDaFoto(contaid: number, horafoto: Date | null) {
   if (!horafoto) return { semhorafoto: true };
+  julgarHoraDaFoto(horafoto, await toleranciaDaFoto(contaid));
+  return { semhorafoto: false };
+}
 
+/**
+ * A tolerância configurada da conta, crua (quem interpreta é
+ * julgarHoraDaFoto). Separada para o tablet poder perguntar JUNTO com o
+ * download da foto, em vez de esperar ele terminar.
+ */
+export async function toleranciaDaFoto(contaid: number): Promise<string | null> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin
     .from("configuracoes")
@@ -124,9 +133,7 @@ export async function conferirHoraDaFoto(contaid: number, horafoto: Date | null)
     .eq("contaid", contaid)
     .eq("chave", "MAX_DIFERENCA_FOTO_SEGUNDOS")
     .maybeSingle();
-
-  julgarHoraDaFoto(horafoto, data?.valor ?? null);
-  return { semhorafoto: false };
+  return data?.valor ?? null;
 }
 
 /** Quanto tempo a foto pode ter, quando a configuração está estragada. */

@@ -5435,6 +5435,50 @@ export type Database = {
         Args: { p_contaid: number; p_lojaid: number; p_pinhash: string }
         Returns: Json
       }
+      visao_tablet_do_usuario: {
+        Args: { p_userid: string }
+        Returns: Json
+      }
+      visao_conferir_pin: {
+        Args: {
+          p_chave: string
+          p_contaid: number
+          p_lojaid: number
+          p_origem: string
+          p_pinhash: string
+        }
+        Returns: Json
+      }
+      visao_pegar_com_pin: {
+        Args: {
+          p_atribuicaoid: number
+          p_chave: string
+          p_contaid: number
+          p_lojaid: number
+          p_origem: string
+          p_pinhash: string
+        }
+        Returns: Json
+      }
+      visao_entregar_com_pin: {
+        Args: {
+          p_atribuicaoid: number
+          p_caminho: string
+          p_chave: string
+          p_contaid: number
+          p_fotoidunico: string
+          p_lojaid: number
+          p_observacao: string
+          p_origem: string
+          p_pinhash: string
+          p_semhorafoto: boolean
+        }
+        Returns: Json
+      }
+      ms_entre: {
+        Args: { p_ate: string; p_de: string }
+        Returns: number
+      }
       visao_pegar: {
         Args: {
           p_atribuicaoid: number

@@ -10,8 +10,8 @@
 // guardado em lugar nenhum — vem no pedido, e some quando ele acaba.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { abrirTentativa, conferirPasse, emitirPasse, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
-import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
+import { conferirPasse, emitirPasse, mensagemDaTrava, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+import { conferirBilhete, emitirBilhete, julgarHoraDaFoto, provaDaFoto, toleranciaDaFoto } from "@/servidor/fotodaentrega";
 
 /**
  * Se o tablet toca som quando chega tarefa nova, em que volume, e de quantos
@@ -41,9 +41,7 @@ async function somDaLoja(
   };
 }
 
-type ClienteDoUsuario = {
-  rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
-};
+type Contexto = { userId: string; recebidoem?: number };
 
 type Tablet = { contaid: number; lojaid: number; loja: string };
 
@@ -77,95 +75,188 @@ export type ItemDaFila = {
 };
 
 /**
- * Qual loja e este tablet — pelo TOKEN, nunca pelo que o navegador diz.
- * Pessoa desligada, loja desativada ou conta cancelada caem aqui na hora.
+ * Quanto cada etapa levou, em milissegundos, para a medição do tablet
+ * (`/tablet?medir=1`). Só volta para a tela quando a ação DÁ CERTO: no erro de
+ * PIN, número nenhum sai daqui, para o tempo de resposta não contar se o PIN
+ * existe.
+ *
+ * Cuidado ao ler: no Cloudflare o relógio só anda quando há espera de rede.
+ * Conta pura (o hash da foto, por exemplo) aparece como 0 aqui; ela foi medida
+ * à parte.
  */
-async function tabletDoToken(supabase: ClienteDoUsuario, userId: string): Promise<Tablet> {
-  const { data, error } = await supabase.rpc("meu_acesso");
-  if (error) throw new Error("Não foi possível confirmar o acesso deste tablet.");
-  const acesso = data as { tipo?: string; loja?: string } | null;
-  if (!acesso || acesso.tipo !== "loja") throw new Error("Esta tela é do tablet da loja.");
-
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: vinculo, error: erro } = await supabaseAdmin
-    .from("contasusuarios")
-    .select("contaid, lojaid")
-    .eq("userid", userId)
-    .single();
-  if (erro || !vinculo?.lojaid) throw new Error("Este tablet não está ligado a nenhuma loja.");
-  return { contaid: vinculo.contaid, lojaid: vinculo.lojaid, loja: acesso.loja ?? "" };
+export function cronometro(recebidoem?: number) {
+  const tempos: Record<string, number> = {};
+  const inicio = recebidoem ?? Date.now();
+  let marca = Date.now();
+  // Da chegada do pedido até aqui: a conferência do token de login.
+  if (recebidoem) tempos.token = marca - recebidoem;
+  return {
+    marcar(nome: string) {
+      const agora = Date.now();
+      tempos[nome] = (tempos[nome] ?? 0) + (agora - marca);
+      marca = agora;
+    },
+    fechar() {
+      tempos.servidor = Date.now() - inicio;
+      return tempos;
+    },
+  };
 }
 
+/** Função ausente = o banco não recebeu as migrações desta versão. */
+function bancoDesatualizado(error: { code?: string; message?: string } | null) {
+  return !!error && (error.code === "PGRST202" || (error.message ?? "").includes("Could not find"));
+}
+const ERRO_BANCO_DESATUALIZADO =
+  "O banco de dados ainda não recebeu as atualizações desta versão. Abra /saude para ver o que falta.";
+
 /**
- * Descobre quem digitou o PIN. Passa pela trava da parte A com tipo "tablet":
- * a trava por origem vale (é ela que segura um adivinhador), mas a trava por
- * chave não — senão um engraçadinho deixaria o balcão sem sistema por 15
- * minutos num horário de pico.
+ * Qual loja é este tablet — pelo TOKEN, nunca pelo que o navegador diz.
+ * Loja desativada ou conta cancelada caem aqui na hora.
+ *
+ * Uma ida só ao banco (antes eram duas: `meu_acesso` e depois o vínculo). O
+ * usuário vem do token, que o middleware já conferiu.
  */
-async function pessoaDoPin(t: Tablet, pin: string) {
+async function tabletDoToken(userId: string): Promise<Tablet> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("visao_tablet_do_usuario", { p_userid: userId });
+  if (bancoDesatualizado(error)) throw new Error(ERRO_BANCO_DESATUALIZADO);
+  if (error) throw new Error("Não foi possível confirmar o acesso deste tablet.");
+  const t = data as unknown as Tablet | null;
+  if (!t) throw new Error("Esta tela é do tablet da loja.");
+  return t;
+}
+
+/** Mensagem única: nunca diz se o PIN existe e a pessoa é que não pode. */
+const ERRO_PIN =
+  "PIN não reconhecido. Confira o número — e lembre que só quem trabalha hoje nesta loja aparece na fila.";
+
+/**
+ * O que o banco precisa para conferir o PIN: o resumo do número e a chave da
+ * trava. Os dois são feitos AQUI, com a chave do servidor; o banco nunca vê o
+ * número.
+ *
+ * A trava é a da parte A com tipo "pintablet": a trava por origem vale (é ela
+ * que segura um adivinhador), mas a por chave não bloqueia — senão um
+ * engraçadinho deixaria o balcão sem sistema por 15 minutos no pico.
+ */
+async function assinaturaDoPin(t: Tablet, pin: string) {
   const limpo = (pin ?? "").trim();
   if (!/^\d{6}$/.test(limpo)) throw new Error("PIN não reconhecido.");
-
-  const chave = await embaralhar(`pintablet:${t.contaid}:${t.lojaid}`);
-  const tentativa = await abrirTentativa(t.contaid, "pintablet", chave, origemDaChamada());
-
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("visao_pessoa_do_pin", {
+  return {
     p_contaid: t.contaid,
     p_lojaid: t.lojaid,
     p_pinhash: await resumoDoPin(t.contaid, limpo),
-  });
-  const pessoa = data as { funcionarioid: number; nome: string } | null;
-  await fecharTentativa(tentativa, !error && !!pessoa);
-  if (error) throw new Error("Não foi possível conferir o PIN agora.");
-  // Mensagem única: nunca diz se o PIN existe e a pessoa é que não pode.
-  if (!pessoa) throw new Error("PIN não reconhecido. Confira o número — e lembre que só quem trabalha hoje nesta loja aparece na fila.");
-  return pessoa;
+    p_chave: await embaralhar(`pintablet:${t.contaid}:${t.lojaid}`),
+    p_origem: origemDaChamada(),
+  };
+}
+
+/** Traduz a recusa do banco para a mensagem da tela. */
+function recusa(r: { travado?: boolean; minutos?: number | null; pinerrado?: boolean; erro?: string }) {
+  if (r.travado) return mensagemDaTrava(r.minutos);
+  if (r.pinerrado) return ERRO_PIN;
+  return r.erro ?? null;
+}
+
+/**
+ * Descobre quem digitou o PIN (pedido e mural). A trava abre, a pessoa é
+ * procurada e a trava fecha numa ida só ao banco, na mesma transação.
+ */
+async function pessoaDoPin(t: Tablet, pin: string) {
+  const args = await assinaturaDoPin(t, pin);
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("visao_conferir_pin", args);
+  if (bancoDesatualizado(error)) throw new Error(ERRO_BANCO_DESATUALIZADO);
+  if (error || !data) throw new Error("Não foi possível conferir o PIN agora.");
+  const r = data as { funcionarioid?: number; nome?: string; travado?: boolean; minutos?: number; pinerrado?: boolean };
+  const motivo = recusa(r);
+  if (motivo) throw new Error(motivo);
+  return { funcionarioid: r.funcionarioid as number, nome: r.nome as string };
 }
 
 /** A fila do dia. Não precisa de PIN: é o que está no balcão, à vista de todos. */
 export const filaDoTablet = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
+    const { userId } = context as unknown as Contexto;
+    const t = await tabletDoToken(userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin.rpc("visao_fila", { p_contaid: t.contaid, p_lojaid: t.lojaid });
-    if (error) throw new Error("Não foi possível carregar a fila agora.");
 
-    // A partir de quantos minutos o cartão fica marcado como parado.
-    const { data: cfg } = await supabaseAdmin
-      .from("configuracoes")
-      .select("valor")
-      .eq("contaid", t.contaid)
-      .eq("chave", "MINUTOS_TAREFA_PARADA")
-      .maybeSingle();
+    // As três perguntas não dependem uma da outra: vão juntas, e a fila
+    // espera a mais lenta, não a soma.
+    const [fila, cfg, som] = await Promise.all([
+      supabaseAdmin.rpc("visao_fila", { p_contaid: t.contaid, p_lojaid: t.lojaid }),
+      // A partir de quantos minutos o cartão fica marcado como parado.
+      supabaseAdmin
+        .from("configuracoes")
+        .select("valor")
+        .eq("contaid", t.contaid)
+        .eq("chave", "MINUTOS_TAREFA_PARADA")
+        .maybeSingle(),
+      somDaLoja(t.contaid, t.lojaid),
+    ]);
+    if (fila.error) throw new Error("Não foi possível carregar a fila agora.");
 
     return {
       loja: t.loja,
-      minutosParada: Number(cfg?.valor ?? 30) || 30,
-      itens: (data ?? []) as unknown as ItemDaFila[],
-      som: await somDaLoja(t.contaid, t.lojaid),
+      minutosParada: Number(cfg.data?.valor ?? 30) || 30,
+      itens: (fila.data ?? []) as unknown as ItemDaFila[],
+      som,
     };
   });
 
+/** O que a tela recebe quando o aceite ou a entrega dá certo. */
+export type ResultadoNoTablet = {
+  nome: string;
+  /** A fila JÁ atualizada: a tela move o cartão sem perguntar de novo. */
+  itens: ItemDaFila[];
+  tempos: Record<string, number>;
+};
+
+/** Chama a função do banco que faz tudo numa ida, e lê a resposta. */
+async function numaIda(
+  nome: "visao_pegar_com_pin" | "visao_entregar_com_pin",
+  args: Record<string, unknown>,
+  c: ReturnType<typeof cronometro>,
+): Promise<ResultadoNoTablet> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc(nome, args as never);
+  c.marcar("banco");
+  if (bancoDesatualizado(error)) throw new Error(ERRO_BANCO_DESATUALIZADO);
+  if (error || !data) throw new Error("Não foi possível falar com o banco agora. Tente de novo.");
+
+  const r = data as {
+    nome?: string; fila?: ItemDaFila[]; tempos?: Record<string, number>;
+    travado?: boolean; minutos?: number; pinerrado?: boolean; erro?: string;
+  };
+  const motivo = recusa(r);
+  if (motivo) throw new Error(motivo);
+
+  const tempos = c.fechar();
+  // Dentro do banco: PIN (com a trava), a ação e a fila. O resto da ida é rede.
+  for (const [k, v] of Object.entries(r.tempos ?? {})) tempos[`banco_${k}`] = Number(v);
+  return { nome: r.nome ?? "", itens: r.fila ?? [], tempos };
+}
+
+/**
+ * Aceitar pelo tablet. Uma ida ao banco para saber que tablet é este, e UMA
+ * para o resto: trava, PIN, rodízio, aceite e a fila nova, na mesma transação.
+ */
 export const pegarNoTablet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { pin: string; atribuicaoid: number }) => d)
+  .validator((d: { pin: string; atribuicaoid: number }) => {
+    if (typeof d?.pin !== "string") throw new Error("PIN inválido.");
+    if (!Number.isInteger(d?.atribuicaoid) || d.atribuicaoid <= 0) throw new Error("Tarefa inválida.");
+    return { pin: d.pin, atribuicaoid: d.atribuicaoid };
+  })
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
-    const pessoa = await pessoaDoPin(t, data.pin);
-
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("visao_pegar", {
-      p_contaid: t.contaid,
-      p_lojaid: t.lojaid,
-      p_funcionarioid: pessoa.funcionarioid,
-      p_atribuicaoid: data.atribuicaoid,
-    });
-    if (error) throw new Error(error.message);
-    return { nome: pessoa.nome };
+    const { userId, recebidoem } = context as unknown as Contexto;
+    const c = cronometro(recebidoem);
+    const t = await tabletDoToken(userId);
+    c.marcar("tablet");
+    const args = await assinaturaDoPin(t, data.pin);
+    return numaIda("visao_pegar_com_pin", { ...args, p_atribuicaoid: data.atribuicaoid }, c);
   });
 
 /**
@@ -180,8 +271,8 @@ export const autorizacaoDeFoto = createServerFn({ method: "POST" })
     return { atribuicaoid: d.atribuicaoid };
   })
   .handler(async ({ data: { atribuicaoid }, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
+    const { userId } = context as unknown as Contexto;
+    const t = await tabletDoToken(userId);
     const caminho = `${t.contaid}/${t.lojaid}/${crypto.randomUUID()}.jpg`;
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -211,36 +302,40 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
     },
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
-    const pessoa = await pessoaDoPin(t, data.pin);
+    const { userId, recebidoem } = context as unknown as Contexto;
+    const c = cronometro(recebidoem);
+    const t = await tabletDoToken(userId);
+    c.marcar("tablet");
+    // O formato do PIN é conferido antes de baixar a foto: número torto não
+    // gasta download.
+    const args = await assinaturaDoPin(t, data.pin);
 
     // A prova da foto sai do ARQUIVO, aqui no servidor — como no celular.
-    // Antes, o tablet nem mandava a impressao digital, entao a mesma foto
-    // provava duas tarefas por ali.
     let fotoidunico: string | null = null;
     let semhorafoto = false;
     if (data.caminho) {
       if (!data.bilhete) throw new Error("Envio de foto inválido.");
       await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, -t.lojaid);
-      const prova = await provaDaFoto(data.caminho);
+      // Baixar a foto e ler a tolerância da conta vão juntos.
+      const [prova, tolerancia] = await Promise.all([provaDaFoto(data.caminho), toleranciaDaFoto(t.contaid)]);
+      c.marcar("foto_baixar_e_conferir");
       fotoidunico = prova.fotoidunico;
-      ({ semhorafoto } = await conferirHoraDaFoto(t.contaid, prova.horafoto));
+      semhorafoto = !prova.horafoto;
+      if (prova.horafoto) julgarHoraDaFoto(prova.horafoto, tolerancia);
     }
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("visao_entregar", {
-      p_contaid: t.contaid,
-      p_lojaid: t.lojaid,
-      p_funcionarioid: pessoa.funcionarioid,
-      p_atribuicaoid: data.atribuicaoid,
-      p_caminho: data.caminho,
-      p_observacao: data.observacao,
-      p_fotoidunico: fotoidunico,
-      p_semhorafoto: semhorafoto,
-    });
-    if (error) throw new Error(error.message);
-    return { nome: pessoa.nome };
+    return numaIda(
+      "visao_entregar_com_pin",
+      {
+        ...args,
+        p_atribuicaoid: data.atribuicaoid,
+        p_caminho: data.caminho,
+        p_observacao: data.observacao,
+        p_fotoidunico: fotoidunico,
+        p_semhorafoto: semhorafoto,
+      },
+      c,
+    );
   });
 
 /**
@@ -281,8 +376,8 @@ export const abrirPedidoNoTablet = createServerFn({ method: "POST" })
     },
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
+    const { userId } = context as unknown as Contexto;
+    const t = await tabletDoToken(userId);
     // O passe prova que ESTE servidor conferiu o PIN desta pessoa, neste
     // tablet, há poucos minutos. Trocar o número aqui não adianta: a
     // assinatura não bate.
@@ -312,8 +407,8 @@ export const conferirPinNoTablet = createServerFn({ method: "POST" })
     assunto: d?.assunto === "mural" ? "mural" : "pedido",
   }))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
+    const { userId } = context as unknown as Contexto;
+    const t = await tabletDoToken(userId);
     const pessoa = await pessoaDoPin(t, data.pin);
     // O passe substitui o PIN enquanto a pessoa preenche: a tela não guarda o
     // número. Dois minutos cobrem os 90 segundos da tela com folga.
@@ -348,8 +443,8 @@ export const muralDoTablet = createServerFn({ method: "POST" })
     return { passe: d.passe, funcionarioid: d.funcionarioid };
   })
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
+    const { userId } = context as unknown as Contexto;
+    const t = await tabletDoToken(userId);
     await conferirPasse(data.passe, `mural:${t.contaid}:${t.lojaid}`, String(data.funcionarioid));
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -371,8 +466,8 @@ export const darCienciaNoTablet = createServerFn({ method: "POST" })
     return { passe: d.passe, funcionarioid: d.funcionarioid, assinaturaid: d.assinaturaid };
   })
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const t = await tabletDoToken(supabase, userId);
+    const { userId } = context as unknown as Contexto;
+    const t = await tabletDoToken(userId);
     await conferirPasse(data.passe, `mural:${t.contaid}:${t.lojaid}`, String(data.funcionarioid));
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

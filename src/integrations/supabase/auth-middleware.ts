@@ -33,6 +33,8 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
+    // Para a medição do tablet: quanto a conferência do token levou.
+    const recebidoem = Date.now();
     const request = getRequest();
 
     if (!request?.headers) {
@@ -91,6 +93,7 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
         supabase,
         userId: data.claims.sub,
         claims: data.claims,
+        recebidoem,
       },
     });
   },

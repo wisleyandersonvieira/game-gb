@@ -136,10 +136,12 @@ export const CONTRATO: Record<string, string[]> = {
   tv_novo_codigo: ["p_minutos", "p_segredohash"],
   usar_codigo_acesso: ["p_codigohash", "p_contaid", "p_cpf"],
   visao_abrir_pedido: ["p_contaid", "p_descricao", "p_funcionarioid", "p_lojaid", "p_observacao", "p_quantidade", "p_tipo", "p_unidade"],
+  visao_conferir_pin: ["p_chave", "p_contaid", "p_lojaid", "p_origem", "p_pinhash"],
   visao_dar_ciencia: ["p_assinaturaid", "p_contaid", "p_funcionarioid", "p_lojaid"],
   visao_entregar: ["p_atribuicaoid", "p_caminho", "p_contaid", "p_fotoidunico", "p_funcionarioid", "p_lojaid", "p_observacao", "p_semhorafoto"],
   visao_fila: ["p_contaid", "p_lojaid"],
   visao_mural: ["p_contaid", "p_funcionarioid", "p_lojaid"],
   visao_pegar: ["p_atribuicaoid", "p_contaid", "p_funcionarioid", "p_lojaid"],
   visao_pessoa_do_pin: ["p_contaid", "p_lojaid", "p_pinhash"],
+  visao_tablet_do_usuario: ["p_userid"],
 };

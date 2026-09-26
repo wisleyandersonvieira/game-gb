@@ -18,7 +18,10 @@ import {
   filaDoTablet,
   pegarNoTablet,
   type ItemDaFila,
+  type ResultadoNoTablet,
 } from "@/servidor/tablet";
+import { entregarNoTabletAntigo, filaDoTabletAntiga, pegarNoTabletAntigo } from "@/servidor/tabletAntigo";
+import { modoDeMedicao, montarEtapas, type Medida, type TemposDoTablet } from "@/painel/medicaoDoTablet";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import {
   decidirRepeticao,
@@ -91,36 +94,107 @@ function Tablet() {
     queryFn: () => filaDoTablet(),
   });
 
+  // Medição (`/tablet?medir=1`, ou `?medir=antigo` para comparar com o
+  // caminho de antes). Desligada, nada disto aparece nem pesa.
+  const [medicao] = useState(modoDeMedicao);
+  const [medidas, setMedidas] = useState<Medida[]>([]);
+  // O que a modal do PIN mostra enquanto o servidor trabalha.
+  const [etapa, setEtapa] = useState<string | null>(null);
+
+  type Feito = ResultadoNoTablet & { cliente: Omit<TemposDoTablet, "desenho">; inicio: number };
+
   const agir = useMutation({
-    mutationFn: async (pin: string) => {
+    // Uma recarga da fila que já estava a caminho traria a lista de ANTES e
+    // devolveria o cartão para o lugar antigo por até 15 segundos.
+    onMutate: () => qc.cancelQueries({ queryKey: ["fila-tablet"] }),
+    mutationFn: async (pin: string): Promise<Feito> => {
       if (!acao) throw new Error("Nada para fazer.");
+      const inicio = performance.now();
+      const cliente: Omit<TemposDoTablet, "desenho"> = { chamada: 0 };
+      const antigo = medicao === "antigo";
+
       if (acao.tipo === "pegar") {
-        return await pegarNoTablet({ data: { pin, atribuicaoid: acao.item.atribuicaoid } });
+        setEtapa("conferindo…");
+        const t = performance.now();
+        if (antigo) {
+          const r = await pegarNoTabletAntigo({ data: { pin, atribuicaoid: acao.item.atribuicaoid } });
+          cliente.chamada = performance.now() - t;
+          return { ...r, ...(await recarregarComoAntes(cliente)), cliente, inicio };
+        }
+        const r = await pegarNoTablet({ data: { pin, atribuicaoid: acao.item.atribuicaoid } });
+        cliente.chamada = performance.now() - t;
+        return { ...r, cliente, inicio };
       }
+
       // A foto sobe direto para o Storage com uma autorização de prazo curto:
       // a chave secreta nunca passa por aqui.
       let caminho: string | null = null;
       let bilhete: string | null = null;
       if (acao.arquivo) {
+        setEtapa("enviando a foto…");
+        let t = performance.now();
         const a = await autorizacaoDeFoto({ data: { atribuicaoid: acao.item.atribuicaoid } });
+        cliente.fotoAutorizacao = performance.now() - t;
+        t = performance.now();
         const { error } = await supabase.storage.from("entregas").uploadToSignedUrl(a.caminho, a.token, acao.arquivo);
+        cliente.fotoEnvio = performance.now() - t;
         if (error) throw new Error("A foto não subiu. Tente de novo.");
         caminho = a.caminho;
         bilhete = a.bilhete;
       }
-      return await entregarNoTablet({
-        data: { pin, atribuicaoid: acao.item.atribuicaoid, caminho, bilhete, observacao: acao.observacao || null },
-      });
+      setEtapa("conferindo…");
+      const dados = { pin, atribuicaoid: acao.item.atribuicaoid, caminho, bilhete, observacao: acao.observacao || null };
+      const t = performance.now();
+      if (antigo) {
+        const r = await entregarNoTabletAntigo({ data: dados });
+        cliente.chamada = performance.now() - t;
+        return { ...r, ...(await recarregarComoAntes(cliente)), cliente, inicio };
+      }
+      const r = await entregarNoTablet({ data: dados });
+      cliente.chamada = performance.now() - t;
+      return { ...r, cliente, inicio };
     },
     onSuccess: (r) => {
-      const feito = acao?.tipo === "pegar" ? "pegou" : "entregou";
-      setRecado(`${r.nome} ${feito} "${acao?.item.titulo}".`);
+      const tipo = acao?.tipo === "pegar" ? "aceite" : "entrega";
+      // A fila já veio na resposta: o cartão muda AGORA, junto com o fechar
+      // da modal, sem outra ida ao servidor.
+      qc.setQueryData(["fila-tablet"], (velho: typeof fila.data) => (velho ? { ...velho, itens: r.itens } : velho));
+      setRecado(`${r.nome} ${tipo === "aceite" ? "pegou" : "entregou"} "${acao?.item.titulo}".`);
       setAcao(null);
       setPedindoPin(false);
-      qc.invalidateQueries({ queryKey: ["fila-tablet"] });
+      setEtapa(null);
       setTimeout(() => setRecado(null), 6000);
+
+      if (medicao) {
+        const aposResposta = performance.now();
+        // Dois quadros: o primeiro é quando o React termina, o segundo é
+        // quando a tela já foi pintada com o cartão no lugar novo.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const fim = performance.now();
+            const cliente = { ...r.cliente, desenho: fim - aposResposta };
+            const m: Medida = {
+              quando: Date.now(),
+              acao: tipo,
+              caminho: medicao,
+              total: Math.round(fim - r.inicio),
+              etapas: montarEtapas(tipo, cliente, r.tempos),
+            };
+            setMedidas((v) => [m, ...v].slice(0, 6));
+          }),
+        );
+      }
     },
+    onError: () => setEtapa(null),
   });
+
+  /** Caminho antigo: depois da ação, a fila era recarregada numa chamada à parte. */
+  async function recarregarComoAntes(cliente: Omit<TemposDoTablet, "desenho">) {
+    const t = performance.now();
+    const f = await filaDoTabletAntiga();
+    cliente.recarga = performance.now() - t;
+    return { itens: f.itens };
+  }
 
   // O PIN do menu usa a MESMA modal e a MESMA trava do pegar tarefa.
   const abrirPedido = useMutation({
@@ -380,6 +454,7 @@ function Tablet() {
         <TecladoDoPin
           titulo={acao?.tipo === "pegar" ? "Quem está pegando?" : "Quem está entregando?"}
           ocupado={agir.isPending}
+          etapa={etapa}
           erro={agir.isError ? (agir.error as Error).message : null}
           cancelar={() => {
             agir.reset();
@@ -389,7 +464,46 @@ function Tablet() {
           enviar={(pin) => agir.mutate(pin)}
         />
       )}
+
+      {medicao && <QuadroDaMedicao caminho={medicao} medidas={medidas} />}
     </main>
+  );
+}
+
+/**
+ * A medição na própria tela do tablet: a /medir é do gestor e não enxerga o
+ * caminho tablet → servidor → banco. Só aparece com `?medir=` no endereço.
+ */
+function QuadroDaMedicao({ caminho, medidas }: { caminho: "novo" | "antigo"; medidas: Medida[] }) {
+  return (
+    <section className="mt-6 space-y-3 rounded-xl border-2 border-dashed border-border bg-card p-4 text-sm">
+      <p className="font-semibold">
+        Medição ligada — caminho {caminho === "antigo" ? "ANTIGO (para comparar)" : "NOVO"}.{" "}
+        <span className="font-normal text-muted-foreground">
+          Troque com ?medir=1 / ?medir=antigo, desligue com ?medir=0.
+        </span>
+      </p>
+      {medidas.length === 0 && <p className="text-muted-foreground">Aceite ou entregue uma tarefa para medir.</p>}
+      {medidas.map((m) => (
+        <div key={m.quando} className="rounded-lg border border-border p-3">
+          <p className="mb-1 font-semibold">
+            {m.acao === "aceite" ? "Aceite" : "Entrega"} ({m.caminho}) às {hora(new Date(m.quando).toISOString())}:{" "}
+            <span className={`font-mono ${m.total < 1000 ? "text-sucesso" : "text-destructive"}`}>{m.total} ms</span>{" "}
+            <span className="font-normal text-muted-foreground">do 6º dígito até o cartão mudar</span>
+          </p>
+          <table className="w-full">
+            <tbody>
+              {m.etapas.map(([rotulo, ms]) => (
+                <tr key={rotulo}>
+                  <td className="pr-3">{rotulo}</td>
+                  <td className="text-right font-mono">{ms} ms</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -622,12 +736,15 @@ function TecladoDoPin({
   cancelar,
   enviar,
   ocupado,
+  etapa,
   erro,
 }: {
   titulo: string;
   cancelar: () => void;
   enviar: (pin: string) => void;
   ocupado: boolean;
+  /** O que aparece no lugar dos pontinhos enquanto o servidor trabalha. */
+  etapa?: string | null;
   /** O motivo da recusa. Aparece DENTRO da modal: atrás dela ninguém vê. */
   erro: string | null;
 }) {
@@ -660,31 +777,42 @@ function TecladoDoPin({
           {erro ?? ""}
         </p>
 
-        <div className="flex justify-center gap-2">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <span
-              key={i}
-              className={`h-4 w-4 rounded-full border border-border ${i < pin.length ? "bg-primary" : ""}`}
-            />
-          ))}
+        {/* Mesma altura com ou sem texto: a modal não pula. Enquanto o
+            servidor confere, os pontinhos dão lugar ao que está acontecendo,
+            e o teclado inteiro fica travado — nada de toque duplo. */}
+        <div className="flex h-5 items-center justify-center gap-2" aria-live="polite">
+          {ocupado ? (
+            <span className="animate-pulse text-base font-medium text-muted-foreground">{etapa ?? "conferindo…"}</span>
+          ) : (
+            [0, 1, 2, 3, 4, 5].map((i) => (
+              <span
+                key={i}
+                className={`h-4 w-4 rounded-full border border-border ${i < pin.length ? "bg-primary" : ""}`}
+              />
+            ))
+          )}
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid grid-cols-3 gap-2 ${ocupado ? "opacity-40" : ""}`}>
           {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-            <button key={d} onClick={() => tocar(d)} className="rounded-xl border border-border py-4 text-2xl">
+            <button
+              key={d}
+              disabled={ocupado}
+              onClick={() => tocar(d)}
+              className="rounded-xl border border-border py-4 text-2xl"
+            >
               {d}
             </button>
           ))}
-          <button onClick={() => setPin("")} className="rounded-xl border border-border py-4 text-sm">
+          <button disabled={ocupado} onClick={() => setPin("")} className="rounded-xl border border-border py-4 text-sm">
             Apagar
           </button>
-          <button onClick={() => tocar("0")} className="rounded-xl border border-border py-4 text-2xl">
+          <button disabled={ocupado} onClick={() => tocar("0")} className="rounded-xl border border-border py-4 text-2xl">
             0
           </button>
-          <button onClick={cancelar} className="rounded-xl border border-border py-4 text-sm">
+          <button disabled={ocupado} onClick={cancelar} className="rounded-xl border border-border py-4 text-sm">
             Cancelar
           </button>
         </div>
-        {ocupado && <p className="text-sm text-muted-foreground">Confirmando...</p>}
       </div>
     </div>
   );
