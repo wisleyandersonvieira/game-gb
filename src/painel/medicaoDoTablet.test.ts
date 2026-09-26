@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { montarEtapas } from "./medicaoDoTablet";
+import { montarDetalhes, montarEtapas } from "./medicaoDoTablet";
 
 const valor = (etapas: [string, number][], trecho: string) => etapas.find(([r]) => r.includes(trecho))?.[1];
 
@@ -44,5 +44,18 @@ describe("medição do tablet", () => {
     expect(valor(e, "baixa e confere")).toBe(700);
     expect(valor(e, "trava + conferir o PIN")).toBe(3);
     expect(valor(e, "gravar a entrega")).toBe(15);
+  });
+
+  it("mostra o tamanho da foto, a velocidade do envio e a partida a frio", () => {
+    const d = montarDetalhes({ fotoOriginalKb: 3400, fotoEnviadaKb: 380, fotoEnvio: 500 }, { colo: "GRU", frio: true, fotokb: 380 });
+    expect(d).toContain("Foto: 3400 KB da câmera, 380 KB enviados");
+    expect(d).toContain("Envio do tablet: 760 KB/s");
+    expect(d.some((x) => x.includes("GRU") && x.includes("PARTIDA A FRIO"))).toBe(true);
+  });
+
+  it("a espera pela redução e pela autorização aparecem separadas", () => {
+    const e = montarEtapas("entrega", { chamada: 900, fotoReducao: 0, fotoAutorizacao: 3, fotoEnvio: 500, desenho: 20 }, { servidor: 700 });
+    expect(valor(e, "esperar a redução")).toBe(0);
+    expect(valor(e, "esperar a autorização")).toBe(3);
   });
 });

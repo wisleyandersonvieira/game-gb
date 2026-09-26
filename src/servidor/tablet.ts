@@ -10,7 +10,7 @@
 // guardado em lugar nenhum — vem no pedido, e some quando ele acaba.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { conferirPasse, emitirPasse, mensagemDaTrava, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+import { conferirPasse, emitirPasse, mensagemDaTrava, ondeRodou, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
 import { conferirBilhete, emitirBilhete, julgarHoraDaFoto, provaDaFoto, toleranciaDaFoto } from "@/servidor/fotodaentrega";
 
 /**
@@ -212,16 +212,21 @@ export type ResultadoNoTablet = {
   /** A fila JÁ atualizada: a tela move o cartão sem perguntar de novo. */
   itens: ItemDaFila[];
   tempos: Record<string, number>;
+  /** Para a medição: onde o servidor rodou, se partiu a frio, e a foto. */
+  onde: { colo: string; frio: boolean; fotokb?: number };
 };
 
-/** Chama a função do banco que faz tudo numa ida, e lê a resposta. */
+/**
+ * Lê a resposta da função do banco que faz tudo numa ida. A chamada vem
+ * pronta, com o nome da função escrito por extenso: é assim que o contrato
+ * (e o /saude) sabem que o app depende dela.
+ */
 async function numaIda(
-  nome: "visao_pegar_com_pin" | "visao_entregar_com_pin",
-  args: Record<string, unknown>,
+  chamada: PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>,
   c: ReturnType<typeof cronometro>,
+  onde: ResultadoNoTablet["onde"],
 ): Promise<ResultadoNoTablet> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc(nome, args as never);
+  const { data, error } = await chamada;
   c.marcar("banco");
   if (bancoDesatualizado(error)) throw new Error(ERRO_BANCO_DESATUALIZADO);
   if (error || !data) throw new Error("Não foi possível falar com o banco agora. Tente de novo.");
@@ -236,7 +241,7 @@ async function numaIda(
   const tempos = c.fechar();
   // Dentro do banco: PIN (com a trava), a ação e a fila. O resto da ida é rede.
   for (const [k, v] of Object.entries(r.tempos ?? {})) tempos[`banco_${k}`] = Number(v);
-  return { nome: r.nome ?? "", itens: r.fila ?? [], tempos };
+  return { nome: r.nome ?? "", itens: r.fila ?? [], tempos, onde };
 }
 
 /**
@@ -252,11 +257,17 @@ export const pegarNoTablet = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }) => {
     const { userId, recebidoem } = context as unknown as Contexto;
+    const onde = ondeRodou();
     const c = cronometro(recebidoem);
     const t = await tabletDoToken(userId);
     c.marcar("tablet");
     const args = await assinaturaDoPin(t, data.pin);
-    return numaIda("visao_pegar_com_pin", { ...args, p_atribuicaoid: data.atribuicaoid }, c);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    return numaIda(
+      supabaseAdmin.rpc("visao_pegar_com_pin", { ...args, p_atribuicaoid: data.atribuicaoid }),
+      c,
+      onde,
+    );
   });
 
 /**
@@ -303,6 +314,7 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { userId, recebidoem } = context as unknown as Contexto;
+    const onde: ResultadoNoTablet["onde"] = ondeRodou();
     const c = cronometro(recebidoem);
     const t = await tabletDoToken(userId);
     c.marcar("tablet");
@@ -320,21 +332,23 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
       const [prova, tolerancia] = await Promise.all([provaDaFoto(data.caminho), toleranciaDaFoto(t.contaid)]);
       c.marcar("foto_baixar_e_conferir");
       fotoidunico = prova.fotoidunico;
+      onde.fotokb = Math.round(prova.tamanho / 1024);
       semhorafoto = !prova.horafoto;
       if (prova.horafoto) julgarHoraDaFoto(prova.horafoto, tolerancia);
     }
 
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     return numaIda(
-      "visao_entregar_com_pin",
-      {
+      supabaseAdmin.rpc("visao_entregar_com_pin", {
         ...args,
         p_atribuicaoid: data.atribuicaoid,
         p_caminho: data.caminho,
         p_observacao: data.observacao,
         p_fotoidunico: fotoidunico,
         p_semhorafoto: semhorafoto,
-      },
+      }),
       c,
+      onde,
     );
   });
 

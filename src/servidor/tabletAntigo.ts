@@ -1,15 +1,16 @@
-// O caminho ANTIGO do aceite e da entrega pelo tablet — temporário, só para
-// medir (26/09/2026).
+// O caminho ANTIGO da entrega pelo tablet — temporário, só para medir
+// (26/09/2026). O do aceite já foi comparado e apagado.
 //
 // É o código que estava no ar até o commit 08aeefc, sem mudar uma linha da
 // lógica, com um cronômetro em cada ida ao banco. Existe para o Wisley comparar
-// ANTES e DEPOIS no mesmo tablet, na mesma rede, no mesmo minuto: a tela do
-// tablet com `?medir=antigo` usa estas funções; sem isso, usa as novas.
+// ANTES e DEPOIS no mesmo tablet, na mesma rede, no mesmo minuto: a entrega
+// no tablet com `?medir=antigo` usa estas funções (e a foto sem redução);
+// sem isso, usa as novas.
 //
 // Apagar depois da comparação (está anotado no plano).
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { abrirTentativa, fecharTentativa, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+import { abrirTentativa, fecharTentativa, ondeRodou, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
 import { conferirBilhete, conferirHoraDaFoto, provaDaFoto } from "@/servidor/fotodaentrega";
 import { cronometro, type ItemDaFila } from "@/servidor/tablet";
 
@@ -88,27 +89,6 @@ export const filaDoTabletAntiga = createServerFn({ method: "GET" })
     return { itens: (data ?? []) as unknown as ItemDaFila[], minutosParada: Number(cfg?.valor ?? 30) || 30, tempos: c.fechar() };
   });
 
-export const pegarNoTabletAntigo = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((d: { pin: string; atribuicaoid: number }) => d)
-  .handler(async ({ data, context }) => {
-    const { supabase, userId, recebidoem } = context as unknown as Contexto;
-    const c = cronometro(recebidoem);
-    const t = await tabletDoToken(supabase, userId, c);
-    const pessoa = await pessoaDoPin(t, data.pin, c);
-
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.rpc("visao_pegar", {
-      p_contaid: t.contaid,
-      p_lojaid: t.lojaid,
-      p_funcionarioid: pessoa.funcionarioid,
-      p_atribuicaoid: data.atribuicaoid,
-    });
-    c.marcar("aceite");
-    if (error) throw new Error(error.message);
-    return { nome: pessoa.nome, tempos: c.fechar() };
-  });
-
 export const entregarNoTabletAntigo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(
@@ -126,6 +106,7 @@ export const entregarNoTabletAntigo = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId, recebidoem } = context as unknown as Contexto;
+    const onde: { colo: string; frio: boolean; fotokb?: number } = ondeRodou();
     const c = cronometro(recebidoem);
     const t = await tabletDoToken(supabase, userId, c);
     const pessoa = await pessoaDoPin(t, data.pin, c);
@@ -137,6 +118,7 @@ export const entregarNoTabletAntigo = createServerFn({ method: "POST" })
       await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, -t.lojaid);
       const prova = await provaDaFoto(data.caminho);
       c.marcar("foto_baixar_e_conferir");
+      onde.fotokb = Math.round(prova.tamanho / 1024);
       fotoidunico = prova.fotoidunico;
       ({ semhorafoto } = await conferirHoraDaFoto(t.contaid, prova.horafoto));
       c.marcar("foto_hora");
@@ -155,5 +137,5 @@ export const entregarNoTabletAntigo = createServerFn({ method: "POST" })
     });
     c.marcar("entrega");
     if (error) throw new Error(error.message);
-    return { nome: pessoa.nome, tempos: c.fechar() };
+    return { nome: pessoa.nome, tempos: c.fechar(), onde };
   });

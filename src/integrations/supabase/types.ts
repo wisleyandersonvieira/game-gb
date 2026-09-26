@@ -5463,12 +5463,12 @@ export type Database = {
       visao_entregar_com_pin: {
         Args: {
           p_atribuicaoid: number
-          p_caminho: string
+          p_caminho: string | null
           p_chave: string
           p_contaid: number
-          p_fotoidunico: string
+          p_fotoidunico: string | null
           p_lojaid: number
-          p_observacao: string
+          p_observacao: string | null
           p_origem: string
           p_pinhash: string
           p_semhorafoto: boolean

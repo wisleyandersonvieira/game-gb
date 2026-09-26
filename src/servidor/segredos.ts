@@ -55,6 +55,25 @@ export function origemDaChamada() {
   }
 }
 
+/**
+ * Para a medição do tablet: em que cidade do Cloudflare este pedido rodou (o
+ * final do cabeçalho cf-ray, ex.: "GRU" = Guarulhos) e se foi o PRIMEIRO
+ * pedido desta instância do servidor — a "partida a frio", que carrega o
+ * programa inteiro antes de começar e aparece na medição como rede.
+ */
+let instanciaNova = true;
+export function ondeRodou(): { colo: string; frio: boolean } {
+  const frio = instanciaNova;
+  instanciaNova = false;
+  let colo = "";
+  try {
+    colo = (getRequest()?.headers.get("cf-ray") ?? "").split("-")[1] ?? "";
+  } catch {
+    // Fora do Cloudflare (desenvolvimento): sem cidade.
+  }
+  return { colo: colo.slice(0, 8), frio };
+}
+
 export type TipoDeTrava = "senha" | "pin" | "tablet" | "pintablet" | "lojamanual" | "tvcodigo";
 
 /**

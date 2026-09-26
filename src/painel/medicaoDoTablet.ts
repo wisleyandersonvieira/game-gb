@@ -21,12 +21,19 @@ export type Medida = {
   /** Do 6º dígito até o cartão mudar na tela. */
   total: number;
   etapas: [string, number][];
+  /** O que não é tempo: tamanho da foto, onde o servidor rodou. */
+  detalhes: string[];
 };
 
 /** O que o tablet cronometrou do lado dele, em ms. */
 export type TemposDoTablet = {
   /** A chamada principal (aceitar ou entregar), do envio à resposta. */
   chamada: number;
+  /** Quanto se ESPEROU pela redução da foto (ela começa quando a foto é escolhida). */
+  fotoReducao?: number;
+  fotoOriginalKb?: number;
+  fotoEnviadaKb?: number;
+  /** Quanto se ESPEROU pela autorização (ela é pedida quando a janela abre). */
   fotoAutorizacao?: number;
   fotoEnvio?: number;
   /** Só no caminho antigo: a recarga da fila depois da ação. */
@@ -90,7 +97,8 @@ export function montarEtapas(
     if (ms !== undefined && Number.isFinite(ms)) etapas.push([rotulo, arred(ms)]);
   };
 
-  add("Foto: autorização de envio (tablet → servidor → banco)", t.fotoAutorizacao);
+  add("Foto: esperar a redução no tablet", t.fotoReducao);
+  add("Foto: esperar a autorização de envio", t.fotoAutorizacao);
   add("Foto: envio do arquivo (tablet → Storage)", t.fotoEnvio);
 
   const trabalhoServidor = servidor.servidor ?? 0;
@@ -117,4 +125,32 @@ export function montarEtapas(
   }
   add("Desenho da tela", t.desenho);
   return etapas;
+}
+
+/**
+ * O que ajuda a ler os tempos sem ser tempo. A foto: quantos KB a câmera deu e
+ * quantos subiram (o envio e o download dependem disso). O servidor: em que
+ * cidade do Cloudflare rodou e se partiu a frio — uma partida a frio carrega o
+ * programa antes de atender e aparece como "rede", sem ser rede.
+ */
+export function montarDetalhes(
+  t: Pick<TemposDoTablet, "fotoOriginalKb" | "fotoEnviadaKb" | "fotoEnvio">,
+  onde?: { colo: string; frio: boolean; fotokb?: number },
+): string[] {
+  const d: string[] = [];
+  if (t.fotoOriginalKb !== undefined && t.fotoEnviadaKb !== undefined) {
+    d.push(
+      t.fotoEnviadaKb < t.fotoOriginalKb
+        ? `Foto: ${t.fotoOriginalKb} KB da câmera, ${t.fotoEnviadaKb} KB enviados`
+        : `Foto: ${t.fotoOriginalKb} KB, enviada sem redução`,
+    );
+    if (t.fotoEnvio && t.fotoEnvio > 0) {
+      d.push(`Envio do tablet: ${Math.round(t.fotoEnviadaKb / (t.fotoEnvio / 1000))} KB/s`);
+    }
+  }
+  if (onde?.fotokb !== undefined) d.push(`O servidor recebeu ${onde.fotokb} KB para conferir`);
+  if (onde) {
+    d.push(`Servidor rodou em ${onde.colo || "?"}${onde.frio ? " — PARTIDA A FRIO (1º pedido desta instância)" : ""}`);
+  }
+  return d;
 }

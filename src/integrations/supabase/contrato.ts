@@ -139,9 +139,10 @@ export const CONTRATO: Record<string, string[]> = {
   visao_conferir_pin: ["p_chave", "p_contaid", "p_lojaid", "p_origem", "p_pinhash"],
   visao_dar_ciencia: ["p_assinaturaid", "p_contaid", "p_funcionarioid", "p_lojaid"],
   visao_entregar: ["p_atribuicaoid", "p_caminho", "p_contaid", "p_fotoidunico", "p_funcionarioid", "p_lojaid", "p_observacao", "p_semhorafoto"],
+  visao_entregar_com_pin: ["p_atribuicaoid", "p_caminho", "p_chave", "p_contaid", "p_fotoidunico", "p_lojaid", "p_observacao", "p_origem", "p_pinhash", "p_semhorafoto"],
   visao_fila: ["p_contaid", "p_lojaid"],
   visao_mural: ["p_contaid", "p_funcionarioid", "p_lojaid"],
-  visao_pegar: ["p_atribuicaoid", "p_contaid", "p_funcionarioid", "p_lojaid"],
+  visao_pegar_com_pin: ["p_atribuicaoid", "p_chave", "p_contaid", "p_lojaid", "p_origem", "p_pinhash"],
   visao_pessoa_do_pin: ["p_contaid", "p_lojaid", "p_pinhash"],
   visao_tablet_do_usuario: ["p_userid"],
 };

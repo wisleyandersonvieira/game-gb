@@ -5,7 +5,7 @@
 // feita pelo servidor (src/servidor/fotodaentrega.test.ts).
 
 /** Bytes de um JPEG com um bloco EXIF contendo DateTimeOriginal. */
-export function bytesDeJpeg(quando: string | null, recheio = ""): Uint8Array {
+export function bytesDeJpeg(quando: string | null, recheio = "", orientacao?: number): Uint8Array {
   const bytes: number[] = [0xff, 0xd8]; // início do JPEG
 
   if (quando !== null) {
@@ -19,12 +19,17 @@ export function bytesDeJpeg(quando: string | null, recheio = ""): Uint8Array {
     p16(42);
     p32(8); // IFD0 em tiff+8
 
-    // Cada IFD ocupa 2 (quantos) + 12 (um campo) + 4 (proximo) = 18 bytes.
+    // Cada IFD ocupa 2 (quantos) + 12 por campo + 4 (proximo). O IFD0 ganha
+    // um campo a mais quando a foto traz a marca de rotacao (0x0112).
     const IFD = 18;
-    const blocoExif = 8 + IFD;
+    const ifd0 = orientacao === undefined ? IFD : IFD + 12;
+    const blocoExif = 8 + ifd0;
     const textoEm = blocoExif + IFD;
 
-    p16(1);
+    p16(orientacao === undefined ? 1 : 2);
+    if (orientacao !== undefined) {
+      p16(0x0112); p16(3); p32(1); p16(orientacao); p16(0); // rotacao (SHORT)
+    }
     p16(0x8769); p16(4); p32(1); p32(blocoExif); // ponteiro EXIF
     p32(0);
 

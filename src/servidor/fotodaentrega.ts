@@ -63,6 +63,8 @@ export type ProvaDaFoto = {
   fotoidunico: string;
   /** Quando a foto foi tirada, se o arquivo trouxer. */
   horafoto: Date | null;
+  /** Quantos bytes chegaram (para a medição). */
+  tamanho: number;
 };
 
 /**
@@ -107,7 +109,7 @@ export async function provaDosBytes(bytes: ArrayBuffer): Promise<ProvaDaFoto> {
     horafoto = null;
   }
 
-  return { fotoidunico, horafoto };
+  return { fotoidunico, horafoto, tamanho: bytes.byteLength };
 }
 
 /**

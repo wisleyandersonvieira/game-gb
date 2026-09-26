@@ -20,8 +20,9 @@ import {
   type ItemDaFila,
   type ResultadoNoTablet,
 } from "@/servidor/tablet";
-import { entregarNoTabletAntigo, filaDoTabletAntiga, pegarNoTabletAntigo } from "@/servidor/tabletAntigo";
-import { modoDeMedicao, montarEtapas, type Medida, type TemposDoTablet } from "@/painel/medicaoDoTablet";
+import { entregarNoTabletAntigo, filaDoTabletAntiga } from "@/servidor/tabletAntigo";
+import { modoDeMedicao, montarDetalhes, montarEtapas, type Medida, type TemposDoTablet } from "@/painel/medicaoDoTablet";
+import { reduzirFoto, type FotoPreparada } from "@/painel/reduzirFoto";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import {
   decidirRepeticao,
@@ -101,7 +102,47 @@ function Tablet() {
   // O que a modal do PIN mostra enquanto o servidor trabalha.
   const [etapa, setEtapa] = useState<string | null>(null);
 
-  type Feito = ResultadoNoTablet & { cliente: Omit<TemposDoTablet, "desenho">; inicio: number };
+  type Feito = Omit<ResultadoNoTablet, "onde"> & {
+    onde?: ResultadoNoTablet["onde"];
+    cliente: Omit<TemposDoTablet, "desenho">;
+    inicio: number;
+  };
+
+  // ADIANTAR O QUE NÃO DEPENDE DO PIN, enquanto a pessoa ainda enquadra a
+  // foto e digita: a autorização de envio é pedida quando a janela de entrega
+  // abre, e a redução da foto começa quando ela é escolhida. Nada disso sobe a
+  // foto nem grava coisa alguma: o envio continua depois do PIN.
+  type Autorizacao = Awaited<ReturnType<typeof autorizacaoDeFoto>>;
+  const preparo = useRef<{
+    atribuicaoid: number;
+    autorizacao: Promise<Autorizacao | null> | null;
+    pedidaEm: number;
+    arquivo: File | null;
+    foto: Promise<FotoPreparada> | null;
+  } | null>(null);
+  const entregarId = acao?.tipo === "entregar" ? acao.item.atribuicaoid : null;
+  const arquivoEscolhido = acao?.tipo === "entregar" ? acao.arquivo : null;
+  useEffect(() => {
+    // O caminho antigo mede como era: sem adiantar nada.
+    if (entregarId === null || medicao === "antigo") {
+      preparo.current = null;
+      return;
+    }
+    preparo.current = {
+      atribuicaoid: entregarId,
+      // Se falhar, tudo bem: é pedida de novo na hora de enviar.
+      autorizacao: autorizacaoDeFoto({ data: { atribuicaoid: entregarId } }).catch(() => null),
+      pedidaEm: Date.now(),
+      arquivo: null,
+      foto: null,
+    };
+  }, [entregarId, medicao]);
+  useEffect(() => {
+    const p = preparo.current;
+    if (!p || !arquivoEscolhido || p.arquivo === arquivoEscolhido) return;
+    p.arquivo = arquivoEscolhido;
+    p.foto = reduzirFoto(arquivoEscolhido);
+  }, [arquivoEscolhido]);
 
   const agir = useMutation({
     // Uma recarga da fila que já estava a caminho traria a lista de ANTES e
@@ -116,11 +157,6 @@ function Tablet() {
       if (acao.tipo === "pegar") {
         setEtapa("conferindo…");
         const t = performance.now();
-        if (antigo) {
-          const r = await pegarNoTabletAntigo({ data: { pin, atribuicaoid: acao.item.atribuicaoid } });
-          cliente.chamada = performance.now() - t;
-          return { ...r, ...(await recarregarComoAntes(cliente)), cliente, inicio };
-        }
         const r = await pegarNoTablet({ data: { pin, atribuicaoid: acao.item.atribuicaoid } });
         cliente.chamada = performance.now() - t;
         return { ...r, cliente, inicio };
@@ -132,11 +168,29 @@ function Tablet() {
       let bilhete: string | null = null;
       if (acao.arquivo) {
         setEtapa("enviando a foto…");
+        const p = preparo.current?.atribuicaoid === acao.item.atribuicaoid ? preparo.current : null;
+
+        // A foto reduzida (já pronta, quase sempre). Falhou a redução: vai a
+        // original, e a entrega segue.
         let t = performance.now();
-        const a = await autorizacaoDeFoto({ data: { atribuicaoid: acao.item.atribuicaoid } });
-        cliente.fotoAutorizacao = performance.now() - t;
+        const foto: FotoPreparada = antigo
+          ? { arquivo: acao.arquivo, reduzida: false, original: acao.arquivo.size, enviada: acao.arquivo.size }
+          : await (p?.arquivo === acao.arquivo && p.foto ? p.foto : reduzirFoto(acao.arquivo));
+        cliente.fotoReducao = performance.now() - t;
+        cliente.fotoOriginalKb = Math.round(foto.original / 1024);
+        cliente.fotoEnviadaKb = Math.round(foto.enviada / 1024);
+
+        // A autorização pedida antes, se ainda estiver no prazo (o bilhete
+        // vale 10 minutos). Cada uma serve para UM envio: depois de usada,
+        // sai daqui, e uma nova tentativa pede outra.
         t = performance.now();
-        const { error } = await supabase.storage.from("entregas").uploadToSignedUrl(a.caminho, a.token, acao.arquivo);
+        const adiantada = p?.autorizacao && Date.now() - p.pedidaEm < 8 * 60_000 ? p.autorizacao : null;
+        if (p) p.autorizacao = null;
+        const a = (adiantada && (await adiantada)) || (await autorizacaoDeFoto({ data: { atribuicaoid: acao.item.atribuicaoid } }));
+        cliente.fotoAutorizacao = performance.now() - t;
+
+        t = performance.now();
+        const { error } = await supabase.storage.from("entregas").uploadToSignedUrl(a.caminho, a.token, foto.arquivo);
         cliente.fotoEnvio = performance.now() - t;
         if (error) throw new Error("A foto não subiu. Tente de novo.");
         caminho = a.caminho;
@@ -179,6 +233,7 @@ function Tablet() {
               caminho: medicao,
               total: Math.round(fim - r.inicio),
               etapas: montarEtapas(tipo, cliente, r.tempos),
+              detalhes: montarDetalhes(cliente, r.onde),
             };
             setMedidas((v) => [m, ...v].slice(0, 6));
           }),
@@ -491,6 +546,9 @@ function QuadroDaMedicao({ caminho, medidas }: { caminho: "novo" | "antigo"; med
             <span className={`font-mono ${m.total < 1000 ? "text-sucesso" : "text-destructive"}`}>{m.total} ms</span>{" "}
             <span className="font-normal text-muted-foreground">do 6º dígito até o cartão mudar</span>
           </p>
+          {m.detalhes.length > 0 && (
+            <p className="mb-1 text-xs text-muted-foreground">{m.detalhes.join(" · ")}</p>
+          )}
           <table className="w-full">
             <tbody>
               {m.etapas.map(([rotulo, ms]) => (
