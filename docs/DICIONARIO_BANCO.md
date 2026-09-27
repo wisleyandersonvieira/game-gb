@@ -855,7 +855,7 @@ Tabela **nova** (Etapa 1.10), **nível conta**. O checklist de cada pessoa. **Ú
 | Coluna | Tipo | Obs |
 |---|---|---|
 | tarefaid | integer | ID automático; obrigatório |
-| sistema | varchar(40) | Vazio nas tarefas comuns. Nas 6 do sistema diz qual é: `feedback_diario`, `leitura`, `pontos_meta`, `nota_fiscal`, `modelo_agendamento`, `guardar_mercadoria`. Única por conta. Tarefa do sistema **não pode ser apagada**, e as 4 primeiras **não podem ser atribuídas** a ninguém. |
+| sistema | varchar(40) | **Código interno.** Vazio nas tarefas criadas pelo master. Nas 6 que o sistema cria para cada conta diz qual é: `feedback_diario`, `leitura`, `pontos_meta`, `nota_fiscal`, `modelo_agendamento`, `guardar_mercadoria`. Único por conta. **Desde 28/09/2026 elas são tarefas comuns** (editáveis, desativáveis, atribuíveis à mão); o código **nunca muda** e o navegador não cria tarefa com código (gatilho `tarefas_protege_codigo`). **As rotinas acham a tarefa pelo código, nunca pelo nome:** `criar_agendamento` → `modelo_agendamento`; `publicar_comunicado` → `leitura` (pelo id em `configuracoes.TAREFA_ID_LEITURA`), só o padrão de pontos. As outras quatro não são usadas por rotina nenhuma. Tarefa desativada ou apagada: a rotina grava aviso `rotina_sem_tarefa` em `avisossistema` (Início e Saúde). A tela mantém a lista em `src/tarefas/rotinas.ts` |
 | titulo | varchar(255) | obrigatório |
 | descricao | text |  |
 | pontos | integer | obrigatório |

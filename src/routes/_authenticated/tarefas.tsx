@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pagina } from "@/ui/Pagina";
+import { rotinaDaTarefa } from "@/tarefas/rotinas";
 
 export const Route = createFileRoute("/_authenticated/tarefas")({
   component: Tarefas,
@@ -71,7 +72,9 @@ function Tarefas() {
       {aba === "catalogo" ? (
         <Catalogo />
       ) : (
-        <Atribuicoes lojaid={lojaAtiva!} nomeDaLoja={loja?.nome ?? ""} />
+        // A chave é a loja: trocar a loja no topo recomeça a aba do zero, e
+        // nada (pessoa marcada, filtro de colaborador) sobra da loja anterior.
+        <Atribuicoes key={lojaAtiva!} lojaid={lojaAtiva!} nomeDaLoja={loja?.nome ?? ""} />
       )}
     </Pagina>
   );
@@ -89,6 +92,8 @@ function Catalogo() {
   const [form, setForm] = useState(TAREFA_VAZIA);
   const [lojasEscolhidas, setLojasEscolhidas] = useState<number[]>([]);
   const [editando, setEditando] = useState<number | null>(null);
+  // O código interno da tarefa em edição: diz se alguma rotina a usa.
+  const [codigoEditando, setCodigoEditando] = useState<string | null>(null);
 
   const catalogo = useQuery({
     queryKey: ["catalogo-tarefas"],
@@ -118,6 +123,7 @@ function Catalogo() {
     setForm(TAREFA_VAZIA);
     setLojasEscolhidas([]);
     setEditando(null);
+    setCodigoEditando(null);
   }
 
   async function sincronizarLojas(tarefaid: number, escolhidas: number[]) {
@@ -167,14 +173,26 @@ function Catalogo() {
   });
 
   const alternarAtiva = useMutation({
-    mutationFn: async ({ tarefaid, ativa }: { tarefaid: number; ativa: boolean }) => {
+    mutationFn: async ({ tarefaid, ativa, codigo }: { tarefaid: number; ativa: boolean; codigo: string | null }) => {
+      // Uma rotina usa esta tarefa: você decide com a informação na tela.
+      const rotina = rotinaDaTarefa(codigo);
+      if (!ativa && rotina) {
+        const ok = confirm(
+          `Esta tarefa é usada por uma rotina automática.\n\n${rotina.rotina}\n\nSe desativar: ${rotina.aoDesativar}\n\nDesativar mesmo assim?`,
+        );
+        if (!ok) return;
+      }
       const { error } = await supabase.from("tarefas").update({ ativa }).eq("tarefaid", tarefaid);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalogo-tarefas"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["catalogo-tarefas"] });
+      qc.invalidateQueries({ queryKey: ["tarefas-da-loja"] });
+    },
   });
 
   const lista = catalogo.data ?? [];
+  const rotinaEmEdicao = rotinaDaTarefa(codigoEditando);
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
 
   return (
@@ -222,6 +240,14 @@ function Catalogo() {
             className={`${campo} md:col-span-2`}
           />
         </div>
+
+        {rotinaEmEdicao && (
+          <div className="space-y-1 rounded-lg border border-azul/40 bg-azul-soft px-3 py-2 text-xs text-azul">
+            <p>{rotinaEmEdicao.rotina}</p>
+            <p className="font-medium">{rotinaEmEdicao.pontos(Number(form.pontos) || 0)}</p>
+            <p>Pode renomear à vontade: a rotina acha a tarefa pelo código interno, não pelo nome.</p>
+          </div>
+        )}
 
         <fieldset className="space-y-2">
           <legend className="text-sm text-muted-foreground">
@@ -285,11 +311,6 @@ function Catalogo() {
             <div className="min-w-0">
               <p className="font-medium">
                 {t.titulo}
-                {t.sistema && (
-                  <span className="ml-2 rounded-md border border-azul/40 bg-azul-soft px-2 py-0.5 text-xs font-normal text-azul">
-                    do sistema
-                  </span>
-                )}
                 {!t.ativa && (
                   <span className="ml-2 rounded-md border border-border px-2 py-0.5 text-xs font-normal text-muted-foreground">
                     desativada
@@ -301,11 +322,6 @@ function Catalogo() {
                 {t.setor && ` · ${t.setor}`}
                 {t.lojas.length > 0 && ` · ${t.lojas.map(nomeDaLoja).join(", ")}`}
               </p>
-              {t.sistema && (
-                <p className="text-xs text-muted-foreground">
-                  Criada pelo sistema. Não pode ser apagada e não aparece para atribuir à mão.
-                </p>
-              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -319,19 +335,18 @@ function Catalogo() {
                     setor: t.setor ?? "",
                   });
                   setLojasEscolhidas(t.lojas);
+                  setCodigoEditando(t.sistema);
                 }}
                 className="rounded-md border border-border px-3 py-1 text-sm"
               >
                 Editar
               </button>
-              {!t.sistema && (
-                <button
-                  onClick={() => alternarAtiva.mutate({ tarefaid: t.tarefaid, ativa: !t.ativa })}
-                  className="rounded-md border border-border px-3 py-1 text-sm"
-                >
-                  {t.ativa ? "Desativar" : "Reativar"}
-                </button>
-              )}
+              <button
+                onClick={() => alternarAtiva.mutate({ tarefaid: t.tarefaid, ativa: !t.ativa, codigo: t.sistema })}
+                className="rounded-md border border-border px-3 py-1 text-sm"
+              >
+                {t.ativa ? "Desativar" : "Reativar"}
+              </button>
             </div>
           </div>
         ))}
@@ -354,19 +369,43 @@ export function horaCurta(hora: string): string {
   return m && m !== "00" ? `${h}h${m}` : `${h}h`;
 }
 
+/** Uma linha da lista, como vem de atribuicoes_da_loja (já agrupada). */
 type Linha = {
-  chave: string;
   ids: number[];
-  titulo: string;
-  nome: string;
+  tarefaid: number;
+  titulo: string | null;
+  funcionarioid: number | null;
+  nome: string | null;
+  compartilhada: boolean;
+  candidatos: string[] | null;
+  horariodisparo: string | null;
   tipofrequencia: string;
   dias: number[];
   valor: number | null;
   dataagendamento: string | null;
   /** Hora local da empresa a partir da qual a tarefa entra na fila. */
   disponivelapartir: string | null;
-  encerradaEm: string | null;
+  datafimvigencia: string | null;
+  criadaem: string | null;
+  /** dd/mm/aaaa, no fuso da conta (vem do banco). */
+  criadaemdia: string | null;
 };
+
+type PaginaDeAtribuicoes = { linhas: Linha[]; temmais: boolean };
+
+/** O filtro aplicado. "todos" / "missao" / o id de uma pessoa. */
+type Filtro = { de: string; ate: string; tarefaid: string; quem: string };
+const SEM_FILTRO: Filtro = { de: "", ate: "", tarefaid: "", quem: "todos" };
+const MAXIMO_DE_DIAS = 366;
+/** Sem filtro, as 5 mais recentes; "carregar mais" e com filtro, 50 por vez. */
+const PRIMEIRAS = 5;
+const POR_VEZ = 50;
+
+function quemFaz(l: Linha) {
+  if (l.funcionarioid) return l.nome ?? "—";
+  if (l.compartilhada) return `👥 ${(l.candidatos ?? []).join(", ")} (a primeira que pegar)`;
+  return `🚨 Missão da equipe${l.horariodisparo ? ` · ${l.horariodisparo.slice(0, 5)}` : ""}`;
+}
 
 function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: string }) {
   const qc = useQueryClient();
@@ -385,28 +424,24 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   const [diaMes, setDiaMes] = useState(1);
   const [mostrarEncerradas, setMostrarEncerradas] = useState(false);
 
-  // Só tarefas que valem nesta loja, e nunca as do sistema.
+  // As tarefas que valem nesta loja, numa ida só (o vínculo traz a tarefa
+  // junto). Vêm também as desativadas: servem para FILTRAR a lista; para
+  // atribuir, só as ativas.
   const opcoesTarefas = useQuery({
     queryKey: ["tarefas-da-loja", lojaid],
     queryFn: async () => {
-      const { data: vinculos, error } = await supabase
+      const { data, error } = await supabase
         .from("tarefaslojas")
-        .select("tarefaid")
+        .select("tarefas!inner(tarefaid, titulo, pontos, ativa)")
         .eq("lojaid", lojaid)
         .eq("ativo", true);
       if (error) throw error;
-      const ids = (vinculos ?? []).map((v) => v.tarefaid);
-      if (ids.length === 0) return [];
-
-      const { data: tarefas, error: erroTarefas } = await supabase
-        .from("tarefas")
-        .select("tarefaid, titulo, pontos, sistema")
-        .in("tarefaid", ids)
-        .eq("ativa", true)
-        .is("sistema", null)
-        .order("titulo");
-      if (erroTarefas) throw erroTarefas;
-      return tarefas ?? [];
+      type Tarefa = { tarefaid: number; titulo: string; pontos: number; ativa: boolean };
+      const tarefas = (data ?? [])
+        .map((v) => (v as unknown as { tarefas: Tarefa }).tarefas)
+        .filter((t): t is Tarefa => !!t);
+      tarefas.sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR"));
+      return tarefas;
     },
   });
 
@@ -435,95 +470,51 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
     },
   });
 
-  const lista = useQuery({
-    queryKey: ["atribuicoes", lojaid, mostrarEncerradas],
-    queryFn: async () => {
-      let consulta = supabase
-        .from("tarefasatribuidas")
-        .select(
-          "atribuicaoid, tarefaid, funcionarioid, tipofrequencia, valorfrequencia, dataagendamento, datafimvigencia, horariodisparo, compartilhada, disponivelapartir",
-        )
-        .eq("lojaid", lojaid)
-        .order("atribuicaoid");
-      if (!mostrarEncerradas) consulta = consulta.is("datafimvigencia", null);
-      const { data, error } = await consulta;
+  // O filtro em digitação e o filtro aplicado (só muda no botão).
+  const [rascunho, setRascunho] = useState<Filtro>(SEM_FILTRO);
+  const [filtro, setFiltro] = useState<Filtro>(SEM_FILTRO);
+  const [erroFiltro, setErroFiltro] = useState<string | null>(null);
+  const filtrando = filtro.de !== "" || filtro.tarefaid !== "" || filtro.quem !== "todos";
+
+  // Uma consulta só: a lista já vem agrupada, com o nome da tarefa, de quem
+  // faz e de quem pode pegar (antes eram 4 idas, 2 em fila).
+  const lista = useInfiniteQuery({
+    queryKey: ["atribuicoes", lojaid, mostrarEncerradas, filtro],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const { data, error } = await supabase.rpc("atribuicoes_da_loja", {
+        p_lojaid: lojaid,
+        p_encerradas: mostrarEncerradas,
+        ...(filtro.de ? { p_de: filtro.de, p_ate: filtro.ate } : {}),
+        ...(filtro.tarefaid ? { p_tarefaid: Number(filtro.tarefaid) } : {}),
+        ...(filtro.quem === "missao" ? { p_missao: true } : {}),
+        ...(filtro.quem !== "todos" && filtro.quem !== "missao" ? { p_funcionarioid: Number(filtro.quem) } : {}),
+        p_limite: pageParam === 0 && !filtrando ? PRIMEIRAS : POR_VEZ,
+        p_offset: pageParam,
+      });
       if (error) throw error;
-
-      const linhas = data ?? [];
-      if (linhas.length === 0) return [] as Linha[];
-
-      // As três dependem da lista acima, mas não uma da outra: vão juntas.
-      // Os candidatos já trazem o nome junto, então caiu também a quarta ida
-      // que existia só para buscar esses nomes (eram 4 em fila; agora é 1).
-      const idsCompartilhadas = linhas.filter((l) => l.compartilhada).map((l) => l.atribuicaoid);
-      type Pessoa = { funcionarioid: number; nomecompleto: string };
-      type Candidato = { atribuicaoid: number; funcionarios: Pessoa | null };
-
-      const [{ data: tarefas }, { data: pessoas }, { data: candidatos }] = await Promise.all([
-        supabase
-          .from("tarefas")
-          .select("tarefaid, titulo")
-          .in("tarefaid", [...new Set(linhas.map((l) => l.tarefaid))]),
-        supabase
-          .from("funcionarios")
-          .select("funcionarioid, nomecompleto")
-          .in(
-            "funcionarioid",
-            [...new Set(linhas.map((l) => l.funcionarioid).filter((v): v is number => v !== null))],
-          ),
-        // Quem pode pegar cada tarefa compartilhada, com o nome junto.
-        idsCompartilhadas.length
-          ? supabase
-              .from("tarefascandidatos")
-              .select("atribuicaoid, funcionarios(funcionarioid, nomecompleto)")
-              .in("atribuicaoid", idsCompartilhadas)
-          : Promise.resolve({ data: [] as unknown[] }),
-      ]);
-
-      const titulo = new Map((tarefas ?? []).map((t) => [t.tarefaid, t.titulo]));
-      const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
-      const daTarefa = new Map<number, string[]>();
-      for (const bruto of candidatos ?? []) {
-        const c = bruto as unknown as Candidato;
-        const atual = daTarefa.get(c.atribuicaoid) ?? [];
-        atual.push(c.funcionarios?.nomecompleto ?? "—");
-        daTarefa.set(c.atribuicaoid, atual);
-      }
-
-      // A Semanal com vários dias vira várias linhas no banco, mas uma só na
-      // tela: mesma tarefa, mesma pessoa, mesma frequência.
-      const agrupadas = new Map<string, Linha>();
-      for (const l of linhas) {
-        const chave = `${l.tarefaid}|${l.funcionarioid ?? `c${l.atribuicaoid}`}|${l.tipofrequencia}|${l.datafimvigencia ?? "ativa"}`;
-        const atual = agrupadas.get(chave);
-        if (atual) {
-          atual.ids.push(l.atribuicaoid);
-          if (l.valorfrequencia !== null) atual.dias.push(l.valorfrequencia);
-        } else {
-          agrupadas.set(chave, {
-            chave,
-            ids: [l.atribuicaoid],
-            disponivelapartir: l.disponivelapartir,
-            titulo: titulo.get(l.tarefaid) ?? `Tarefa ${l.tarefaid}`,
-            nome: l.funcionarioid
-              ? (nome.get(l.funcionarioid) ?? "—")
-              : l.compartilhada
-                ? `👥 ${(daTarefa.get(l.atribuicaoid) ?? []).sort().join(", ")} (a primeira que pegar)`
-                : `🚨 Missão da equipe${l.horariodisparo ? ` · ${l.horariodisparo.slice(0, 5)}` : ""}`,
-            tipofrequencia: l.tipofrequencia,
-            dias: l.valorfrequencia !== null ? [l.valorfrequencia] : [],
-            valor: l.valorfrequencia,
-            dataagendamento: l.dataagendamento,
-            encerradaEm: l.datafimvigencia,
-          });
-        }
-      }
-      // Ativas primeiro; as encerradas vêm depois.
-      return [...agrupadas.values()].sort(
-        (a, b) => Number(a.encerradaEm !== null) - Number(b.encerradaEm !== null),
-      );
+      return data as unknown as PaginaDeAtribuicoes;
     },
+    getNextPageParam: (ultima, todas) =>
+      ultima.temmais ? todas.reduce((n, p) => n + p.linhas.length, 0) : undefined,
   });
+
+  function aplicarFiltro() {
+    const f = rascunho;
+    if ((f.de === "") !== (f.ate === "")) return setErroFiltro("Escolha a data inicial e a final (ou nenhuma das duas).");
+    if (f.de && f.de > f.ate) return setErroFiltro("A data final é antes da inicial.");
+    if (f.de && (Date.parse(f.ate) - Date.parse(f.de)) / 86_400_000 > MAXIMO_DE_DIAS - 1) {
+      return setErroFiltro(`Escolha um período de no máximo ${MAXIMO_DE_DIAS} dias.`);
+    }
+    setErroFiltro(null);
+    setFiltro(f);
+  }
+
+  function limparFiltro() {
+    setRascunho(SEM_FILTRO);
+    setFiltro(SEM_FILTRO);
+    setErroFiltro(null);
+  }
 
   const atribuir = useMutation({
     mutationFn: async () => {
@@ -617,9 +608,10 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
     return descrever(l) + (l.disponivelapartir ? ` · a partir das ${horaCurta(l.disponivelapartir)}` : "");
   }
 
-  const tarefas = opcoesTarefas.data ?? [];
+  const todasAsTarefas = opcoesTarefas.data ?? [];
+  const tarefas = todasAsTarefas.filter((t) => t.ativa);
   const pessoas = opcoesFuncionarios.data ?? [];
-  const linhas = lista.data ?? [];
+  const linhas = (lista.data?.pages ?? []).flatMap((p) => p.linhas);
 
   return (
     <div className="space-y-4">
@@ -836,15 +828,90 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
         )}
       </form>
 
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={mostrarEncerradas}
-            onChange={(e) => setMostrarEncerradas(e.target.checked)}
-          />
-          Mostrar também as encerradas
-        </label>
+      <div className="space-y-3">
+        <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+          <p className="text-sm font-semibold">Filtrar as atribuições</p>
+          <div className="grid gap-3 md:grid-cols-4">
+            <label className="space-y-1 text-sm">
+              <span className="block text-muted-foreground">Criadas de</span>
+              <input
+                type="date"
+                value={rascunho.de}
+                onChange={(e) => setRascunho({ ...rascunho, de: e.target.value })}
+                className={`${campo} w-full`}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="block text-muted-foreground">até</span>
+              <input
+                type="date"
+                value={rascunho.ate}
+                onChange={(e) => setRascunho({ ...rascunho, ate: e.target.value })}
+                className={`${campo} w-full`}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="block text-muted-foreground">Tarefa</span>
+              <select
+                value={rascunho.tarefaid}
+                onChange={(e) => setRascunho({ ...rascunho, tarefaid: e.target.value })}
+                className={`${campo} w-full`}
+              >
+                <option value="">Todas</option>
+                {todasAsTarefas.map((t) => (
+                  <option key={t.tarefaid} value={t.tarefaid}>
+                    {t.titulo}
+                    {t.ativa ? "" : " (desativada)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="block text-muted-foreground">Colaborador</span>
+              {/* Só quem está ativo NESTA loja: a lista que a página já busca. */}
+              <select
+                value={rascunho.quem}
+                onChange={(e) => setRascunho({ ...rascunho, quem: e.target.value })}
+                className={`${campo} w-full`}
+              >
+                <option value="todos">Todos</option>
+                <option value="missao">🚨 Missão da equipe</option>
+                {pessoas.map((p) => (
+                  <option key={p.funcionarioid} value={p.funcionarioid}>
+                    {p.nomecompleto}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={aplicarFiltro}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
+              Filtrar
+            </button>
+            <button type="button" onClick={limparFiltro} className="rounded-lg border border-border px-4 py-2 text-sm">
+              Limpar filtro
+            </button>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={mostrarEncerradas}
+                onChange={(e) => setMostrarEncerradas(e.target.checked)}
+              />
+              Mostrar também as encerradas
+            </label>
+          </div>
+          {erroFiltro && <p className="text-sm text-destructive">{erroFiltro}</p>}
+          <p className="text-xs text-muted-foreground">
+            {filtrando
+              ? `Filtro aplicado: ${POR_VEZ} por vez, da mais nova para a mais antiga.`
+              : `Sem filtro: as ${PRIMEIRAS} atribuições criadas por último, da mais nova para a mais antiga.`}{" "}
+            A data é a de quando a atribuição foi criada (período de até {MAXIMO_DE_DIAS} dias).
+          </p>
+        </div>
 
         {lista.isLoading && <p className="text-muted-foreground">Carregando...</p>}
         {lista.isError && (
@@ -853,18 +920,21 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
 
         {linhas.map((l) => (
           <div
-            key={l.chave}
+            key={l.ids.join("-")}
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
           >
             <div className="min-w-0">
-              <p className={`font-medium ${l.encerradaEm ? "text-muted-foreground" : ""}`}>{l.titulo}</p>
-              <p className="text-sm text-muted-foreground">
-                {l.nome} · {descreverComHora(l)}
+              <p className={`font-medium ${l.datafimvigencia ? "text-muted-foreground" : ""}`}>
+                {l.titulo ?? `Tarefa ${l.tarefaid}`}
               </p>
+              <p className="text-sm text-muted-foreground">
+                {quemFaz(l)} · {descreverComHora(l)}
+              </p>
+              {l.criadaemdia && <p className="text-xs text-muted-foreground">Criada em {l.criadaemdia}</p>}
             </div>
-            {l.encerradaEm ? (
+            {l.datafimvigencia ? (
               <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                Encerrada em {new Date(`${l.encerradaEm}T12:00:00`).toLocaleDateString("pt-BR")}
+                Encerrada em {new Date(`${l.datafimvigencia}T12:00:00`).toLocaleDateString("pt-BR")}
               </span>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -901,9 +971,23 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
           </div>
         ))}
 
+        {lista.hasNextPage && (
+          <button
+            onClick={() => lista.fetchNextPage()}
+            disabled={lista.isFetchingNextPage}
+            className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {lista.isFetchingNextPage ? "Carregando..." : `Carregar mais ${POR_VEZ}`}
+          </button>
+        )}
+
         {!lista.isLoading && linhas.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            {mostrarEncerradas ? "Nenhuma atribuição nesta loja." : "Nenhuma atribuição ativa nesta loja."}
+            {filtrando
+              ? "Nenhuma atribuição com esse filtro."
+              : mostrarEncerradas
+                ? "Nenhuma atribuição nesta loja."
+                : "Nenhuma atribuição ativa nesta loja."}
           </p>
         )}
 

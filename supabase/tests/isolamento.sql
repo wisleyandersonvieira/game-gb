@@ -560,14 +560,16 @@ BEGIN
      WHERE t.sistema IS NOT NULL AND tl.lojaid = 10) = 6,
     'as tarefas do sistema valem nas lojas que ja existiam');
 
-  -- Nao se apaga.
+  -- 28/09/2026: virou tarefa comum. Apagar segue a regra de qualquer
+  -- tarefa: ligada a uma loja, o banco segura (a mesma chave de todas), e nao
+  -- mais a trava especial "do sistema".
   BEGIN
     DELETE FROM public.tarefas WHERE sistema = 'feedback_diario';
     deu_erro := false;
-  EXCEPTION WHEN restrict_violation THEN
+  EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'tarefa do sistema nao pode ser apagada');
+  PERFORM public.exigir(deu_erro, 'tarefa do sistema se apaga como qualquer outra (ligada a loja, o banco segura)');
 
   -- Mas pode ser editada.
   UPDATE public.tarefas SET titulo = 'Feedback do dia' WHERE sistema = 'feedback_diario';
@@ -575,15 +577,18 @@ BEGIN
     (SELECT titulo FROM public.tarefas WHERE sistema = 'feedback_diario') = 'Feedback do dia',
     'tarefa do sistema pode ter o titulo editado');
 
-  -- As 4 de bonus nunca viram atribuicao.
+  -- 28/09/2026: as 4 de bonus tambem se atribuem a mao, como qualquer outra.
+  -- (Desfeito logo em seguida, para nao mexer nas contas dos testes abaixo.)
   BEGIN
     INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid)
     SELECT tarefaid, 100, 10 FROM public.tarefas WHERE sistema = 'feedback_diario';
     deu_erro := false;
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'desfaz';
   EXCEPTION WHEN restrict_violation THEN
     deu_erro := true;
+    WHEN raise_exception THEN NULL;
   END;
-  PERFORM public.exigir(deu_erro, 'tarefa de bonus nao se atribui a ninguem');
+  PERFORM public.exigir(NOT deu_erro, 'tarefa de bonus agora se atribui a mao, como qualquer outra');
 
   -- As 2 de modelo continuam podendo virar atribuicao (pelos fluxos delas).
   INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
@@ -2349,11 +2354,20 @@ BEGIN
   BEGIN UPDATE public.tarefasatribuidas SET datafimvigencia = hoje WHERE agendamentoid = ag; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'a tarefa do agendamento nao se mexe por fora da agenda');
+  -- 28/09/2026: "Atender agendamento" virou tarefa comum e se atribui a mao;
+  -- o que continua so pela Agenda e a atribuicao PRESA a um agendamento.
   BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
         VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica');
         deu_erro := false;
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'desfaz';
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true;
+            WHEN raise_exception THEN NULL; END;
+  PERFORM public.exigir(NOT deu_erro, '"Atender agendamento" agora se atribui a mao');
+  BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia, agendamentoid)
+        VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica', ag);
+        deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem atribui "Atender agendamento" na mao');
+  PERFORM public.exigir(deu_erro, 'ninguem cria na mao uma atribuicao presa a um agendamento');
 
   PERFORM public.alterar_pagamento_agendamento(ag, 'Pago', 150);
   PERFORM public.exigir((SELECT valoranterior = 'Sinal pago (R$ 150,00)' AND valornovo = 'Pago (R$ 150,00)'
@@ -9416,5 +9430,163 @@ BEGIN
 END $$;
 UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid IN (9972, 7551);
 DROP TABLE mapa_antes;
+
+-- ===========================================================================
+-- 76. Tarefas "do sistema" viram comuns; rotina sem tarefa avisa; a lista de
+--     atribuicoes com filtro
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '76. tarefas comuns e atribuicoes da loja'; END $$;
+
+-- Nenhuma funcao do banco procura tarefa pelo NOME: renomear nao quebra
+-- rotina nenhuma. (Se alguem escrever "WHERE titulo = '...'", reprova.)
+DO $$
+DECLARE sobrou text;
+BEGIN
+  SELECT string_agg(p.proname, ', ') INTO sobrou
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prosrc ~* 'titulo\s*(=|ilike|like)\s*''';
+  PERFORM public.exigir(sobrou IS NULL, 'nenhuma rotina acha tarefa pelo nome' || coalesce(' (sobrou: ' || sobrou || ')', ''));
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname IN ('tarefas_protege_sistema', 'tarefasatribuidas_sem_bonus')),
+                        'as travas que faziam delas tarefas especiais sairam');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE
+  t integer := (SELECT tipoeventoid FROM public.tiposevento WHERE nome = 'Evento');
+  d1 timestamptz := ((public.dia_em_sao_paulo(now()) + 4)::timestamp + time '15:00') AT TIME ZONE 'America/Sao_Paulo';
+  modelo integer := (SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento');
+  ag integer; doc integer; avisos integer; deu_erro boolean;
+BEGIN
+  -- Renomear: a rotina continua achando pelo codigo.
+  UPDATE public.tarefas SET titulo = 'Atender cliente da agenda', pontos = 15 WHERE tarefaid = modelo;
+  ag := public.criar_agendamento(10, t, d1, 'Cliente Renomeada');
+  PERFORM public.exigir((SELECT tarefaid FROM public.tarefasatribuidas WHERE agendamentoid = ag) = modelo,
+                        'renomeada, "Atender agendamento" continua sendo criada pela agenda (achada pelo codigo)');
+
+  -- Desativada: o agendamento nasce sem a tarefa, e fica o aviso.
+  SELECT count(*) INTO avisos FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa';
+  UPDATE public.tarefas SET ativa = false WHERE tarefaid = modelo;
+  ag := public.criar_agendamento(10, t, d1, 'Cliente Sem Tarefa');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag),
+                        'com a tarefa desativada, o agendamento nasce sem ela');
+  PERFORM public.exigir((SELECT count(*) FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa') = avisos + 1
+                        AND EXISTS (SELECT 1 FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa'
+                                     AND texto LIKE 'Agenda: o agendamento de Cliente Sem Tarefa%'),
+                        'e isso nao fica em silencio: vira aviso para o dono');
+  UPDATE public.tarefas SET ativa = true, titulo = 'Atender agendamento', pontos = 10 WHERE tarefaid = modelo;
+
+  -- Comunicado: o padrao de pontos vem da "Leitura de comunicado", pelo codigo.
+  UPDATE public.tarefas SET titulo = 'Li o aviso', pontos = 6 WHERE sistema = 'leitura';
+  doc := public.publicar_comunicado('Teste 76 a', 'Texto', NULL, 'funcionarios', NULL, ARRAY[110]);
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 6,
+                        'renomeada, a leitura continua dando o padrao de pontos (achada pelo codigo)');
+  UPDATE public.tarefas SET ativa = false WHERE sistema = 'leitura';
+  SELECT count(*) INTO avisos FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa';
+  doc := public.publicar_comunicado('Teste 76 b', 'Texto', NULL, 'funcionarios', NULL, ARRAY[110]);
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 0
+                        AND (SELECT count(*) FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa') = avisos + 1,
+                        'leitura desativada: padrao 0 e aviso para o dono');
+  doc := public.publicar_comunicado('Teste 76 c', 'Texto', 4, 'funcionarios', NULL, ARRAY[110]);
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 4
+                        AND (SELECT count(*) FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa') = avisos + 1,
+                        'com os pontos escritos no comunicado, a tarefa nem e procurada (sem aviso)');
+  UPDATE public.tarefas SET ativa = true, titulo = 'Leitura de comunicado', pontos = 3 WHERE sistema = 'leitura';
+
+  -- O codigo interno nao muda e o navegador nao inventa codigo.
+  BEGIN UPDATE public.tarefas SET sistema = NULL WHERE sistema = 'leitura'; deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o codigo interno da tarefa nao muda');
+  BEGIN INSERT INTO public.tarefas (titulo, pontos, sistema) VALUES ('Falsa', 1, 'nota_fiscal'); deu_erro := false;
+  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'tarefa nova nao recebe codigo interno pelo navegador');
+END $$;
+
+-- A prova de que o padrao dos comunicados nao mudou com a tarefa ATIVA: a
+-- conta antiga (coalesce(pontos do comunicado, pontos da leitura, 0)) contra
+-- a nova, em todas as combinacoes. Tem de dar 0 diferencas.
+DO $$
+DECLARE pp integer; pl integer; doc integer; casos integer := 0; dif integer := 0;
+BEGIN
+  FOREACH pl IN ARRAY ARRAY[0, 3, 9] LOOP
+    UPDATE public.tarefas SET pontos = pl WHERE sistema = 'leitura';
+    FOR pp IN SELECT x FROM unnest(ARRAY[NULL, 0, 4, 12]::integer[]) x LOOP
+      doc := public.publicar_comunicado('Prova 76', 'Texto', pp, 'funcionarios', NULL, ARRAY[110]);
+      casos := casos + 1;
+      IF (SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) <> coalesce(pp, pl, 0) THEN
+        dif := dif + 1;
+      END IF;
+    END LOOP;
+  END LOOP;
+  UPDATE public.tarefas SET pontos = 3 WHERE sistema = 'leitura';
+  RAISE NOTICE '   padrao dos comunicados: % casos comparados, % diferencas', casos, dif;
+  PERFORM public.exigir(casos = 12 AND dif = 0, 'com a leitura ativa, o padrao de pontos e exatamente o de antes');
+END $$;
+
+-- A lista de atribuicoes: 5 mais recentes, filtros, 50 por vez.
+RESET ROLE;
+INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao)
+SELECT 1, 1000, CASE WHEN i % 2 = 0 THEN 100 ELSE 110 END, 10, 'Diaria', now() - (i || ' hours')::interval
+  FROM generate_series(1, 60) i;
+INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo, dataatribuicao)
+VALUES (1, 1000, NULL, 10, 'Diaria', '09:00', now() - interval '30 minutes');
+SET ROLE authenticated;
+DO $$
+DECLARE v jsonb; v2 jsonb; hoje date := (public.meu_hoje()->>'hoje')::date; deu_erro boolean;
+BEGIN
+  v := public.atribuicoes_da_loja(10);
+  PERFORM public.exigir(jsonb_array_length(v->'linhas') = 5 AND (v->>'temmais')::boolean,
+                        'sem filtro: as 5 mais recentes, e avisa que ha mais');
+  PERFORM public.exigir((v->'linhas'->0->>'criadaem')::timestamptz >= (v->'linhas'->4->>'criadaem')::timestamptz,
+                        'da mais nova para a mais antiga');
+  v := public.atribuicoes_da_loja(10, false, NULL, NULL, NULL, NULL, false, 500);
+  PERFORM public.exigir(jsonb_array_length(v->'linhas') = 50, 'no maximo 50 por vez');
+  v2 := public.atribuicoes_da_loja(10, false, NULL, NULL, NULL, NULL, false, 50, 50);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'linhas') a, jsonb_array_elements(v2->'linhas') b
+                                     WHERE a->'ids' = b->'ids'),
+                        '"carregar mais" traz as seguintes, sem repetir');
+  v := public.atribuicoes_da_loja(10, false, NULL, NULL, NULL, 110, false, 50);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'linhas') x
+                                     WHERE (x->>'funcionarioid')::integer IS DISTINCT FROM 110
+                                       AND NOT (x->>'compartilhada')::boolean),
+                        'filtro de colaborador: so as dele (e as compartilhadas em que ele pode pegar)');
+  v := public.atribuicoes_da_loja(10, false, NULL, NULL, NULL, NULL, true, 50);
+  PERFORM public.exigir(jsonb_array_length(v->'linhas') >= 1
+                        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'linhas') x
+                                         WHERE x->>'funcionarioid' IS NOT NULL OR (x->>'compartilhada')::boolean),
+                        'filtro "missao da equipe": so as missoes');
+  v := public.atribuicoes_da_loja(10, false, hoje - 400, hoje - 380);
+  PERFORM public.exigir(jsonb_array_length(v->'linhas') = 0, 'filtro de data pela criacao: periodo antigo vem vazio');
+  v := public.atribuicoes_da_loja(10, false, hoje - 1, hoje, 1000, NULL, false, 50);
+  PERFORM public.exigir(jsonb_array_length(v->'linhas') > 0
+                        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'linhas') x WHERE (x->>'tarefaid')::integer <> 1000),
+                        'filtro de tarefa e de data juntos');
+  PERFORM public.exigir(jsonb_array_length(public.atribuicoes_da_loja(10, true, NULL, NULL, NULL, NULL, false, 50)->'linhas')
+                        >= jsonb_array_length(public.atribuicoes_da_loja(10, false, NULL, NULL, NULL, NULL, false, 50)->'linhas'),
+                        '"mostrar tambem as encerradas" continua valendo junto com o filtro');
+  BEGIN PERFORM public.atribuicoes_da_loja(10, false, hoje, hoje - 1); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'data final antes da inicial e recusada');
+  BEGIN PERFORM public.atribuicoes_da_loja(10, false, hoje - 400, hoje); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'periodo maior que 366 dias e recusado');
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(jsonb_array_length(public.atribuicoes_da_loja(10, true, NULL, NULL, NULL, NULL, false, 50)->'linhas') = 0,
+                        'a conta B nao ve as atribuicoes de uma loja de A');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa'),
+                        'a conta B nao ve os avisos de A');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('anon',
+    'public.atribuicoes_da_loja(integer, boolean, date, date, integer, integer, boolean, integer, integer)', 'EXECUTE'),
+    'o visitante sem login nao le as atribuicoes');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

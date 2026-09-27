@@ -19,6 +19,7 @@ export const CONTRATO: Record<string, string[]> = {
   anular_feedback: ["p_feedbackid", "p_motivo"],
   aprovar_entrega: ["p_entregaid"],
   arquivar_documento_pessoal: ["p_documentoid"],
+  atribuicoes_da_loja: ["p_ate", "p_de", "p_encerradas", "p_funcionarioid", "p_limite", "p_lojaid", "p_missao", "p_offset", "p_tarefaid"],
   atribuicoes_para_entregar: ["p_lojaid"],
   atribuir_tarefa: ["p_dataagendamento", "p_disponivelapartir", "p_funcionarios", "p_horariodisparo", "p_lojaid", "p_tarefaid", "p_tipofrequencia", "p_valorfrequencia"],
   cancelar_agendamento: ["p_agendamentoid", "p_motivo"],

@@ -166,7 +166,7 @@ function Novo({ aoPublicar }: { aoPublicar: (id: number) => void }) {
   const padrao = useQuery({
     queryKey: ["pontos-leitura"],
     queryFn: async () => {
-      const { data } = await supabase.from("tarefas").select("pontos").eq("sistema", "leitura").maybeSingle();
+      const { data } = await supabase.from("tarefas").select("pontos").eq("sistema", "leitura").eq("ativa", true).maybeSingle();
       return data?.pontos ?? 0;
     },
   });

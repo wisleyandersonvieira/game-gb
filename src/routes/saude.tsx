@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { diagnostico } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
 import { VERSAO, versaoEmTexto } from "@/ui/versao";
+import { dataHoraBr } from "@/rh/datas";
 
 export const Route = createFileRoute("/saude")({
   ssr: false,
@@ -87,6 +88,8 @@ function Saude() {
         </div>
       )}
 
+      <RotinasSemTarefa />
+
       {d.data?.detalhe && (
         <>
           <ul className="space-y-2">
@@ -158,5 +161,46 @@ function Saude() {
         </>
       )}
     </main>
+  );
+}
+
+/**
+ * Rotina que rodou e não achou a tarefa de que depende (28/09/2026): a Agenda
+ * sem "Atender agendamento", os Comunicados sem "Leitura de comunicado". Não
+ * pode falhar em silêncio. Só aparece com login, e cada conta só vê os dela
+ * (a regra da tabela de avisos).
+ */
+function RotinasSemTarefa() {
+  const avisos = useQuery({
+    queryKey: ["saude-rotinas-sem-tarefa"],
+    queryFn: async () => {
+      const { data: sessao } = await supabase.auth.getSession();
+      if (!sessao.session) return null;
+      const { data, error } = await supabase
+        .from("avisossistema")
+        .select("avisoid, texto, criadoem")
+        .eq("tipo", "rotina_sem_tarefa")
+        .order("criadoem", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  if (!avisos.data) return null;
+  return (
+    <div className={`rounded-lg border bg-card p-3 ${avisos.data.length > 0 ? "border-destructive" : "border-border"}`}>
+      <p className="text-sm font-medium">Rotinas que não acharam a tarefa</p>
+      {avisos.data.length === 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">Nenhuma: toda rotina achou a tarefa de que precisa.</p>
+      ) : (
+        <ul className="mt-2 space-y-2">
+          {avisos.data.map((a) => (
+            <li key={a.avisoid} className="text-xs">
+              {a.texto} <span className="text-muted-foreground">({dataHoraBr(a.criadoem)})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

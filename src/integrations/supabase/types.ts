@@ -4887,6 +4887,20 @@ export type Database = {
         Args: { p_atribuicaoid: number; p_hora: string | null }
         Returns: undefined
       }
+      atribuicoes_da_loja: {
+        Args: {
+          p_ate?: string
+          p_de?: string
+          p_encerradas?: boolean
+          p_funcionarioid?: number
+          p_limite?: number
+          p_lojaid: number
+          p_missao?: boolean
+          p_offset?: number
+          p_tarefaid?: number
+        }
+        Returns: Json
+      }
       atribuir_tarefa: {
         Args: {
           p_dataagendamento?: string
