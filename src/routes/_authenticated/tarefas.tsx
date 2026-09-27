@@ -144,6 +144,14 @@ function Catalogo() {
 
   const salvar = useMutation({
     mutationFn: async () => {
+      // Tarefa que PAGA sozinha: com pontos, só salva depois de você
+      // confirmar, lendo a conta com todas as letras.
+      const pontosNovos = Number(form.pontos);
+      const pagaSozinha = rotinaDaTarefa(codigoEditando)?.pagaSemValidacao;
+      if (pagaSozinha && pontosNovos > 0) {
+        const ok = confirm(`ATENÇÃO: ESTA TAREFA PAGA PONTOS SOZINHA.\n\n${pagaSozinha(pontosNovos)}\n\nSalvar com ${pontosNovos} pontos?`);
+        if (!ok) return false;
+      }
       const dados = {
         titulo: form.titulo.trim(),
         descricao: form.descricao.trim() || null,
@@ -164,8 +172,10 @@ function Catalogo() {
         if (error) throw error;
       }
       await sincronizarLojas(tarefaid, lojasEscolhidas);
+      return true;
     },
-    onSuccess: () => {
+    onSuccess: (salvou) => {
+      if (!salvou) return;
       limpar();
       qc.invalidateQueries({ queryKey: ["catalogo-tarefas"] });
       qc.invalidateQueries({ queryKey: ["atribuicoes"] });
@@ -207,6 +217,17 @@ function Catalogo() {
         <p className="text-sm font-semibold">
           {editando === null ? "Nova tarefa" : "Editando tarefa"}
         </p>
+
+        {rotinaEmEdicao?.pagaSemValidacao && (
+          <div role="alert" className="space-y-2 rounded-xl border-4 border-destructive bg-destructive/10 p-4 text-destructive">
+            <p className="text-lg font-bold">⚠ Esta tarefa paga pontos sozinha, sem validação</p>
+            <p className="text-base font-semibold">
+              {Number(form.pontos) > 0
+                ? rotinaEmEdicao.pagaSemValidacao(Number(form.pontos))
+                : "Com 0 ponto ela não paga nada. Se você colocar pontos, cada ciência de comunicado novo (publicado com o campo de pontos em branco) passa a pagar esses pontos AUTOMATICAMENTE, SEM VALIDAÇÃO de ninguém."}
+            </p>
+          </div>
+        )}
 
         <div className="grid gap-3 md:grid-cols-3">
           <input

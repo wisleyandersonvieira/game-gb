@@ -17,6 +17,12 @@ export type Rotina = {
   aoDesativar: string;
   /** O que acontece com os pontos dela. */
   pontos: (pontos: number) => string;
+  /**
+   * A rotina PAGA os pontos desta tarefa sozinha, sem ninguém aprovar. Hoje
+   * só a "Leitura de comunicado". A tela mostra um aviso grande ao editar e
+   * pede confirmação ao salvar com pontos.
+   */
+  pagaSemValidacao?: (pontos: number) => string;
 };
 
 export const ROTINAS_POR_CODIGO: Record<string, Rotina> = {
@@ -36,6 +42,10 @@ export const ROTINAS_POR_CODIGO: Record<string, Rotina> = {
       p > 0
         ? `ATENÇÃO: com ${p} pontos, cada ciência de um comunicado novo publicado com o campo de pontos em branco paga ${p} pontos AUTOMATICAMENTE, sem validação. Os comunicados já publicados não mudam.`
         : "Com 0 ponto, a ciência dos comunicados novos (com o campo em branco) não paga nada.",
+    pagaSemValidacao: (p) =>
+      `Cada ciência de comunicado passa a pagar ${p} ${p === 1 ? "ponto" : "pontos"} AUTOMATICAMENTE, SEM VALIDAÇÃO de ninguém. ` +
+      `Vale para todo comunicado novo publicado com o campo de pontos em branco. ` +
+      `Numa loja de 20 pessoas, um comunicado paga até ${new Intl.NumberFormat("pt-BR").format(20 * p)} pontos.`,
   },
 };
 
