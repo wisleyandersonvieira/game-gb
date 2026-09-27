@@ -20,7 +20,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/config-publica";
 import {
-  ERRO_TRAVADO, abrirTentativa, conferirSenhaDoTablet, deHex, embaralhar, fecharTentativa,
+  ERRO_TRAVADO, abrirTentativa, cifrar, conferirSenhaDoTablet, decifrar, deHex, embaralhar, fecharTentativa,
   hex, origemDaChamada, resumoDoPin,
 } from "@/servidor/segredos";
 
@@ -493,19 +493,27 @@ export const aceitarPolitica = createServerFn({ method: "POST" })
 // O gestor: criar acesso, gerar código, redefinir, trocar CPF, desativar
 // ---------------------------------------------------------------------------
 
-/** Gera o código de primeiro acesso e devolve o texto UMA vez. */
+/** O contexto que amarra o código cifrado à conta e à pessoa. */
+const contextoDoCodigo = (contaid: number, funcionarioid: number) => `codigo:${contaid}:${funcionarioid}`;
+
+/**
+ * Gera o código de primeiro acesso. Guarda o resumo (que confere a entrada) e
+ * o código cifrado com a chave do servidor (que deixa reimprimir a folha).
+ * O banco recusa quem já fez o primeiro acesso: aí o caminho é redefinir.
+ */
 async function gerarCodigo(contaid: number, funcionarioid: number, quem: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const codigo = codigoSorteado();
-  const { error } = await supabaseAdmin.rpc("criar_codigo_acesso", {
+  const { data, error } = await supabaseAdmin.rpc("criar_codigo_acesso", {
     p_contaid: contaid,
     p_funcionarioid: funcionarioid,
     p_codigohash: await embaralhar(`codigo:${contaid}:${codigo}`),
+    p_codigocifrado: await cifrar(codigo, contextoDoCodigo(contaid, funcionarioid)),
     p_dias: DIAS_DO_CODIGO,
     p_quem: quem,
   });
   if (error) throw new Error(error.message);
-  return codigo;
+  return { codigo, codigoid: data as number };
 }
 
 export const criarAcessoColaborador = createServerFn({ method: "POST" })
@@ -524,6 +532,17 @@ export const criarAcessoColaborador = createServerFn({ method: "POST" })
       .eq("funcionarioid", data.funcionarioid)
       .single();
     if (erroPessoa || !pessoa) throw new Error("Pessoa não encontrada.");
+    const { codigo } = await criarAcessoInterno(contaid, pessoa, userId);
+    return { nome: pessoa.nomecompleto, codigo, dias: DIAS_DO_CODIGO };
+  });
+
+/** Cria o login da pessoa e o primeiro código. Usado pelo botão e pela folha. */
+async function criarAcessoInterno(
+  contaid: number,
+  pessoa: { funcionarioid: number; cpf: string | null; ativo: boolean },
+  userId: string,
+) {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (!pessoa.ativo) throw new Error("Pessoa desativada não recebe acesso.");
     if (!pessoa.cpf) throw new Error("Cadastre o CPF antes de criar o acesso.");
 
@@ -546,13 +565,12 @@ export const criarAcessoColaborador = createServerFn({ method: "POST" })
         p_quem: userId,
       });
       if (erroVinculo) throw new Error(erroVinculo.message);
-      const codigo = await gerarCodigo(contaid, pessoa.funcionarioid, userId);
-      return { nome: pessoa.nomecompleto, codigo, dias: DIAS_DO_CODIGO };
+      return await gerarCodigo(contaid, pessoa.funcionarioid, userId);
     } catch (e) {
       await supabaseAdmin.auth.admin.deleteUser(criado.user.id).catch(() => undefined);
       throw new Error(`Não foi possível criar o acesso: ${(e as Error).message}`);
     }
-  });
+}
 
 /** Gera um código novo (o anterior é cancelado). */
 export const gerarCodigoDeAcesso = createServerFn({ method: "POST" })
@@ -572,7 +590,7 @@ export const gerarCodigoDeAcesso = createServerFn({ method: "POST" })
       .single();
     if (!pessoa) throw new Error("Pessoa não encontrada.");
 
-    const codigo = await gerarCodigo(contaid, pessoa.funcionarioid, userId);
+    const { codigo } = await gerarCodigo(contaid, pessoa.funcionarioid, userId);
     return { nome: pessoa.nomecompleto, codigo, dias: DIAS_DO_CODIGO };
   });
 
@@ -586,27 +604,205 @@ export const redefinirAcessoColaborador = createServerFn({ method: "POST" })
     const contaid = await contaDoMaster(supabase);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    const r = await redefinirInterno(contaid, data.funcionarioid, userId);
+    return { nome: r.nome, codigo: r.codigo, dias: DIAS_DO_CODIGO };
+  });
+
+/** Apaga senha e PIN, derruba as sessões e só então gera o código novo. */
+async function redefinirInterno(contaid: number, funcionarioid: number, userId: string) {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: acesso } = await supabaseAdmin
       .from("contasusuarios")
       .select("userid, funcionarios(nomecompleto)")
       .eq("contaid", contaid)
-      .eq("funcionarioid", data.funcionarioid)
+      .eq("funcionarioid", funcionarioid)
       .single();
     if (!acesso) throw new Error("Esta pessoa ainda não tem acesso.");
 
     // Primeiro o banco (que confere se a pessoa está ativa), depois o Supabase.
     const { error: erroBanco } = await supabaseAdmin.rpc("redefinir_acesso", {
       p_contaid: contaid,
-      p_funcionarioid: data.funcionarioid,
+      p_funcionarioid: funcionarioid,
       p_pinhash: null as unknown as string,
       p_quem: userId,
     });
     if (erroBanco) throw new Error(erroBanco.message);
 
     await supabaseAdmin.auth.admin.signOut(acesso.userid, "global").catch(() => undefined);
-    const codigo = await gerarCodigo(contaid, data.funcionarioid, userId);
+    const gerado = await gerarCodigo(contaid, funcionarioid, userId);
     const nome = (acesso as { funcionarios?: { nomecompleto: string } }).funcionarios?.nomecompleto ?? "";
-    return { nome, codigo, dias: DIAS_DO_CODIGO };
+    return { nome, ...gerado };
+}
+
+// ---------------------------------------------------------------------------
+// A folha de instruções de acesso (PDF), 27/09/2026
+// ---------------------------------------------------------------------------
+
+/** O que vai numa folha. O PDF é montado no navegador com isto. */
+export type FolhaDeAcesso = {
+  funcionarioid: number;
+  nome: string;
+  cargo: string | null;
+  lojas: string[];
+  cpfmascarado: string | null;
+  conta: string;
+  codigoempresa: string;
+  codigo: string;
+  expiraem: string;
+  /** Esta folha redefiniu o acesso: a senha e o PIN anteriores deixaram de valer. */
+  redefinido: boolean;
+  emitidaem: string;
+};
+
+type PessoaDaFicha = {
+  funcionarioid: number;
+  nome: string;
+  cargo: string | null;
+  cpf: string | null;
+  ativo: boolean;
+  lojas: string[];
+  temacesso: boolean;
+  jaentrou: boolean;
+  codigo: { codigoid: number; cifrado: string | null; expiraem: string; criadoem: string } | null;
+};
+
+type Ficha = { conta: string; codigoempresa: string; pessoas: PessoaDaFicha[] };
+
+const cpfMascarado = (cpf: string | null) => {
+  const n = soNumeros(cpf ?? "");
+  return n.length === 11 ? `***.${n.slice(3, 6)}.${n.slice(6, 9)}-**` : null;
+};
+
+/** O que vai acontecer com cada pessoa. Decidido AQUI, nunca pela tela. */
+type Passo = { pessoa: PessoaDaFicha; acao: "reimprimir" | "codigo-novo" | "criar-acesso" | "redefinir" };
+
+/**
+ * Monta as folhas de acesso de uma ou várias pessoas.
+ *
+ * - Quem já tem código válido e reimprimível recebe O MESMO código: sortear
+ *   outro trancaria quem já está com a folha na mão.
+ * - "codigonovo" é a ação explícita de trocar o código (o anterior deixa de
+ *   valer). "redefinir" é para quem já fez o primeiro acesso: apaga senha e
+ *   PIN, derruba as sessões e só então gera o código — nunca em lote.
+ * - Se algo vai invalidar um código ou uma senha, a primeira chamada NÃO faz
+ *   nada: devolve os avisos, e só a segunda (aceito: true) executa. O plano é
+ *   recalculado na segunda chamada, então nada muda por baixo da confirmação.
+ * - Toda folha emitida fica registrada: quem, quando, com qual código.
+ */
+export const emitirFolhasDeAcesso = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { funcionarioids: number[]; modo: "imprimir" | "codigonovo" | "redefinir"; aceito?: boolean }) => {
+    const ids = Array.isArray(d?.funcionarioids) ? [...new Set(d.funcionarioids)] : [];
+    if (ids.length === 0 || ids.length > 60 || !ids.every((n) => Number.isInteger(n) && n > 0)) {
+      throw new Error("Marque de 1 a 60 pessoas.");
+    }
+    if (!["imprimir", "codigonovo", "redefinir"].includes(d?.modo)) throw new Error("Ação inválida.");
+    // Trocar código ou redefinir acesso é sempre UMA pessoa por vez.
+    if (d.modo !== "imprimir" && ids.length !== 1) throw new Error("Isto se faz uma pessoa por vez.");
+    return { funcionarioids: ids, modo: d.modo, aceito: d.aceito === true };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    await exigirMaster(supabase);
+    const contaid = await contaDoMaster(supabase);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const ler = async () => {
+      const { data: bruto, error } = await supabaseAdmin.rpc("folha_de_acesso", {
+        p_contaid: contaid,
+        p_funcionarioids: data.funcionarioids,
+      });
+      if (error || !bruto) throw new Error("Não foi possível ler os dados da folha.");
+      return bruto as unknown as Ficha;
+    };
+    const ficha = await ler();
+
+    // 1. O plano.
+    const passos: Passo[] = [];
+    const avisos: string[] = [];
+    const deFora: { nome: string; motivo: string }[] = [];
+    for (const p of ficha.pessoas) {
+      if (!p.ativo) { deFora.push({ nome: p.nome, motivo: "está desativada" }); continue; }
+      if (!p.cpf) { deFora.push({ nome: p.nome, motivo: "não tem CPF cadastrado" }); continue; }
+      if (!p.temacesso) { passos.push({ pessoa: p, acao: "criar-acesso" }); continue; }
+      if (p.jaentrou) {
+        if (data.modo === "redefinir") {
+          passos.push({ pessoa: p, acao: "redefinir" });
+          avisos.push(
+            `${p.nome} já fez o primeiro acesso. Esta folha REDEFINE o acesso: a senha e o PIN atuais deixam de valer agora, quem estiver usando o app com o login dela é desconectado, e ela vai criar senha e PIN de novo com o código novo.`,
+          );
+        } else {
+          deFora.push({
+            nome: p.nome,
+            motivo: "já fez o primeiro acesso — a folha dela redefine o acesso e se faz no cartão dela, uma por vez",
+          });
+        }
+        continue;
+      }
+      if (data.modo === "codigonovo") {
+        passos.push({ pessoa: p, acao: "codigo-novo" });
+        if (p.codigo) avisos.push(`O código atual de ${p.nome} deixa de valer: a folha que ela já tiver não serve mais.`);
+      } else if (p.codigo?.cifrado) {
+        passos.push({ pessoa: p, acao: "reimprimir" });
+      } else if (p.codigo) {
+        passos.push({ pessoa: p, acao: "codigo-novo" });
+        avisos.push(
+          `${p.nome} tem um código gerado antes da folha em PDF, que não dá para reimprimir. Sai um código novo, e o anterior deixa de valer.`,
+        );
+      } else {
+        // Sem código válido: não há nada a invalidar.
+        passos.push({ pessoa: p, acao: "codigo-novo" });
+      }
+    }
+
+    if (avisos.length > 0 && !data.aceito) {
+      return { precisaConfirmar: true as const, avisos, deFora, folhas: [] as FolhaDeAcesso[] };
+    }
+
+    // 2. A execução, pessoa por pessoa.
+    const feitos: { pessoa: PessoaDaFicha; codigo: string; codigoid: number; redefinido: boolean }[] = [];
+    for (const { pessoa, acao } of passos) {
+      if (acao === "reimprimir") {
+        const codigo = await decifrar(pessoa.codigo?.cifrado, contextoDoCodigo(contaid, pessoa.funcionarioid));
+        if (!codigo) throw new Error(`Não foi possível reimprimir o código de ${pessoa.nome}. Gere um código novo para ela.`);
+        feitos.push({ pessoa, codigo, codigoid: pessoa.codigo!.codigoid, redefinido: false });
+      } else if (acao === "criar-acesso") {
+        feitos.push({ pessoa, ...(await criarAcessoInterno(contaid, pessoa, userId)), redefinido: false });
+      } else if (acao === "redefinir") {
+        const r = await redefinirInterno(contaid, pessoa.funcionarioid, userId);
+        feitos.push({ pessoa, codigo: r.codigo, codigoid: r.codigoid, redefinido: true });
+      } else {
+        feitos.push({ pessoa, ...(await gerarCodigo(contaid, pessoa.funcionarioid, userId)), redefinido: false });
+      }
+    }
+
+    // 3. O registro de cada folha, e a validade de cada código (do banco).
+    const depois = new Map((feitos.length ? await ler() : ficha).pessoas.map((p) => [p.funcionarioid, p]));
+    const folhas: FolhaDeAcesso[] = [];
+    for (const f of feitos) {
+      const { data: emitidaem, error } = await supabaseAdmin.rpc("registrar_folha_de_acesso", {
+        p_contaid: contaid,
+        p_funcionarioid: f.pessoa.funcionarioid,
+        p_codigoid: f.codigoid,
+        p_redefiniu: f.redefinido,
+        p_quem: userId,
+      });
+      if (error) throw new Error(`Não foi possível registrar a folha de ${f.pessoa.nome}.`);
+      folhas.push({
+        funcionarioid: f.pessoa.funcionarioid,
+        nome: f.pessoa.nome,
+        cargo: f.pessoa.cargo,
+        lojas: f.pessoa.lojas,
+        cpfmascarado: cpfMascarado(f.pessoa.cpf),
+        conta: ficha.conta,
+        codigoempresa: ficha.codigoempresa,
+        codigo: f.codigo,
+        expiraem: depois.get(f.pessoa.funcionarioid)?.codigo?.expiraem ?? "",
+        redefinido: f.redefinido,
+        emitidaem: emitidaem as string,
+      });
+    }
+    return { precisaConfirmar: false as const, avisos: [] as string[], deFora, folhas };
   });
 
 /** Trocar o CPF de quem já entra pelo app: muda o cadastro e o login junto. */

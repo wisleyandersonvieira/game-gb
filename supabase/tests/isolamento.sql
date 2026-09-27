@@ -5102,39 +5102,39 @@ BEGIN
                         'sem senha guardada: nao existe senha padrao para adivinhar');
 
   -- Codigo de primeiro acesso: uso unico.
-  PERFORM public.criar_codigo_acesso(1, 8100, repeat('c', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8100, repeat('c', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   v_usou := public.usar_codigo_acesso(1, '52998224725', repeat('c', 64));
   PERFORM public.exigir((v_usou->>'funcionarioid')::integer = 8100, 'o codigo certo abre a porta uma vez');
   PERFORM public.exigir(public.usar_codigo_acesso(1, '52998224725', repeat('c', 64)) IS NULL,
                         'o mesmo codigo nao serve duas vezes');
 
   -- Codigo de outra pessoa, CPF trocado: nao serve.
-  PERFORM public.criar_codigo_acesso(1, 8101, repeat('d', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('d', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   PERFORM public.exigir(public.usar_codigo_acesso(1, '52998224725', repeat('d', 64)) IS NULL,
                         'codigo de um nao entra no CPF de outro');
 
   -- Codigo vencido nao serve.
-  PERFORM public.criar_codigo_acesso(1, 8101, repeat('e', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('e', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   UPDATE public.codigosacesso SET expiraem = now() - interval '1 day' WHERE codigohash = repeat('e', 64);
   PERFORM public.exigir(public.usar_codigo_acesso(1, '11144477735', repeat('e', 64)) IS NULL,
                         'codigo vencido nao serve');
 
   -- Gerar outro cancela o anterior.
-  PERFORM public.criar_codigo_acesso(1, 8101, repeat('f', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-  PERFORM public.criar_codigo_acesso(1, 8101, repeat('g', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('f', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('g', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   PERFORM public.exigir(public.usar_codigo_acesso(1, '11144477735', repeat('f', 64)) IS NULL,
                         'gerar um codigo novo cancela o anterior');
   PERFORM public.exigir(public.usar_codigo_acesso(1, '11144477735', repeat('g', 64)) IS NOT NULL,
                         'o codigo novo funciona');
 
   -- Codigo da conta A nao vale na conta B.
-  PERFORM public.criar_codigo_acesso(1, 8101, repeat('h', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.criar_codigo_acesso(1, 8101, repeat('h', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   PERFORM public.exigir(public.usar_codigo_acesso(2, '11144477735', repeat('h', 64)) IS NULL,
                         'codigo de uma conta nao vale em outra');
 
   -- Ninguem gera codigo para pessoa de outra conta.
   BEGIN
-    PERFORM public.criar_codigo_acesso(2, 8101, repeat('i', 64), 7, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+    PERFORM public.criar_codigo_acesso(2, 8101, repeat('i', 64), NULL, 7, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
     deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'nao se gera codigo para pessoa de outra conta');
@@ -5284,9 +5284,11 @@ END $$;
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
+  -- O codigo antes da senha e do PIN: desde 27/09/2026 o banco nao gera
+  -- codigo para quem ja fez o primeiro acesso (secao 69).
+  PERFORM public.criar_codigo_acesso(1, 8100, repeat('j', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   PERFORM public.definir_senha_app(1, 8100, 'pbkdf2$1$aa$bb');
   PERFORM public.definir_pin(1, 8100, repeat('7', 64), false);
-  PERFORM public.criar_codigo_acesso(1, 8100, repeat('j', 64), 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 
   -- Como AUTHENTICATED (o papel das telas): e assim que o gatilho roda de
   -- verdade. Antes o teste fazia isto como dono do banco e escondia o defeito.
@@ -5351,7 +5353,7 @@ BEGIN
                         'ninguem le os codigos de acesso pelo navegador');
 
   FOREACH f IN ARRAY ARRAY[
-    'public.criar_codigo_acesso(integer, integer, text, integer, uuid)',
+    'public.criar_codigo_acesso(integer, integer, text, text, integer, uuid)',
     'public.usar_codigo_acesso(integer, text, text)',
     'public.senha_app_de(integer, text)',
     'public.definir_senha_app(integer, integer, text)',
@@ -7228,19 +7230,15 @@ BEGIN
   PERFORM public.exigir(to_char(v_brasilia AT TIME ZONE 'UTC', 'HH24:MI') = '18:00',
                         '15h em Brasilia e 18h UTC (o servidor nao confunde os dois)');
 
-  -- Campo Grande fica uma hora atras: 15h la e 19h UTC.
-  UPDATE public.configuracoes SET valor = 'America/Campo_Grande'
-   WHERE contaid = 1 AND chave = 'FUSO_HORARIO';
-  PERFORM public.exigir(public.fuso_da_conta(1) = 'America/Campo_Grande',
-                        'a conta pode escolher outro fuso');
-  v_campo := public.instante_na_conta(1, v_hoje, '15:00'::time);
+  -- Desde 27/09/2026 a conta NAO escolhe outro fuso (travado em Brasilia ate
+  -- o resto do sistema passar para o fuso da conta — ver secao 69). A conta
+  -- de conversao continua provada direto, para quando os outros fusos abrirem:
+  -- Campo Grande fica uma hora atras, 15h la e 19h UTC.
+  v_campo := (v_hoje::timestamp + '15:00'::time) AT TIME ZONE 'America/Campo_Grande';
   PERFORM public.exigir(v_campo <> v_brasilia,
-                        'trocando o fuso, a MESMA hora vira outro instante (era o risco de fixar Brasilia)');
+                        'com outro fuso, a MESMA hora vira outro instante (era o risco de fixar Brasilia)');
   PERFORM public.exigir(v_campo > v_brasilia,
                         'e Campo Grande libera DEPOIS de Brasilia, porque fica uma hora atras');
-
-  UPDATE public.configuracoes SET valor = 'America/Sao_Paulo'
-   WHERE contaid = 1 AND chave = 'FUSO_HORARIO';
 END $$;
 
 -- Fuso invalido nao entra: erraria todas as liberacoes, em silencio. Esta
@@ -8365,15 +8363,15 @@ BEGIN
   -- Paulo, mas ainda 26/09 22h30 em Rio Branco.
   PERFORM public.exigir(public.dia_da_conta(1, '2026-09-27 03:30+00') = '2026-09-27',
                         'conta em Sao Paulo: 03h30 UTC ja e dia 27');
-  UPDATE public.configuracoes SET valor = 'America/Rio_Branco' WHERE contaid = 2 AND chave = 'FUSO_HORARIO';
-  PERFORM public.exigir(public.dia_da_conta(2, '2026-09-27 03:30+00') = '2026-09-26',
-                        'conta em Rio Branco: o mesmo instante ainda e dia 26');
-  PERFORM public.exigir(public.hoje_da_conta(2) = (now() AT TIME ZONE 'America/Rio_Branco')::date,
+  -- (O fuso da conta esta travado em Sao Paulo desde 27/09/2026 — secao 69.
+  -- A conversao continua provada direto, para quando os outros fusos abrirem.)
+  PERFORM public.exigir(public.dia_no_fuso('2026-09-27 03:30+00', 'America/Rio_Branco') = '2026-09-26',
+                        'em Rio Branco o mesmo instante ainda e dia 26');
+  PERFORM public.exigir(public.hoje_da_conta(2) = (now() AT TIME ZONE 'America/Sao_Paulo')::date,
                         'hoje da conta usa o fuso da conta e o relogio do servidor');
   PERFORM public.exigir(public.tarefa_cai_no_dia('Unica', NULL, '2026-09-27 03:30+00', '2026-09-26', 'America/Rio_Branco')
                         AND NOT public.tarefa_cai_no_dia('Unica', NULL, '2026-09-27 03:30+00', '2026-09-26'),
                         'a Unica agendada cai no dia DA CONTA (em Sao Paulo ela so cairia no dia 27)');
-  UPDATE public.configuracoes SET valor = 'America/Sao_Paulo' WHERE contaid = 2 AND chave = 'FUSO_HORARIO';
 
   -- Nada do que a loja ve decide o dia sozinho.
   SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -8416,5 +8414,243 @@ BEGIN
                         'quem esta logado nao pergunta o dia passando a conta de outro');
 END $$;
 RESET TIME ZONE;
+
+-- ===========================================================================
+-- 69. Estorno traz a Unica de volta; fuso travado; codigo so no 1o acesso;
+--     a folha de acesso (27/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '69. estorno da Unica, fuso travado, codigo e folha de acesso'; END $$;
+-- O rodizio atrapalharia o refazer (Olga pegou tarefas disputadas nas secoes
+-- anteriores); aqui ele sai, e volta no fim.
+UPDATE public.configuracoes SET valor = '0' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (9961, 1, 'Unica estornada no dia seguinte', 3), (9962, 1, 'Unica estornada no mesmo dia', 3),
+  (9963, 1, 'Unica recusada', 3);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9961, 10), (1, 9962, 10), (1, 9963, 10);
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM set_config('teste.e1', public.atribuir_tarefa(9961, 10, ARRAY[9767, 9768], 'Unica', NULL, now() - interval '1 day', NULL)::text, false);
+  PERFORM set_config('teste.e2', public.atribuir_tarefa(9962, 10, ARRAY[9767, 9768], 'Unica', NULL, now(), NULL)::text, false);
+  PERFORM set_config('teste.e3', public.atribuir_tarefa(9963, 10, ARRAY[9767, 9768], 'Unica', NULL, now(), NULL)::text, false);
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- Olga aceita e entrega as tres pelo tablet.
+DO $$
+DECLARE v jsonb; v_atr integer;
+BEGIN
+  FOREACH v_atr IN ARRAY ARRAY[current_setting('teste.e1')::int, current_setting('teste.e2')::int,
+                               current_setting('teste.e3')::int] LOOP
+    v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), repeat('a', 64), 'sem-ip', v_atr);
+    PERFORM public.exigir(v ? 'nome', 'Olga aceita ' || v_atr || coalesce(' (' || (v->>'erro') || ')', ''));
+    v := public.visao_entregar_com_pin(1, 10, repeat('1', 64), repeat('a', 64), 'sem-ip', v_atr, NULL, NULL, NULL, true);
+    PERFORM public.exigir(v ? 'nome', 'e entrega ' || coalesce(v->>'erro', ''));
+  END LOOP;
+END $$;
+
+-- O gestor aprova as duas primeiras.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT e.entregaid FROM public.entregas e JOIN public.tarefasatribuidas c ON c.atribuicaoid = e.atribuicaoid
+            WHERE c.origematribuicaoid IN (current_setting('teste.e1')::int, current_setting('teste.e2')::int) LOOP
+    PERFORM public.aprovar_entrega(r.entregaid);
+  END LOOP;
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- A primeira aconteceu toda ONTEM: aceite, copia e entrega.
+DO $$
+DECLARE v_atr integer := current_setting('teste.e1')::int;
+BEGIN
+  UPDATE public.missoesaceites SET dia = dia - 1 WHERE contaid = 1 AND atribuicaoid = v_atr;
+  UPDATE public.tarefasatribuidas SET dataagendamento = dataagendamento - interval '1 day',
+                                      dataatribuicao = dataatribuicao - interval '1 day'
+   WHERE contaid = 1 AND origematribuicaoid = v_atr;
+  UPDATE public.entregas SET dataenvio = dataenvio - interval '1 day', dataaprovacao = dataaprovacao - interval '1 day'
+   WHERE contaid = 1 AND atribuicaoid IN (SELECT atribuicaoid FROM public.tarefasatribuidas WHERE origematribuicaoid = v_atr);
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_e1 integer := current_setting('teste.e1')::int; v_e2 integer := current_setting('teste.e2')::int;
+        v_e3 integer := current_setting('teste.e3')::int; r record;
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fila_da_loja(10) WHERE atribuicaoid = v_e1),
+                        'a Unica aprovada ontem esta fora da fila');
+  -- O gestor estorna (servico malfeito) e recusa a terceira.
+  FOR r IN SELECT e.entregaid FROM public.entregas e JOIN public.tarefasatribuidas c ON c.atribuicaoid = e.atribuicaoid
+            WHERE c.origematribuicaoid IN (v_e1, v_e2) LOOP
+    PERFORM public.estornar_entrega(r.entregaid, 'servico malfeito');
+  END LOOP;
+  FOR r IN SELECT e.entregaid FROM public.entregas e JOIN public.tarefasatribuidas c ON c.atribuicaoid = e.atribuicaoid
+            WHERE c.origematribuicaoid = v_e3 LOOP
+    PERFORM public.recusar_entrega(r.entregaid, 'foto nao mostra o servico');
+  END LOOP;
+
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_e1) = 'para_pegar',
+                        'estornada no dia seguinte: a Unica VOLTA para ser feita');
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_e2) = 'em_andamento',
+                        'estornada no mesmo dia: volta para quem aceitou, para refazer');
+  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_e3) = 'em_andamento',
+                        'recusada: tambem volta para quem aceitou');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- O celular mostra a copia estornada HOJE (a pessoa ve que precisa refazer).
+DO $$
+DECLARE v jsonb := public.eu_tarefas(1, 9767); v_e1 integer := current_setting('teste.e1')::int;
+BEGIN
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                 WHERE x->>'situacao' = 'recusada'
+                                   AND (x->>'atribuicaoid')::int IN (SELECT atribuicaoid FROM public.tarefasatribuidas
+                                                                      WHERE origematribuicaoid = v_e1)),
+                        'no celular, a copia estornada hoje aparece como recusada');
+END $$;
+
+-- E a pessoa consegue refazer.
+DO $$
+DECLARE v jsonb; v_atr integer;
+BEGIN
+  v_atr := current_setting('teste.e1')::int;
+  v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), repeat('a', 64), 'sem-ip', v_atr);
+  PERFORM public.exigir(v ? 'nome', 'estornada ontem: a pessoa aceita de novo' || coalesce(' (' || (v->>'erro') || ')', ''));
+  v := public.visao_entregar_com_pin(1, 10, repeat('1', 64), repeat('a', 64), 'sem-ip', v_atr, NULL, 'refeito', NULL, true);
+  PERFORM public.exigir(v ? 'nome', 'e entrega de novo' || coalesce(' (' || (v->>'erro') || ')', ''));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v->'fila') x
+                                 WHERE (x->>'atribuicaoid')::int = v_atr AND x->>'situacao' = 'feita'),
+                        'e ela volta para "Feitas hoje"');
+  FOREACH v_atr IN ARRAY ARRAY[current_setting('teste.e2')::int, current_setting('teste.e3')::int] LOOP
+    v := public.visao_entregar_com_pin(1, 10, repeat('1', 64), repeat('a', 64), 'sem-ip', v_atr, NULL, 'refeito', NULL, true);
+    PERFORM public.exigir(v ? 'nome', 'estornada ou recusada hoje: a pessoa entrega de novo' || coalesce(' (' || (v->>'erro') || ')', ''));
+  END LOOP;
+
+  -- No dia seguinte ao estorno, a copia velha sai do celular (nao fica
+  -- "recusada" para sempre).
+  UPDATE public.entregas SET dataestorno = dataestorno - interval '1 day'
+   WHERE contaid = 1 AND statusvalidacao = 'Estornada'
+     AND atribuicaoid IN (SELECT atribuicaoid FROM public.tarefasatribuidas
+                           WHERE origematribuicaoid = current_setting('teste.e1')::int);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.eu_tarefas(1, 9767)) x
+                                     WHERE x->>'situacao' = 'recusada'
+                                       AND (x->>'atribuicaoid')::int IN (SELECT atribuicaoid FROM public.tarefasatribuidas
+                                                                          WHERE origematribuicaoid = current_setting('teste.e1')::int)),
+                        'estornada ONTEM, de outro dia: a copia velha nao fica no celular para sempre');
+END $$;
+UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+
+-- O fuso fica em Sao Paulo: o banco recusa outro, mesmo por UPDATE direto.
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN
+    UPDATE public.configuracoes SET valor = 'America/Rio_Branco' WHERE contaid = 1 AND chave = 'FUSO_HORARIO';
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'fuso fora do horario de Brasilia e recusado (ainda nao esta disponivel)');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoes
+                                     WHERE chave = 'FUSO_HORARIO' AND valor <> 'America/Sao_Paulo'),
+                        'nenhuma conta fica fora de Sao Paulo');
+END $$;
+
+-- O codigo de acesso e so para o PRIMEIRO acesso.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cpf, cargo) OVERRIDING SYSTEM VALUE VALUES
+  (9964, 1, 'Rita Folha', '39053344705', 'Atendente');
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9964, 10);
+DO $$
+DECLARE v_cod integer; v_antigo integer; deu_erro boolean; v jsonb;
+BEGIN
+  v_antigo := public.criar_codigo_acesso(1, 9964, repeat('k', 64), 'v1.aaaa.bbbb', 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir((SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v_antigo) = 'v1.aaaa.bbbb',
+                        'o codigo fica guardado cifrado (so o servidor abre), para reimprimir a folha');
+
+  -- Ela escolhe o PIN: ja fez o primeiro acesso.
+  PERFORM public.definir_pin(1, 9964, repeat('4', 64), false);
+  BEGIN
+    PERFORM public.criar_codigo_acesso(1, 9964, repeat('l', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'quem ja fez o primeiro acesso nao ganha codigo (o caminho e redefinir)');
+  PERFORM public.exigir(public.usar_codigo_acesso(1, '39053344705', repeat('k', 64)) IS NULL,
+                        'e um codigo que sobrou nao abre a conta de quem ja tem PIN');
+
+  -- Redefinir apaga senha e PIN; ai sim sai codigo novo.
+  PERFORM public.redefinir_acesso(1, 9964, NULL, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  v_cod := public.criar_codigo_acesso(1, 9964, repeat('m', 64), 'v1.cccc.dddd', 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir(v_cod IS NOT NULL, 'depois de redefinir, sai o codigo novo');
+  PERFORM public.exigir((SELECT canceladoem IS NOT NULL FROM public.codigosacesso WHERE codigoid = v_antigo),
+                        'e o anterior deixa de valer');
+
+  -- A folha: numa consulta so, e so da propria conta.
+  v := public.folha_de_acesso(1, ARRAY[9964, 200]);
+  PERFORM public.exigir(v->>'codigoempresa' IS NOT NULL AND jsonb_array_length(v->'pessoas') = 1,
+                        'a folha traz so gente da propria conta (a pessoa da conta B fica de fora)');
+  PERFORM public.exigir((v->'pessoas'->0->'codigo'->>'codigoid')::int = v_cod
+                        AND v->'pessoas'->0->'codigo'->>'cifrado' = 'v1.cccc.dddd'
+                        AND v->'pessoas'->0->'lojas' ? 'Loja A1',
+                        'com o codigo vigente e as lojas, numa consulta so');
+  PERFORM public.exigir(jsonb_array_length(public.folha_de_acesso(2, ARRAY[9964])->'pessoas') = 0,
+                        'a conta B nao monta folha de pessoa da conta A');
+
+  -- O registro de cada folha.
+  PERFORM public.registrar_folha_de_acesso(1, 9964, v_cod, true, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  BEGIN
+    PERFORM public.registrar_folha_de_acesso(1, 200, v_cod, false, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nao se registra folha de pessoa de outra conta');
+  BEGIN
+    PERFORM public.registrar_folha_de_acesso(2, 200, v_cod, false, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+    deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem com o codigo de outra conta');
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean; r record;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.folhasacesso WHERE funcionarioid = 9964) = 1,
+                        'o master A ve o registro das folhas da conta dele');
+  SELECT * INTO r FROM public.situacao_dos_acessos() WHERE funcionarioid = 9964;
+  PERFORM public.exigir(r.folhas = 1 AND r.folhaemitidapor = 'master.a@exemplo.com'
+                        AND r.codigogeradopor = 'master.a@exemplo.com' AND r.codigoreimprimivel,
+                        'o cartao mostra quem gerou o codigo e quem imprimiu a folha');
+  BEGIN
+    INSERT INTO public.folhasacesso (funcionarioid, codigoid) VALUES (9964, 1);
+    deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'ninguem registra folha pelo navegador: so o servidor');
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.folhasacesso),
+                        'a conta B nao ve as folhas da conta A');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['public.folha_de_acesso(integer, integer[])',
+                           'public.registrar_folha_de_acesso(integer, integer, integer, boolean, uuid)',
+                           'public.criar_codigo_acesso(integer, integer, text, text, integer, uuid)'] LOOP
+    PERFORM public.exigir(NOT has_function_privilege('anon', f, 'EXECUTE')
+                          AND NOT has_function_privilege('authenticated', f, 'EXECUTE'),
+                          f || ': so o servidor chama');
+  END LOOP;
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

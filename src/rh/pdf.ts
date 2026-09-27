@@ -33,7 +33,33 @@ class Documento {
   doc = new jsPDF({ unit: "mm", format: "a4" });
   y = MARGEM;
 
-  constructor(conta: string, loja: string | null | undefined, titulo: string) {
+  constructor(
+    conta: string,
+    loja: string | null | undefined,
+    titulo: string,
+    private opcoes: { marca?: boolean } = {},
+  ) {
+    this.cabecalho(conta, loja, titulo);
+  }
+
+  /** Começa outra página com o mesmo cabeçalho (uma folha por pessoa). */
+  novaPagina(conta: string, loja: string | null | undefined, titulo: string) {
+    this.doc.addPage();
+    this.y = MARGEM;
+    this.cabecalho(conta, loja, titulo);
+  }
+
+  private cabecalho(conta: string, loja: string | null | undefined, titulo: string) {
+    if (this.opcoes.marca) {
+      // A marca, nas cores dela (docs/marca): "STGame" em azul, na mesma
+      // linha acima do nome da empresa.
+      this.doc.setFont("helvetica", "bold");
+      this.doc.setFontSize(11);
+      this.doc.setTextColor(31, 79, 224);
+      this.doc.text("STGame", MARGEM, this.y);
+      this.doc.setTextColor(11, 26, 58);
+      this.y += 6;
+    }
     this.doc.setFont("helvetica", "bold");
     this.doc.setFontSize(13);
     this.doc.text(conta || " ", MARGEM, this.y);
@@ -96,13 +122,44 @@ class Documento {
     this.y += 6;
   }
 
-  salvar(nomeArquivo: string, usuario: string) {
+  /** Um bloco em destaque: rótulo pequeno em cima, valor grande embaixo. */
+  destaque(rotulo: string, valor: string, o: { mono?: boolean; tamanho?: number } = {}) {
+    const tamanho = o.tamanho ?? 22;
+    const altura = tamanho * 0.45 + 12;
+    this.cabe(altura);
+    this.doc.setDrawColor(31, 79, 224);
+    this.doc.setLineWidth(0.6);
+    this.doc.roundedRect(MARGEM, this.y, LARGURA, altura, 2, 2);
+    this.doc.setFont("helvetica", "normal");
+    this.doc.setFontSize(9);
+    this.doc.text(rotulo, MARGEM + 4, this.y + 5.5);
+    this.doc.setFont(o.mono ? "courier" : "helvetica", "bold");
+    this.doc.setFontSize(tamanho);
+    this.doc.text(valor, 105, this.y + 7 + tamanho * 0.42, { align: "center" });
+    this.doc.setDrawColor(0, 0, 0);
+    this.doc.setLineWidth(0.3);
+    this.y += altura + 4;
+  }
+
+  /** Uma imagem (o QR code), centralizada. */
+  imagem(dataUrl: string, lado: number) {
+    this.cabe(lado + 2);
+    this.doc.addImage(dataUrl, "PNG", 105 - lado / 2, this.y, lado, lado);
+    this.y += lado + 2;
+  }
+
+  salvar(nomeArquivo: string, usuario: string, extra: { emitidoEm?: string | Date; aviso?: string } = {}) {
     const total = this.doc.getNumberOfPages();
-    const agora = dataHoraBr(new Date());
+    const agora = dataHoraBr(extra.emitidoEm ?? new Date());
     for (let p = 1; p <= total; p++) {
       this.doc.setPage(p);
       this.doc.setFont("helvetica", "italic");
       this.doc.setFontSize(8);
+      if (extra.aviso) {
+        this.doc.setFont("helvetica", "bold");
+        this.doc.text(extra.aviso, 105, 297 - 15, { align: "center" });
+        this.doc.setFont("helvetica", "italic");
+      }
       this.doc.text(`Gerado em ${agora} por ${usuario}`, MARGEM, 297 - 10);
       this.doc.text(`Página ${p} de ${total}`, 210 - MARGEM, 297 - 10, { align: "right" });
     }
@@ -199,3 +256,94 @@ export async function pdfReciboResgate(r: ReciboResgate) {
 }
 
 export { reais };
+
+// ---------------------------------------------------------------------------
+// Folha de instruções de acesso (27/09/2026)
+// ---------------------------------------------------------------------------
+
+/** O que o servidor manda para montar uma folha (ver emitirFolhasDeAcesso). */
+export type DadosDaFolha = {
+  nome: string;
+  cargo: string | null;
+  lojas: string[];
+  cpfmascarado: string | null;
+  conta: string;
+  codigoempresa: string;
+  codigo: string;
+  expiraem: string;
+  redefinido: boolean;
+  emitidaem: string;
+};
+
+/** O endereço da equipe da empresa. O MESMO de "Lojas e links da TV". */
+export const enderecoDaEquipe = (codigoempresa: string, origem = window.location.origin) =>
+  `${origem}/e/${codigoempresa}`;
+
+const dataBr = (iso: string) =>
+  new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", year: "numeric" }).format(
+    new Date(iso),
+  );
+
+/**
+ * Uma folha por pessoa, no mesmo arquivo. O QR leva SÓ ao endereço da
+ * empresa — nunca ao código de acesso: uma folha esquecida no balcão não pode
+ * virar entrada de um toque, lida de longe.
+ */
+export async function pdfFolhasDeAcesso(folhas: DadosDaFolha[], nomeArquivo: string) {
+  if (folhas.length === 0) return;
+  const [{ default: QRCode }, usuario] = await Promise.all([import("qrcode"), usuarioAtual()]);
+  const TITULO = "Instruções de acesso ao STGame";
+  let d: Documento | null = null;
+
+  for (const f of folhas) {
+    const loja = f.lojas.join(" · ") || null;
+    if (!d) d = new Documento(f.conta, loja, TITULO, { marca: true });
+    else d.novaPagina(f.conta, loja, TITULO);
+
+    d.campo("Nome", f.nome);
+    d.campo("Cargo", f.cargo || "—");
+    d.campo("Loja", loja || "—");
+    if (f.cpfmascarado) d.campo("CPF", f.cpfmascarado);
+
+    const endereco = enderecoDaEquipe(f.codigoempresa);
+    const qr = await QRCode.toDataURL(endereco, { margin: 1, width: 360, errorCorrectionLevel: "M" });
+    d.y += 2;
+    d.imagem(qr, 42);
+    d.paragrafo(endereco, { alinhar: "center", negrito: true, tamanho: 11 });
+    d.campo("Código da empresa", f.codigoempresa);
+    d.y += 2;
+    d.destaque("Seu código de acesso (primeiro acesso)", f.codigo, { mono: true, tamanho: 26 });
+
+    d.secao("Como entrar");
+    d.paragrafo(`1. Abra o endereço acima no celular, ou leia o QR code com a câmera.`);
+    d.paragrafo(`2. Digite o seu CPF.`);
+    d.paragrafo(
+      `3. Digite o código de acesso desta folha. Em seguida, crie a sua senha e o seu PIN de 6 dígitos — o PIN é o que você digita no tablet da loja para aceitar e entregar tarefas.`,
+    );
+
+    d.secao("Importante");
+    d.paragrafo(`• O código vale até ${dataBr(f.expiraem)} e serve UMA vez só.`);
+    d.paragrafo(`• A senha e o PIN são pessoais: não conte para ninguém, nem para o gestor.`);
+    if (f.redefinido) {
+      d.paragrafo(
+        `• O seu acesso foi redefinido em ${dataHoraBr(f.emitidaem)}: a senha e o PIN que você tinha deixaram de valer. Crie novos com este código.`,
+        { negrito: true },
+      );
+    }
+  }
+
+  d!.salvar(nomeArquivo, usuario, {
+    emitidoEm: folhas[0].emitidaem,
+    aviso: "Este documento dá acesso ao sistema — não deixe à vista.",
+  });
+}
+
+/** acesso-<primeiro nome>-<data>.pdf, ou acessos-<loja>-<data>.pdf em lote. */
+export function nomeDaFolha(folhas: { nome: string; lojas: string[] }[], hoje: string) {
+  const limpar = (t: string) =>
+    t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (folhas.length === 1) return `acesso-${limpar(folhas[0].nome.split(/\s+/)[0] ?? "pessoa")}-${hoje}.pdf`;
+  const lojas = new Set(folhas.flatMap((f) => f.lojas));
+  const loja = lojas.size === 1 ? [...lojas][0] : "equipe";
+  return `acessos-${limpar(loja)}-${hoje}.pdf`;
+}

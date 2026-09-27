@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   criarAcessoColaborador,
   desativarColaborador,
-  gerarCodigoDeAcesso,
+  emitirFolhasDeAcesso,
   redefinirAcessoColaborador,
   trocarCpfDoColaborador,
 } from "@/servidor/acesso";
@@ -13,6 +13,8 @@ import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pontos } from "@/ui/Pontos";
 import { IconeTelegram, JanelaConvite, useDesligarTelegram, useVinculosTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
+import { useHojeDaConta } from "@/ui/hoje";
+import { dataHoraBr } from "@/rh/datas";
 
 export const Route = createFileRoute("/_authenticated/funcionarios")({
   component: Funcionarios,
@@ -43,7 +45,28 @@ const FORM_VAZIO = {
 type SituacaoAcesso = {
   temacesso: boolean; nuncaentrou: boolean; semsenha: boolean; sempin: boolean;
   codigopendente: boolean; codigoexpiraem: string | null; redefinidoem: string | null;
+  codigogeradoem: string | null; codigogeradopor: string | null; codigoreimprimivel: boolean;
+  folhaemitidaem: string | null; folhaemitidapor: string | null; folhas: number;
 };
+
+/** Já fez o primeiro acesso: tem senha ou PIN. Folha nova, para ela, redefine o acesso. */
+const jaEntrou = (a: SituacaoAcesso | undefined) => !!a?.temacesso && (!a.semsenha || !a.sempin);
+
+/** "Código gerado em 27/09/2026 09:40 por x@y · folha impressa 2× (a última em … por …)". */
+function registroDoAcesso(a: SituacaoAcesso | undefined) {
+  if (!a?.temacesso) return null;
+  const partes: string[] = [];
+  if (a.codigopendente && a.codigogeradoem) {
+    partes.push(`Código gerado em ${dataHoraBr(a.codigogeradoem)}${a.codigogeradopor ? ` por ${a.codigogeradopor}` : ""}`);
+    if (!a.codigoreimprimivel) partes.push("código anterior à folha em PDF: o PDF gera um novo");
+  }
+  if (a.folhas > 0 && a.folhaemitidaem) {
+    partes.push(
+      `folha impressa ${a.folhas}× (a última em ${dataHoraBr(a.folhaemitidaem)}${a.folhaemitidapor ? ` por ${a.folhaemitidapor}` : ""})`,
+    );
+  }
+  return partes.length ? partes.join(" · ") : null;
+}
 
 /** Frase curta sobre o acesso ao aplicativo, para o gestor saber o que falta. */
 function situacaoDoAcesso(a: SituacaoAcesso | undefined) {
@@ -246,10 +269,44 @@ function Funcionarios() {
     onSuccess: aoGerarCodigo,
   });
 
-  const novoCodigo = useMutation({
-    onError: (e, funcionarioid) => setErroDoAcesso({ funcionarioid, texto: (e as Error).message }),
-    mutationFn: (funcionarioid: number) => gerarCodigoDeAcesso({ data: { funcionarioid } }),
-    onSuccess: aoGerarCodigo,
+  // A FOLHA DE ACESSO (PDF). O servidor decide o que acontece com cada
+  // pessoa; quando algo vai deixar de valer (um código, uma senha), ele devolve
+  // os avisos ANTES, e só executa depois do "OK".
+  const hojeConta = useHojeDaConta();
+  const [erroDoLote, setErroDoLote] = useState<string | null>(null);
+  type ModoDaFolha = "imprimir" | "codigonovo" | "redefinir";
+  const folha = useMutation({
+    mutationFn: async ({ ids, modo }: { ids: number[]; modo: ModoDaFolha }) => {
+      let r = await emitirFolhasDeAcesso({ data: { funcionarioids: ids, modo } });
+      if (r.precisaConfirmar) {
+        if (!confirm(`${r.avisos.join("\n\n")}\n\nContinuar?`)) return null;
+        r = await emitirFolhasDeAcesso({ data: { funcionarioids: ids, modo, aceito: true } });
+      }
+      if (r.folhas.length > 0) {
+        // O gerador de PDF só é baixado quando alguém pede um.
+        const { pdfFolhasDeAcesso, nomeDaFolha } = await import("@/rh/pdf");
+        const dia = hojeConta.data?.hoje ?? r.folhas[0].emitidaem.slice(0, 10);
+        await pdfFolhasDeAcesso(r.folhas, nomeDaFolha(r.folhas, dia));
+      }
+      return r;
+    },
+    onMutate: () => {
+      setErroDoAcesso(null);
+      setErroDoLote(null);
+    },
+    onError: (e, { ids }) => {
+      if (ids.length === 1) setErroDoAcesso({ funcionarioid: ids[0], texto: (e as Error).message });
+      else setErroDoLote((e as Error).message);
+    },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["acessos-equipe"] });
+      qc.invalidateQueries({ queryKey: ["equipe"] });
+      if (!r) return;
+      if (r.folhas.length === 1) setCodigoNovo({ nome: r.folhas[0].nome, codigo: r.folhas[0].codigo, dias: 7 });
+      if (r.deFora.length > 0) {
+        alert(`Ficaram de fora do PDF:\n${r.deFora.map((d) => `• ${d.nome}: ${d.motivo}`).join("\n")}`);
+      }
+    },
   });
 
   const trocarCpf = useMutation({
@@ -544,6 +601,26 @@ function Funcionarios() {
         )}
       </section>
 
+      {selecionados.length > 0 && (
+        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+          <p className="text-sm">
+            {selecionados.length} {selecionados.length === 1 ? "pessoa marcada" : "pessoas marcadas"}
+          </p>
+          <button
+            onClick={() => folha.mutate({ ids: selecionados, modo: "imprimir" })}
+            disabled={folha.isPending}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {folha.isPending ? "Gerando..." : "PDF de acesso (uma página por pessoa)"}
+          </button>
+          <p className="w-full text-xs text-muted-foreground">
+            Quem já tem código recebe o mesmo; quem não tem acesso ganha o acesso agora. Quem já entrou no app fica
+            de fora: a folha dessas pessoas redefine o acesso e é feita no cartão de cada uma.
+          </p>
+          {erroDoLote && <p className="w-full text-sm text-destructive">{erroDoLote}</p>}
+        </section>
+      )}
+
       <div className="space-y-2">
         {equipe.isLoading && <p className="text-muted-foreground">Carregando...</p>}
         {equipe.isError && (
@@ -561,7 +638,7 @@ function Funcionarios() {
               <input
                 type="checkbox"
                 className="mt-1.5"
-                aria-label={`Escolher ${f.nomecompleto} para aplicar horário`}
+                aria-label={`Marcar ${f.nomecompleto}`}
                 checked={selecionados.includes(f.funcionarioid)}
                 onChange={(e) =>
                   setSelecionados((atual) =>
@@ -613,6 +690,9 @@ function Funcionarios() {
                 {cpfMascarado(f.cpf) ? `CPF ${cpfMascarado(f.cpf)}` : "Sem CPF cadastrado"} ·{" "}
                 {situacaoDoAcesso(acessos.data?.get(f.funcionarioid))}
               </p>
+              {registroDoAcesso(acessos.data?.get(f.funcionarioid)) && (
+                <p className="text-xs text-muted-foreground">{registroDoAcesso(acessos.data?.get(f.funcionarioid))}</p>
+              )}
               {erroDoAcesso?.funcionarioid === f.funcionarioid && (
                 <p className="mt-1 rounded-md border border-destructive px-2 py-1 text-xs text-destructive">
                   {erroDoAcesso.texto}
@@ -666,13 +746,32 @@ function Funcionarios() {
                   {criarAcesso.isPending ? "Criando..." : "Criar acesso"}
                 </button>
               )}
-              {acessos.data?.get(f.funcionarioid)?.temacesso && acessos.data?.get(f.funcionarioid)?.semsenha && (
+              {f.ativo && f.cpf && (
                 <button
-                  onClick={() => novoCodigo.mutate(f.funcionarioid)}
-                  disabled={novoCodigo.isPending}
+                  onClick={() =>
+                    folha.mutate({
+                      ids: [f.funcionarioid],
+                      modo: jaEntrou(acessos.data?.get(f.funcionarioid)) ? "redefinir" : "imprimir",
+                    })
+                  }
+                  disabled={folha.isPending}
+                  title={
+                    jaEntrou(acessos.data?.get(f.funcionarioid))
+                      ? "Esta pessoa já entrou no app: a folha nova REDEFINE o acesso (a tela avisa antes)."
+                      : "Folha de instruções de acesso. Quem já tem código recebe o mesmo."
+                  }
                   className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
                 >
-                  {novoCodigo.isPending ? "Gerando..." : "Gerar código novo"}
+                  PDF
+                </button>
+              )}
+              {acessos.data?.get(f.funcionarioid)?.temacesso && !jaEntrou(acessos.data?.get(f.funcionarioid)) && (
+                <button
+                  onClick={() => folha.mutate({ ids: [f.funcionarioid], modo: "codigonovo" })}
+                  disabled={folha.isPending}
+                  className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
+                >
+                  Gerar código novo
                 </button>
               )}
               {acessos.data?.get(f.funcionarioid)?.temacesso && !acessos.data?.get(f.funcionarioid)?.semsenha && (

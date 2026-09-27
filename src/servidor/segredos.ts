@@ -197,3 +197,55 @@ export async function conferirPasse(
   for (let i = 0; i < assinatura.length; i++) diferenca |= assinatura.charCodeAt(i) ^ esperada.charCodeAt(i);
   if (diferenca !== 0) throw new Error("Confirme o seu PIN de novo.");
 }
+
+// ---------------------------------------------------------------------------
+// Cifra do código de acesso (27/09/2026)
+// ---------------------------------------------------------------------------
+// O código de primeiro acesso é conferido pelo RESUMO (como o PIN), e o banco
+// nunca soube qual era. Para a folha poder ser reimpressa com o MESMO código,
+// ele passa a ser guardado também cifrado — com uma chave derivada da chave do
+// servidor, que não está no banco. O banco sozinho continua sem ler nada.
+//
+// O texto cifrado fica amarrado a um CONTEXTO (a conta e a pessoa): copiado
+// para a linha de outra pessoa, ele não abre.
+
+const bytesDe = (t: string) => new TextEncoder().encode(t);
+const paraBase64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+const deBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function chaveDaCifra() {
+  const base = await crypto.subtle.importKey("raw", bytesDe(chaveDoServidor()), "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: bytesDe("stgame"), info: bytesDe("codigo-de-acesso") },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+export async function cifrar(texto: string, contexto: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cifrado = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: bytesDe(contexto) },
+    await chaveDaCifra(),
+    bytesDe(texto),
+  );
+  return `v1.${paraBase64(iv)}.${paraBase64(new Uint8Array(cifrado))}`;
+}
+
+/** Devolve null quando não abre (mexido, de outro contexto, ou de outra chave). */
+export async function decifrar(guardado: string | null | undefined, contexto: string): Promise<string | null> {
+  const [versao, iv, dados] = (guardado ?? "").split(".");
+  if (versao !== "v1" || !iv || !dados) return null;
+  try {
+    const aberto = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: deBase64(iv), additionalData: bytesDe(contexto) },
+      await chaveDaCifra(),
+      deBase64(dados),
+    );
+    return new TextDecoder().decode(aberto);
+  } catch {
+    return null;
+  }
+}

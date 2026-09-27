@@ -32,6 +32,8 @@ type Item = {
    * Tem de ser igual ao padrão da migração; o teste de servidor confere.
    */
   padrao: string;
+  /** Campo que existe mas ainda não se altera: o texto diz por quê. */
+  travado?: string;
 };
 
 /** O que aparece na tela. Os IDs das tarefas do sistema (TAREFA_*) ficam de fora: o sistema cuida deles. */
@@ -145,16 +147,18 @@ export const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
   // links da TV". Duas telas mandando na mesma coisa é pedir confusão.
   {
     titulo: "Fuso horário da empresa",
-    aviso:
-      "Decide a que horas as tarefas com \"Disponível a partir de\" entram na fila. Uma loja em Campo Grande fica uma hora atrás de Brasília.",
+    aviso: "Decide que dia é hoje para a empresa e a que horas as tarefas com \"Disponível a partir de\" entram na fila.",
     itens: [
       {
         chave: "FUSO_HORARIO",
         rotulo: "Fuso horário",
-        ajuda:
-          "Escreva como o computador conhece: America/Sao_Paulo (Brasília), America/Campo_Grande (MS), America/Manaus (AM), America/Rio_Branco (AC). Se digitar um fuso que não existe, o sistema recusa.",
+        ajuda: "America/Sao_Paulo é o horário de Brasília.",
         tipo: "texto",
         padrao: "America/Sao_Paulo",
+        // Travado em 27/09/2026 (decisão do Wisley): parte do sistema ainda
+        // usa São Paulo fixo, e oferecer outro fuso faria metade obedecer e
+        // metade não. O banco também recusa qualquer outro valor.
+        travado: "Por enquanto o STGame funciona só no horário de Brasília. Outros fusos ainda não estão disponíveis.",
       },
     ],
   },
@@ -300,18 +304,20 @@ function Configuracoes() {
               // salvar cria a chave — alterar_configuracao cuida disso.
               const atual = configs.data.get(item.chave);
               return (
+                <div key={item.chave} className="space-y-1">
                 <Linha
-                  key={item.chave}
                   item={item}
                   valor={atual?.valor ?? item.padrao}
                   nuncaSalvo={!atual}
-                  podeAlterar={podeAlterar}
+                  podeAlterar={podeAlterar && !item.travado}
                   aoSalvar={() => {
                     for (const k of ["configuracoes", "configuracoes-historico", "minha-taxa", "extrato"]) {
                       qc.invalidateQueries({ queryKey: [k] });
                     }
                   }}
                 />
+                {item.travado && <p className="text-sm font-medium text-muted-foreground">{item.travado}</p>}
+                </div>
               );
             })}
           </section>

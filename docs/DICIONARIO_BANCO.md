@@ -74,6 +74,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `fotosexpurgo` | conta | expurgoid | entregas |
 | `tentativasacesso` | conta | tentativaid |  |
 | `codigosacesso` | conta | codigoid | funcionarios |
+| `folhasacesso` | conta | folhaid | funcionarios, codigosacesso |
 | `senhasgestor` | conta (vazia no admin geral) | userid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
@@ -509,12 +510,28 @@ Código de primeiro acesso do colaborador. Nível conta.
 |---|---|---|
 | codigoid | integer | ID automático |
 | contaid / funcionarioid | integer | de quem é o código |
-| codigohash | char(64) | o código **embaralhado pelo servidor**; o texto nunca é guardado |
+| codigohash | char(64) | o código **embaralhado pelo servidor**; é o que confere a entrada |
+| codigocifrado | text | o código **cifrado pelo servidor** (AES-GCM, chave fora do banco, amarrado à conta e à pessoa), só para reimprimir a folha. Vazio nos códigos de antes de 27/09/2026 |
 | expiraem | timestamptz | padrão: 7 dias |
 | usadoem / canceladoem | timestamptz | uso único; gerar outro cancela o anterior |
 | criadopor / criadoem | uuid / timestamptz | |
 
 **Ninguém lê pelo navegador.** É assim que a pessoa entra da primeira vez: **não existe senha padrão**. Desativar a pessoa cancela o código pendente. Funções: `criar_codigo_acesso` e `usar_codigo_acesso` (só o servidor).
+
+**Só para o PRIMEIRO acesso (27/09/2026):** o banco não gera código para quem já tem senha ou PIN, e o código não abre a conta de quem já tem. Para dar código novo a quem já entrou, o caminho é redefinir o acesso (apaga senha e PIN e derruba as sessões antes).
+
+## folhasacesso (27/09/2026)
+Cada folha de instruções de acesso (PDF) emitida. Nível conta. A folha em si não é guardada: é gerada na hora, no navegador.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| folhaid | integer | ID automático |
+| contaid / funcionarioid | integer | de quem é a folha (FK composta: mesma conta) |
+| codigoid | integer | o código impresso nela (FK composta: mesma conta) |
+| redefiniu | boolean | esta folha redefiniu o acesso (senha e PIN anteriores deixaram de valer) |
+| emitidaem / emitidapor | timestamptz / uuid | quem imprimiu e quando |
+
+Só o master da conta lê; ninguém escreve pelo navegador — quem registra é o servidor, na mesma chamada que monta a folha (`registrar_folha_de_acesso`). Os dados da folha saem numa consulta só: `folha_de_acesso` (só o servidor).
 
 ## senhasgestor (Etapa 1.12)
 Resumo da senha do master, do administrador geral e do tablet da loja (o colaborador guarda o dele em `funcionarios.senhahashapp`).

@@ -328,6 +328,7 @@ export type Database = {
       }
       codigosacesso: {
         Row: {
+          codigocifrado: string | null
           canceladoem: string | null
           codigohash: string
           codigoid: number
@@ -339,6 +340,7 @@ export type Database = {
           usadoem: string | null
         }
         Insert: {
+          codigocifrado?: string | null
           canceladoem?: string | null
           codigohash: string
           codigoid?: number
@@ -350,6 +352,7 @@ export type Database = {
           usadoem?: string | null
         }
         Update: {
+          codigocifrado?: string | null
           canceladoem?: string | null
           codigohash?: string
           codigoid?: number
@@ -1742,6 +1745,36 @@ export type Database = {
             referencedColumns: ["contaid"]
           },
         ]
+      }
+      folhasacesso: {
+        Row: {
+          codigoid: number
+          contaid: number
+          emitidaem: string
+          emitidapor: string | null
+          folhaid: number
+          funcionarioid: number
+          redefiniu: boolean
+        }
+        Insert: {
+          codigoid: number
+          contaid?: number
+          emitidaem?: string
+          emitidapor?: string | null
+          folhaid?: number
+          funcionarioid: number
+          redefiniu?: boolean
+        }
+        Update: {
+          codigoid?: number
+          contaid?: number
+          emitidaem?: string
+          emitidapor?: string | null
+          folhaid?: number
+          funcionarioid?: number
+          redefiniu?: boolean
+        }
+        Relationships: []
       }
       funcionarios: {
         Row: {
@@ -5031,13 +5064,14 @@ export type Database = {
       }
       criar_codigo_acesso: {
         Args: {
+          p_codigocifrado: string
           p_codigohash: string
           p_contaid: number
           p_dias: number
           p_funcionarioid: number
           p_quem: string
         }
-        Returns: undefined
+        Returns: number
       }
       criar_conquista: {
         Args: {
@@ -5483,6 +5517,11 @@ export type Database = {
         Returns: Json
       }
       meu_hoje: { Args: never; Returns: Json }
+      folha_de_acesso: { Args: { p_contaid: number; p_funcionarioids: number[] }; Returns: Json }
+      registrar_folha_de_acesso: {
+        Args: { p_codigoid: number; p_contaid: number; p_funcionarioid: number; p_quem: string; p_redefiniu: boolean }
+        Returns: string
+      }
       hoje_da_conta: { Args: { p_contaid: number }; Returns: string }
       dia_da_conta: { Args: { p_contaid: number; p_instante: string }; Returns: string }
       dia_no_fuso: { Args: { p_fuso: string; p_instante: string }; Returns: string }
@@ -5957,6 +5996,12 @@ export type Database = {
           sempin: boolean
           semsenha: boolean
           temacesso: boolean
+          codigogeradoem: string | null
+          codigogeradopor: string | null
+          codigoreimprimivel: boolean
+          folhaemitidaem: string | null
+          folhaemitidapor: string | null
+          folhas: number
         }[]
       }
       so_digitos: { Args: { p_texto: string }; Returns: string }
