@@ -3512,8 +3512,9 @@ BEGIN
 
   -- 29/09/2026: "removida" so depois de o arquivo sair de verdade.
   PERFORM public.exigir((SELECT pathfotoevidencia = '1/10/velha.jpg' AND fotoexpiradaem IS NULL
+                                AND fotoaguardaremocaoem IS NOT NULL
                            FROM public.entregas WHERE entregaid = v_velha),
-                        'na fila, a entrega vencida AINDA nao diz "foto removida" (o arquivo continua la)');
+                        'na fila, a entrega vencida diz "sendo apagada", nao "foto removida" (o arquivo continua la)');
   -- A remocao falha: nada muda na entrega.
   PERFORM public.expurgo_resultado(ARRAY(SELECT expurgoid FROM public.fotosexpurgo WHERE caminho = '1/10/velha.jpg'),
                                    'erro de teste');
@@ -9694,19 +9695,26 @@ BEGIN
                         AND EXISTS (SELECT 1 FROM public.avisossistema WHERE contaid = 1 AND tipo = 'expurgo_preso' AND lidoem IS NULL)
                         AND EXISTS (SELECT 1 FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos' AND resultado = 'erro'),
                         'fila de fotos parada ha mais de 2 dias vira aviso e erro na aba Rotinas');
-  PERFORM public.exigir((SELECT fotoexpiradaem IS NULL AND pathfotoevidencia = '1/10/parada.jpg' FROM public.entregas WHERE entregaid = v_e),
-                        'com a remocao parada, a entrega continua dizendo a verdade: a foto esta guardada');
+  PERFORM public.exigir((SELECT fotoexpiradaem IS NULL AND fotoaguardaremocaoem IS NOT NULL FROM public.entregas WHERE entregaid = v_e),
+                        'com a remocao parada, a entrega diz a verdade: vencida, sendo apagada (nao "removida")');
   r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
   PERFORM public.exigir(r->>'acao' = 'ja rodou hoje', 'o aviso de fila parada sai uma vez por dia, nao a cada 5 minutos');
-
-  UPDATE public.entregas SET pathfotoevidencia = NULL, fotoexpiradaem = NULL WHERE entregaid = v_e;
-  DELETE FROM public.fotosexpurgo;
+  PERFORM set_config('teste.foto_vencida', v_e::text, false);
 END $$;
 
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
+DECLARE v_e integer := current_setting('teste.foto_vencida')::integer; v_dia date; q jsonb;
 BEGIN
+  -- A politica promete que a foto some depois do prazo: o Quadro (a unica
+  -- tela que mostra a foto) nao entrega o caminho da foto vencida.
+  SELECT (dataenvio AT TIME ZONE 'America/Sao_Paulo')::date INTO v_dia FROM public.entregas WHERE entregaid = v_e;
+  q := public.quadro_validacao((SELECT lojaid FROM public.entregas WHERE entregaid = v_e), v_dia, v_dia);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements((q->'historico') || (q->'pendentes')) x
+                                 WHERE (x->>'entregaid')::integer = v_e
+                                   AND x->>'pathfotoevidencia' IS NULL AND x->>'fotoaguardaremocaoem' IS NOT NULL),
+                        'o Quadro nao mostra a foto vencida (sem caminho) e diz que esta sendo apagada');
   PERFORM public.exigir(public.saude_da_minha_conta() ? 'fotos', 'o dono ve a saude da propria conta');
   PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.saude_das_rotinas()', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.saude_das_rotinas()', 'EXECUTE'),
@@ -9782,5 +9790,8 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 UPDATE public.funcionarioslojas SET ativo = true WHERE funcionarioid = 124 AND lojaid = 10;
+UPDATE public.entregas SET pathfotoevidencia = NULL, fotoexpiradaem = NULL, fotoaguardaremocaoem = NULL
+ WHERE entregaid = current_setting('teste.foto_vencida')::integer;
+DELETE FROM public.fotosexpurgo;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

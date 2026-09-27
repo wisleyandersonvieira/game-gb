@@ -339,6 +339,7 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | dataestorno | timestamptz |  |
 | estornadopor | uuid | → auth.users |
 | motivoestorno | text | Obrigatório quando o status é Estornada |
+| fotoaguardaremocaoem | timestamptz | Quando a foto passou do prazo e o arquivo entrou na fila para ser apagado (29/09/2026). Daí em diante a foto **não aparece em tela nenhuma** (a política promete que ela some depois do prazo) e a entrega diz "sendo apagada" |
 | fotoexpiradaem | timestamptz | Quando a foto foi apagada por tempo (Etapa 1.12). **Desde 29/09/2026 só é gravada depois de o arquivo sair de verdade** (`expurgo_resultado`), nunca antes. A entrega, os pontos e o histórico continuam valendo; a tela mostra "foto removida por tempo" |
 
 **Regras de `entregas`:** `statusvalidacao` é `Pendente`, `Aprovada`, `Recusada` ou `Estornada`. Recusada exige `motivorecusa` e Estornada exige `motivoestorno` (o banco recusa sem). No máximo uma entrega Pendente ou Aprovada por atribuição por dia, no fuso de São Paulo. A entrega aponta para a sua atribuição e tem de concordar com ela em tarefa, pessoa e loja. **O navegador não grava nesta tabela:** tudo passa por `registrar_entrega`, `aprovar_entrega`, `recusar_entrega` e `estornar_entrega`.

@@ -1322,6 +1322,7 @@ export type Database = {
           entregaid: number
           estornadopor: string | null
           fileidtelegram: string | null
+          fotoaguardaremocaoem: string | null
           fotoexpiradaem: string | null
           fotoidunico: string | null
           funcionarioid: number
@@ -1353,6 +1354,7 @@ export type Database = {
           entregaid?: number
           estornadopor?: string | null
           fileidtelegram?: string | null
+          fotoaguardaremocaoem?: string | null
           fotoexpiradaem?: string | null
           fotoidunico?: string | null
           funcionarioid: number
@@ -1384,6 +1386,7 @@ export type Database = {
           entregaid?: number
           estornadopor?: string | null
           fileidtelegram?: string | null
+          fotoaguardaremocaoem?: string | null
           fotoexpiradaem?: string | null
           fotoidunico?: string | null
           funcionarioid?: number

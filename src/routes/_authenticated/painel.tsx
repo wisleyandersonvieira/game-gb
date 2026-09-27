@@ -45,6 +45,8 @@ type LinhaDoQuadro = {
   motivoestorno?: string | null;
   pathfotoevidencia: string | null;
   fotoexpiradaem: string | null;
+  /** A foto passou do prazo e o arquivo está na fila para ser apagado. */
+  fotoaguardaremocaoem?: string | null;
   semhorafoto?: boolean;
   titulo: string | null;
   pontostarefa: number | null;
@@ -70,6 +72,8 @@ type Entrega = {
   foto: string | null;
   /** Foto apagada pelo prazo da conta (a entrega e os pontos continuam valendo). */
   fotoExpirada: boolean;
+  /** Passou do prazo e está sendo apagada: não aparece, mas ainda não saiu. */
+  fotoSendoApagada: boolean;
   /** O arquivo não trazia a hora em que a foto foi tirada. Quem decide é você. */
   semHoraDaFoto: boolean;
 };
@@ -314,6 +318,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
         nome: l.nome ?? "—",
         foto: l.pathfotoevidencia ? (links.get(l.pathfotoevidencia) ?? null) : null,
         fotoExpirada: l.fotoexpiradaem !== null,
+        fotoSendoApagada: l.fotoexpiradaem === null && !!l.fotoaguardaremocaoem,
         // Só PENDENTE carrega o aviso: nas decididas, a decisão já foi tomada.
         semHoraDaFoto: l.statusvalidacao === "Pendente" && l.semhorafoto === true,
       });
@@ -541,6 +546,11 @@ function Cartao({ e, children }: { e: Entrega; children: React.ReactNode }) {
         <a href={e.foto} target="_blank" rel="noreferrer">
           <img src={e.foto} alt={`Foto de ${e.titulo}`} className="max-h-40 w-full rounded-md object-cover" />
         </a>
+      )}
+      {!e.foto && e.fotoSendoApagada && (
+        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+          Foto vencida: passou do prazo de guarda e está sendo apagada. A entrega e os pontos continuam valendo.
+        </p>
       )}
       {!e.foto && e.fotoExpirada && (
         <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">

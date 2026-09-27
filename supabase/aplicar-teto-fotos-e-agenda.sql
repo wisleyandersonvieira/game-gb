@@ -18,24 +18,32 @@
 -- O QUE MUDA PARA QUEM JÁ USA:
 --   * Comunicado (e tarefa "Leitura de comunicado") acima de 50 pontos por
 --     ciência passa a ser recusado. O que já foi publicado não muda.
---   * Entregas que diziam "foto removida" com o arquivo ainda guardado voltam
---     a mostrar a foto. Provado: 400 entregas, mudaram só as 100 do erro.
+--   * FOTOS: foto vencida some de todas as telas e a entrega diz "sendo
+--     apagada"; "removida" só depois de o arquivo sair de verdade. Ao
+--     aplicar, toda foto vencida ainda guardada entra na fila e some na hora.
+--     Das que diziam "removida" com o arquivo guardado, SÓ voltam a aparecer
+--     as que ainda estão no prazo (se o prazo foi aumentado depois).
+--     Provado: 500 entregas; vencida que aparece 0, "removida" falsa 0.
 --   * Remarcar ou trocar o responsável recria a tarefa de atender que faltar.
 --
--- Para saber, ANTES de aplicar, quantas fotos vencidas continuam guardadas
--- (só leitura; cole sozinho e rode):
---   SELECT count(*) AS vencidas_guardadas,
---          max(extract(day FROM now() - e.dataenvio) - public.dias_guardar_foto(e.contaid)) AS dias_de_atraso
+-- ANTES de aplicar, para ver os dois grupos das que dizem "removida" com o
+-- arquivo ainda guardado (só leitura; cole sozinho e rode):
+--   SELECT CASE WHEN e.dataenvio < now() - make_interval(days => public.dias_guardar_foto(e.contaid))
+--               THEN 'A) vencidas (vão ficar escondidas, sendo apagadas)'
+--               ELSE 'B) dentro do prazo (vão voltar a aparecer)' END AS grupo,
+--          count(*) AS entregas
 --     FROM public.entregas e
---     LEFT JOIN public.fotosexpurgo f ON f.contaid = e.contaid AND f.entregaid = e.entregaid
---    WHERE (e.pathfotoevidencia IS NOT NULL AND e.fotoexpiradaem IS NULL
---           AND e.dataenvio < now() - make_interval(days => public.dias_guardar_foto(e.contaid)))
---       OR (e.fotoexpiradaem IS NOT NULL AND f.removidoem IS NULL AND f.expurgoid IS NOT NULL);
+--     JOIN public.fotosexpurgo f ON f.contaid = e.contaid AND f.entregaid = e.entregaid
+--    WHERE e.fotoexpiradaem IS NOT NULL AND e.pathfotoevidencia IS NULL AND f.removidoem IS NULL
+--    GROUP BY 1 ORDER BY 1;
+-- E as vencidas que a rotina antiga nem marcou (vão sumir das telas ao aplicar):
+--   SELECT count(*) FROM public.entregas e
+--    WHERE e.pathfotoevidencia IS NOT NULL AND e.fotoexpiradaem IS NULL
+--      AND e.dataenvio < now() - make_interval(days => public.dias_guardar_foto(e.contaid));
 -- =========================================================================
 
 
 BEGIN;
-
 
 -- ======== 20260929230000_teto_pontos_ciencia.sql ========
 -- Teto de pontos por ciência de comunicado (29/09/2026, aprovado pelo Wisley).
@@ -421,6 +429,7 @@ CREATE TRIGGER tarefas_teto_da_leitura
   BEFORE INSERT OR UPDATE OF pontos ON public.tarefas
   FOR EACH ROW EXECUTE FUNCTION public.teto_na_tarefa_de_leitura();
 
+
 -- ======== 20260929231000_fotos_de_verdade_e_saude.sql ========
 -- Fotos: "apagada" só depois de sair de verdade; e a Saúde confere as
 -- rotinas (29/09/2026, pedidos do Wisley).
@@ -428,21 +437,35 @@ CREATE TRIGGER tarefas_teto_da_leitura
 -- 1. FOTOS. A política de uso diz que a foto é apagada depois do prazo. A
 --    rotina marcava a entrega como "foto removida" ANTES de o arquivo sair;
 --    se a remoção (Edge Function, via pg_net + Vault) nunca rodava, ficava
---    gravado "apagada" para uma foto que continuava guardada. Agora:
---      * a rotina só põe o arquivo vencido na fila;
---      * "foto removida" só é gravado quando a Edge Function confirma que o
---        arquivo saiu (expurgo_resultado);
---      * fila parada (presa em 5 tentativas, ou esperando há mais de 2 dias)
---        vira aviso e erro na aba Rotinas;
---      * as entregas que já diziam "removida" com o arquivo ainda guardado
---        VOLTAM a mostrar a foto (o registro deixa de mentir).
+--    gravado "apagada" para uma foto que continuava guardada. Agora há TRÊS
+--    estados, e cada um diz a verdade:
+--      * no prazo: a foto aparece;
+--      * vencida, na fila (entregas.fotoaguardaremocaoem): a foto NÃO aparece
+--        em tela nenhuma — a política promete que ela some depois do prazo —
+--        e a entrega diz "foto vencida, sendo apagada";
+--      * removida (entregas.fotoexpiradaem): só depois de a Edge Function
+--        confirmar que o arquivo saiu.
+--    Fila parada (presa em 5 tentativas, ou esperando há mais de 2 dias) vira
+--    aviso e erro na aba Rotinas.
+--    As entregas que diziam "removida" com o arquivo ainda guardado:
+--      * vencidas (o caso normal: a rotina antiga só marcava vencidas) passam
+--        a "sendo apagada" — continuam escondidas e o arquivo continua na fila;
+--      * dentro do prazo (só se o prazo foi AUMENTADO depois da marcação)
+--        voltam a mostrar a foto e saem da fila.
 -- 2. SAÚDE. A /saude passa a conferir o que as rotinas precisam para rodar:
 --    os segredos do cofre (só se existem, nunca o valor), o agendamento
 --    automático (pg_cron) e as mensagens que falharam; e mostra as fotos
 --    vencidas ainda guardadas, quantas e há quantos dias.
 
 -- ---------------------------------------------------------------------------
--- 1a. A rotina só enfileira
+-- 1. O estado "vencida, sendo apagada"
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS fotoaguardaremocaoem timestamptz;
+COMMENT ON COLUMN public.entregas.fotoaguardaremocaoem IS
+  'Quando a foto passou do prazo e o arquivo entrou na fila para ser apagado. Daí em diante a foto não aparece em tela nenhuma; fotoexpiradaem só é gravado quando o arquivo sai de verdade.';
+
+-- ---------------------------------------------------------------------------
+-- 1a. A rotina enfileira e esconde; não diz "removida"
 -- ---------------------------------------------------------------------------
 -- Parte da versão mais recente (20260927100800_pin_tablet_e_expurgo.sql),
 -- com o diff conferido.
@@ -499,6 +522,16 @@ BEGIN
      LIMIT 2000
     ON CONFLICT (contaid, caminho) DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
+
+    -- Na fila = vencida: some das telas (a política promete), sem dizer
+    -- "removida". Todas as entregas que usam o arquivo estão vencidas: o
+    -- arquivo que ainda serve a uma no prazo não entra na fila.
+    UPDATE public.entregas e
+       SET fotoaguardaremocaoem = p_agora
+      FROM public.fotosexpurgo f
+     WHERE f.contaid = p_contaid AND f.removidoem IS NULL
+       AND e.contaid = p_contaid AND e.pathfotoevidencia = f.caminho
+       AND e.fotoaguardaremocaoem IS NULL AND e.fotoexpiradaem IS NULL;
 
     IF EXISTS (SELECT 1 FROM public.fotosexpurgo
                 WHERE contaid = p_contaid AND removidoem IS NULL AND tentativas < 5) THEN
@@ -576,14 +609,126 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 1c. Consertar o que já está gravado errado
 -- ---------------------------------------------------------------------------
--- Entrega marcada "removida" cujo arquivo continua na fila (não saiu): volta
--- a apontar para a foto, que continua guardada. Roda de novo sem efeito.
+-- Entrega marcada "removida" cujo arquivo NÃO saiu (continua na fila). Roda
+-- de novo sem efeito.
+-- (a) Dentro do prazo de hoje (só acontece se o prazo foi aumentado depois
+--     da marcação): a foto volta a aparecer e o arquivo SAI da fila.
+WITH no_prazo AS (
+  UPDATE public.entregas e
+     SET pathfotoevidencia = f.caminho, fotoexpiradaem = NULL, fotoaguardaremocaoem = NULL
+    FROM public.fotosexpurgo f
+   WHERE f.contaid = e.contaid AND f.entregaid = e.entregaid
+     AND f.removidoem IS NULL
+     AND e.fotoexpiradaem IS NOT NULL AND e.pathfotoevidencia IS NULL
+     AND e.dataenvio >= now() - make_interval(days => public.dias_guardar_foto(e.contaid))
+  RETURNING f.expurgoid
+)
+DELETE FROM public.fotosexpurgo WHERE expurgoid IN (SELECT expurgoid FROM no_prazo);
+-- (b) Vencida (o caso normal): continua escondida e na fila, e passa a dizer
+--     a verdade — "sendo apagada", não "removida".
 UPDATE public.entregas e
-   SET pathfotoevidencia = f.caminho, fotoexpiradaem = NULL
+   SET pathfotoevidencia = f.caminho, fotoexpiradaem = NULL, fotoaguardaremocaoem = f.criadoem
   FROM public.fotosexpurgo f
  WHERE f.contaid = e.contaid AND f.entregaid = e.entregaid
    AND f.removidoem IS NULL
    AND e.fotoexpiradaem IS NOT NULL AND e.pathfotoevidencia IS NULL;
+
+-- (c) Toda foto que JÁ passou do prazo e ainda não estava na fila entra
+--     nela agora, e some das telas na hora — sem esperar a rotina da
+--     madrugada (a política promete que ela some depois do prazo). As mesmas
+--     regras da rotina: nunca o arquivo que ainda serve a uma entrega no
+--     prazo.
+INSERT INTO public.fotosexpurgo (contaid, entregaid, caminho)
+SELECT DISTINCT ON (e.contaid, e.pathfotoevidencia) e.contaid, e.entregaid, e.pathfotoevidencia
+  FROM public.entregas e
+ WHERE e.pathfotoevidencia IS NOT NULL AND e.fotoexpiradaem IS NULL
+   AND e.dataenvio < now() - make_interval(days => public.dias_guardar_foto(e.contaid))
+   AND NOT EXISTS (SELECT 1 FROM public.fotosexpurgo f
+                    WHERE f.contaid = e.contaid AND f.caminho = e.pathfotoevidencia)
+   AND NOT EXISTS (SELECT 1 FROM public.entregas r
+                    WHERE r.contaid = e.contaid AND r.pathfotoevidencia = e.pathfotoevidencia
+                      AND r.dataenvio >= now() - make_interval(days => public.dias_guardar_foto(e.contaid)))
+ ORDER BY e.contaid, e.pathfotoevidencia, e.dataenvio
+ON CONFLICT (contaid, caminho) DO NOTHING;
+UPDATE public.entregas e
+   SET fotoaguardaremocaoem = now()
+  FROM public.fotosexpurgo f
+ WHERE f.contaid = e.contaid AND f.removidoem IS NULL AND e.pathfotoevidencia = f.caminho
+   AND e.fotoaguardaremocaoem IS NULL AND e.fotoexpiradaem IS NULL;
+-- E pede a remoção já (sem cofre/pg_net, como no teste, não faz nada; a
+-- Saúde mostra).
+SELECT public.fotos_expurgo_disparar();
+
+-- ---------------------------------------------------------------------------
+-- 1d. O Quadro não mostra foto vencida
+-- ---------------------------------------------------------------------------
+-- A única tela que mostra a foto da entrega. Parte da versão mais recente
+-- (20260929200000_quadro_e_intervalo.sql), com o diff conferido: a foto na
+-- fila para apagar sai sem caminho, e vem o estado "sendo apagada".
+CREATE OR REPLACE FUNCTION public.quadro_validacao(p_lojaid integer, p_de date DEFAULT NULL,
+                                                   p_ate date DEFAULT NULL, p_offset integer DEFAULT 0)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_dia   jsonb   := public.meu_hoje();
+  v_hoje  date    := (v_dia->>'hoje')::date;
+  v_fuso  text    := v_dia->>'fuso';
+  v_ate   date    := coalesce(p_ate, (v_dia->>'hoje')::date - 1);
+  v_de    date;
+  v_pend  jsonb;
+  v_hist  jsonb;
+  v_n     integer;
+BEGIN
+  v_de := coalesce(p_de, v_ate - 6);
+  IF v_de > v_ate THEN
+    RAISE EXCEPTION 'A data inicial é depois da final.' USING ERRCODE = 'check_violation';
+  END IF;
+  IF v_ate - v_de > 92 THEN
+    RAISE EXCEPTION 'Escolha um período de no máximo 93 dias.' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT coalesce(jsonb_agg(x ORDER BY x.dataenvio), '[]'::jsonb) INTO v_pend
+    FROM (SELECT e.entregaid, e.tarefaid, e.funcionarioid, e.statusvalidacao, e.dataenvio, e.pontosganhos,
+                 -- Foto vencida (na fila para apagar) não aparece (29/09/2026).
+                 e.observacao, CASE WHEN e.fotoaguardaremocaoem IS NULL THEN e.pathfotoevidencia END AS pathfotoevidencia,
+                 e.fotoexpiradaem, e.fotoaguardaremocaoem, e.semhorafoto,
+                 t.titulo, t.pontos AS pontostarefa, f.nomecompleto AS nome
+            FROM public.entregas e
+            LEFT JOIN public.tarefas t      ON t.tarefaid = e.tarefaid AND t.contaid = e.contaid
+            LEFT JOIN public.funcionarios f ON f.funcionarioid = e.funcionarioid AND f.contaid = e.contaid
+           WHERE e.lojaid = p_lojaid AND e.statusvalidacao = 'Pendente') x;
+
+  -- O histórico não leva "sem hora da foto": a decisão já foi tomada.
+  SELECT coalesce(jsonb_agg(x ORDER BY x.dataenvio DESC, x.entregaid DESC), '[]'::jsonb), count(*)
+    INTO v_hist, v_n
+    FROM (SELECT e.entregaid, e.tarefaid, e.funcionarioid, e.statusvalidacao, e.dataenvio, e.dataaprovacao,
+                 e.datarecusa, e.dataestorno, e.pontosganhos, e.observacao, e.motivorecusa, e.motivoestorno,
+                 CASE WHEN e.fotoaguardaremocaoem IS NULL THEN e.pathfotoevidencia END AS pathfotoevidencia,
+                 e.fotoexpiradaem, e.fotoaguardaremocaoem,
+                 t.titulo, t.pontos AS pontostarefa, f.nomecompleto AS nome
+            FROM public.entregas e
+            LEFT JOIN public.tarefas t      ON t.tarefaid = e.tarefaid AND t.contaid = e.contaid
+            LEFT JOIN public.funcionarios f ON f.funcionarioid = e.funcionarioid AND f.contaid = e.contaid
+           WHERE e.lojaid = p_lojaid
+             AND e.statusvalidacao IN ('Aprovada', 'Recusada', 'Estornada')
+             AND e.dataenvio >= (v_de::timestamp AT TIME ZONE v_fuso)
+             AND e.dataenvio <  ((v_ate + 1)::timestamp AT TIME ZONE v_fuso)
+           ORDER BY e.dataenvio DESC, e.entregaid DESC
+          OFFSET greatest(coalesce(p_offset, 0), 0)
+           LIMIT 51) x;
+
+  RETURN jsonb_build_object(
+    'hoje', v_hoje, 'de', v_de, 'ate', v_ate,
+    'pendentes', v_pend,
+    -- Pediu 51 para saber se tem mais; devolve 50.
+    'historico', CASE WHEN v_n > 50 THEN v_hist - 50 ELSE v_hist END,
+    'temmais', v_n > 50);
+END;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 2a. Fotos vencidas ainda guardadas, de uma conta (interna)
@@ -699,6 +844,7 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.saude_das_rotinas() FROM public, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.saude_das_rotinas() TO service_role;
+
 
 -- ======== 20260929232000_agenda_nao_perde_a_tarefa.sql ========
 -- Agendamento que não perde a tarefa de atender (29/09/2026, pedido do Wisley).
