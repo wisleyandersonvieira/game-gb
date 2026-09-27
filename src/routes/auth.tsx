@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { destinoDoUsuario } from "@/integrations/supabase/destino";
-import { entrarColaborador, entrarComCodigo, entrarMaster } from "@/servidor/acesso";
+import { concluirPrimeiroAcesso, conferirPrimeiroAcesso, entrarColaborador, entrarMaster } from "@/servidor/acesso";
+import { faltaParaConcluir } from "@/ui/senhaEPin";
 import { Logo } from "@/ui/Logo";
 
 /** O codigo da empresa fica guardado no aparelho: quem le o QR uma vez nao digita mais. */
@@ -36,6 +37,11 @@ function AuthPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // Primeiro acesso em dois passos NA MESMA TELA: 1) o código é CONFERIDO
+  // (não gasto); 2) senha e PIN, e só no "Concluir" o código é gasto — junto
+  // com a senha e o PIN, tudo ou nada.
+  const [etapa, setEtapa] = useState<"codigo" | "senhaepin">("codigo");
+  const [nova, setNova] = useState({ senha: "", senha2: "", pin: "", pin2: "" });
 
   useEffect(() => {
     try {
@@ -64,15 +70,24 @@ function AuthPage() {
         await usarSessao(await entrarMaster({ data: { email, senha } }));
       } else {
         const codigo = empresa.trim().toLowerCase();
+        const guardarEmpresa = () => {
+          try {
+            localStorage.setItem(CHAVE_EMPRESA, codigo);
+          } catch {
+            // Sem armazenamento: o codigo e digitado da proxima vez.
+          }
+        };
+        if (aba === "primeiro" && etapa === "codigo") {
+          await conferirPrimeiroAcesso({ data: { codigo, cpf, codigoacesso: codigoAcesso } });
+          guardarEmpresa();
+          setEtapa("senhaepin");
+          return;
+        }
         const sessao =
           aba === "primeiro"
-            ? await entrarComCodigo({ data: { codigo, cpf, codigoacesso: codigoAcesso } })
+            ? await concluirPrimeiroAcesso({ data: { codigo, cpf, codigoacesso: codigoAcesso, senha: nova.senha, pin: nova.pin } })
             : await entrarColaborador({ data: { codigo, cpf, senha } });
-        try {
-          localStorage.setItem(CHAVE_EMPRESA, codigo);
-        } catch {
-          // Sem armazenamento: o codigo e digitado da proxima vez.
-        }
+        guardarEmpresa();
         await usarSessao(sessao);
       }
     } catch (erroEntrada) {
@@ -122,6 +137,7 @@ function AuthPage() {
               onClick={() => {
                 setAba(v);
                 setErro(null);
+                setEtapa("codigo");
               }}
               className={`rounded-md px-3 py-1.5 font-medium ${aba === v ? "bg-card shadow-sm" : "text-muted-foreground"}`}
             >
@@ -130,7 +146,9 @@ function AuthPage() {
           ))}
         </div>
 
-        {aba !== "gestor" ? (
+        {aba === "primeiro" && etapa === "senhaepin" ? (
+          <CriarSenhaEPin valor={nova} mudar={setNova} voltar={() => { setEtapa("codigo"); setErro(null); }} />
+        ) : aba !== "gestor" ? (
           <>
             <input
               required
@@ -161,7 +179,7 @@ function AuthPage() {
             className="w-full rounded-lg border border-border bg-background px-3 py-2"
           />
         )}
-        {aba === "primeiro" ? (
+        {aba === "primeiro" && etapa === "senhaepin" ? null : aba === "primeiro" ? (
           <input
             required
             value={codigoAcesso}
@@ -187,10 +205,18 @@ function AuthPage() {
 
         <button
           type="submit"
-          disabled={carregando}
+          disabled={carregando || (aba === "primeiro" && etapa === "senhaepin" && faltaParaConcluir(nova) !== null)}
           className="w-full rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-60"
         >
-          {carregando ? "Aguarde..." : "Entrar"}
+          {aba === "primeiro" && etapa === "senhaepin"
+            ? carregando
+              ? "Salvando…"
+              : "Concluir"
+            : carregando
+              ? "Aguarde..."
+              : aba === "primeiro"
+                ? "Continuar"
+                : "Entrar"}
         </button>
 
         {aba === "gestor" ? (
@@ -208,5 +234,48 @@ function AuthPage() {
         )}
       </form>
     </main>
+  );
+}
+
+/**
+ * Passo 2 do primeiro acesso: senha e PIN. O que foi digitado continua aqui se
+ * der erro (a pessoa corrige e tenta de novo). O botão Concluir, lá embaixo,
+ * só acende quando o básico está certo.
+ */
+function CriarSenhaEPin({
+  valor,
+  mudar,
+  voltar,
+}: {
+  valor: { senha: string; senha2: string; pin: string; pin2: string };
+  mudar: (v: { senha: string; senha2: string; pin: string; pin2: string }) => void;
+  voltar: () => void;
+}) {
+  const campo = "w-full rounded-lg border border-border bg-background px-3 py-2";
+  const falta = faltaParaConcluir(valor);
+  const comecou = valor.senha || valor.senha2 || valor.pin || valor.pin2;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm">
+        Código conferido. Agora crie a sua <strong>senha</strong> e o seu <strong>PIN</strong> — os dois são só seus.
+        Nada é gravado até você tocar em <strong>Concluir</strong>.
+      </p>
+      <input type="password" autoComplete="new-password" className={campo} placeholder="Senha (8 ou mais caracteres)"
+        value={valor.senha} onChange={(e) => mudar({ ...valor, senha: e.target.value })} />
+      <input type="password" autoComplete="new-password" className={campo} placeholder="Repita a senha"
+        value={valor.senha2} onChange={(e) => mudar({ ...valor, senha2: e.target.value })} />
+      <p className="text-xs text-muted-foreground">
+        O PIN tem 6 números: é o que você digita no tablet da loja para aceitar e entregar tarefas. Não pode ser pedaço do
+        seu CPF, sequência ou número repetido.
+      </p>
+      <input inputMode="numeric" maxLength={6} className={campo} placeholder="PIN de 6 números"
+        value={valor.pin} onChange={(e) => mudar({ ...valor, pin: e.target.value.replace(/\D/g, "") })} />
+      <input inputMode="numeric" maxLength={6} className={campo} placeholder="Repita o PIN"
+        value={valor.pin2} onChange={(e) => mudar({ ...valor, pin2: e.target.value.replace(/\D/g, "") })} />
+      {comecou && falta && <p className="text-xs text-muted-foreground">{falta}</p>}
+      <button type="button" onClick={voltar} className="text-xs text-muted-foreground underline">
+        Voltar e corrigir o código
+      </button>
+    </div>
   );
 }

@@ -5634,6 +5634,15 @@ export type Database = {
         Returns: Json
       }
       meu_hoje: { Args: never; Returns: Json }
+      conferir_codigo_acesso: { Args: { p_codigohash: string; p_contaid: number; p_cpf: string }; Returns: boolean }
+      concluir_primeiro_acesso: {
+        Args: { p_codigohash: string; p_contaid: number; p_cpf: string; p_pinhash: string; p_senhahash: string }
+        Returns: Json
+      }
+      completar_senha_e_pin: {
+        Args: { p_contaid: number; p_funcionarioid: number; p_pinhash: string; p_senhahash: string }
+        Returns: undefined
+      }
       anexos_admin: {
         Args: never
         Returns: {

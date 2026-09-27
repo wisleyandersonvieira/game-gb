@@ -104,7 +104,7 @@ export function PainelDaLoja({ dados, tv = false }: { dados: DadosPainel; tv?: b
           {dados.atividade.map((i, n) => (
             <Item key={n} tv={tv} titulo={`✅ ${i.titulo}`} linha={`${i.pessoa} · +${i.pontos} · ${hora(i.aprovadaem)}`} />
           ))}
-          {dados.atividade.length === 0 && <Vazio tv={tv} texto="Nenhuma aprovação hoje ainda." />}
+          {dados.atividade.length === 0 && <Vazio tv={tv} texto="Nada do que foi feito hoje foi aprovado ainda." />}
         </Coluna>
       </div>
 

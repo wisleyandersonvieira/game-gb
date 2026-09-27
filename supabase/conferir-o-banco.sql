@@ -200,7 +200,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE table_schema = 'public' AND table_name = 'redes')),
   (200, 'ADMIN', 'versao', 'remover anexo (com registro)', 'aplicar-remover-anexo.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'anexos_admin'))
+                WHERE n.nspname = 'public' AND p.proname = 'anexos_admin')),
+  (210, 'C1', 'versao', 'primeiro acesso tudo ou nada (senha, PIN e codigo juntos)', 'aplicar-primeiro-acesso-e-tv.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'concluir_primeiro_acesso'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

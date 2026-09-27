@@ -2,11 +2,12 @@
 // dar ciência na política de uso. Enquanto faltar alguma das três, é a única
 // tela que abre.
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { meuAcesso } from "@/integrations/supabase/destino";
-import { aceitarPolitica, definirMeuPin, trocarMinhaSenha } from "@/servidor/acesso";
+import { aceitarPolitica, completarSenhaEPin } from "@/servidor/acesso";
+import { faltaParaConcluir } from "@/ui/senhaEPin";
 import { Logo } from "@/ui/Logo";
 
 export const Route = createFileRoute("/primeiro-acesso")({
@@ -33,27 +34,14 @@ function PrimeiroAcesso() {
   const acesso = useQuery({ queryKey: ["meu-acesso"], queryFn: meuAcesso });
   const a = acesso.data;
 
-  const salvarSenha = useMutation({
+  // Senha e PIN JUNTOS, num "Concluir" só: ou grava os dois, ou nenhum. Se
+  // der erro, o que foi digitado fica, e a mensagem aparece aqui mesmo.
+  const concluir = useMutation({
     mutationFn: async () => {
-      if (senha !== senha2) throw new Error("As duas senhas precisam ser iguais.");
-      await trocarMinhaSenha({ data: { senha } });
+      await completarSenhaEPin({ data: { senha: a?.semsenha ? senha : "", pin: a?.sempin ? pin : "" } });
     },
-    onSuccess: () => {
-      setSenha("");
-      setSenha2("");
-      qc.invalidateQueries({ queryKey: ["meu-acesso"] });
-    },
-  });
-
-  const salvarPin = useMutation({
-    mutationFn: async () => {
-      if (pin !== pin2) throw new Error("Os dois números precisam ser iguais.");
-      await definirMeuPin({ data: { pin } });
-    },
-    onSuccess: () => {
-      setPin("");
-      setPin2("");
-      qc.invalidateQueries({ queryKey: ["meu-acesso"] });
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["meu-acesso"] });
     },
   });
 
@@ -67,23 +55,13 @@ function PrimeiroAcesso() {
     );
   }
 
-  const faltaSenha = a.semsenha;
-  const faltaPin = a.sempin;
+  const faltaSenha = a.semsenha === true;
+  const faltaPin = a.sempin === true;
   const faltaPolitica = a.politicapendente;
+  const falta = faltaParaConcluir({ senha, senha2, pin, pin2 }, { senha: faltaSenha, pin: faltaPin });
 
   if (!faltaSenha && !faltaPin && !faltaPolitica) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
-        <Logo altura={40} />
-        <p className="font-display text-xl">Tudo pronto, {a.nome}!</p>
-        <button
-          onClick={() => navigate({ to: "/eu" })}
-          className="rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground"
-        >
-          Continuar
-        </button>
-      </main>
-    );
+    return <Entrando irPara={() => navigate({ to: "/eu" })} />;
   }
 
   return (
@@ -91,53 +69,56 @@ function PrimeiroAcesso() {
       <Logo altura={36} />
       <h1 className="font-display text-2xl font-semibold">Bem-vindo, {a.nome}</h1>
       <p className="text-sm text-muted-foreground">
-Três passos rápidos e você está dentro. A senha e o PIN são só seus: não empreste a ninguém.
+Dois passos rápidos e você está dentro. A senha e o PIN são só seus: não empreste a ninguém.
       </p>
 
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-        <h2 className="font-semibold">1. Crie a sua senha {faltaSenha ? "" : "✓"}</h2>
-        {faltaSenha && (
-          <>
-            <p className="text-xs text-muted-foreground">
-              Pelo menos 8 caracteres. Não pode ser um pedaço do seu CPF, nem sequência, nem número repetido.
-            </p>
-            <input type="password" className={campo} placeholder="Nova senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
-            <input type="password" className={campo} placeholder="Repita a senha" value={senha2} onChange={(e) => setSenha2(e.target.value)} />
-            {salvarSenha.isError && <p className="text-sm text-destructive">{(salvarSenha.error as Error).message}</p>}
+        <h2 className="font-semibold">
+          1. Crie a sua senha e o seu PIN {faltaSenha || faltaPin ? "" : "✓"}
+        </h2>
+        {(faltaSenha || faltaPin) && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              concluir.mutate();
+            }}
+            className="space-y-3"
+          >
+            {faltaSenha && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Senha: pelo menos 8 caracteres. Não pode ser um pedaço do seu CPF, nem sequência, nem número repetido.
+                </p>
+                <input type="password" autoComplete="new-password" className={campo} placeholder="Nova senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
+                <input type="password" autoComplete="new-password" className={campo} placeholder="Repita a senha" value={senha2} onChange={(e) => setSenha2(e.target.value)} />
+              </>
+            )}
+            {faltaPin && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  PIN: 6 números. É o que você digita no tablet da loja para aceitar e entregar tarefas.
+                </p>
+                <input inputMode="numeric" maxLength={6} className={campo} placeholder="PIN de 6 números" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+                <input inputMode="numeric" maxLength={6} className={campo} placeholder="Repita o PIN" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))} />
+              </>
+            )}
+            {(senha || senha2 || pin || pin2) && falta && !concluir.isError && (
+              <p className="text-xs text-muted-foreground">{falta}</p>
+            )}
+            {concluir.isError && <p className="text-sm text-destructive">{(concluir.error as Error).message}</p>}
             <button
-              onClick={() => salvarSenha.mutate()}
-              disabled={salvarSenha.isPending}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              type="submit"
+              disabled={falta !== null || concluir.isPending}
+              className="w-full rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-50"
             >
-              Salvar senha
+              {concluir.isPending ? "Salvando…" : "Concluir"}
             </button>
-          </>
+          </form>
         )}
       </section>
 
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-        <h2 className="font-semibold">2. Escolha o seu número do tablet (PIN) {faltaPin ? "" : "✓"}</h2>
-        {faltaPin && (
-          <>
-            <p className="text-xs text-muted-foreground">
-              6 dígitos. É o que você digita no tablet da loja para aceitar e entregar tarefas.
-            </p>
-            <input inputMode="numeric" maxLength={6} className={campo} placeholder="PIN de 6 dígitos" value={pin} onChange={(e) => setPin(e.target.value)} />
-            <input inputMode="numeric" maxLength={6} className={campo} placeholder="Repita o PIN" value={pin2} onChange={(e) => setPin2(e.target.value)} />
-            {salvarPin.isError && <p className="text-sm text-destructive">{(salvarPin.error as Error).message}</p>}
-            <button
-              onClick={() => salvarPin.mutate()}
-              disabled={salvarPin.isPending}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-            >
-              Salvar PIN
-            </button>
-          </>
-        )}
-      </section>
-
-      <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-        <h2 className="font-semibold">3. Leia e aceite a política de uso {faltaPolitica ? "" : "✓"}</h2>
+        <h2 className="font-semibold">2. Leia e aceite a política de uso {faltaPolitica ? "" : "✓"}</h2>
         {faltaPolitica && <PoliticaDeUso aoAceitar={() => qc.invalidateQueries({ queryKey: ["meu-acesso"] })} />}
       </section>
     </main>
@@ -178,4 +159,12 @@ function PoliticaDeUso({ aoAceitar }: { aoAceitar: () => void }) {
       </button>
     </>
   );
+}
+
+/** Não falta nada: entra direto no aplicativo (sem "Tudo pronto → Continuar"). */
+function Entrando({ irPara }: { irPara: () => void }) {
+  useEffect(() => {
+    irPara();
+  }, [irPara]);
+  return <main className="p-6 text-sm text-muted-foreground">Entrando…</main>;
 }

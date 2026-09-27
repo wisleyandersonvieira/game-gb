@@ -8973,4 +8973,115 @@ BEGIN
   PERFORM public.exigir(v_abertas = 5, 'chute de codigo de empresa: 5 tentativas por origem, depois a trava fecha');
 END $$;
 
+-- ===========================================================================
+-- 72. Primeiro acesso tudo-ou-nada; na TV, "hoje" e trabalho feito hoje
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '72. primeiro acesso tudo ou nada, e a TV'; END $$;
+
+INSERT INTO auth.users (id, email, email_confirmed_at)
+VALUES ('c7200000-0000-0000-0000-000000000001', 'bia72@colaborador.stgame.com.br', now());
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cpf) OVERRIDING SYSTEM VALUE VALUES
+  (9972, 1, 'Bia Primeira', '85312746053');
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9972, 10);
+DO $$
+DECLARE v jsonb; deu_erro boolean; v_cod integer;
+BEGIN
+  PERFORM public.criar_acesso_colaborador(1, 9972, 'c7200000-0000-0000-0000-000000000001', NULL,
+                                          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  v_cod := public.criar_codigo_acesso(1, 9972, repeat('r', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
+  -- Passo 1: so confere. Se ela fechar a tela aqui, o codigo continua valendo.
+  PERFORM public.exigir(public.conferir_codigo_acesso(1, '85312746053', repeat('r', 64)),
+                        'o passo 1 confere o codigo');
+  PERFORM public.exigir((SELECT usadoem IS NULL FROM public.codigosacesso WHERE codigoid = v_cod),
+                        'e NAO gasta o codigo: fechar a tela depois dele nao deixa ninguem de fora');
+  PERFORM public.exigir(NOT public.conferir_codigo_acesso(1, '11144477735', repeat('r', 64)),
+                        'codigo com o CPF de outra pessoa nao confere');
+
+  -- Passo 2 com PIN que ja e de alguem: NADA e gravado.
+  BEGIN
+    PERFORM public.concluir_primeiro_acesso(1, '85312746053', repeat('r', 64), 'pbkdf2$1$aa$bb', repeat('1', 64));
+    deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := SQLERRM LIKE 'Escolha outro%'; END;
+  PERFORM public.exigir(deu_erro, 'PIN que ja e de alguem: "escolha outro numero"');
+  PERFORM public.exigir((SELECT senhahashapp IS NULL AND pinhash IS NULL FROM public.funcionarios WHERE funcionarioid = 9972),
+                        'e nem a senha fica gravada (tudo ou nada)');
+  PERFORM public.exigir((SELECT usadoem IS NULL FROM public.codigosacesso WHERE codigoid = v_cod),
+                        'e o codigo continua valendo para ela tentar de novo');
+
+  -- Passo 2 certo: senha, PIN e codigo, juntos.
+  v := public.concluir_primeiro_acesso(1, '85312746053', repeat('r', 64), 'pbkdf2$1$aa$bb', repeat('8', 64));
+  PERFORM public.exigir(v->>'userid' = 'c7200000-0000-0000-0000-000000000001', 'deu certo: devolve o login para abrir a sessao');
+  PERFORM public.exigir((SELECT senhahashapp IS NOT NULL AND pinhash IS NOT NULL AND primeiroacessoem IS NOT NULL
+                           FROM public.funcionarios WHERE funcionarioid = 9972),
+                        'senha e PIN gravados juntos');
+  PERFORM public.exigir((SELECT usadoem IS NOT NULL FROM public.codigosacesso WHERE codigoid = v_cod),
+                        'e o codigo gasto na mesma hora');
+  PERFORM public.exigir(public.concluir_primeiro_acesso(1, '85312746053', repeat('r', 64), 'pbkdf2$1$cc$dd', repeat('9', 64)) IS NULL,
+                        'o mesmo codigo nao serve de novo');
+
+  -- Quem ja esta logado sem senha nem PIN: completa os dois juntos, ou nenhum.
+  UPDATE public.funcionarios SET senhahashapp = NULL, pinhash = NULL WHERE funcionarioid = 9972;
+  BEGIN
+    PERFORM public.completar_senha_e_pin(1, 9972, 'pbkdf2$1$ee$ff', repeat('1', 64));
+    deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro AND (SELECT senhahashapp IS NULL FROM public.funcionarios WHERE funcionarioid = 9972),
+                        'completar com PIN repetido nao grava nem a senha');
+  PERFORM public.completar_senha_e_pin(1, 9972, 'pbkdf2$1$ee$ff', repeat('6', 64));
+  PERFORM public.exigir((SELECT senhahashapp = 'pbkdf2$1$ee$ff' AND pinhash = repeat('6', 64)
+                           FROM public.funcionarios WHERE funcionarioid = 9972),
+                        'completar certo grava os dois');
+  PERFORM public.completar_senha_e_pin(1, 9972, 'pbkdf2$1$gg$hh', repeat('7', 64));
+  PERFORM public.exigir((SELECT senhahashapp = 'pbkdf2$1$ee$ff' FROM public.funcionarios WHERE funcionarioid = 9972),
+                        'e nunca troca uma senha que ja existe (isso exige a senha atual)');
+END $$;
+
+-- TV: a entrega de ONTEM aprovada HOJE nao entra no podio nem na atividade
+-- de hoje; a de hoje entra.
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (9973, 1, 'TV ontem', 40), (9974, 1, 'TV hoje', 60);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9973, 10), (1, 9974, 10);
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_ontem integer; v_hoje integer;
+BEGIN
+  v_ontem := public.atribuir_tarefa(9973, 10, ARRAY[9972], 'Unica', NULL, now() - interval '1 day', NULL);
+  v_hoje  := public.atribuir_tarefa(9974, 10, ARRAY[9972], 'Unica', NULL, now(), NULL);
+  PERFORM set_config('teste.tv_ontem', public.registrar_entrega(v_ontem)::text, false);
+  PERFORM set_config('teste.tv_hoje', public.registrar_entrega(v_hoje)::text, false);
+END $$;
+RESET ROLE;
+UPDATE public.entregas SET dataenvio = now() - interval '1 day' WHERE entregaid = current_setting('teste.tv_ontem')::int;
+SET ROLE authenticated;
+DO $$
+BEGIN
+  PERFORM public.aprovar_entrega(current_setting('teste.tv_ontem')::int);
+  PERFORM public.aprovar_entrega(current_setting('teste.tv_hoje')::int);
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE v jsonb := public.montar_painel(1, 10, true);
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'atividade') x WHERE x->>'titulo' = 'TV ontem'),
+                        'TV: tarefa de ONTEM aprovada hoje nao aparece na atividade de hoje');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v->'atividade') x WHERE x->>'titulo' = 'TV hoje'),
+                        'e a feita hoje aparece');
+  PERFORM public.exigir((SELECT (x->>'pontos')::int FROM jsonb_array_elements(v->'podio') x WHERE x->>'pessoa' = 'Bia P.') = 60,
+                        'podio de hoje: so os 60 pontos do trabalho de hoje (os 40 de ontem ficam de fora)');
+  -- O livro de pontos lanca os dois hoje (na aprovacao): a TV e o extrato
+  -- medem coisas diferentes, e a diferenca e exatamente a tarefa de ontem.
+  PERFORM public.exigir((SELECT sum(pontos) FROM public.movimentospontos
+                          WHERE funcionarioid = 9972 AND tipo = 'aprovacao'
+                            AND public.dia_da_conta(1, datamovimento) = public.hoje_da_conta(1)) = 100,
+                        'o livro lanca hoje as DUAS aprovacoes (100): a diferenca para a TV (60) e so a tarefa de ontem');
+  -- E o livro tem mais do que tarefa: bonus, conquistas, resgates, estornos.
+  -- A TV nunca mostrou isso; o extrato sempre mostrou.
+  PERFORM public.exigir((SELECT sum(pontos) FROM public.movimentospontos
+                          WHERE funcionarioid = 9972 AND public.dia_da_conta(1, datamovimento) = public.hoje_da_conta(1)) > 100,
+                        'o livro do dia ainda tem o bonus da conquista, que a TV nao mostra (nem antes mostrava)');
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

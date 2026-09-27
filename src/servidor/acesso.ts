@@ -226,40 +226,84 @@ export const entrarColaborador = createServerFn({ method: "POST" })
     return abrirSessao(dados.userid);
   });
 
-/** Primeiro acesso: CPF + código do gestor. Uso único. */
-export const entrarComCodigo = createServerFn({ method: "POST" })
+/**
+ * PRIMEIRO ACESSO, passo 1: confere o código de acesso SEM consumir. Passa
+ * pela trava como o login. O código só é gasto no passo 2, junto com a senha e
+ * o PIN — antes era gasto aqui, e quem perdesse a sessão antes de criar a
+ * senha ficava trancado (sem código e sem senha).
+ */
+export const conferirPrimeiroAcesso = createServerFn({ method: "POST" })
   .validator((d: { codigo: string; cpf: string; codigoacesso: string }) => d)
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const cpf = soNumeros(data.cpf);
-    const origem = origemDaChamada();
-
     const codigoEmpresa = (data.codigo ?? "").trim().toLowerCase();
     const { data: achada } = await supabaseAdmin.rpc("conta_do_codigo", { p_codigo: codigoEmpresa });
     const contaid = typeof achada === "number" ? achada : null;
 
-    // Empresa que não existe: o mesmo caminho, contando na trava.
+    const chave = await embaralhar(contaid ? `cpf:${contaid}:${cpf}` : `empresa:${codigoEmpresa}`);
+    const tentativa = await abrirTentativa(contaid, "senha", chave, origemDaChamada());
+    const { data: ok } = contaid
+      ? await supabaseAdmin.rpc("conferir_codigo_acesso", {
+          p_contaid: contaid,
+          p_cpf: cpf,
+          p_codigohash: await embaralhar(`codigo:${contaid}:${limparCodigoAcesso(data.codigoacesso)}`),
+        })
+      : { data: false };
+    await fecharTentativa(tentativa, ok === true);
+    if (ok !== true) throw new Error(ERRO_CODIGO);
+    return { ok: true as const };
+  });
+
+/**
+ * PRIMEIRO ACESSO, passo 2: senha, PIN e consumo do código JUNTOS, numa
+ * transação só (concluir_primeiro_acesso). Deu errado em qualquer ponto — PIN
+ * repetido, código vencido no meio —, nada é gravado e o código continua
+ * valendo. Deu certo: a pessoa sai daqui já logada.
+ */
+export const concluirPrimeiroAcesso = createServerFn({ method: "POST" })
+  .validator((d: { codigo: string; cpf: string; codigoacesso: string; senha: string; pin: string }) => d)
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const cpf = soNumeros(data.cpf);
+    // As regras da senha e do PIN primeiro: são sobre o formato, não revelam nada.
+    const senha = conferirSegredo(data.senha, 8, cpf, "senha");
+    const pin = conferirSegredo(data.pin, 6, cpf, "PIN");
+    if (!/^\d{6}$/.test(pin)) throw new Error("O PIN tem 6 números.");
+
+    const codigoEmpresa = (data.codigo ?? "").trim().toLowerCase();
+    const { data: achada } = await supabaseAdmin.rpc("conta_do_codigo", { p_codigo: codigoEmpresa });
+    const contaid = typeof achada === "number" ? achada : null;
+    const origem = origemDaChamada();
+
     const chave = await embaralhar(contaid ? `cpf:${contaid}:${cpf}` : `empresa:${codigoEmpresa}`);
     const tentativa = await abrirTentativa(contaid, "senha", chave, origem);
     if (!contaid) {
       await fecharTentativa(tentativa, false);
       throw new Error(ERRO_CODIGO);
     }
+    // Escolher PIN passa pela trava do PIN: sem ela, "escolha outro número"
+    // viraria um adivinhador do PIN dos colegas.
+    const tentativaPin = await abrirTentativa(contaid, "pin", await embaralhar(`pinescolha:${contaid}:${cpf}`), origem);
 
-    const codigoLimpo = (data.codigoacesso ?? "").trim().toUpperCase().replace(/\s/g, "");
-    const { data: usado } = await supabaseAdmin.rpc("usar_codigo_acesso", {
+    const { data: feito, error } = await supabaseAdmin.rpc("concluir_primeiro_acesso", {
       p_contaid: contaid,
       p_cpf: cpf,
-      p_codigohash: await embaralhar(`codigo:${contaid}:${codigoLimpo}`),
+      p_codigohash: await embaralhar(`codigo:${contaid}:${limparCodigoAcesso(data.codigoacesso)}`),
+      p_senhahash: await resumoDaSenha(senha),
+      p_pinhash: await resumoDoPin(contaid, pin),
     });
-    await fecharTentativa(tentativa, !!usado);
-    if (!usado) throw new Error(ERRO_CODIGO);
+    const pinRepetido = !!error && (error.message ?? "").includes("Escolha outro");
+    await fecharTentativa(tentativaPin, !pinRepetido);
+    await fecharTentativa(tentativa, !error && !!feito);
+    if (pinRepetido) throw new Error("Escolha outro número de PIN. Nada foi gravado: o seu código continua valendo.");
+    if (error) throw new Error(`Não foi possível concluir agora. Nada foi gravado: tente de novo. (${error.message})`);
+    if (!feito) throw new Error(ERRO_CODIGO);
 
-    const { data: pessoa } = await supabaseAdmin.rpc("senha_app_de", { p_contaid: contaid, p_cpf: cpf });
-    const dados = pessoa as { userid: string } | null;
-    if (!dados) throw new Error(ERRO_CODIGO);
-    return abrirSessao(dados.userid);
+    return abrirSessao((feito as { userid: string }).userid);
   });
+
+const limparCodigoAcesso = (c: string) => (c ?? "").trim().toUpperCase().replace(/\s/g, "");
 
 /**
  * Entrada por e-mail: serve para o gestor (master), para o administrador geral
@@ -481,6 +525,45 @@ export const definirMeuPin = createServerFn({ method: "POST" })
     await fecharTentativa(tentativa, !error);
     if (error) throw new Error(error.message.includes("Escolha outro") ? "Escolha outro número." : error.message);
     return { ok: true };
+  });
+
+/**
+ * Para quem já está logado e ainda não tem senha ou PIN (entrou pelo caminho
+ * antigo, que gastava o código antes da senha): grava o que falta JUNTO, numa
+ * transação. Só preenche o que está vazio.
+ */
+export const completarSenhaEPin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { senha?: string; pin?: string }) => ({
+    senha: typeof d?.senha === "string" ? d.senha : "",
+    pin: typeof d?.pin === "string" ? d.pin : "",
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
+    await colaboradorDoToken(supabase);
+    const pessoa = await pessoaDoToken(userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const senha = data.senha ? conferirSegredo(data.senha, 8, pessoa.cpf, "senha") : "";
+    const pin = data.pin ? conferirSegredo(data.pin, 6, pessoa.cpf, "PIN") : "";
+    const chave = await embaralhar(`pessoa:${pessoa.contaid}:${pessoa.funcionarioid}`);
+    const tentativa = pin ? await abrirTentativa(pessoa.contaid, "pin", chave, origemDaChamada()) : null;
+
+    const { error } = await supabaseAdmin.rpc("completar_senha_e_pin", {
+      p_contaid: pessoa.contaid,
+      p_funcionarioid: pessoa.funcionarioid,
+      p_senhahash: senha ? await resumoDaSenha(senha) : "",
+      p_pinhash: pin ? await resumoDoPin(pessoa.contaid, pin) : "",
+    });
+    if (tentativa) await fecharTentativa(tentativa, !error);
+    if (error) {
+      throw new Error(
+        error.message.includes("Escolha outro")
+          ? "Escolha outro número de PIN. Nada foi gravado."
+          : `${error.message} Nada foi gravado.`,
+      );
+    }
+    return { ok: true as const };
   });
 
 /** Ciência da política no primeiro acesso: usa a mesma função das telas do gestor. */
