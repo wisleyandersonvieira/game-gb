@@ -10,13 +10,14 @@
 //   * expediente — a hora inteira dentro do expediente, fora do intervalo;
 //   * parcial    — entra ou sai no meio da hora (mostra a hora de entrada ou
 //                  de saída).
-// O TOTAL (28/09/2026, regra do Wisley): a pessoa conta na hora em que está
-// presente pelo menos METADE dela — a mesma regra para entrada, saída e
-// intervalo. Meia hora exata é empate: conta se for a SEGUNDA metade
-// (presente às h:30). É o desempate que faz a equipe que entra às 10h30
-// contar nas 10h, e um intervalo das 14h30 às 15h30 tirar a pessoa de UMA
-// hora só (a das 14h), não de duas nem de nenhuma. Consequência: quem sai às
-// 17h30 não conta nas 17h. As células não mudam; muda só a conta.
+// O TOTAL (29/09/2026, duas regras do Wisley, uma frase cada — as mesmas da
+// legenda e do rodapé do PDF, em REGRAS_DO_TOTAL):
+//   * Presença: a pessoa conta na hora em que estiver presente pelo menos 30
+//     minutos, contando os 30 exatos. (Entra 10h30: conta nas 10h. Sai
+//     17h30: conta nas 17h.)
+//   * Intervalo: o intervalo tira a pessoa da hora em que ele começa, e só
+//     dela. (Intervalo 14h30–15h30: sai só das 14h.)
+// As células não mudam; muda só a conta.
 //
 // O turno é do dia em que começa: saída menor que a entrada vai até o dia
 // seguinte, e as colunas passam da meia-noite (00h, 01h...).
@@ -58,21 +59,27 @@ export type Mapa = { horas: number[]; linhas: LinhaDoMapa[]; totais: number[] };
 
 /** Minutos de presença na hora que começa em h0 (expediente menos intervalo). */
 function contaNaHora(e: [number, number], int: [number, number] | null, h0: number) {
-  const presente = sobreposicao(e[0], e[1], h0, h0 + 60) - (int ? sobreposicao(int[0], int[1], h0, h0 + 60) : 0);
-  if (presente !== 30) return presente > 30;
-  const meio = h0 + 30;
-  return meio >= e[0] && meio < e[1] && !(int && meio >= int[0] && meio < int[1]);
+  // Intervalo: só a hora em que ele COMEÇA (o começo já cortado ao expediente).
+  if (int && Math.floor(int[0] / 60) * 60 === h0) return false;
+  // Presença: 30 minutos ou mais do expediente nesta hora.
+  return sobreposicao(e[0], e[1], h0, h0 + 60) >= 30;
 }
 
 /** O aviso da tela Jornada, palavra por palavra. */
 export const AVISO_DA_JORNADA =
   "Estes horários servem para o sistema saber quando enviar tarefas e avisos. O STGame não registra ponto nem controla jornada.";
 
+/** As duas regras do total, uma frase cada: na legenda e no rodapé do PDF. */
+export const REGRAS_DO_TOTAL = [
+  "Presença: a pessoa conta na hora em que estiver presente pelo menos 30 minutos, contando os 30 exatos.",
+  "Intervalo: o intervalo tira a pessoa da hora em que ele começa, e só dela.",
+];
+
 export const LEGENDA_DO_MAPA = [
   "X = em expediente a hora inteira.",
   "••• = Intervalo (planejamento, não afeta o sistema).",
   "10:30 = entra ou sai no meio da hora.",
-  "Total = quem está presente pelo menos metade da hora, fora do intervalo. Meia hora exata conta se for a segunda metade (entra 10:30: conta nas 10h; sai 17:30: não conta nas 17h).",
+  ...REGRAS_DO_TOTAL,
   "O turno da noite fica no dia em que começa.",
 ];
 

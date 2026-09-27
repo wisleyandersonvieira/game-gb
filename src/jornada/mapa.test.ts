@@ -37,7 +37,7 @@ describe("mapa da jornada", () => {
     expect(m.totais[5]).toBe(1);
   });
 
-  test("a hora parcial mostra o horário; conta quem está pelo menos metade da hora", () => {
+  test("presença: conta com 30 minutos ou mais na hora, contando os 30 exatos", () => {
     const m = montarMapa([pessoa({ entrada: "10:20", saida: "17:40" })]);
     expect(m.linhas[0].celulas?.[0]).toEqual({ tipo: "parcial", hora: "10:20" });
     expect(m.linhas[0].celulas?.at(-1)).toEqual({ tipo: "parcial", hora: "17:40" });
@@ -48,17 +48,15 @@ describe("mapa da jornada", () => {
     expect(pouco.totais.at(-1)).toBe(0);
   });
 
-  test("caso do Wisley 1: a equipe inteira entrando às 10h30 — o total das 10h não é zero", () => {
-    const equipe = [1, 2, 3, 4].map((id) => pessoa({ funcionarioid: id, entrada: "10:30", saida: "18:30" }));
+  test("caso do Wisley 1: a equipe inteira entrando às 10h30 — todos contam nas 10h", () => {
+    const equipe = [1, 2, 3, 4].map((id) => pessoa({ funcionarioid: id, entrada: "10:30", saida: "18:00" }));
     const m = montarMapa(equipe);
     expect(rotuloDaHora(m.horas[0])).toBe("10h");
     expect(m.linhas[0].celulas?.[0]).toEqual({ tipo: "parcial", hora: "10:30" });
     expect(m.totais[0]).toBe(4);
-    // Meia hora exata é empate: a primeira metade (sai 18:30) não conta.
-    expect(m.totais.at(-1)).toBe(0);
   });
 
-  test("caso do Wisley 2: intervalo das 14h30 às 15h30 tira a pessoa de UMA hora só", () => {
+  test("caso do Wisley 2: intervalo das 14h30 às 15h30 tira a pessoa só das 14h", () => {
     const m = montarMapa([pessoa({ entrada: "10:00", saida: "18:00", intervaloinicio: "14:30", intervalofim: "15:30" })]);
     const h = m.horas.map(rotuloDaHora);
     expect(m.linhas[0].celulas?.[h.indexOf("14h")]).toEqual({ tipo: "intervalo" });
@@ -68,11 +66,22 @@ describe("mapa da jornada", () => {
     expect(m.totais[h.indexOf("15h")]).toBe(1);
   });
 
-  test("intervalo curto não tira da hora; o longo tira", () => {
-    const m = montarMapa([pessoa({ entrada: "10:00", saida: "18:00", intervaloinicio: "14:00", intervalofim: "14:20" })]);
-    expect(m.totais[4]).toBe(1);
-    const longo = montarMapa([pessoa({ entrada: "10:00", saida: "18:00", intervaloinicio: "14:00", intervalofim: "14:40" })]);
-    expect(longo.totais[4]).toBe(0);
+  test("caso do Wisley 3: saída às 17h30 — conta nas 17h", () => {
+    const m = montarMapa([pessoa({ entrada: "10:00", saida: "17:30" })]);
+    const h = m.horas.map(rotuloDaHora);
+    expect(m.linhas[0].celulas?.[h.indexOf("17h")]).toEqual({ tipo: "parcial", hora: "17:30" });
+    expect(m.totais[h.indexOf("17h")]).toBe(1);
+  });
+
+  test("intervalo: tira só da hora em que começa, curto ou longo", () => {
+    const curto = montarMapa([pessoa({ entrada: "10:00", saida: "18:00", intervaloinicio: "14:00", intervalofim: "14:20" })]);
+    expect(curto.totais[4]).toBe(0);
+    expect(curto.totais[5]).toBe(1);
+    const longo = montarMapa([pessoa({ entrada: "10:00", saida: "18:00", intervaloinicio: "13:45", intervalofim: "15:45" })]);
+    const h = longo.horas.map(rotuloDaHora);
+    expect(longo.totais[h.indexOf("13h")]).toBe(0);
+    expect(longo.totais[h.indexOf("14h")]).toBe(1);
+    expect(longo.totais[h.indexOf("15h")]).toBe(1);
   });
 
   test("turno da noite passa da meia-noite, com o intervalo do outro lado", () => {

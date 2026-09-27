@@ -4,7 +4,7 @@
 import { jsPDF } from "jspdf";
 import { dataHoraBr } from "@/rh/datas";
 import { supabase } from "@/integrations/supabase/client";
-import { AVISO_DA_JORNADA, LEGENDA_DO_MAPA, rotuloDaHora, type Mapa } from "@/jornada/mapa";
+import { AVISO_DA_JORNADA, LEGENDA_DO_MAPA, REGRAS_DO_TOTAL, rotuloDaHora, type Mapa } from "@/jornada/mapa";
 
 const FUSO = "America/Sao_Paulo";
 const MARGEM = 18;
@@ -41,7 +41,12 @@ class Documento {
     conta: string,
     loja: string | null | undefined,
     titulo: string,
-    private opcoes: { marca?: boolean; paisagem?: boolean } = {},
+    private opcoes: {
+      marca?: boolean;
+      paisagem?: boolean;
+      /** Linhas repetidas no rodapé de TODAS as páginas, acima do aviso. */
+      rodape?: string[];
+    } = {},
   ) {
     this.doc = new jsPDF({ unit: "mm", format: "a4", orientation: opcoes.paisagem ? "landscape" : "portrait" });
     this.W = opcoes.paisagem ? 297 : 210;
@@ -86,8 +91,13 @@ class Documento {
     this.y += 2;
   }
 
+  /** Até onde vai o conteúdo: o rodapé (e as linhas extras dele) fica livre. */
+  private get fimDoConteudo() {
+    return this.H - 22 - (this.opcoes.rodape?.length ?? 0) * 4;
+  }
+
   private cabe(altura: number) {
-    if (this.y + altura > this.H - 22) {
+    if (this.y + altura > this.fimDoConteudo) {
       this.doc.addPage();
       this.y = MARGEM;
     }
@@ -194,7 +204,7 @@ class Documento {
     this.cabe(alturaLinha * 2);
     desenhar(titulos, true);
     for (const linha of linhas) {
-      if (this.y + alturaLinha > this.H - 22) {
+      if (this.y + alturaLinha > this.fimDoConteudo) {
         this.doc.addPage();
         this.y = MARGEM;
         desenhar(titulos, true);
@@ -211,6 +221,10 @@ class Documento {
       this.doc.setPage(p);
       this.doc.setFont("helvetica", "italic");
       this.doc.setFontSize(8);
+      const extras = this.opcoes.rodape ?? [];
+      extras.forEach((linha, i) =>
+        this.doc.text(linha, this.W / 2, this.H - 15 - (extras.length - i) * 4, { align: "center" }),
+      );
       if (extra.aviso) {
         this.doc.setFont("helvetica", "bold");
         this.doc.text(extra.aviso, this.W / 2, this.H - 15, { align: "center" });
@@ -433,7 +447,12 @@ const AZUL_CLARO: Cor = [226, 234, 252];
  */
 export async function pdfMapaDaJornada(m: { loja: string; dia: string; mapa: Mapa }) {
   const [conta, usuario] = await Promise.all([nomeDaConta(), usuarioAtual()]);
-  const d = new Documento(conta, m.loja, `Mapa da jornada — ${m.dia}`, { marca: true, paisagem: true });
+  const d = new Documento(conta, m.loja, `Mapa da jornada — ${m.dia}`, {
+    marca: true,
+    paisagem: true,
+    // As duas regras do total vão em toda página: quem lê o papel entende a conta.
+    rodape: REGRAS_DO_TOTAL,
+  });
   const { horas, linhas, totais } = m.mapa;
 
   const primeira = 64;
