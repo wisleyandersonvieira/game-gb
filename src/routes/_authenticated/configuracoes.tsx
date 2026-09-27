@@ -65,6 +65,15 @@ export const GRUPOS: { titulo: string; aviso?: string; itens: Item[] }[] = [
         unidade: "pontos",
         padrao: "10",
       },
+      {
+        chave: "MAX_PONTOS_CIENCIA",
+        rotulo: "Máximo de pontos por ciência de comunicado",
+        ajuda:
+          "A ciência de um comunicado paga pontos sozinha, sem ninguém aprovar. Este é o máximo que ela pode pagar, no campo de pontos do comunicado e na tarefa \"Leitura de comunicado\". Mudar não mexe em nada já lançado. De 0 a 10000.",
+        tipo: "inteiro",
+        unidade: "pontos",
+        padrao: "50",
+      },
     ],
   },
   {

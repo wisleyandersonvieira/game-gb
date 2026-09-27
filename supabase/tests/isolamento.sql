@@ -3507,13 +3507,23 @@ BEGIN
   PERFORM public.exigir(r->>'acao' = 'antes do horario', 'expurgo nao roda antes do horario da conta');
 
   r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
-  PERFORM public.exigir((r->>'fotos')::integer = 1, 'expurgo marca so a foto vencida');
+  PERFORM public.exigir((r->>'enfileiradas')::integer = 1, 'expurgo poe na fila so a foto vencida');
   PERFORM public.exigir((r->>'dias')::integer = 180, 'expurgo usa o prazo da conta (180 dias)');
 
-  -- O que sai e o que FICA.
+  -- 29/09/2026: "removida" so depois de o arquivo sair de verdade.
+  PERFORM public.exigir((SELECT pathfotoevidencia = '1/10/velha.jpg' AND fotoexpiradaem IS NULL
+                           FROM public.entregas WHERE entregaid = v_velha),
+                        'na fila, a entrega vencida AINDA nao diz "foto removida" (o arquivo continua la)');
+  -- A remocao falha: nada muda na entrega.
+  PERFORM public.expurgo_resultado(ARRAY(SELECT expurgoid FROM public.fotosexpurgo WHERE caminho = '1/10/velha.jpg'),
+                                   'erro de teste');
+  PERFORM public.exigir((SELECT fotoexpiradaem IS NULL FROM public.entregas WHERE entregaid = v_velha),
+                        'remocao que falhou nao grava "foto removida"');
+  -- O arquivo saiu: so agora.
+  PERFORM public.expurgo_resultado(ARRAY(SELECT expurgoid FROM public.fotosexpurgo WHERE caminho = '1/10/velha.jpg'), NULL);
   PERFORM public.exigir((SELECT pathfotoevidencia IS NULL AND fotoexpiradaem IS NOT NULL
                            FROM public.entregas WHERE entregaid = v_velha),
-                        'a entrega vencida fica marcada como foto removida por tempo');
+                        'com o arquivo apagado de verdade, a entrega fica marcada como foto removida por tempo');
   PERFORM public.exigir((SELECT statusvalidacao = v_status AND coalesce(pontosganhos, 0) = coalesce(v_pontos, 0)
                            FROM public.entregas WHERE entregaid = v_velha),
                         'o registro da entrega e os pontos continuam de pe');
@@ -3523,8 +3533,8 @@ BEGIN
                            FROM public.entregas WHERE entregaid = v_nova),
                         'a foto dentro do prazo continua no lugar');
   PERFORM public.exigir((SELECT count(*) FROM public.fotosexpurgo
-                          WHERE contaid = 1 AND caminho = '1/10/velha.jpg' AND removidoem IS NULL) = 1,
-                        'o caminho entra na fila para a Edge Function apagar');
+                          WHERE contaid = 1 AND caminho = '1/10/velha.jpg' AND removidoem IS NOT NULL) = 1,
+                        'o caminho entrou na fila e a Edge Function registrou que apagou');
 
   -- Isolamento: a rotina da conta A nao encosta na conta B.
   PERFORM public.exigir((SELECT pathfotoevidencia = '2/20/outra.jpg' AND fotoexpiradaem IS NULL
@@ -3544,8 +3554,10 @@ BEGIN
                              dataenvio = now() - interval '3 days' WHERE entregaid = v_nova;
   DELETE FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos';
   r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
-  PERFORM public.exigir((SELECT fotoexpiradaem IS NOT NULL FROM public.entregas WHERE entregaid = v_velha),
-                        'a entrega vencida perde a foto');
+  -- 29/09/2026: o arquivo que ainda serve a uma entrega no prazo nem entra na
+  -- fila (apaga-lo levaria a foto dela junto).
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosexpurgo WHERE caminho = '1/10/dividida.jpg'),
+                        'arquivo dividido com uma entrega no prazo nao entra na fila');
   PERFORM public.exigir((SELECT fotoexpiradaem IS NULL AND pathfotoevidencia = '1/10/dividida.jpg'
                            FROM public.entregas WHERE entregaid = v_nova),
                         'a entrega DENTRO do prazo nao perde a foto, mesmo dividindo o arquivo');
@@ -4721,7 +4733,10 @@ BEGIN
       'salvar_jornada', 'vincular_jornada',
       -- 27/09/2026: intervalo do mapa. Le a conta de quem chamou
       -- (exige_master_editavel) e so grava pessoa dela (secao 75).
-      'salvar_intervalo_do_mapa'
+      'salvar_intervalo_do_mapa',
+      -- 29/09/2026: a conta sai do login (minha_conta / agendamento_para_mudar)
+      -- e so tocam a conta de quem chamou (secao 77).
+      'saude_da_minha_conta', 'recriar_tarefa_do_agendamento'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -8443,12 +8458,16 @@ BEGIN
   -- A CATRACA: quantas funcoes ainda decidem o dia sozinhas (Sao Paulo fixo).
   -- Este numero so pode DESCER. Funcao nova que calcular o dia por conta
   -- propria reprova aqui: use hoje_da_conta / dia_da_conta / dia_no_fuso.
+  -- 29/09/2026: conta tambem quem chama rotina_hora_local(p_agora) SEM o fuso
+  -- (cai no padrao de Sao Paulo) — as rotinas do bot que a varredura achou.
+  -- Eram 45 + essas 5 = 50. A auxiliar teste_agora (so existe no teste) sai
+  -- da conta, para o numero ser o da producao.
   SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
-     AND p.proname NOT IN ('dia_em_sao_paulo', 'instante_local', 'tarefa_cai_no_dia')
+     AND p.proname NOT IN ('dia_em_sao_paulo', 'instante_local', 'tarefa_cai_no_dia', 'teste_agora')
      AND (p.prosrc LIKE '%dia_em_sao_paulo(%' OR p.prosrc LIKE '%AT TIME ZONE ''America/Sao_Paulo''%'
-          OR p.prosrc LIKE '%instante_local(%');
-  PERFORM public.exigir(v_n <= 46, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 46, so pode descer)');
+          OR p.prosrc LIKE '%instante_local(%' OR p.prosrc LIKE '%rotina_hora_local(p_agora)%');
+  PERFORM public.exigir(v_n <= 50, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 50, so pode descer)');
 END $$;
 
 -- As telas perguntam meu_hoje(); o resto e so do servidor.
@@ -9588,5 +9607,180 @@ BEGIN
     'public.atribuicoes_da_loja(integer, boolean, date, date, integer, integer, boolean, integer, integer)', 'EXECUTE'),
     'o visitante sem login nao le as atribuicoes');
 END $$;
+
+-- ===========================================================================
+-- 77. Teto de pontos por ciencia; fotos "apagadas" so de verdade; a Saude;
+--     agendamento que nao perde a tarefa
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '77. teto, fotos, saude e agenda'; END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE doc integer; deu_erro boolean; msg text; antes integer;
+BEGIN
+  PERFORM public.exigir((SELECT valor FROM public.configuracoes WHERE chave = 'MAX_PONTOS_CIENCIA') = '50',
+                        'teto de pontos por ciencia: padrao 50 na conta');
+  doc := public.publicar_comunicado('Teto 77 a', 'Texto', 50, 'funcionarios', NULL, ARRAY[110]);
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 50,
+                        'no teto, o comunicado passa');
+  BEGIN PERFORM public.publicar_comunicado('Teto 77 b', 'Texto', 1000, 'funcionarios', NULL, ARRAY[110]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; msg := SQLERRM; END;
+  PERFORM public.exigir(deu_erro AND msg LIKE '%máximo permitido nesta conta (50 pontos)%',
+                        '1000 por engano e recusado, com mensagem que diz o maximo');
+  BEGIN PERFORM public.editar_comunicado(doc, 'Teto 77 a', 'Texto', 51); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'editar comunicado tambem respeita o teto');
+  BEGIN UPDATE public.tarefas SET pontos = 60 WHERE sistema = 'leitura'; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a tarefa Leitura de comunicado tambem respeita o teto');
+  UPDATE public.tarefas SET titulo = 'Leitura renomeada' WHERE sistema = 'leitura';
+  UPDATE public.tarefas SET titulo = 'Leitura de comunicado' WHERE sistema = 'leitura';
+  PERFORM public.exigir(true, 'mudar so o nome da leitura nao esbarra no teto');
+
+  -- O master muda o teto; o que ja foi lancado nao muda.
+  PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '10');
+  PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 50,
+                        'baixar o teto nao mexe no comunicado ja publicado');
+  BEGIN PERFORM public.publicar_comunicado('Teto 77 c', 'Texto', 11, 'funcionarios', NULL, ARRAY[110]); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o teto novo vale para o que se grava daqui em diante');
+  PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '50');
+  BEGIN PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '20000'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'teto acima de 10000 e recusado');
+END $$;
+
+-- So o master muda o teto: o gerente nao.
+SET teste.uid = '12121212-1212-1212-1212-121212121212';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '500'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o gerente nao muda o teto de pontos por ciencia');
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.documentos WHERE titulo LIKE 'Teto 77%'),
+                        'a conta B nao ve os comunicados de A');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- Fotos: fila parada nao fica calada, e a Saude conta as vencidas.
+DO $$
+DECLARE v_e integer; r jsonb; s jsonb;
+BEGIN
+  SELECT min(entregaid) INTO v_e FROM public.entregas WHERE contaid = 1;
+  UPDATE public.entregas SET dataenvio = now() - interval '200 days', pathfotoevidencia = '1/10/parada.jpg', fotoexpiradaem = NULL
+   WHERE entregaid = v_e;
+  s := public.saude_das_rotinas();
+  PERFORM public.exigir((s->'fotos'->>'vencidas')::integer >= 1 AND (s->'fotos'->>'diasdeatraso')::integer >= 19,
+                        'a Saude conta a foto vencida ainda guardada, e ha quantos dias passou do prazo');
+  PERFORM public.exigir(s ? 'segredos' AND s ? 'jobs' AND s ? 'mensagensfalhadas' AND s ? 'agendador',
+                        'a Saude confere cofre, agendamento e mensagens que falharam');
+  PERFORM public.exigir(s::text NOT LIKE '%decrypted%', 'a Saude nunca devolve valor de segredo');
+
+  DELETE FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos';
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  -- A remocao nunca rodou (sem pg_net no teste): a fila envelhece.
+  UPDATE public.fotosexpurgo SET criadoem = now() - interval '4 days' WHERE caminho = '1/10/parada.jpg';
+  DELETE FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos';
+  UPDATE public.avisossistema SET lidoem = now() WHERE contaid = 1 AND tipo = 'expurgo_preso';
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  PERFORM public.exigir((r->>'atraso')::integer >= 4
+                        AND EXISTS (SELECT 1 FROM public.avisossistema WHERE contaid = 1 AND tipo = 'expurgo_preso' AND lidoem IS NULL)
+                        AND EXISTS (SELECT 1 FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos' AND resultado = 'erro'),
+                        'fila de fotos parada ha mais de 2 dias vira aviso e erro na aba Rotinas');
+  PERFORM public.exigir((SELECT fotoexpiradaem IS NULL AND pathfotoevidencia = '1/10/parada.jpg' FROM public.entregas WHERE entregaid = v_e),
+                        'com a remocao parada, a entrega continua dizendo a verdade: a foto esta guardada');
+  r := public.rotina_expurgo_fotos(1, public.teste_agora(public.dia_em_sao_paulo(now()), '23:59'));
+  PERFORM public.exigir(r->>'acao' = 'ja rodou hoje', 'o aviso de fila parada sai uma vez por dia, nao a cada 5 minutos');
+
+  UPDATE public.entregas SET pathfotoevidencia = NULL, fotoexpiradaem = NULL WHERE entregaid = v_e;
+  DELETE FROM public.fotosexpurgo;
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.exigir(public.saude_da_minha_conta() ? 'fotos', 'o dono ve a saude da propria conta');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.saude_das_rotinas()', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.saude_das_rotinas()', 'EXECUTE'),
+                        'os numeros de todas as contas so saem pelo servidor');
+END $$;
+
+-- Agenda: a tarefa que some aparece na lista, e volta ao remarcar/trocar.
+DO $$
+DECLARE
+  t integer := (SELECT tipoeventoid FROM public.tiposevento WHERE nome = 'Evento');
+  d1 timestamptz := ((public.dia_em_sao_paulo(now()) + 6)::timestamp + time '15:00') AT TIME ZONE 'America/Sao_Paulo';
+  ag integer; lista jsonb; deu_erro boolean;
+BEGIN
+  -- Responsavel sai da loja depois de marcado.
+  ag := public.criar_agendamento(10, t, d1, 'Cliente 77 fora', NULL, NULL, NULL, NULL, 'Pendente', 124);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
+                                     WHERE (x->>'agendamentoid')::integer = ag),
+                        'agendamento com tarefa nao aparece na lista');
+  UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 124 AND lojaid = 10;
+  lista := public.agendamentos_sem_tarefa(10);
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(lista) x
+                                 WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'responsavel_fora'),
+                        'responsavel que saiu da loja: a Agenda mostra que a tarefa nao vai aparecer');
+  BEGIN PERFORM public.recriar_tarefa_do_agendamento(ag); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'recriar com o responsavel fora da loja pede para trocar o responsavel');
+  PERFORM public.trocar_responsavel_agendamento(ag, 110);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
+                                     WHERE (x->>'agendamentoid')::integer = ag)
+                        AND (SELECT funcionarioid FROM public.tarefasatribuidas WHERE agendamentoid = ag AND datafimvigencia IS NULL) = 110,
+                        'trocado o responsavel, a tarefa vai para ele e sai da lista');
+
+  -- Nasce sem a tarefa (modelo desativada); remarcar recria.
+  UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento';
+  ag := public.criar_agendamento(10, t, d1, 'Cliente 77 sem');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
+                                 WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'sem_tarefa'),
+                        'agendamento que nasceu sem tarefa aparece na lista');
+  BEGIN PERFORM public.recriar_tarefa_do_agendamento(ag); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'recriar com a tarefa desativada pede para reativa-la');
+  UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
+  PERFORM public.remarcar_agendamento(ag, d1 + interval '1 hour');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag AND datafimvigencia IS NULL),
+                        'remarcar recria a tarefa que faltava');
+
+  -- Tarefa desativada DEPOIS de marcado.
+  UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento';
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
+                                 WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'tarefa_desativada'),
+                        'tarefa desativada depois de marcado: aparece na lista');
+  UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
+
+  -- Criado sem tarefa; so o botao recria.
+  UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento';
+  ag := public.criar_agendamento(10, t, d1, 'Cliente 77 botao');
+  UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
+  deu_erro := NOT public.recriar_tarefa_do_agendamento(ag);
+  PERFORM public.exigir(NOT deu_erro AND EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag),
+                        'o botao "Recriar tarefa" recria');
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(jsonb_array_length(public.agendamentos_sem_tarefa(10)) = 0, 'a conta B nao ve a agenda de A');
+  BEGIN PERFORM public.recriar_tarefa_do_agendamento((SELECT max(agendamentoid) FROM public.agendamentos)); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a conta B nao recria tarefa em agendamento de A');
+  PERFORM public.exigir((public.saude_da_minha_conta()->'fotos'->>'vencidas')::integer = 0
+                        OR public.saude_da_minha_conta() IS NOT NULL, 'a conta B ve so a propria saude');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+UPDATE public.funcionarioslojas SET ativo = true WHERE funcionarioid = 124 AND lojaid = 10;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

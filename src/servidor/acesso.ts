@@ -1210,8 +1210,21 @@ function segredoConfere(dado: string, esperado: string) {
 }
 
 /** É o dono da conta? Conferido NO BANCO, com o token que o navegador mandou. */
-async function ehDonoPeloToken(token?: string) {
-  if (!token) return false;
+/** O que saude_das_rotinas devolve (nunca o valor de um segredo). */
+export type SaudeDasRotinas = {
+  cofre: boolean;
+  pgnet: boolean;
+  segredos: Record<string, boolean>;
+  agendador: boolean;
+  jobs: { nome: string; existe: boolean; ativo: boolean; ultimaexecucao: string | null; ultimostatus: string | null }[];
+  /** null = só o admin geral vê o total de todas as contas. */
+  mensagensfalhadas: number | null;
+  fotos: { vencidas: number; diasdeatraso: number; presas: number } | null;
+};
+
+/** O tipo de acesso de quem mandou o token ("master", "admin"...), ou null. */
+async function tipoPeloToken(token?: string): Promise<string | null> {
+  if (!token) return null;
   try {
     const { createClient } = await import("@supabase/supabase-js");
     const cliente = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -1219,10 +1232,9 @@ async function ehDonoPeloToken(token?: string) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { data } = await cliente.rpc("meu_acesso");
-    const tipo = (data as { tipo?: string } | null)?.tipo;
-    return tipo === "master" || tipo === "gerente" || tipo === "admin";
+    return (data as { tipo?: string } | null)?.tipo ?? null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -1233,9 +1245,9 @@ export const diagnostico = createServerFn({ method: "GET" })
   // quem passar a chave STGAME_SAUDE_CHAVE no endereço. A chave existe para o
   // dia em que NINGUÉM consegue entrar — que foi o que aconteceu em
   // 23/09/2026 e é a razão de esta tela existir.
-  const detalhe =
-    (await ehDonoPeloToken(data.token)) ||
-    segredoConfere(data.chave ?? "", process.env["STGAME_SAUDE_CHAVE"] ?? "");
+  const tipo = await tipoPeloToken(data.token);
+  const porChave = segredoConfere(data.chave ?? "", process.env["STGAME_SAUDE_CHAVE"] ?? "");
+  const detalhe = ["master", "gerente", "admin"].includes(tipo ?? "") || porChave;
 
   const temPepper = !!process.env["STGAME_PIN_PEPPER"] && process.env["STGAME_PIN_PEPPER"]!.length >= 16;
 
@@ -1291,5 +1303,24 @@ export const diagnostico = createServerFn({ method: "GET" })
   // não são assunto de quem está passando na internet (25/09/2026).
   if (!detalhe) return { detalhe: false as const, banco };
 
-  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando, assinaturas };
+  // As rotinas (29/09/2026): cofre, agendamento, mensagens que falharam e
+  // fotos vencidas ainda guardadas. O que depende da plataforma (segredos,
+  // agendamento) todo dono vê; os NÚMEROS somados de todas as contas, só o
+  // admin geral ou quem tem a chave — cada dono vê os da própria conta na tela.
+  let rotinas: SaudeDasRotinas | null = null;
+  if (temChave) {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: r, error } = await supabaseAdmin.rpc("saude_das_rotinas");
+      if (!error && r) {
+        const bruto = r as unknown as SaudeDasRotinas;
+        const verTudo = tipo === "admin" || porChave;
+        rotinas = verTudo ? bruto : { ...bruto, mensagensfalhadas: null, fotos: null };
+      }
+    } catch {
+      rotinas = null;
+    }
+  }
+
+  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando, assinaturas, rotinas };
 });

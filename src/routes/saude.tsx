@@ -6,7 +6,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { diagnostico } from "@/servidor/acesso";
+import { diagnostico, type SaudeDasRotinas } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
 import { VERSAO, versaoEmTexto } from "@/ui/versao";
 import { dataHoraBr } from "@/rh/datas";
@@ -88,7 +88,7 @@ function Saude() {
         </div>
       )}
 
-      <RotinasSemTarefa />
+      <SaudeDaConta />
 
       {d.data?.detalhe && (
         <>
@@ -128,6 +128,8 @@ function Saude() {
             />
           </ul>
 
+          {d.data.rotinas && <Rotinas r={d.data.rotinas} />}
+
           {d.data.assinaturas.length > 0 && (
             <div className="rounded-lg border border-destructive bg-card p-3">
               <p className="text-sm font-medium">Funções com parâmetros diferentes do que o app espera:</p>
@@ -164,37 +166,131 @@ function Saude() {
   );
 }
 
+/** Uma hora sem rodar já é sinal de agendamento parado (ele roda a cada 5 minutos). */
+const PARADO_DEPOIS_DE_MS = 60 * 60 * 1000;
+
 /**
- * Rotina que rodou e não achou a tarefa de que depende (28/09/2026): a Agenda
- * sem "Atender agendamento", os Comunicados sem "Leitura de comunicado". Não
- * pode falhar em silêncio. Só aparece com login, e cada conta só vê os dela
- * (a regra da tabela de avisos).
+ * O que as rotinas automáticas precisam para rodar (29/09/2026). Diz só SE
+ * cada segredo existe, nunca o valor. Os números somados de todas as contas
+ * (mensagens e fotos) só vêm para o admin geral ou com a chave.
  */
-function RotinasSemTarefa() {
-  const avisos = useQuery({
-    queryKey: ["saude-rotinas-sem-tarefa"],
+function Rotinas({ r }: { r: SaudeDasRotinas }) {
+  const rotinas = r.jobs.find((j) => j.nome === "gamegb-rotinas");
+  const fila = r.jobs.find((j) => j.nome === "stgame-telegram-fila");
+  const rodouAgora = (j?: SaudeDasRotinas["jobs"][number]) =>
+    !!j?.ultimaexecucao && Date.now() - Date.parse(j.ultimaexecucao) < PARADO_DEPOIS_DE_MS && j.ultimostatus !== "failed";
+  const segredo = (nome: string) => r.segredos[nome] === true;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Rotinas automáticas</p>
+      <ul className="space-y-2">
+        <Linha
+          ok={r.cofre && r.pgnet}
+          titulo="Cofre de segredos e chamadas do banco (Vault e pg_net)"
+          ajuda="Sem eles, nenhuma foto vencida é apagada e nenhuma mensagem sai. Ligue as extensões Vault e pg_net no Supabase."
+        />
+        <Linha
+          ok={segredo("stgame_funcoes_url") && segredo("stgame_expurgo_segredo")}
+          titulo="Segredos do apagamento de fotos no cofre"
+          ajuda="Faltam stgame_funcoes_url e/ou stgame_expurgo_segredo no Vault. Sem eles, as fotos vencidas não são apagadas."
+        />
+        <Linha
+          ok={r.agendador && !!rotinas?.existe && !!rotinas?.ativo && rodouAgora(rotinas)}
+          titulo="Agendamento automático das rotinas (lista do dia, fechamento, fotos)"
+          ajuda={
+            !r.agendador
+              ? "A extensão pg_cron não está ligada: nenhuma rotina roda sozinha."
+              : !rotinas?.existe
+                ? 'O agendamento "gamegb-rotinas" não existe. Aplique as migrações.'
+                : !rotinas.ativo
+                  ? 'O agendamento "gamegb-rotinas" está desligado.'
+                  : `A última execução foi ${rotinas.ultimaexecucao ? dataHoraBr(rotinas.ultimaexecucao) : "nunca"}${rotinas.ultimostatus === "failed" ? ", com erro" : ""}: ele deveria rodar a cada 5 minutos.`
+          }
+        />
+        <Linha
+          ok={segredo("stgame_fila_segredo") && !!fila?.existe && !!fila?.ativo}
+          titulo="Fila de mensagens do Telegram (só importa com o bot ligado)"
+          ajuda="Falta o segredo stgame_fila_segredo no Vault ou o agendamento stgame-telegram-fila. Resolver antes de ligar o Telegram (Etapa 1.13)."
+        />
+        {r.mensagensfalhadas !== null && (
+          <Linha
+            ok={r.mensagensfalhadas === 0}
+            titulo={`Mensagens que falharam nas últimas 24 horas: ${r.mensagensfalhadas}`}
+            ajuda="Mensagens que o Telegram recusou até desistir. Todas as contas somadas."
+          />
+        )}
+        {r.fotos && (
+          <Linha
+            ok={r.fotos.vencidas === 0 || r.fotos.diasdeatraso <= 2}
+            titulo={`Fotos vencidas ainda guardadas: ${r.fotos.vencidas}`}
+            ajuda={`A mais antiga passou do prazo há ${r.fotos.diasdeatraso} dia(s)${r.fotos.presas > 0 ? `; ${r.fotos.presas} com a remoção falhando` : ""}. A política de uso promete que elas são apagadas. Todas as contas somadas.`}
+          />
+        )}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * A saúde da conta de quem está logado: fotos vencidas ainda guardadas,
+ * mensagens que falharam e rotinas que não acharam a tarefa (28/09/2026).
+ * Cada conta só vê os dela.
+ */
+function SaudeDaConta() {
+  const dados = useQuery({
+    queryKey: ["saude-da-conta"],
     queryFn: async () => {
       const { data: sessao } = await supabase.auth.getSession();
       if (!sessao.session) return null;
-      const { data, error } = await supabase
-        .from("avisossistema")
-        .select("avisoid, texto, criadoem")
-        .eq("tipo", "rotina_sem_tarefa")
-        .order("criadoem", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      return data ?? [];
+      const [saude, avisos] = await Promise.all([
+        supabase.rpc("saude_da_minha_conta"),
+        supabase
+          .from("avisossistema")
+          .select("avisoid, texto, criadoem")
+          .eq("tipo", "rotina_sem_tarefa")
+          .order("criadoem", { ascending: false })
+          .limit(20),
+      ]);
+      if (saude.error) throw saude.error;
+      if (avisos.error) throw avisos.error;
+      return {
+        saude: saude.data as unknown as {
+          fotos: { vencidas: number; diasdeatraso: number; presas: number };
+          mensagensfalhadas: number;
+        } | null,
+        avisos: avisos.data ?? [],
+      };
     },
   });
-  if (!avisos.data) return null;
+  if (!dados.data) return null;
+  const { saude, avisos } = dados.data;
   return (
-    <div className={`rounded-lg border bg-card p-3 ${avisos.data.length > 0 ? "border-destructive" : "border-border"}`}>
-      <p className="text-sm font-medium">Rotinas que não acharam a tarefa</p>
-      {avisos.data.length === 0 ? (
-        <p className="mt-1 text-xs text-muted-foreground">Nenhuma: toda rotina achou a tarefa de que precisa.</p>
-      ) : (
-        <ul className="mt-2 space-y-2">
-          {avisos.data.map((a) => (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Esta conta</p>
+      <ul className="space-y-2">
+        {saude && (
+          <>
+            <Linha
+              ok={saude.fotos.vencidas === 0 || saude.fotos.diasdeatraso <= 2}
+              titulo={`Fotos vencidas ainda guardadas: ${saude.fotos.vencidas}`}
+              ajuda={`A mais antiga passou do prazo há ${saude.fotos.diasdeatraso} dia(s)${saude.fotos.presas > 0 ? `; ${saude.fotos.presas} com a remoção falhando` : ""}. A política de uso promete que elas são apagadas: a rotina de apagar não está dando conta.`}
+            />
+            <Linha
+              ok={saude.mensagensfalhadas === 0}
+              titulo={`Mensagens do Telegram que falharam nas últimas 24 horas: ${saude.mensagensfalhadas}`}
+              ajuda="O Telegram recusou essas mensagens até o sistema desistir."
+            />
+          </>
+        )}
+        <Linha
+          ok={avisos.length === 0}
+          titulo={avisos.length === 0 ? "Toda rotina achou a tarefa de que precisa" : "Rotinas que não acharam a tarefa"}
+          ajuda=""
+        />
+      </ul>
+      {avisos.length > 0 && (
+        <ul className="space-y-2 rounded-lg border border-destructive bg-card p-3">
+          {avisos.map((a) => (
             <li key={a.avisoid} className="text-xs">
               {a.texto} <span className="text-muted-foreground">({dataHoraBr(a.criadoem)})</span>
             </li>

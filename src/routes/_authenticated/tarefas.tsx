@@ -148,8 +148,13 @@ function Catalogo() {
       // confirmar, lendo a conta com todas as letras.
       const pontosNovos = Number(form.pontos);
       const pagaSozinha = rotinaDaTarefa(codigoEditando)?.pagaSemValidacao;
+      if (pagaSozinha && tetoDaConta !== null && pontosNovos > tetoDaConta) {
+        throw new Error(`O máximo permitido nesta conta é ${tetoDaConta} pontos por ciência (Configurações).`);
+      }
       if (pagaSozinha && pontosNovos > 0) {
-        const ok = confirm(`ATENÇÃO: ESTA TAREFA PAGA PONTOS SOZINHA.\n\n${pagaSozinha(pontosNovos)}\n\nSalvar com ${pontosNovos} pontos?`);
+        const ok = confirm(
+          `ATENÇÃO: ESTA TAREFA PAGA PONTOS SOZINHA.\n\n${pagaSozinha(pontosNovos, tetoDaConta)}\n\nSalvar com ${pontosNovos} pontos?`,
+        );
         if (!ok) return false;
       }
       const dados = {
@@ -203,6 +208,18 @@ function Catalogo() {
 
   const lista = catalogo.data ?? [];
   const rotinaEmEdicao = rotinaDaTarefa(codigoEditando);
+
+  // O teto de pontos por ciência da conta: só quando se edita a tarefa que
+  // paga sozinha (abrir a tela não ganha consulta nenhuma).
+  const teto = useQuery({
+    queryKey: ["teto-pontos-ciencia"],
+    enabled: !!rotinaEmEdicao?.pagaSemValidacao,
+    queryFn: async () => {
+      const { data } = await supabase.from("configuracoes").select("valor").eq("chave", "MAX_PONTOS_CIENCIA").maybeSingle();
+      return data?.valor ? Number(data.valor) : 50;
+    },
+  });
+  const tetoDaConta = teto.data ?? null;
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
 
   return (
@@ -223,8 +240,8 @@ function Catalogo() {
             <p className="text-lg font-bold">⚠ Esta tarefa paga pontos sozinha, sem validação</p>
             <p className="text-base font-semibold">
               {Number(form.pontos) > 0
-                ? rotinaEmEdicao.pagaSemValidacao(Number(form.pontos))
-                : "Com 0 ponto ela não paga nada. Se você colocar pontos, cada ciência de comunicado novo (publicado com o campo de pontos em branco) passa a pagar esses pontos AUTOMATICAMENTE, SEM VALIDAÇÃO de ninguém."}
+                ? rotinaEmEdicao.pagaSemValidacao(Number(form.pontos), tetoDaConta)
+                : `Com 0 ponto ela não paga nada. Se você colocar pontos, cada ciência de comunicado novo (publicado com o campo de pontos em branco) passa a pagar esses pontos AUTOMATICAMENTE, SEM VALIDAÇÃO de ninguém.${tetoDaConta !== null ? ` O máximo permitido nesta conta é ${tetoDaConta} pontos.` : ""}`}
             </p>
           </div>
         )}

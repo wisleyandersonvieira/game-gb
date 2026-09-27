@@ -53,6 +53,12 @@ function resumo(e: Execucao): string {
   if (e.rotina === "conferencia_livro") return `${d.pessoas ?? 0} pessoas conferidas, tudo certo`;
   if (e.rotina === "limpeza") return `${d.apagados ?? 0} registros antigos apagados`;
   if (e.rotina === "expurgo_fotos") {
+    // Desde 29/09/2026 a rotina só PÕE NA FILA: "apagada" só depois de o
+    // arquivo sair de verdade (a Edge Function confirma).
+    if (d.enfileiradas !== undefined) {
+      const parte = d.enfileiradas === 0 ? "Nenhuma foto nova passou do prazo" : `${d.enfileiradas} fotos vencidas entraram na fila para apagar`;
+      return d.atraso ? `${parte} · fila parada: a mais antiga espera há ${d.atraso} dia(s)` : parte;
+    }
     if (d.fotos === 0) return `Nenhuma foto passou de ${d.dias ?? 180} dias`;
     return `${d.fotos ?? 0} fotos com mais de ${d.dias ?? 180} dias apagadas`;
   }

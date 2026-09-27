@@ -2,9 +2,11 @@
 // próprio banco (pg_net), com o cabeçalho x-expurgo-segredo. Sem ele ou com
 // valor errado: 401 e nada acontece.
 //
-// SQL não apaga arquivo do Storage. A rotina do banco já marcou a entrega
-// ("foto removida por tempo") e guardou o caminho na fila; aqui só se apaga o
-// arquivo e se devolve o resultado. Nenhum caminho vai para log.
+// SQL não apaga arquivo do Storage. A rotina do banco guardou o caminho na
+// fila; aqui se apaga o arquivo e se devolve o resultado. Desde 29/09/2026 a
+// entrega só passa a dizer "foto removida por tempo" quando este resultado
+// chega (expurgo_resultado): nunca antes de o arquivo sair. Nenhum caminho
+// vai para log.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { segredoConfere } from "../_shared/seguranca.ts";
 

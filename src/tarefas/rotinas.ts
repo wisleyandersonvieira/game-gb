@@ -22,14 +22,14 @@ export type Rotina = {
    * só a "Leitura de comunicado". A tela mostra um aviso grande ao editar e
    * pede confirmação ao salvar com pontos.
    */
-  pagaSemValidacao?: (pontos: number) => string;
+  pagaSemValidacao?: (pontos: number, teto: number | null) => string;
 };
 
 export const ROTINAS_POR_CODIGO: Record<string, Rotina> = {
   modelo_agendamento: {
     rotina: "Agenda: cada agendamento novo cria esta tarefa para o responsável, no dia do evento.",
     aoDesativar:
-      "Os agendamentos novos deixam de criar a tarefa de atender para o responsável. O agendamento é criado mesmo assim, e um aviso aparece no Início e na Saúde a cada vez.",
+      "Os agendamentos novos deixam de criar a tarefa de atender para o responsável (o agendamento é criado mesmo assim, e um aviso aparece no Início e na Saúde a cada vez). Os agendamentos JÁ MARCADOS também perdem a tarefa enquanto ela estiver desativada: eles aparecem na Agenda, em \"Agendamentos sem tarefa de atender\".",
     pontos: (p) =>
       `Os ${p} pontos são pagos quando o responsável entrega e a entrega é aprovada, como em qualquer tarefa. Nada é pago sozinho.`,
   },
@@ -42,10 +42,11 @@ export const ROTINAS_POR_CODIGO: Record<string, Rotina> = {
       p > 0
         ? `ATENÇÃO: com ${p} pontos, cada ciência de um comunicado novo publicado com o campo de pontos em branco paga ${p} pontos AUTOMATICAMENTE, sem validação. Os comunicados já publicados não mudam.`
         : "Com 0 ponto, a ciência dos comunicados novos (com o campo em branco) não paga nada.",
-    pagaSemValidacao: (p) =>
+    pagaSemValidacao: (p, teto) =>
       `Cada ciência de comunicado passa a pagar ${p} ${p === 1 ? "ponto" : "pontos"} AUTOMATICAMENTE, SEM VALIDAÇÃO de ninguém. ` +
       `Vale para todo comunicado novo publicado com o campo de pontos em branco. ` +
-      `Numa loja de 20 pessoas, um comunicado paga até ${new Intl.NumberFormat("pt-BR").format(20 * p)} pontos.`,
+      `Numa loja de 20 pessoas, um comunicado paga até ${new Intl.NumberFormat("pt-BR").format(20 * p)} pontos.` +
+      (teto !== null ? ` O máximo permitido nesta conta é ${teto} pontos (Configurações).` : ""),
   },
 };
 

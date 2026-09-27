@@ -4854,6 +4854,7 @@ export type Database = {
         Args: { p_documentoid: number }
         Returns: number[]
       }
+      agendamentos_sem_tarefa: { Args: { p_lojaid: number }; Returns: Json }
       alterar_configuracao: {
         Args: { p_chave: string; p_valor: string }
         Returns: string
@@ -5730,6 +5731,8 @@ export type Database = {
         Args: { p_ate?: string; p_de?: string; p_lojaid: number; p_offset?: number }
         Returns: Json
       }
+      saude_da_minha_conta: { Args: never; Returns: Json }
+      saude_das_rotinas: { Args: never; Returns: Json }
       salvar_intervalo_do_mapa: {
         Args: { p_fim: string | null; p_funcionarioid: number; p_inicio: string | null }
         Returns: undefined
@@ -6052,6 +6055,7 @@ export type Database = {
       }
       recibo_ciencia: { Args: { p_assinaturaid: number }; Returns: Json }
       recibo_resgate: { Args: { p_resgateid: number }; Returns: Json }
+      recriar_tarefa_do_agendamento: { Args: { p_agendamentoid: number }; Returns: boolean }
       recusar_entrega: {
         Args: { p_entregaid: number; p_motivo: string }
         Returns: undefined

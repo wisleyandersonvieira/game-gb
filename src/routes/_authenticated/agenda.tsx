@@ -87,7 +87,7 @@ const COR: Record<string, string> = {
 };
 
 function atualizarTudo(qc: ReturnType<typeof useQueryClient>) {
-  for (const k of ["agenda", "agenda-historico", "agenda-anexos", "painel", "para-entregar", "quadro"]) {
+  for (const k of ["agenda", "agenda-historico", "agenda-anexos", "agenda-sem-tarefa", "painel", "para-entregar", "quadro"]) {
     qc.invalidateQueries({ queryKey: [k] });
   }
 }
@@ -133,6 +133,7 @@ function Agenda() {
         <AvisoSemLoja />
       ) : (
         <>
+          <SemTarefa lojaid={lojaAtiva} />
           <div className="flex flex-wrap gap-x-2 border-b border-border">
             {(
               [
@@ -164,6 +165,75 @@ function Agenda() {
         </>
       )}
     </Pagina>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Agendamentos que perderam a tarefa de atender (29/09/2026)          */
+/* ------------------------------------------------------------------ */
+
+const MOTIVO: Record<string, string> = {
+  sem_tarefa: "está sem a tarefa de atender",
+  tarefa_desativada: 'a tarefa "Atender agendamento" está desativada no Catálogo de tarefas',
+  responsavel_fora: "o responsável não trabalha mais nesta loja: troque o responsável",
+};
+
+/**
+ * Agendamento futuro cuja tarefa de atender não vai aparecer na lista do dia.
+ * Antes isso sumia em silêncio; agora aparece aqui, com o motivo, e o botão
+ * recria a tarefa quando dá (remarcar e trocar o responsável também recriam).
+ */
+function SemTarefa({ lojaid }: { lojaid: number }) {
+  const qc = useQueryClient();
+  const lista = useQuery({
+    queryKey: ["agenda-sem-tarefa", lojaid],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("agendamentos_sem_tarefa", { p_lojaid: lojaid });
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        agendamentoid: number;
+        quando: string;
+        cliente: string;
+        responsavel: string | null;
+        motivo: string;
+      }[];
+    },
+  });
+  const recriar = useMutation({
+    mutationFn: async (agendamentoid: number) => {
+      const { error } = await supabase.rpc("recriar_tarefa_do_agendamento", { p_agendamentoid: agendamentoid });
+      if (error) throw error;
+    },
+    onSuccess: () => atualizarTudo(qc),
+  });
+  const itens = lista.data ?? [];
+  if (itens.length === 0) return null;
+  return (
+    <div role="alert" className="space-y-2 rounded-xl border-2 border-destructive bg-destructive/10 p-4">
+      <p className="font-semibold text-destructive">
+        Agendamentos sem tarefa de atender ({itens.length}): a tarefa não vai aparecer para o responsável
+      </p>
+      <ul className="space-y-2">
+        {itens.map((a) => (
+          <li key={a.agendamentoid} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span>
+              <strong>{a.quando}</strong> · {a.cliente}
+              {a.responsavel && ` · ${a.responsavel}`} — {MOTIVO[a.motivo] ?? a.motivo}
+            </span>
+            {a.motivo === "sem_tarefa" && (
+              <button
+                onClick={() => recriar.mutate(a.agendamentoid)}
+                disabled={recriar.isPending}
+                className="rounded-md border border-border bg-card px-3 py-1 text-sm disabled:opacity-60"
+              >
+                Recriar tarefa
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {recriar.isError && <p className="text-sm text-destructive">{(recriar.error as Error).message}</p>}
+    </div>
   );
 }
 

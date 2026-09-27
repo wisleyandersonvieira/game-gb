@@ -8,12 +8,14 @@ describe("rotinas que usam tarefas", () => {
   test("a Leitura de comunicado avisa que paga sozinha, sem validação", () => {
     const aviso = rotinaDaTarefa("leitura")?.pagaSemValidacao;
     expect(aviso).toBeDefined();
-    const texto = aviso!(1000);
+    const texto = aviso!(1000, 50);
     expect(texto).toContain("AUTOMATICAMENTE");
     expect(texto).toContain("SEM VALIDAÇÃO");
     expect(texto).toContain("Cada ciência");
     // O engano de digitar 1000: a conta aparece na tela.
     expect(texto).toContain("20.000");
+    // O teto da conta vem escrito no aviso.
+    expect(texto).toContain("O máximo permitido nesta conta é 50 pontos");
   });
 
   test("só a Leitura de comunicado paga sem validação", () => {

@@ -339,7 +339,7 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | dataestorno | timestamptz |  |
 | estornadopor | uuid | → auth.users |
 | motivoestorno | text | Obrigatório quando o status é Estornada |
-| fotoexpiradaem | timestamptz | Quando a foto foi apagada por tempo (Etapa 1.12). A entrega, os pontos e o histórico continuam valendo; a tela mostra "foto removida por tempo" |
+| fotoexpiradaem | timestamptz | Quando a foto foi apagada por tempo (Etapa 1.12). **Desde 29/09/2026 só é gravada depois de o arquivo sair de verdade** (`expurgo_resultado`), nunca antes. A entrega, os pontos e o histórico continuam valendo; a tela mostra "foto removida por tempo" |
 
 **Regras de `entregas`:** `statusvalidacao` é `Pendente`, `Aprovada`, `Recusada` ou `Estornada`. Recusada exige `motivorecusa` e Estornada exige `motivoestorno` (o banco recusa sem). No máximo uma entrega Pendente ou Aprovada por atribuição por dia, no fuso de São Paulo. A entrega aponta para a sua atribuição e tem de concordar com ela em tarefa, pessoa e loja. **O navegador não grava nesta tabela:** tudo passa por `registrar_entrega`, `aprovar_entrega`, `recusar_entrega` e `estornar_entrega`.
 
@@ -580,7 +580,7 @@ Fila do que precisa sair do Storage. Nível conta.
 | tentativas | integer | para em 5 |
 | erro | text | último erro da remoção |
 
-**Ninguém lê pelo navegador** (RLS ligada e sem policy; sem GRANT para `anon` nem `authenticated`). SQL não apaga arquivo do Storage: a rotina `rotina_expurgo_fotos(conta, agora)` marca a entrega (`fotoexpiradaem`), zera `pathfotoevidencia` e põe o caminho aqui; a Edge Function **expurgo-fotos** (cabeçalho `x-expurgo-segredo`, chamada por `fotos_expurgo_disparar()` via pg_net) apaga o arquivo e responde por `expurgo_pegar` / `expurgo_resultado`. Prazo por conta em `DIAS_GUARDAR_FOTO_ENTREGA` (padrão 180, mínimo 90, garantido também por `dias_guardar_foto`). **`fotoidunico` não é apagado**: é a marca que impede reenviar a mesma foto. **Documento de RH não entra aqui**: tem regra própria.
+**Ninguém lê pelo navegador** (RLS ligada e sem policy; sem GRANT para `anon` nem `authenticated`). SQL não apaga arquivo do Storage: a rotina `rotina_expurgo_fotos(conta, agora)` **só põe o caminho aqui** (nunca o arquivo que ainda serve a uma entrega no prazo); quando a remoção é confirmada, `expurgo_resultado` marca as entregas (`fotoexpiradaem`) e zera `pathfotoevidencia` — antes disso a entrega continua dizendo que a foto está guardada (29/09/2026). Fila parada (5 tentativas, ou mais de 2 dias) vira aviso `expurgo_preso`; a `/saude` mostra as vencidas ainda guardadas (`saude_das_rotinas`, `saude_da_minha_conta`); a Edge Function **expurgo-fotos** (cabeçalho `x-expurgo-segredo`, chamada por `fotos_expurgo_disparar()` via pg_net) apaga o arquivo e responde por `expurgo_pegar` / `expurgo_resultado`. Prazo por conta em `DIAS_GUARDAR_FOTO_ENTREGA` (padrão 180, mínimo 90, garantido também por `dias_guardar_foto`). **`fotoidunico` não é apagado**: é a marca que impede reenviar a mesma foto. **Documento de RH não entra aqui**: tem regra própria.
 
 ## itenscontagemestoque
 | Coluna | Tipo | Obs |
