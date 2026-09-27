@@ -40,7 +40,7 @@ function Gestao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("contas")
-        .select("contaid, nome, email, telefone, cidade, limitelojas, status")
+        .select("contaid, nome, nomefantasia, email, telefone, cidade, limitelojas, status")
         .single();
       if (error) throw error;
       return data;
@@ -149,7 +149,7 @@ function Gestao() {
 
   return (
     <Pagina
-      titulo={conta.data?.nome ?? "Lojas e links da TV"}
+      titulo={conta.data?.nomefantasia ?? "Lojas e links da TV"}
       acoes={
         conta.data ? (
           <p className="text-sm text-muted-foreground">
@@ -529,7 +529,7 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
     queryKey: ["codigo-da-empresa"],
     staleTime: ESTAVEL,
     queryFn: async () => {
-      const { data, error } = await supabase.from("contas").select("codigo, nome").single();
+      const { data, error } = await supabase.from("contas").select("codigo, nomefantasia").single();
       if (error) throw error;
       return data;
     },
@@ -643,7 +643,7 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
         <div id="ficha-impressa">
           <h1 style={{ fontSize: "20pt", marginBottom: "4mm" }}>Ficha de acesso — {senhaNova.loja}</h1>
           <p style={{ fontSize: "10pt", marginBottom: "8mm" }}>
-            {conta.data?.nome ?? ""} · gerada em {new Date().toLocaleString("pt-BR")}
+            {conta.data?.nomefantasia ?? ""} · gerada em {new Date().toLocaleString("pt-BR")}
           </p>
           <h2 style={{ fontSize: "12pt", marginTop: "6mm" }}>Tablet do balcão</h2>
           <p style={{ fontSize: "12pt" }}>

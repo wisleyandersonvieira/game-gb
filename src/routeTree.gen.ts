@@ -44,6 +44,7 @@ import { Route as AuthenticatedSolicitacoesRouteImport } from './routes/_authent
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminPerfilRouteImport } from './routes/admin/perfil'
+import { Route as AdminRedesRouteImport } from './routes/admin/redes'
 import { Route as ECodigoRouteImport } from './routes/e.$codigo'
 import { Route as EuIndexRouteImport } from './routes/eu/index'
 import { Route as EuExtratoRouteImport } from './routes/eu/extrato'
@@ -235,6 +236,11 @@ const AdminPerfilRoute = AdminPerfilRouteImport.update({
   path: '/perfil',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminRedesRoute = AdminRedesRouteImport.update({
+  id: '/redes',
+  path: '/redes',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const ECodigoRoute = ECodigoRouteImport.update({
   id: '/e/$codigo',
   path: '/e/$codigo',
@@ -310,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
+  '/admin/redes': typeof AdminRedesRoute
   '/e/$codigo': typeof ECodigoRoute
   '/eu/extrato': typeof EuExtratoRoute
   '/eu/perfil': typeof EuPerfilRoute
@@ -352,6 +359,7 @@ export interface FileRoutesByTo {
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
+  '/admin/redes': typeof AdminRedesRoute
   '/e/$codigo': typeof ECodigoRoute
   '/eu/extrato': typeof EuExtratoRoute
   '/eu/perfil': typeof EuPerfilRoute
@@ -398,6 +406,7 @@ export interface FileRoutesById {
   '/_authenticated/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
   '/admin/perfil': typeof AdminPerfilRoute
+  '/admin/redes': typeof AdminRedesRoute
   '/e/$codigo': typeof ECodigoRoute
   '/eu/extrato': typeof EuExtratoRoute
   '/eu/perfil': typeof EuPerfilRoute
@@ -444,6 +453,7 @@ export interface FileRouteTypes {
     | '/solicitacoes'
     | '/tarefas'
     | '/admin/perfil'
+    | '/admin/redes'
     | '/e/$codigo'
     | '/eu/extrato'
     | '/eu/perfil'
@@ -486,6 +496,7 @@ export interface FileRouteTypes {
     | '/solicitacoes'
     | '/tarefas'
     | '/admin/perfil'
+    | '/admin/redes'
     | '/e/$codigo'
     | '/eu/extrato'
     | '/eu/perfil'
@@ -531,6 +542,7 @@ export interface FileRouteTypes {
     | '/_authenticated/solicitacoes'
     | '/_authenticated/tarefas'
     | '/admin/perfil'
+    | '/admin/redes'
     | '/e/$codigo'
     | '/eu/extrato'
     | '/eu/perfil'
@@ -806,6 +818,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPerfilRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/redes': {
+      id: '/admin/redes'
+      path: '/redes'
+      fullPath: '/admin/redes'
+      preLoaderRoute: typeof AdminRedesRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/e/$codigo': {
       id: '/e/$codigo'
       path: '/e/$codigo'
@@ -920,11 +939,13 @@ const AuthenticatedRouteRouteWithChildren =
 
 interface AdminRouteRouteChildren {
   AdminPerfilRoute: typeof AdminPerfilRoute
+  AdminRedesRoute: typeof AdminRedesRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminPerfilRoute: AdminPerfilRoute,
+  AdminRedesRoute: AdminRedesRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

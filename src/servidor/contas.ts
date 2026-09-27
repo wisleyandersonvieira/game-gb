@@ -9,6 +9,7 @@
 //   chamou. Esconder o botao na tela nao e protecao.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { conferirPasse, emitirPasse } from "@/servidor/segredos";
 
 type ClienteDoUsuario = { rpc: (nome: string) => Promise<{ data: unknown; error: unknown }> };
 
@@ -57,6 +58,11 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
   .validator(
     (d: {
       nome: string;
+      nomefantasia?: string;
+      responsavel?: string;
+      cnpj?: string;
+      redeid?: number | null;
+      codigo?: string;
       email: string;
       telefone?: string;
       cidade?: string;
@@ -69,7 +75,7 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
 
     const email = data.email.trim().toLowerCase();
     const nome = data.nome.trim();
-    if (!nome) throw new Error("Informe o nome do cliente.");
+    if (!nome) throw new Error("Informe a razão social do cliente.");
     if (!email) throw new Error("Informe o e-mail do usuário master.");
     if (!Number.isInteger(data.limitelojas) || data.limitelojas < 1) {
       throw new Error("O limite de lojas precisa ser um número inteiro de 1 para cima.");
@@ -98,6 +104,13 @@ export const criarContaEConvidar = createServerFn({ method: "POST" })
       .from("contas")
       .insert({
         nome,
+        // Vazio: o banco usa a razão social. Os gatilhos também limpam o CNPJ
+        // (só dígitos, conferidos, sem repetir) e conferem o código.
+        nomefantasia: data.nomefantasia?.trim() || null,
+        responsavel: data.responsavel?.trim() || null,
+        cnpj: data.cnpj?.trim() || null,
+        redeid: Number.isInteger(data.redeid) ? data.redeid : null,
+        codigo: data.codigo?.trim().toLowerCase() || null,
         email,
         telefone: data.telefone?.trim() || null,
         cidade: data.cidade?.trim() || null,
@@ -254,4 +267,203 @@ export const situacaoDosLogins = createServerFn({ method: "GET" })
       contaid: v.contaid as number,
       jaEntrou: porId.get(v.userid as string) ?? false,
     }));
+  });
+
+// ---------------------------------------------------------------------------
+// Anexos da administração e logotipo das redes (27/09/2026)
+// ---------------------------------------------------------------------------
+// Contratos têm dado pessoal dentro: são tratados como documento SIGILOSO.
+// Os dois buckets são privados e não têm regra de acesso para ninguém — só o
+// servidor chega neles, e só depois de conferir que quem pediu é o admin
+// geral. O arquivo sobe direto do navegador para o Storage, com uma
+// autorização de poucos minutos para UM caminho; o registro só é gravado
+// depois que o servidor confere, no próprio Storage, tamanho e tipo.
+
+const BUCKET_ANEXOS = "administracao";
+const BUCKET_LOGOS = "logos-redes";
+export const TIPOS_ANEXO: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+export const TIPOS_LOGO: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+export const MAXIMO_ANEXO = 10 * 1024 * 1024;
+export const MAXIMO_LOGO = 512 * 1024;
+/** O link para abrir um anexo ou ver um logotipo vale isto (segundos). */
+const LINK_SEGUNDOS = 300;
+
+type Alvo = { alvo: "conta" | "rede"; id: number };
+const assuntoDoEnvio = (caminho: string, tipo: string, tamanho: number) => `envio:${caminho}:${tipo}:${tamanho}`;
+
+function conferirAlvo(d: Partial<Alvo>): Alvo {
+  if (d?.alvo !== "conta" && d?.alvo !== "rede") throw new Error("Diga de quem é o anexo.");
+  if (!Number.isInteger(d.id) || (d.id as number) <= 0) throw new Error("Cliente ou rede inválido.");
+  return { alvo: d.alvo, id: d.id as number };
+}
+
+/** Confere no próprio Storage que o arquivo chegou com o tamanho e o tipo prometidos. */
+async function conferirArquivo(bucket: string, caminho: string, tipo: string, tamanho: number) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const pasta = caminho.slice(0, caminho.lastIndexOf("/"));
+  const nome = caminho.slice(caminho.lastIndexOf("/") + 1);
+  const { data } = await supabaseAdmin.storage.from(bucket).list(pasta, { search: nome, limit: 5 });
+  const obj = (data ?? []).find((o) => o.name === nome) as
+    | { metadata?: { size?: number; mimetype?: string } }
+    | undefined;
+  if (!obj) throw new Error("O arquivo não chegou. Tente enviar de novo.");
+  const real = obj.metadata?.size ?? -1;
+  if (real !== tamanho || (obj.metadata?.mimetype && obj.metadata.mimetype !== tipo)) {
+    await supabaseAdmin.storage.from(bucket).remove([caminho]).catch(() => undefined);
+    throw new Error("O arquivo que chegou não é o que foi autorizado. Envie de novo.");
+  }
+}
+
+export const autorizarAnexoAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { alvo: "conta" | "rede"; id: number; tipo: string; tamanho: number }) => {
+    const a = conferirAlvo(d);
+    if (!TIPOS_ANEXO[d?.tipo]) throw new Error("Só PDF ou imagem (JPG, PNG, WEBP).");
+    if (!Number.isInteger(d?.tamanho) || d.tamanho <= 0 || d.tamanho > MAXIMO_ANEXO) {
+      throw new Error("O arquivo passa de 10 MB.");
+    }
+    return { ...a, tipo: d.tipo, tamanho: d.tamanho };
+  })
+  .handler(async ({ data, context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: existe } =
+      data.alvo === "conta"
+        ? await supabaseAdmin.from("contas").select("contaid").eq("contaid", data.id).maybeSingle()
+        : await supabaseAdmin.from("redes").select("redeid").eq("redeid", data.id).maybeSingle();
+    if (!existe) throw new Error(data.alvo === "conta" ? "Cliente não encontrado." : "Rede não encontrada.");
+
+    const caminho = `${data.alvo}s/${data.id}/${crypto.randomUUID()}.${TIPOS_ANEXO[data.tipo]}`;
+    const { data: envio, error } = await supabaseAdmin.storage.from(BUCKET_ANEXOS).createSignedUploadUrl(caminho);
+    if (error || !envio) throw new Error("Não foi possível preparar o envio.");
+    const { userId } = context as unknown as { userId: string };
+    return {
+      caminho,
+      token: envio.token,
+      passe: await emitirPasse(assuntoDoEnvio(caminho, data.tipo, data.tamanho), `${data.alvo}:${data.id}:${userId}`),
+    };
+  });
+
+export const registrarAnexoAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (d: { alvo: "conta" | "rede"; id: number; caminho: string; passe: string; nome: string; tipo: string; tamanho: number }) => {
+      const a = conferirAlvo(d);
+      if (typeof d?.caminho !== "string" || typeof d?.passe !== "string") throw new Error("Envio inválido.");
+      return {
+        ...a,
+        caminho: d.caminho.slice(0, 300),
+        passe: d.passe.slice(0, 200),
+        nome: (typeof d.nome === "string" ? d.nome : "arquivo").slice(0, 200),
+        tipo: String(d.tipo),
+        tamanho: Number(d.tamanho),
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { userId } = context as unknown as { userId: string };
+    // O passe prova que ESTE servidor autorizou este caminho, com este tipo e
+    // este tamanho, para este cliente (ou rede), há menos de 15 minutos.
+    await conferirPasse(data.passe, assuntoDoEnvio(data.caminho, data.tipo, data.tamanho), `${data.alvo}:${data.id}:${userId}`, 15);
+    await conferirArquivo(BUCKET_ANEXOS, data.caminho, data.tipo, data.tamanho);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("anexosadmin").insert({
+      contaid: data.alvo === "conta" ? data.id : null,
+      redeid: data.alvo === "rede" ? data.id : null,
+      nomearquivo: data.nome,
+      caminho: data.caminho,
+      tipo: data.tipo,
+      tamanho: data.tamanho,
+      enviadopor: userId,
+    });
+    if (error) throw new Error(`Não foi possível registrar o anexo: ${error.message}`);
+    return { ok: true as const };
+  });
+
+/** Um link para abrir o anexo, que vale 5 minutos. */
+export const abrirAnexoAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { anexoid: number }) => {
+    if (!Number.isInteger(d?.anexoid)) throw new Error("Anexo inválido.");
+    return { anexoid: d.anexoid };
+  })
+  .handler(async ({ data, context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: anexo } = await supabaseAdmin
+      .from("anexosadmin").select("caminho").eq("anexoid", data.anexoid).maybeSingle();
+    if (!anexo) throw new Error("Anexo não encontrado.");
+    const { data: link, error } = await supabaseAdmin.storage
+      .from(BUCKET_ANEXOS).createSignedUrl(anexo.caminho, LINK_SEGUNDOS);
+    if (error || !link) throw new Error("Não foi possível abrir o anexo agora.");
+    return { url: link.signedUrl };
+  });
+
+export const autorizarLogoRede = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { redeid: number; tipo: string; tamanho: number }) => {
+    if (!Number.isInteger(d?.redeid)) throw new Error("Rede inválida.");
+    if (!TIPOS_LOGO[d?.tipo]) throw new Error("O logotipo tem de ser PNG, JPG ou WEBP.");
+    if (!Number.isInteger(d?.tamanho) || d.tamanho <= 0 || d.tamanho > MAXIMO_LOGO) {
+      throw new Error("O logotipo passa de 512 KB. Use uma imagem menor.");
+    }
+    return { redeid: d.redeid, tipo: d.tipo, tamanho: d.tamanho };
+  })
+  .handler(async ({ data, context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { userId } = context as unknown as { userId: string };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const caminho = `redes/${data.redeid}/${crypto.randomUUID()}.${TIPOS_LOGO[data.tipo]}`;
+    const { data: envio, error } = await supabaseAdmin.storage.from(BUCKET_LOGOS).createSignedUploadUrl(caminho);
+    if (error || !envio) throw new Error("Não foi possível preparar o envio.");
+    return {
+      caminho,
+      token: envio.token,
+      passe: await emitirPasse(assuntoDoEnvio(caminho, data.tipo, data.tamanho), `rede:${data.redeid}:${userId}`),
+    };
+  });
+
+export const registrarLogoRede = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { redeid: number; caminho: string; passe: string; tipo: string; tamanho: number }) => {
+    if (!Number.isInteger(d?.redeid) || typeof d?.caminho !== "string" || typeof d?.passe !== "string") {
+      throw new Error("Envio inválido.");
+    }
+    return { redeid: d.redeid, caminho: d.caminho.slice(0, 300), passe: d.passe.slice(0, 200), tipo: String(d.tipo), tamanho: Number(d.tamanho) };
+  })
+  .handler(async ({ data, context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { userId } = context as unknown as { userId: string };
+    await conferirPasse(data.passe, assuntoDoEnvio(data.caminho, data.tipo, data.tamanho), `rede:${data.redeid}:${userId}`, 15);
+    await conferirArquivo(BUCKET_LOGOS, data.caminho, data.tipo, data.tamanho);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: antes } = await supabaseAdmin.from("redes").select("logocaminho").eq("redeid", data.redeid).maybeSingle();
+    const { error } = await supabaseAdmin.from("redes").update({ logocaminho: data.caminho }).eq("redeid", data.redeid);
+    if (error) throw new Error(`Não foi possível salvar o logotipo: ${error.message}`);
+    // O logotipo anterior sai do Storage: não fica arquivo órfão.
+    if (antes?.logocaminho) await supabaseAdmin.storage.from(BUCKET_LOGOS).remove([antes.logocaminho]).catch(() => undefined);
+    return { ok: true as const };
+  });
+
+/** Os logotipos das redes, com links de 5 minutos (o bucket é privado). */
+export const logosDasRedes = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: redes } = await supabaseAdmin.from("redes").select("redeid, logocaminho").not("logocaminho", "is", null);
+    const lista = (redes ?? []) as { redeid: number; logocaminho: string }[];
+    if (lista.length === 0) return {} as Record<number, string>;
+    const { data: links } = await supabaseAdmin.storage
+      .from(BUCKET_LOGOS).createSignedUrls(lista.map((r) => r.logocaminho), LINK_SEGUNDOS);
+    const porCaminho = new Map((links ?? []).map((l) => [l.path, l.signedUrl]));
+    return Object.fromEntries(lista.map((r) => [r.redeid, porCaminho.get(r.logocaminho) ?? ""])) as Record<number, string>;
   });

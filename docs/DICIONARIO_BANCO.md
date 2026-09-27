@@ -75,6 +75,9 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `tentativasacesso` | conta | tentativaid |  |
 | `codigosacesso` | conta | codigoid | funcionarios |
 | `folhasacesso` | conta | folhaid | funcionarios, codigosacesso |
+| `codigosantigos` | conta | codigo | contas |
+| `anexosadmin` | conta (ou rede) | anexoid | contas / redes |
+| `redes` | **plataforma** (sem conta) | redeid | — |
 | `senhasgestor` | conta (vazia no admin geral) | userid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
@@ -1265,3 +1268,32 @@ Entra por `pegar_tarefa(atribuicao, funcionario)` (o bot continua chamando `pega
 
 ### Funções (todas internas ou só para o servidor)
 `jornada_da_pessoa(conta, pessoa, dia)` (o turno que começa no dia; entende o turno da noite), `bot_janela(conta, pessoa, agora)` (pode mandar agora? senão, quando), `no_silencio`, `bot_enviadas_hoje`, `rotina_mensagens(conta, agora)` (chamada pelo despachante a cada 5 minutos), `bot_texto_rotina` (monta a mensagem na hora de enviar; devolve vazio quando não faz mais sentido), `bot_resumo_ausencia`, `bot_marcar_bloqueio`, `bot_visto(chat)`, `bot_pegar_folga` e `bot_pegar_missao` (grupo da equipe). Para as telas: `definir_horario_equipe(pessoas[], entrada, saida)` e `definir_rotina_mensagem(loja, rotina, ativo)`.
+
+## contas — campos de 27/09/2026
+| Coluna | Tipo | Obs |
+|---|---|---|
+| nome | varchar(200) | **razão social**: só em contrato e cobrança |
+| nomefantasia | varchar(120) | **o que aparece no produto** (cabeçalho do gestor, celular, folha de acesso, recibos, Telegram). Quem já existia começou igual ao `nome` |
+| responsavel | varchar(120) | nome do responsável |
+| cnpj | varchar(20) | só os 14 dígitos, conferidos; vazio aceito; repetido, não |
+| redeid | integer | → redes (sem rede = vazio) |
+| codigo | varchar(30) | código da empresa. **Novo ou trocado:** apelido de 4 a 20 letras minúsculas e números, sugerido do nome fantasia; nunca sequencial. Os antigos continuam como estavam |
+
+## codigosantigos (27/09/2026)
+Código de empresa que foi trocado. **Abre a empresa por 30 dias** (os PDFs impressos e o link no mural continuam funcionando) e fica **reservado para ela para sempre**, para um papel velho nunca levar a outra empresa. Só o admin geral lê.
+
+## redes (27/09/2026) — tabela da PLATAFORMA
+Redes de franquia. Não tem `contaid`: reúne clientes, não pertence a nenhum. Só o admin geral lê e escreve.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| redeid | integer | ID automático |
+| nome | varchar(120) | único (sem diferenciar maiúscula) |
+| responsavel, endereco, telefone, email | texto | contato |
+| lojascontratadas | integer | o número **contratado**, digitado. O real (lojas ativas dos clientes da rede) é calculado em `redes_admin()` |
+| logocaminho | text | logotipo no bucket privado `logos-redes` (PNG/JPG/WEBP, até 512 KB). Só o servidor grava |
+
+Rede com cliente ligado não se apaga (o banco diz quantos são).
+
+## anexosadmin (27/09/2026)
+Contratos da administração, de um cliente **ou** de uma rede. **Documento sigiloso**: o arquivo fica no bucket privado `administracao`, sem regra de acesso para ninguém (só o servidor, depois de conferir que é o admin geral); o link de abertura vale 5 minutos. PDF ou imagem, até 10 MB. Guarda quem subiu e quando. Não se apaga.

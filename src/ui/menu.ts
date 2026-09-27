@@ -24,8 +24,7 @@ import {
   UserPlus,
   Users,
   Wrench,
-  type LucideIcon,
-} from "lucide-react";
+  type LucideIcon, Network } from "lucide-react";
 
 export type ItemMenu = { to: string; label: string; icone: LucideIcon };
 export type GrupoMenu = { titulo: string; itens: ItemMenu[] };
@@ -92,11 +91,18 @@ export const BARRA_CELULAR: ItemMenu[] = [
 ];
 
 export const MENU_ADMIN: GrupoMenu[] = [
-  { titulo: "Administração", itens: [{ to: "/admin", label: "Clientes", icone: Building2 }] },
+  {
+    titulo: "Administração",
+    itens: [
+      { to: "/admin", label: "Clientes", icone: Building2 },
+      { to: "/admin/redes", label: "Redes", icone: Network },
+    ],
+  },
   { titulo: "Conta", itens: [{ to: "/admin/perfil", label: "Meu perfil", icone: CircleUser }] },
 ];
 
 export const BARRA_CELULAR_ADMIN: ItemMenu[] = [
   { to: "/admin", label: "Clientes", icone: Building2 },
+  { to: "/admin/redes", label: "Redes", icone: Network },
   { to: "/admin/perfil", label: "Meu perfil", icone: CircleUser },
 ];

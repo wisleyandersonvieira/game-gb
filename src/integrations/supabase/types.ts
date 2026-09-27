@@ -265,6 +265,42 @@ export type Database = {
           },
         ]
       }
+      anexosadmin: {
+        Row: {
+          anexoid: number
+          caminho: string
+          contaid: number | null
+          enviadoem: string
+          enviadopor: string | null
+          nomearquivo: string
+          redeid: number | null
+          tamanho: number
+          tipo: string
+        }
+        Insert: {
+          anexoid?: number
+          caminho: string
+          contaid?: number | null
+          enviadoem?: string
+          enviadopor?: string | null
+          nomearquivo: string
+          redeid?: number | null
+          tamanho: number
+          tipo: string
+        }
+        Update: {
+          anexoid?: number
+          caminho?: string
+          contaid?: number | null
+          enviadoem?: string
+          enviadopor?: string | null
+          nomearquivo?: string
+          redeid?: number | null
+          tamanho?: number
+          tipo?: string
+        }
+        Relationships: []
+      }
       avisossistema: {
         Row: {
           avisoid: number
@@ -379,6 +415,30 @@ export type Database = {
             referencedColumns: ["contaid", "funcionarioid"]
           },
         ]
+      }
+      codigosantigos: {
+        Row: {
+          codigo: string
+          contaid: number
+          trocadoem: string
+          trocadopor: string | null
+          valeate: string
+        }
+        Insert: {
+          codigo: string
+          contaid: number
+          trocadoem?: string
+          trocadopor?: string | null
+          valeate: string
+        }
+        Update: {
+          codigo?: string
+          contaid?: number
+          trocadoem?: string
+          trocadopor?: string | null
+          valeate?: string
+        }
+        Relationships: []
       }
       configuracoes: {
         Row: {
@@ -684,6 +744,10 @@ export type Database = {
       }
       contas: {
         Row: {
+          cnpj: string | null
+          nomefantasia: string
+          redeid: number | null
+          responsavel: string | null
           cidade: string | null
           codigo: string
           contaid: number
@@ -696,6 +760,10 @@ export type Database = {
           telefone: string | null
         }
         Insert: {
+          cnpj?: string | null
+          nomefantasia?: string | null
+          redeid?: number | null
+          responsavel?: string | null
           cidade?: string | null
           codigo: string
           contaid?: number
@@ -708,6 +776,10 @@ export type Database = {
           telefone?: string | null
         }
         Update: {
+          cnpj?: string | null
+          nomefantasia?: string
+          redeid?: number | null
+          responsavel?: string | null
           cidade?: string | null
           codigo?: string
           contaid?: number
@@ -3663,6 +3735,45 @@ export type Database = {
           },
         ]
       }
+      redes: {
+        Row: {
+          criadoem: string
+          criadopor: string | null
+          email: string | null
+          endereco: string | null
+          logocaminho: string | null
+          lojascontratadas: number
+          nome: string
+          redeid: number
+          responsavel: string | null
+          telefone: string | null
+        }
+        Insert: {
+          criadoem?: string
+          criadopor?: string | null
+          email?: string | null
+          endereco?: string | null
+          logocaminho?: string | null
+          lojascontratadas?: number
+          nome: string
+          redeid?: number
+          responsavel?: string | null
+          telefone?: string | null
+        }
+        Update: {
+          criadoem?: string
+          criadopor?: string | null
+          email?: string | null
+          endereco?: string | null
+          logocaminho?: string | null
+          lojascontratadas?: number
+          nome?: string
+          redeid?: number
+          responsavel?: string | null
+          telefone?: string | null
+        }
+        Relationships: []
+      }
       resgates: {
         Row: {
           origem: string | null
@@ -5517,6 +5628,29 @@ export type Database = {
         Returns: Json
       }
       meu_hoje: { Args: never; Returns: Json }
+      sugerir_codigo_empresa: { Args: { p_codigoatual?: string; p_nome: string }; Returns: Json }
+      codigo_empresa_disponivel: { Args: { p_codigo: string; p_codigoatual?: string }; Returns: Json }
+      cnpj_valido: { Args: { p_cnpj: string }; Returns: boolean }
+      resumo_admin_das_contas: {
+        Args: never
+        Returns: { codigospendentes: number; contaid: number; lojasativas: number }[]
+      }
+      redes_admin: {
+        Args: never
+        Returns: {
+          clientes: number
+          criadoem: string
+          email: string | null
+          endereco: string | null
+          lojascontratadas: number
+          lojasreais: number
+          nome: string
+          redeid: number
+          responsavel: string | null
+          telefone: string | null
+          temlogo: boolean
+        }[]
+      }
       folha_de_acesso: { Args: { p_contaid: number; p_funcionarioids: number[] }; Returns: Json }
       registrar_folha_de_acesso: {
         Args: { p_codigoid: number; p_contaid: number; p_funcionarioid: number; p_quem: string; p_redefiniu: boolean }

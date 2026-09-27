@@ -1027,9 +1027,10 @@ export const definirSenhaDoTablet = createServerFn({ method: "POST" })
     const { data: loja } = await supabaseAdmin
       .from("lojas").select("nome").eq("contaid", contaid).eq("lojaid", data.lojaid).single();
     const { data: conta } = await supabaseAdmin
-      .from("contas").select("codigo, nome").eq("contaid", contaid).single();
+      .from("contas").select("codigo, nome, nomefantasia").eq("contaid", contaid).single();
 
-    const senha = conferirSenhaDoTablet(data.senha, [loja?.nome, conta?.codigo, conta?.nome]);
+    // Nem a razão social nem o nome fantasia: os dois são fáceis de adivinhar.
+    const senha = conferirSenhaDoTablet(data.senha, [loja?.nome, conta?.codigo, conta?.nome, conta?.nomefantasia]);
 
     const { error } = await supabaseAdmin.rpc("definir_senha_gestor", {
       p_userid: acesso.userid, p_contaid: contaid, p_hash: await resumoDaSenha(senha),

@@ -1,0 +1,869 @@
+-- =========================================================================
+-- STGame — Administração: razão social e nome fantasia, CNPJ, código da
+-- empresa curto, Redes, anexos sigilosos; e a cópia do código de acesso com
+-- vida curta.
+--
+-- Como usar: Supabase -> SQL Editor -> New query -> colar TUDO -> Run.
+-- Se der erro, NADA é aplicado: me mande a mensagem.
+-- Pode rodar duas vezes sem problema.
+--
+-- ATENÇÃO: aplique tudo o que veio antes. E aplique ESTE ARQUIVO ANTES de
+-- publicar a versão nova: as telas novas dependem das colunas daqui.
+--
+-- Este arquivo é UMA migração só:
+--   20260929160000_admin_clientes_e_redes.sql
+--
+-- O QUE MUDA PARA QUEM JÁ USA:
+--   * O único dado existente tocado: cada cliente ganha o NOME FANTASIA igual
+--     ao nome de hoje (nada muda de aparência). O "nome" passa a significar
+--     razão social.
+--   * O código da empresa de quem já existe NÃO muda.
+--   * Códigos de acesso já usados, cancelados ou vencidos perdem a cópia
+--     cifrada agora.
+--   * Dois buckets novos e privados no Storage: "administracao" e
+--     "logos-redes".
+-- =========================================================================
+
+
+BEGIN;
+
+-- Administração: razão social e nome fantasia, CNPJ, responsável, código da
+-- empresa curto (com o antigo valendo 30 dias), Redes de franquia e anexos
+-- sigilosos. E a cópia legível do código de acesso com vida curta
+-- (27/09/2026).
+
+-- ---------------------------------------------------------------------------
+-- 1. A cópia cifrada do código de acesso some quando o código deixa de valer
+-- ---------------------------------------------------------------------------
+-- Ela existe só para reimprimir a folha enquanto o código vale. Usado,
+-- cancelado (código novo, pessoa desativada, redefinir) ou vencido: some.
+-- O gatilho cobre TODO caminho que marca uso ou cancelamento, e a restrição
+-- impede que a situação exista, venha o UPDATE de onde vier.
+CREATE OR REPLACE FUNCTION public.codigo_cifrado_some()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NEW.usadoem IS NOT NULL OR NEW.canceladoem IS NOT NULL THEN
+    NEW.codigocifrado := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS codigosacesso_cifrado_some ON public.codigosacesso;
+CREATE TRIGGER codigosacesso_cifrado_some
+  BEFORE INSERT OR UPDATE ON public.codigosacesso
+  FOR EACH ROW EXECUTE FUNCTION public.codigo_cifrado_some();
+
+-- Os que já estão usados, cancelados ou vencidos perdem a cópia agora.
+UPDATE public.codigosacesso SET codigocifrado = NULL
+ WHERE codigocifrado IS NOT NULL
+   AND (usadoem IS NOT NULL OR canceladoem IS NOT NULL OR expiraem <= now());
+
+ALTER TABLE public.codigosacesso DROP CONSTRAINT IF EXISTS codigosacesso_cifrado_so_pendente;
+ALTER TABLE public.codigosacesso ADD CONSTRAINT codigosacesso_cifrado_so_pendente
+  CHECK (codigocifrado IS NULL OR (usadoem IS NULL AND canceladoem IS NULL));
+
+-- Vencer não é um UPDATE: quem apaga a cópia dos vencidos é esta faxina, a
+-- cada 5 minutos. Mesmo antes dela passar, código vencido não sai em folha
+-- nenhuma (folha_de_acesso só lê código válido).
+CREATE OR REPLACE FUNCTION public.limpar_codigos_vencidos()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE v_n integer;
+BEGIN
+  UPDATE public.codigosacesso SET codigocifrado = NULL
+   WHERE codigocifrado IS NOT NULL AND expiraem <= now();
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.limpar_codigos_vencidos() FROM public, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.limpar_codigos_vencidos() TO service_role;
+
+DO $cron$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+    CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+    EXECUTE $$SELECT cron.schedule('stgame-codigos-vencidos', '*/5 * * * *', 'SELECT public.limpar_codigos_vencidos()')$$;
+  ELSE
+    RAISE NOTICE 'pg_cron indisponível aqui: faxina dos códigos não agendada (ambiente de teste).';
+  END IF;
+END
+$cron$;
+
+-- ---------------------------------------------------------------------------
+-- 2. CNPJ
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cnpj_valido(p_cnpj text)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  d  text := regexp_replace(coalesce(p_cnpj, ''), '[^0-9]', '', 'g');
+  p1 int[] := ARRAY[5,4,3,2,9,8,7,6,5,4,3,2];
+  p2 int[] := ARRAY[6,5,4,3,2,9,8,7,6,5,4,3,2];
+  s  int;
+  r  int;
+BEGIN
+  IF length(d) <> 14 OR d ~ '^(\d)\1{13}$' THEN RETURN false; END IF;
+  s := 0;
+  FOR i IN 1..12 LOOP s := s + substr(d, i, 1)::int * p1[i]; END LOOP;
+  r := s % 11; r := CASE WHEN r < 2 THEN 0 ELSE 11 - r END;
+  IF r <> substr(d, 13, 1)::int THEN RETURN false; END IF;
+  s := 0;
+  FOR i IN 1..13 LOOP s := s + substr(d, i, 1)::int * p2[i]; END LOOP;
+  r := s % 11; r := CASE WHEN r < 2 THEN 0 ELSE 11 - r END;
+  RETURN r = substr(d, 14, 1)::int;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.cnpj_valido(text) FROM public, anon;
+GRANT  EXECUTE ON FUNCTION public.cnpj_valido(text) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 3. Redes (franquias) — da PLATAFORMA, só do administrador geral
+-- ---------------------------------------------------------------------------
+-- Não tem contaid: uma rede reúne clientes, não pertence a nenhum. O teste de
+-- isolamento a declara como tabela da plataforma e confere que só o admin
+-- geral lê e escreve.
+CREATE TABLE IF NOT EXISTS public.redes (
+  redeid           integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  nome             varchar(120) NOT NULL CHECK (btrim(nome) <> ''),
+  responsavel      varchar(120),
+  endereco         varchar(300),
+  telefone         varchar(50),
+  email            varchar(255),
+  -- O número CONTRATADO, digitado pelo admin. A contagem real (lojas ativas
+  -- dos clientes da rede) é calculada em redes_admin(), nunca guardada.
+  lojascontratadas integer NOT NULL DEFAULT 0 CHECK (lojascontratadas BETWEEN 0 AND 100000),
+  -- Caminho do logotipo no bucket privado logos-redes. Só o servidor grava.
+  logocaminho      text,
+  criadoem         timestamptz NOT NULL DEFAULT now(),
+  criadopor        uuid DEFAULT auth.uid() REFERENCES auth.users (id) ON DELETE SET NULL
+);
+COMMENT ON TABLE public.redes IS
+  'Redes de franquia (tabela da PLATAFORMA): só o administrador geral lê e escreve. Nenhum cliente enxerga.';
+CREATE UNIQUE INDEX IF NOT EXISTS redes_nome_unico ON public.redes (lower(btrim(nome)));
+
+ALTER TABLE public.redes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.redes FROM anon, authenticated;
+GRANT SELECT, DELETE ON public.redes TO authenticated;
+GRANT INSERT (nome, responsavel, endereco, telefone, email, lojascontratadas) ON public.redes TO authenticated;
+GRANT UPDATE (nome, responsavel, endereco, telefone, email, lojascontratadas) ON public.redes TO authenticated;
+GRANT ALL ON public.redes TO service_role;
+DROP POLICY IF EXISTS redes_admin_tudo ON public.redes;
+CREATE POLICY redes_admin_tudo ON public.redes FOR ALL TO authenticated
+  USING ((select public.eh_admin_geral())) WITH CHECK ((select public.eh_admin_geral()));
+
+-- ---------------------------------------------------------------------------
+-- 4. Os campos novos do cliente
+-- ---------------------------------------------------------------------------
+-- "nome" continua sendo a coluna, e passa a significar RAZÃO SOCIAL (contrato
+-- e cobrança). O que aparece no produto é o NOME FANTASIA. Para nada mudar de
+-- aparência ao aplicar, o nome fantasia de quem já existe começa igual ao
+-- nome de hoje — é o único dado existente que esta migração toca.
+ALTER TABLE public.contas ADD COLUMN IF NOT EXISTS nomefantasia varchar(120);
+UPDATE public.contas SET nomefantasia = left(nome, 120) WHERE nomefantasia IS NULL;
+ALTER TABLE public.contas ALTER COLUMN nomefantasia SET NOT NULL;
+ALTER TABLE public.contas DROP CONSTRAINT IF EXISTS contas_nomefantasia_preenchido;
+ALTER TABLE public.contas ADD CONSTRAINT contas_nomefantasia_preenchido CHECK (btrim(nomefantasia) <> '');
+
+ALTER TABLE public.contas ADD COLUMN IF NOT EXISTS responsavel varchar(120);
+ALTER TABLE public.contas ADD COLUMN IF NOT EXISTS cnpj varchar(20);
+ALTER TABLE public.contas DROP CONSTRAINT IF EXISTS contas_cnpj_valido;
+ALTER TABLE public.contas ADD CONSTRAINT contas_cnpj_valido
+  CHECK (cnpj IS NULL OR (cnpj ~ '^[0-9]{14}$' AND public.cnpj_valido(cnpj)));
+CREATE UNIQUE INDEX IF NOT EXISTS contas_cnpj_unico ON public.contas (cnpj) WHERE cnpj IS NOT NULL;
+ALTER TABLE public.contas ADD COLUMN IF NOT EXISTS redeid integer REFERENCES public.redes (redeid) ON DELETE RESTRICT;
+
+COMMENT ON COLUMN public.contas.nome IS 'RAZÃO SOCIAL: só em contrato e cobrança. No produto aparece nomefantasia.';
+COMMENT ON COLUMN public.contas.nomefantasia IS 'NOME FANTASIA: o que aparece no produto (cabeçalho do gestor, tablet, celular, PDFs da equipe).';
+COMMENT ON COLUMN public.contas.cnpj IS 'CNPJ só com os 14 dígitos, conferidos. Vazio é aceito; repetido, não.';
+
+-- Arruma o que chega antes de gravar: CNPJ só com dígitos (e sem repetir),
+-- nome fantasia igual à razão social quando não vier.
+CREATE OR REPLACE FUNCTION public.normaliza_conta()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  NEW.cnpj := nullif(regexp_replace(coalesce(NEW.cnpj, ''), '[^0-9]', '', 'g'), '');
+  IF NEW.cnpj IS NOT NULL AND NOT public.cnpj_valido(NEW.cnpj) THEN
+    RAISE EXCEPTION 'CNPJ inválido: confira os números.' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.cnpj IS NOT NULL AND EXISTS (SELECT 1 FROM public.contas
+                                       WHERE cnpj = NEW.cnpj AND contaid <> NEW.contaid) THEN
+    RAISE EXCEPTION 'Já existe um cliente com este CNPJ.' USING ERRCODE = 'unique_violation';
+  END IF;
+  NEW.nomefantasia := coalesce(nullif(btrim(NEW.nomefantasia), ''), left(btrim(NEW.nome), 120));
+  NEW.responsavel := nullif(btrim(coalesce(NEW.responsavel, '')), '');
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.normaliza_conta() FROM public, anon, authenticated;
+DROP TRIGGER IF EXISTS contas_a_normaliza ON public.contas;
+-- "a_" no nome: roda antes dos gatilhos do código, que usam o nome fantasia.
+CREATE TRIGGER contas_a_normaliza
+  BEFORE INSERT OR UPDATE ON public.contas
+  FOR EACH ROW EXECUTE FUNCTION public.normaliza_conta();
+
+-- ---------------------------------------------------------------------------
+-- 5. O código da empresa: apelido curto, e o antigo vale 30 dias
+-- ---------------------------------------------------------------------------
+-- Formato novo: só letras minúsculas e números, 4 a 20. Sem número
+-- sequencial (daria para descobrir a carteira de clientes testando números, e
+-- um erro de digitação cairia em outra empresa sem ninguém notar).
+-- Quem já existe continua com o código de hoje: a regra nova vale quando o
+-- código é criado ou trocado.
+--
+-- Todo código que já foi de uma empresa fica RESERVADO para ela, para sempre:
+-- se outro cliente pudesse pegá-lo, um PDF antigo ou um link velho no mural
+-- levaria a equipe para a empresa errada. Depois da troca, o antigo ainda
+-- ABRE a empresa por 30 dias; depois disso só fica reservado.
+CREATE TABLE IF NOT EXISTS public.codigosantigos (
+  codigo      varchar(30) PRIMARY KEY,
+  contaid     integer NOT NULL REFERENCES public.contas (contaid) ON DELETE RESTRICT,
+  trocadoem   timestamptz NOT NULL DEFAULT now(),
+  valeate     timestamptz NOT NULL,
+  trocadopor  uuid REFERENCES auth.users (id) ON DELETE SET NULL
+);
+COMMENT ON TABLE public.codigosantigos IS
+  'Códigos de empresa que já foram trocados: abrem a empresa por 30 dias e ficam reservados para ela para sempre. Só o admin geral lê.';
+ALTER TABLE public.codigosantigos ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.codigosantigos FROM anon, authenticated;
+GRANT SELECT ON public.codigosantigos TO authenticated;
+GRANT ALL ON public.codigosantigos TO service_role;
+DROP POLICY IF EXISTS codigosantigos_admin_le ON public.codigosantigos;
+CREATE POLICY codigosantigos_admin_le ON public.codigosantigos FOR SELECT TO authenticated
+  USING ((select public.eh_admin_geral()));
+
+-- Livre = ninguém mais usa nem usou. O código atual e os antigos da própria
+-- empresa contam como dela.
+CREATE OR REPLACE FUNCTION public.codigo_livre(p_codigo text, p_contaid integer)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT NOT EXISTS (SELECT 1 FROM public.contas
+                      WHERE codigo = p_codigo AND contaid IS DISTINCT FROM p_contaid)
+     AND NOT EXISTS (SELECT 1 FROM public.codigosantigos
+                      WHERE codigo = p_codigo AND contaid IS DISTINCT FROM p_contaid)
+$$;
+REVOKE ALL ON FUNCTION public.codigo_livre(text, integer) FROM public, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.codigo_livre(text, integer) TO service_role;
+
+-- A sugestão a partir do nome fantasia: a primeira palavra ("premier"), depois
+-- as duas primeiras juntas, depois tudo junto, e só então a primeira com 2, 3...
+CREATE OR REPLACE FUNCTION public.codigo_sugerido(p_nome text, p_contaid integer)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_limpo    text := lower(translate(coalesce(p_nome, ''),
+                     'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ',
+                     'aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN'));
+  v_palavras text[];
+  v_cand     text[] := ARRAY[]::text[];
+  v          text;
+  v_base     text;
+BEGIN
+  SELECT coalesce(array_agg(p ORDER BY n), ARRAY[]::text[]) INTO v_palavras
+    FROM regexp_split_to_table(regexp_replace(v_limpo, '[^a-z0-9]+', ' ', 'g'), ' ') WITH ORDINALITY AS t(p, n)
+   WHERE p <> '' AND p NOT IN ('de', 'da', 'do', 'das', 'dos', 'e', 'ltda', 'me', 'epp', 'eireli', 'sa', 'cia');
+  IF cardinality(v_palavras) > 0 THEN
+    v_cand := v_cand || v_palavras[1];
+    IF cardinality(v_palavras) > 1 THEN v_cand := v_cand || (v_palavras[1] || v_palavras[2]); END IF;
+    v_cand := v_cand || array_to_string(v_palavras, '');
+  END IF;
+  FOREACH v IN ARRAY v_cand LOOP
+    v := left(v, 20);
+    IF length(v) >= 4 AND public.codigo_livre(v, p_contaid) THEN RETURN v; END IF;
+  END LOOP;
+  v_base := left(coalesce(nullif(array_to_string(v_palavras, ''), ''), 'empresa'), 18);
+  IF length(v_base) < 4 THEN v_base := rpad(v_base, 4, 'x'); END IF;
+  FOR i IN 2..99 LOOP
+    v := v_base || i::text;
+    IF public.codigo_livre(v, p_contaid) THEN RETURN v; END IF;
+  END LOOP;
+  RETURN v_base || substr(md5(random()::text), 1, 2);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.codigo_sugerido(text, integer) FROM public, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.codigo_sugerido(text, integer) TO service_role;
+
+-- O que a TELA do admin pergunta: sugestão e disponibilidade. Não recebem
+-- conta (a conta vem pelo código atual, que o admin já vê), e conferem que
+-- quem chamou é o admin geral.
+CREATE OR REPLACE FUNCTION public.sugerir_codigo_empresa(p_nome text, p_codigoatual text DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE v_conta integer;
+BEGIN
+  IF NOT public.eh_admin_geral() THEN
+    RAISE EXCEPTION 'Só o administrador geral.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  SELECT contaid INTO v_conta FROM public.contas WHERE codigo = lower(btrim(coalesce(p_codigoatual, '')));
+  RETURN jsonb_build_object('sugestao', public.codigo_sugerido(p_nome, v_conta));
+END;
+$$;
+REVOKE ALL ON FUNCTION public.sugerir_codigo_empresa(text, text) FROM public, anon;
+GRANT  EXECUTE ON FUNCTION public.sugerir_codigo_empresa(text, text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.codigo_empresa_disponivel(p_codigo text, p_codigoatual text DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_conta integer;
+  v       text := lower(btrim(coalesce(p_codigo, '')));
+BEGIN
+  IF NOT public.eh_admin_geral() THEN
+    RAISE EXCEPTION 'Só o administrador geral.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  SELECT contaid INTO v_conta FROM public.contas WHERE codigo = lower(btrim(coalesce(p_codigoatual, '')));
+  RETURN jsonb_build_object(
+    'formato', v ~ '^[a-z0-9]{4,20}$',
+    'livre',   public.codigo_livre(v, v_conta));
+END;
+$$;
+REVOKE ALL ON FUNCTION public.codigo_empresa_disponivel(text, text) FROM public, anon;
+GRANT  EXECUTE ON FUNCTION public.codigo_empresa_disponivel(text, text) TO authenticated;
+
+-- Conta nova sem código escolhido: nasce com a sugestão do nome fantasia.
+-- Parte da versão mais recente (20260927100500), trocando a regra antiga
+-- (nome + 6 caracteres sorteados) pela sugestão curta.
+CREATE OR REPLACE FUNCTION public.codigo_padrao_da_conta()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF btrim(coalesce(NEW.codigo, '')) <> '' THEN
+    NEW.codigo := lower(btrim(NEW.codigo));
+    RETURN NEW;
+  END IF;
+  NEW.codigo := public.codigo_sugerido(coalesce(NEW.nomefantasia, NEW.nome), NEW.contaid);
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.codigo_padrao_da_conta() FROM public, anon, authenticated;
+
+-- A regra nova vale quando o código NASCE ou MUDA. Ao mudar, o antigo vai
+-- para codigosantigos, valendo por 30 dias.
+CREATE OR REPLACE FUNCTION public.valida_codigo_da_conta()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.codigo IS NOT DISTINCT FROM OLD.codigo THEN
+    RETURN NEW;
+  END IF;
+  NEW.codigo := lower(btrim(coalesce(NEW.codigo, '')));
+  IF NEW.codigo !~ '^[a-z0-9]{4,20}$' THEN
+    RAISE EXCEPTION 'O código da empresa usa só letras minúsculas e números, sem acento, de 4 a 20 caracteres.'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT public.codigo_livre(NEW.codigo, NEW.contaid) THEN
+    RAISE EXCEPTION 'O código "%" já é (ou já foi) de outro cliente. Escolha outro.', NEW.codigo
+      USING ERRCODE = 'unique_violation';
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    -- Voltando a um código que já foi dela: deixa de ser "antigo".
+    DELETE FROM public.codigosantigos WHERE codigo = NEW.codigo AND contaid = NEW.contaid;
+    INSERT INTO public.codigosantigos (codigo, contaid, trocadoem, valeate, trocadopor)
+    VALUES (OLD.codigo, OLD.contaid, now(), now() + interval '30 days', auth.uid())
+    ON CONFLICT (codigo) DO UPDATE SET trocadoem = excluded.trocadoem, valeate = excluded.valeate,
+                                       trocadopor = excluded.trocadopor;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.valida_codigo_da_conta() FROM public, anon, authenticated;
+DROP TRIGGER IF EXISTS contas_codigo_valido ON public.contas;
+-- Depois de contas_codigo_padrao (ordem alfabética), que preenche o vazio.
+CREATE TRIGGER contas_codigo_valido
+  BEFORE INSERT OR UPDATE OF codigo ON public.contas
+  FOR EACH ROW EXECUTE FUNCTION public.valida_codigo_da_conta();
+
+-- Quem abre a empresa pelo código: o atual, ou um antigo nos 30 dias.
+CREATE OR REPLACE FUNCTION public.conta_pelo_codigo_ou_antigo(p_codigo text)
+RETURNS integer
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT coalesce(
+    (SELECT contaid FROM public.contas WHERE codigo = lower(btrim(coalesce(p_codigo, '')))),
+    (SELECT contaid FROM public.codigosantigos
+      WHERE codigo = lower(btrim(coalesce(p_codigo, ''))) AND valeate > now()))
+$$;
+REVOKE ALL ON FUNCTION public.conta_pelo_codigo_ou_antigo(text) FROM public, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.conta_pelo_codigo_ou_antigo(text) TO service_role;
+
+-- A que procura a empresa pelo código passa a aceitar o antigo. Parte da
+-- versão mais recente (20260927100500). (conta_por_codigo NÃO volta: foi
+-- apagada de propósito, porque dizia o nome da empresa a quem tivesse o código.)
+CREATE OR REPLACE FUNCTION public.conta_do_codigo(p_codigo text)
+RETURNS integer
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE v_id integer;
+BEGIN
+  IF NOT public.bot_contexto_confiavel() THEN
+    RAISE EXCEPTION 'Só o servidor procura empresa por código.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- O código atual, ou um código ANTIGO por 30 dias depois da troca (os PDFs
+  -- impressos e o link colado no mural continuam funcionando nesse prazo).
+  SELECT contaid INTO v_id FROM public.contas
+   WHERE contaid = public.conta_pelo_codigo_ou_antigo(p_codigo) AND status <> 'cancelada';
+  RETURN v_id;
+END;
+$$;
+
+
+
+-- ---------------------------------------------------------------------------
+-- 6. Anexos da administração (contratos): documento SIGILOSO
+-- ---------------------------------------------------------------------------
+-- O arquivo fica no bucket privado "administracao", que não tem regra de
+-- acesso para ninguém: só o servidor chega nele, depois de conferir que quem
+-- pediu é o admin geral, e o link de abertura vale 5 minutos. Esta tabela é
+-- o registro (quem subiu, quando, tamanho, tipo). Nenhum cliente lê.
+CREATE TABLE IF NOT EXISTS public.anexosadmin (
+  anexoid     integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  -- De um cliente OU de uma rede (um dos dois, nunca os dois).
+  contaid     integer REFERENCES public.contas (contaid) ON DELETE RESTRICT,
+  redeid      integer REFERENCES public.redes (redeid) ON DELETE RESTRICT,
+  nomearquivo varchar(200) NOT NULL,
+  caminho     text NOT NULL UNIQUE,
+  tipo        varchar(60) NOT NULL CHECK (tipo IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')),
+  tamanho     integer NOT NULL CHECK (tamanho > 0 AND tamanho <= 10485760),
+  enviadoem   timestamptz NOT NULL DEFAULT now(),
+  enviadopor  uuid REFERENCES auth.users (id) ON DELETE SET NULL,
+  CONSTRAINT anexosadmin_de_um_so CHECK (num_nonnulls(contaid, redeid) = 1)
+);
+COMMENT ON TABLE public.anexosadmin IS
+  'Anexos da administração (contratos): registro de cada arquivo, de um cliente ou de uma rede. Só o admin geral lê; só o servidor grava.';
+CREATE INDEX IF NOT EXISTS anexosadmin_conta_idx ON public.anexosadmin (contaid) WHERE contaid IS NOT NULL;
+CREATE INDEX IF NOT EXISTS anexosadmin_rede_idx ON public.anexosadmin (redeid) WHERE redeid IS NOT NULL;
+ALTER TABLE public.anexosadmin ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.anexosadmin FROM anon, authenticated;
+GRANT SELECT ON public.anexosadmin TO authenticated;
+GRANT ALL ON public.anexosadmin TO service_role;
+DROP POLICY IF EXISTS anexosadmin_admin_le ON public.anexosadmin;
+CREATE POLICY anexosadmin_admin_le ON public.anexosadmin FOR SELECT TO authenticated
+  USING ((select public.eh_admin_geral()));
+
+-- Os dois buckets: privados, e SEM regra de acesso para ninguém.
+INSERT INTO storage.buckets (id, name, public) VALUES
+  ('administracao', 'administracao', false),
+  ('logos-redes',   'logos-redes',   false)
+ON CONFLICT (id) DO UPDATE SET public = false;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'storage' AND table_name = 'buckets' AND column_name = 'file_size_limit') THEN
+    EXECUTE $q$UPDATE storage.buckets
+                  SET file_size_limit = 10485760,
+                      allowed_mime_types = ARRAY['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+                WHERE id = 'administracao'$q$;
+    -- Logotipo: só imagem (SVG não: pode carregar código), até 512 KB.
+    EXECUTE $q$UPDATE storage.buckets
+                  SET file_size_limit = 524288,
+                      allowed_mime_types = ARRAY['image/png', 'image/jpeg', 'image/webp']
+                WHERE id = 'logos-redes'$q$;
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 7. Rede com cliente não se apaga
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.impede_apagar_rede_com_clientes()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE v_n integer;
+BEGIN
+  SELECT count(*) INTO v_n FROM public.contas WHERE redeid = OLD.redeid;
+  IF v_n > 0 THEN
+    RAISE EXCEPTION 'A rede "%" tem % cliente(s) ligado(s). Mova esses clientes para outra rede (ou "sem rede") antes de apagar.',
+      OLD.nome, v_n USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.anexosadmin WHERE redeid = OLD.redeid) THEN
+    RAISE EXCEPTION 'A rede "%" tem contratos anexados: eles não se apagam.', OLD.nome
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.impede_apagar_rede_com_clientes() FROM public, anon, authenticated;
+DROP TRIGGER IF EXISTS redes_nao_apaga_com_clientes ON public.redes;
+CREATE TRIGGER redes_nao_apaga_com_clientes
+  BEFORE DELETE ON public.redes
+  FOR EACH ROW EXECUTE FUNCTION public.impede_apagar_rede_com_clientes();
+
+-- ---------------------------------------------------------------------------
+-- 8. O que as telas do admin leem
+-- ---------------------------------------------------------------------------
+-- Por cliente: quantas pessoas ainda têm código de acesso pendente (é quem
+-- fica sem entrar se o código da empresa mudar) e quantas lojas ativas.
+-- Só números: o admin continua sem ver dado operacional.
+CREATE OR REPLACE FUNCTION public.resumo_admin_das_contas()
+RETURNS TABLE (contaid integer, codigospendentes integer, lojasativas integer)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NOT public.eh_admin_geral() THEN
+    RAISE EXCEPTION 'Só o administrador geral.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN QUERY
+  SELECT c.contaid,
+         (SELECT count(*) FROM public.codigosacesso k
+           WHERE k.contaid = c.contaid AND k.usadoem IS NULL AND k.canceladoem IS NULL AND k.expiraem > now())::integer,
+         (SELECT count(*) FROM public.lojas l WHERE l.contaid = c.contaid AND l.ativa)::integer
+    FROM public.contas c;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.resumo_admin_das_contas() FROM public, anon;
+GRANT  EXECUTE ON FUNCTION public.resumo_admin_das_contas() TO authenticated;
+
+-- Por rede: o contratado (digitado) e o real (calculado), lado a lado.
+CREATE OR REPLACE FUNCTION public.redes_admin()
+RETURNS TABLE (redeid integer, nome varchar, responsavel varchar, endereco varchar, telefone varchar,
+               email varchar, lojascontratadas integer, temlogo boolean, criadoem timestamptz,
+               clientes integer, lojasreais integer)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NOT public.eh_admin_geral() THEN
+    RAISE EXCEPTION 'Só o administrador geral.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN QUERY
+  SELECT r.redeid, r.nome, r.responsavel, r.endereco, r.telefone, r.email, r.lojascontratadas,
+         r.logocaminho IS NOT NULL, r.criadoem,
+         (SELECT count(*) FROM public.contas c WHERE c.redeid = r.redeid)::integer,
+         (SELECT count(*) FROM public.lojas l JOIN public.contas c ON c.contaid = l.contaid
+           WHERE c.redeid = r.redeid AND l.ativa)::integer
+    FROM public.redes r
+   ORDER BY lower(r.nome);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.redes_admin() FROM public, anon;
+GRANT  EXECUTE ON FUNCTION public.redes_admin() TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 9. No produto, o NOME FANTASIA
+-- ---------------------------------------------------------------------------
+-- Cada uma parte da versão mais recente; só troca contas.nome por
+-- contas.nomefantasia. Cabeçalho do gestor e do celular (meu_acesso), folha de
+-- acesso, recibos, login pelo código e Telegram.
+
+
+CREATE OR REPLACE FUNCTION public.meu_acesso()
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  a     record;
+BEGIN
+  IF v_uid IS NULL THEN
+    -- Sem token, ou token inválido/vencido: o banco não reconhece ninguém.
+    RETURN jsonb_build_object('tipo', 'semlogin');
+  END IF;
+  IF public.eh_admin_geral() THEN
+    RETURN jsonb_build_object('tipo', 'admin');
+  END IF;
+
+  SELECT cu.papel, cu.contaid, cu.lojaid, cu.funcionarioid,
+         c.status AS statusconta, c.nomefantasia AS nomeconta,
+         l.nome AS nomeloja, l.ativa AS lojaativa,
+         f.nomecompleto AS nomepessoa, f.ativo AS pessoaativa,
+         f.senhahashapp IS NULL AS semsenha, f.pinhash IS NULL AS sempin
+    INTO a
+    FROM public.contasusuarios cu
+    JOIN public.contas c ON c.contaid = cu.contaid
+    LEFT JOIN public.lojas l ON l.contaid = cu.contaid AND l.lojaid = cu.lojaid
+    LEFT JOIN public.funcionarios f ON f.contaid = cu.contaid AND f.funcionarioid = cu.funcionarioid
+   WHERE cu.userid = v_uid;
+
+  IF NOT FOUND THEN
+    -- Token bom, mas esta pessoa não pertence a conta nenhuma.
+    RETURN jsonb_build_object('tipo', 'nenhum');
+  END IF;
+
+  -- Desligado na hora: pessoa inativa, loja desativada ou conta cancelada.
+  IF a.statusconta = 'cancelada'
+     OR (a.papel = 'loja' AND coalesce(a.lojaativa, false) = false)
+     OR (a.papel = 'colaborador' AND coalesce(a.pessoaativa, false) = false) THEN
+    RETURN jsonb_build_object('tipo', 'desligado');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'tipo', a.papel,
+    'conta', a.nomeconta,
+    'loja', a.nomeloja,
+    'nome', coalesce(a.nomepessoa, a.nomeloja, a.nomeconta),
+    'somenteleitura', a.statusconta <> 'ativa',
+    'semsenha', coalesce(a.semsenha, false),
+    'sempin', coalesce(a.sempin, false),
+    'politicapendente', CASE WHEN a.papel = 'colaborador'
+                             THEN public.politica_pendente(a.contaid, a.funcionarioid) ELSE false END);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.folha_de_acesso(p_contaid integer, p_funcionarioids integer[])
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT jsonb_build_object(
+    'conta',  c.nomefantasia,
+    'codigoempresa', c.codigo,
+    'pessoas', coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+               'funcionarioid', f.funcionarioid,
+               'nome',          f.nomecompleto,
+               'cargo',         f.cargo,
+               'cpf',           f.cpf,
+               'ativo',         f.ativo,
+               'lojas',         coalesce((SELECT jsonb_agg(l.nome ORDER BY l.nome)
+                                            FROM public.funcionarioslojas fl
+                                            JOIN public.lojas l ON l.contaid = fl.contaid AND l.lojaid = fl.lojaid
+                                           WHERE fl.contaid = f.contaid AND fl.funcionarioid = f.funcionarioid
+                                             AND fl.ativo AND l.ativa), '[]'::jsonb),
+               'temacesso',     cu.userid IS NOT NULL,
+               'jaentrou',      (f.senhahashapp IS NOT NULL OR f.pinhash IS NOT NULL),
+               'codigo',        CASE WHEN k.codigoid IS NOT NULL THEN jsonb_build_object(
+                                  'codigoid', k.codigoid, 'cifrado', k.codigocifrado,
+                                  'expiraem', k.expiraem, 'criadoem', k.criadoem) END
+             ) ORDER BY f.nomecompleto)
+        FROM public.funcionarios f
+        LEFT JOIN public.contasusuarios cu
+               ON cu.contaid = f.contaid AND cu.funcionarioid = f.funcionarioid AND cu.papel = 'colaborador'
+        LEFT JOIN LATERAL (SELECT k2.codigoid, k2.codigocifrado, k2.expiraem, k2.criadoem
+                             FROM public.codigosacesso k2
+                            WHERE k2.contaid = f.contaid AND k2.funcionarioid = f.funcionarioid
+                              AND k2.usadoem IS NULL AND k2.canceladoem IS NULL AND k2.expiraem > now()
+                            ORDER BY k2.criadoem DESC LIMIT 1) k ON true
+       WHERE f.contaid = c.contaid AND f.funcionarioid = ANY (p_funcionarioids)), '[]'::jsonb))
+    FROM public.contas c
+   WHERE c.contaid = p_contaid AND public.bot_contexto_confiavel()
+$$;
+
+CREATE OR REPLACE FUNCTION public.recibo_ciencia(p_assinaturaid integer)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+  SELECT jsonb_build_object(
+           'conta', c.nomefantasia, 'pessoa', f.nomecompleto, 'titulo', d.titulo, 'conteudo', d.conteudo,
+           'publicadoem', d.datacriacao, 'ciencia', s.dataciencia, 'origem', s.origem,
+           'protocolo', 'C-' || s.assinaturaid, 'pontos', s.pontospagos)
+    FROM public.documentosassinaturas s
+    JOIN public.documentos d    ON d.documentoid = s.documentoid
+    JOIN public.funcionarios f  ON f.funcionarioid = s.funcionarioid
+    JOIN public.contas c        ON c.contaid = s.contaid
+   WHERE s.assinaturaid = p_assinaturaid AND s.statusassinatura = 'Ciente'
+$$;
+
+CREATE OR REPLACE FUNCTION public.recibo_resgate(p_resgateid integer)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+  WITH r AS (
+    SELECT r.*, f.nomecompleto, p.nome AS premio, l.nome AS loja, c.nomefantasia AS conta
+      FROM public.resgates r
+      JOIN public.funcionarios f ON f.funcionarioid = r.funcionarioid
+      JOIN public.produtosloja p ON p.produtoid = r.produtoid
+      JOIN public.contas c       ON c.contaid = r.contaid
+      LEFT JOIN public.lojas l   ON l.lojaid = r.lojaid
+     WHERE r.resgateid = p_resgateid
+  ),
+  mov AS (
+    SELECT m.movimentoid, m.datamovimento, m.tipo, m.pontos, m.descricao,
+           (SELECT coalesce(sum(x.pontos), 0) FROM public.movimentospontos x
+             WHERE x.funcionarioid = m.funcionarioid AND x.movimentoid < m.movimentoid) AS saldoantes
+      FROM public.movimentospontos m
+     WHERE m.resgateid = p_resgateid
+  )
+  SELECT jsonb_build_object(
+           'conta', r.conta, 'loja', r.loja, 'pessoa', r.nomecompleto,
+           'premio', CASE WHEN r.valorreais IS NOT NULL THEN 'Abate na comanda de ' || public.reais(r.valorreais) ELSE r.premio END,
+           'pontos', r.pontosgastos, 'situacao', r.status, 'solicitadoem', r.datasolicitacao,
+           'entregueem', r.dataentrega, 'protocolo', 'R-' || r.resgateid,
+           'movimentos', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                             'data', datamovimento, 'tipo', tipo, 'pontos', pontos, 'descricao', descricao,
+                             'saldoantes', saldoantes, 'saldodepois', saldoantes + pontos) ORDER BY movimentoid), '[]'::jsonb)
+                            FROM mov))
+    FROM r
+$$;
+
+CREATE OR REPLACE FUNCTION public.bot_quem(p_chatid bigint)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_opcoes jsonb;
+  v_n      integer;
+  v_escolha integer;
+  r        record;
+BEGIN
+  SELECT count(*), jsonb_agg(jsonb_build_object('contaid', x.contaid, 'empresa', x.empresa) ORDER BY x.empresa)
+    INTO v_n, v_opcoes
+    FROM (SELECT DISTINCT v.contaid, c.nomefantasia AS empresa
+            FROM public.telegramvinculos v
+            JOIN public.contas c ON c.contaid = v.contaid AND c.status IN ('ativa', 'suspensa')
+            LEFT JOIN public.funcionarios f ON f.funcionarioid = v.funcionarioid AND f.contaid = v.contaid
+           WHERE v.chatid = p_chatid AND v.ativo AND v.tipo IN ('pessoa', 'master')
+             AND (v.tipo = 'master' OR f.ativo)) x;
+  IF v_n = 0 THEN
+    RETURN jsonb_build_object('status', 'sem_vinculo');
+  END IF;
+
+  SELECT contaid INTO v_escolha FROM bot.contaativa WHERE chatid = p_chatid;
+  IF v_n > 1 AND (v_escolha IS NULL OR NOT v_opcoes @> jsonb_build_array(jsonb_build_object('contaid', v_escolha))) THEN
+    RETURN jsonb_build_object('status', 'escolher', 'opcoes', v_opcoes);
+  END IF;
+
+  SELECT v.contaid, v.tipo, v.funcionarioid, v.userid, c.nomefantasia AS empresa, c.status AS situacao,
+         f.nomecompleto AS nome,
+         (SELECT min(fl.lojaid) FROM public.funcionarioslojas fl JOIN public.lojas l ON l.lojaid = fl.lojaid AND l.ativa
+           WHERE fl.funcionarioid = v.funcionarioid AND fl.ativo) AS lojaid
+    INTO r
+    FROM public.telegramvinculos v
+    JOIN public.contas c ON c.contaid = v.contaid
+    LEFT JOIN public.funcionarios f ON f.funcionarioid = v.funcionarioid AND f.contaid = v.contaid
+   WHERE v.chatid = p_chatid AND v.ativo AND v.tipo IN ('pessoa', 'master')
+     AND c.status IN ('ativa', 'suspensa') AND (v.tipo = 'master' OR f.ativo)
+     AND (v_n = 1 OR v.contaid = v_escolha)
+   ORDER BY (v.tipo = 'pessoa') DESC
+   LIMIT 1;
+
+  RETURN jsonb_build_object('status', 'ok', 'contaid', r.contaid, 'tipo', r.tipo, 'funcionarioid', r.funcionarioid,
+                            'userid', r.userid, 'nome', coalesce(r.nome, 'responsável'), 'empresa', r.empresa,
+                            'suspensa', r.situacao = 'suspensa', 'lojaid', r.lojaid, 'varias', v_n > 1,
+                            'opcoes', v_opcoes);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.bot_usar_convite(p_chatid bigint, p_tipochat text, p_codigo text, p_nome text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  c        public.telegramconvites%ROWTYPE;
+  v_grupo  public.telegramvinculos%ROWTYPE;
+  v_valido boolean := false;
+  v_nome   text;
+  v_loja   text;
+BEGIN
+  IF (SELECT count(*) FROM bot.tentativas WHERE chatid = p_chatid AND em > now() - interval '1 hour') >= 5 THEN
+    RETURN jsonb_build_object('ok', false, 'erro', 'bloqueado');
+  END IF;
+
+  IF p_codigo ~ '^[0-9a-f]{64}$' THEN
+    SELECT * INTO c FROM public.telegramconvites
+     WHERE codigohash = public.telegram_hash(p_codigo) AND usadoem IS NULL AND canceladoem IS NULL AND expiraem > now()
+     FOR UPDATE;
+    v_valido := FOUND
+      AND EXISTS (SELECT 1 FROM public.contas WHERE contaid = c.contaid AND status = 'ativa')
+      AND ((c.tipo IN ('pessoa', 'master') AND p_tipochat = 'private')
+        OR (c.tipo = 'grupo' AND p_tipochat IN ('group', 'supergroup') AND p_chatid < 0))
+      AND (c.tipo <> 'pessoa' OR EXISTS (SELECT 1 FROM public.funcionarios
+                                          WHERE funcionarioid = c.funcionarioid AND contaid = c.contaid AND ativo));
+  END IF;
+
+  IF v_valido AND c.tipo = 'grupo' THEN
+    SELECT * INTO v_grupo FROM public.telegramvinculos WHERE chatid = p_chatid AND tipo = 'grupo' AND ativo;
+    IF FOUND AND NOT (v_grupo.contaid = c.contaid AND v_grupo.lojaid = c.lojaid AND v_grupo.papelgrupo = c.papelgrupo) THEN
+      v_valido := false;   -- grupo já ligado a outra loja ou empresa
+    END IF;
+  END IF;
+
+  IF NOT v_valido THEN
+    INSERT INTO bot.tentativas (chatid) VALUES (p_chatid);
+    RETURN jsonb_build_object('ok', false, 'erro', 'invalido');
+  END IF;
+
+  UPDATE public.telegramconvites SET usadoem = now() WHERE conviteid = c.conviteid;
+
+  IF c.tipo = 'pessoa' THEN
+    UPDATE public.telegramvinculos SET ativo = false, desligadoem = now()
+     WHERE ativo AND ((tipo = 'pessoa' AND funcionarioid = c.funcionarioid)
+                   OR (contaid = c.contaid AND chatid = p_chatid AND tipo <> 'grupo'));
+    INSERT INTO public.telegramvinculos (contaid, tipo, chatid, funcionarioid, nometelegram)
+    VALUES (c.contaid, 'pessoa', p_chatid, c.funcionarioid, left(p_nome, 120));
+    SELECT nomecompleto INTO v_nome FROM public.funcionarios WHERE funcionarioid = c.funcionarioid;
+  ELSIF c.tipo = 'master' THEN
+    UPDATE public.telegramvinculos SET ativo = false, desligadoem = now()
+     WHERE ativo AND contaid = c.contaid AND ((tipo = 'master' AND userid = c.userid) OR (chatid = p_chatid AND tipo <> 'grupo'));
+    INSERT INTO public.telegramvinculos (contaid, tipo, chatid, userid, nometelegram)
+    VALUES (c.contaid, 'master', p_chatid, c.userid, left(p_nome, 120));
+  ELSE
+    IF v_grupo.vinculoid IS NULL THEN
+      UPDATE public.telegramvinculos SET ativo = false, desligadoem = now()
+       WHERE ativo AND tipo = 'grupo' AND contaid = c.contaid AND lojaid = c.lojaid AND papelgrupo = c.papelgrupo;
+      INSERT INTO public.telegramvinculos (contaid, tipo, chatid, lojaid, papelgrupo, nometelegram)
+      VALUES (c.contaid, 'grupo', p_chatid, c.lojaid, c.papelgrupo, left(p_nome, 120));
+    END IF;
+    SELECT nome INTO v_loja FROM public.lojas WHERE lojaid = c.lojaid;
+  END IF;
+
+  DELETE FROM bot.contaativa WHERE chatid = p_chatid;
+  RETURN jsonb_build_object('ok', true, 'tipo', c.tipo, 'nome', v_nome, 'loja', v_loja, 'papel', c.papelgrupo,
+                            'empresa', (SELECT nomefantasia FROM public.contas WHERE contaid = c.contaid));
+END;
+$$;
+
+COMMIT;

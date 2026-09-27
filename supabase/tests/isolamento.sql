@@ -4595,15 +4595,28 @@ BEGIN
     AND coalesce(qual, '') || coalesce(with_check, '') NOT LIKE '%eh_admin_geral%';
   PERFORM public.exigir(liberadas IS NULL, 'toda policy filtra por conta ou e do admin geral');
 
-  -- Uma tabela sem contaid nao teria como ser isolada.
+  -- Uma tabela sem contaid nao teria como ser isolada. A UNICA excecao sao
+  -- as tabelas da PLATAFORMA, que nao pertencem a conta nenhuma e sao so do
+  -- admin geral (redes de franquia, 27/09/2026). Elas sao conferidas a parte,
+  -- logo abaixo: toda policy delas e so do admin, e nenhum cliente le.
   SELECT string_agg(t.table_name, ', ') INTO liberadas
   FROM information_schema.tables t
   WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+    AND t.table_name NOT IN ('redes')
     AND NOT EXISTS (
       SELECT 1 FROM information_schema.columns c
       WHERE c.table_schema = 'public' AND c.table_name = t.table_name
         AND c.column_name = 'contaid');
   PERFORM public.exigir(liberadas IS NULL, 'toda tabela de public tem coluna contaid');
+
+  -- As tabelas da plataforma: RLS ligada, e TODA policy delas e so do admin.
+  SELECT string_agg(tablename || '.' || policyname, ', ') INTO liberadas
+  FROM pg_policies
+  WHERE schemaname = 'public' AND tablename IN ('redes')
+    AND (coalesce(qual, '') || coalesce(with_check, '') NOT LIKE '%eh_admin_geral%'
+         OR coalesce(qual, '') || coalesce(with_check, '') LIKE '%minha_conta%');
+  PERFORM public.exigir(liberadas IS NULL AND (SELECT count(*) FROM pg_policies WHERE tablename = 'redes') > 0,
+                        'tabela da plataforma (redes): so o admin geral, em toda policy');
 
   -- Toda tabela de nivel loja tem lojaid amarrado a mesma conta.
   SELECT string_agg(conrelid::regclass::text, ', ') INTO liberadas
@@ -4668,7 +4681,10 @@ BEGIN
       -- 27/09/2026: o dia de hoje e o fuso da conta de QUEM CHAMOU (a conta
       -- sai do proprio login, como em meu_acesso). Nao recebe conta nenhuma e
       -- so devolve data e fuso. Provada na secao 68.
-      'meu_hoje'
+      'meu_hoje',
+      -- 27/09/2026: telas do admin geral. Nao recebem conta, e todas
+      -- recusam quem nao e o admin geral (provado na secao 70).
+      'sugerir_codigo_empresa', 'codigo_empresa_disponivel', 'resumo_admin_das_contas', 'redes_admin'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -5382,15 +5398,19 @@ BEGIN
                         'o endereco que dizia o nome da empresa nao existe mais');
 END $$;
 
--- Codigo de empresa novo nao e adivinhavel a partir do nome.
+-- Codigo de empresa novo: desde 27/09/2026 e um APELIDO CURTO sugerido do
+-- nome fantasia (decisao do Wisley), e nao mais nome + parte sorteada. Nunca
+-- numero sequencial. O codigo nao abre nada sozinho, e a tela de entrar da a
+-- mesma resposta para codigo que nao existe e para CPF errado.
 DO $$
 DECLARE v_codigo text;
 BEGIN
   INSERT INTO public.contas (contaid, nome, email, limitelojas) OVERRIDING SYSTEM VALUE
   VALUES (9001, 'Padaria Teste', 'padaria@exemplo.com', 1)
   RETURNING codigo INTO v_codigo;
-  PERFORM public.exigir(v_codigo LIKE 'padariateste-%' AND length(v_codigo) > 15,
-                        'o codigo da empresa nova tem parte sorteada (nao da para enumerar clientes)');
+  PERFORM public.exigir(v_codigo = 'padaria',
+                        'o codigo da empresa nova e um apelido curto sugerido do nome (4 a 20, minusculas e numeros)');
+  PERFORM public.exigir(v_codigo !~ '^[0-9]+$', 'e nunca um numero sequencial');
   DELETE FROM public.configuracoes WHERE contaid = 9001;
   DELETE FROM public.contas WHERE contaid = 9001;
 END $$;
@@ -8651,6 +8671,233 @@ BEGIN
                           AND NOT has_function_privilege('authenticated', f, 'EXECUTE'),
                           f || ': so o servidor chama');
   END LOOP;
+END $$;
+
+-- ===========================================================================
+-- 70. Administracao: redes, anexos sigilosos, CNPJ, codigo da empresa; e a
+--     copia cifrada do codigo de acesso com vida curta (27/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '70. administracao, anexos, codigo da empresa, codigo cifrado'; END $$;
+
+-- A copia cifrada do codigo de acesso SOME quando o codigo deixa de valer.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cpf) OVERRIDING SYSTEM VALUE VALUES
+  (9970, 1, 'Tito Cifra', '16899535009');
+DO $$
+DECLARE v1 integer; v2 integer; deu_erro boolean;
+BEGIN
+  v1 := public.criar_codigo_acesso(1, 9970, repeat('n', 64), 'v1.um.um', 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  v2 := public.criar_codigo_acesso(1, 9970, repeat('o', 64), 'v1.dois.dois', 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.exigir((SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v1) IS NULL,
+                        'codigo cancelado (saiu outro): a copia cifrada some');
+  PERFORM public.exigir((SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v2) = 'v1.dois.dois',
+                        'o codigo que vale continua reimprimivel');
+  PERFORM public.usar_codigo_acesso(1, '16899535009', repeat('o', 64));
+  PERFORM public.exigir((SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v2) IS NULL,
+                        'codigo usado: a copia cifrada some na hora');
+  -- Vencido: a faxina apaga.
+  PERFORM public.redefinir_acesso(1, 9970, NULL, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  v1 := public.criar_codigo_acesso(1, 9970, repeat('p', 64), 'v1.tres.tres', 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  UPDATE public.codigosacesso SET expiraem = now() - interval '1 minute' WHERE codigoid = v1;
+  -- Em dois passos: numa expressao so, o Postgres nao garante a ordem, e a
+  -- conferencia poderia rodar antes da faxina.
+  PERFORM public.exigir((SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v1) IS NOT NULL,
+                        'vencido, antes da faxina, a copia ainda esta la (e nenhuma folha a le)');
+  PERFORM public.exigir(public.limpar_codigos_vencidos() >= 1, 'a faxina acha o vencido');
+  PERFORM public.exigir((SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v1) IS NULL,
+                        'codigo vencido: a faxina apaga a copia cifrada');
+  -- E nenhum caminho consegue deixar copia em codigo usado ou cancelado.
+  BEGIN
+    UPDATE public.codigosacesso SET codigocifrado = 'v1.volta.volta' WHERE codigoid = v2;
+    deu_erro := (SELECT codigocifrado FROM public.codigosacesso WHERE codigoid = v2) IS NOT NULL;
+  EXCEPTION WHEN check_violation THEN deu_erro := false; END;
+  PERFORM public.exigir(NOT deu_erro, 'codigo usado nao volta a ter copia cifrada, nem por UPDATE direto');
+END $$;
+
+-- O indice "uma entrega por dia" usa dia_em_sao_paulo: ela tem de continuar
+-- sendo o que e hoje — IMUTAVEL e presa a Sao Paulo. Se alguem a fizer ler o
+-- fuso da conta, o indice passaria a devolver linha errada em silencio.
+DO $$
+DECLARE v_fn text;
+BEGIN
+  SELECT pg_get_functiondef('public.dia_em_sao_paulo(timestamp with time zone)'::regprocedure) INTO v_fn;
+  PERFORM public.exigir((SELECT provolatile FROM pg_proc WHERE oid = 'public.dia_em_sao_paulo(timestamp with time zone)'::regprocedure) = 'i'
+                        AND v_fn LIKE '%AT TIME ZONE ''America/Sao_Paulo''%'
+                        AND v_fn NOT LIKE '%configurac%' AND v_fn NOT LIKE '%fuso_da_conta%',
+                        'dia_em_sao_paulo continua imutavel e presa a Sao Paulo (o indice de entregas depende disso)');
+END $$;
+
+-- CNPJ: confere os digitos, aceita vazio, nao repete. Codigo da empresa:
+-- formato novo so quando nasce ou muda, e o antigo vale 30 dias.
+DO $$
+DECLARE deu_erro boolean; v_antigo text; v_conta integer;
+BEGIN
+  UPDATE public.contas SET cnpj = '11.222.333/0001-81' WHERE contaid = 1;
+  PERFORM public.exigir((SELECT cnpj FROM public.contas WHERE contaid = 1) = '11222333000181',
+                        'CNPJ e guardado so com os digitos');
+  BEGIN UPDATE public.contas SET cnpj = '11222333000181' WHERE contaid = 2; deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'dois clientes nao tem o mesmo CNPJ');
+  BEGIN UPDATE public.contas SET cnpj = '11222333000182' WHERE contaid = 2; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'CNPJ com digito errado e recusado');
+  UPDATE public.contas SET cnpj = NULL WHERE contaid = 2;
+  PERFORM public.exigir((SELECT cnpj FROM public.contas WHERE contaid = 2) IS NULL, 'CNPJ vazio e aceito');
+
+  PERFORM public.exigir((SELECT nomefantasia FROM public.contas WHERE contaid = 1) = 'Empresa A',
+                        'quem ja existia comeca com o nome fantasia igual ao nome de hoje');
+
+  -- O codigo antigo (formato velho) continua; mexer em outra coluna nao o revalida.
+  v_antigo := (SELECT codigo FROM public.contas WHERE contaid = 2);
+  UPDATE public.contas SET observacoes = 'x' WHERE contaid = 2;
+  PERFORM public.exigir((SELECT codigo FROM public.contas WHERE contaid = 2) = v_antigo,
+                        'cliente que ja existia continua com o codigo atual');
+
+  -- Trocar: formato novo; o antigo abre a empresa por 30 dias e fica reservado.
+  v_antigo := (SELECT codigo FROM public.contas WHERE contaid = 1);
+  BEGIN UPDATE public.contas SET codigo = 'Pr' WHERE contaid = 1; deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'codigo novo fora do formato (4 a 20, minusculas e numeros) e recusado');
+  UPDATE public.contas SET codigo = 'premier' WHERE contaid = 1;
+  PERFORM public.exigir(public.conta_do_codigo('premier') = 1, 'o codigo novo abre a empresa');
+  PERFORM public.exigir(public.conta_do_codigo(v_antigo) = 1, 'o codigo antigo continua abrindo a empresa (30 dias)');
+  PERFORM public.exigir((SELECT valeate FROM public.codigosantigos WHERE codigo = v_antigo) > now() + interval '29 days',
+                        'o antigo vale 30 dias');
+  UPDATE public.contas SET codigo = 'outrocodigo' WHERE contaid = 1;
+  BEGIN UPDATE public.contas SET codigo = 'premier' WHERE contaid = 2; deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o codigo que ja foi de um cliente fica reservado: outro nao pega');
+  UPDATE public.codigosantigos SET valeate = now() - interval '1 second' WHERE codigo = 'premier';
+  PERFORM public.exigir(public.conta_do_codigo('premier') IS NULL, 'depois dos 30 dias o antigo nao abre mais');
+  BEGIN UPDATE public.contas SET codigo = 'premier' WHERE contaid = 2; deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'e continua reservado para sempre (um PDF velho nunca leva a outra empresa)');
+  UPDATE public.contas SET codigo = 'premier' WHERE contaid = 1;
+  PERFORM public.exigir(public.conta_do_codigo('premier') = 1 AND NOT EXISTS (SELECT 1 FROM public.codigosantigos WHERE codigo = 'premier'),
+                        'a propria empresa pode voltar a um codigo que ja foi dela');
+
+  -- A sugestao sai do nome fantasia e nao repete ninguem.
+  PERFORM public.exigir(public.codigo_sugerido('Premier Lojas LTDA', NULL) = 'premierlojas',
+                        'sugestao: "premier" ja e de alguem, entao sai "premierlojas"');
+  PERFORM public.exigir(public.codigo_sugerido('Açaí da Praça', NULL) = 'acai', 'sugestao sem acento e sem "da"');
+
+  -- Rede com cliente nao se apaga.
+  INSERT INTO public.redes (redeid, nome, lojascontratadas) OVERRIDING SYSTEM VALUE VALUES (70, 'Rede Setenta', 5);
+  UPDATE public.contas SET redeid = 70 WHERE contaid = 1;
+  BEGIN DELETE FROM public.redes WHERE redeid = 70; deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 cliente%'; END;
+  PERFORM public.exigir(deu_erro, 'rede com cliente nao se apaga, e a mensagem diz quantos');
+
+  -- Anexos: registro so pelo servidor, de um cliente OU de uma rede.
+  INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
+  VALUES (1, 'contrato-a.pdf', 'contas/1/contrato.pdf', 'application/pdf', 1000);
+  BEGIN
+    INSERT INTO public.anexosadmin (contaid, redeid, nomearquivo, caminho, tipo, tamanho)
+    VALUES (1, 70, 'x.pdf', 'contas/1/x.pdf', 'application/pdf', 1000);
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'anexo e de um cliente OU de uma rede, nunca dos dois');
+  BEGIN
+    INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
+    VALUES (1, 'x.exe', 'contas/1/x.exe', 'application/x-msdownload', 1000);
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'anexo so PDF ou imagem');
+  BEGIN
+    INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
+    VALUES (1, 'grande.pdf', 'contas/1/grande.pdf', 'application/pdf', 20000000);
+    deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'anexo de mais de 10 MB e recusado');
+  INSERT INTO storage.objects (bucket_id, name) VALUES ('administracao', 'contas/1/contrato.pdf'),
+                                                       ('logos-redes', 'redes/70/logo.png');
+END $$;
+
+-- O MASTER de cada conta (inclusive da conta A, dona do contrato): nao le
+-- nada disso, nem escreve.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.anexosadmin), 'o master nao ve anexo nenhum, nem o contrato da propria conta');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.redes), 'o master nao ve as redes');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.codigosantigos), 'o master nao ve codigos antigos');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id IN ('administracao', 'logos-redes')),
+                        'nem os arquivos dos buckets da administracao');
+  BEGIN INSERT INTO public.redes (nome) VALUES ('Rede pirata'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao cria rede');
+  UPDATE public.redes SET nome = 'invadida' WHERE redeid = 70;
+  DELETE FROM public.redes WHERE redeid = 70;
+  BEGIN INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
+        VALUES (1, 'x.pdf', 'contas/1/y.pdf', 'application/pdf', 10); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao registra anexo');
+  BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('administracao', '1/entrou.pdf'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao sobe arquivo no bucket da administracao');
+  BEGIN UPDATE public.contas SET codigo = 'tomada' WHERE contaid = 1; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir((SELECT codigo FROM public.contas WHERE contaid = 1) = 'premier',
+                        'o master nao troca o codigo da propria empresa');
+  BEGIN PERFORM public.redes_admin(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao chama redes_admin');
+  BEGIN PERFORM public.resumo_admin_das_contas(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem resumo_admin_das_contas');
+  BEGIN PERFORM public.sugerir_codigo_empresa('x'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem a sugestao de codigo');
+  BEGIN PERFORM public.codigo_empresa_disponivel('x'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem a conferencia de codigo');
+  PERFORM public.exigir((public.meu_acesso())->>'conta' = 'Empresa A', 'o produto mostra o NOME FANTASIA');
+END $$;
+RESET ROLE;
+DO $$
+BEGIN
+  PERFORM public.exigir((SELECT nome FROM public.redes WHERE redeid = 70) = 'Rede Setenta',
+                        'o UPDATE e o DELETE do master nao tocaram na rede');
+END $$;
+
+-- O ADMIN GERAL le e escreve.
+SET ROLE authenticated;
+SET teste.uid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+DO $$
+DECLARE r record;
+BEGIN
+  PERFORM public.exigir((SELECT count(*) FROM public.anexosadmin) = 1, 'o admin geral ve os anexos');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.codigosantigos), 'e os codigos antigos');
+  INSERT INTO public.redes (nome, lojascontratadas) VALUES ('Rede do Admin', 3);
+  SELECT * INTO r FROM public.redes_admin() WHERE redeid = 70;
+  PERFORM public.exigir(r.lojascontratadas = 5 AND r.clientes = 1 AND r.lojasreais >= 1,
+                        'a rede mostra o contratado (digitado) e o real (calculado), lado a lado');
+  PERFORM public.exigir((public.sugerir_codigo_empresa('Gela Boca Sorvetes'))->>'sugestao' = 'gela',
+                        'o admin recebe a sugestao de codigo');
+  PERFORM public.exigir(NOT ((public.codigo_empresa_disponivel('premier'))->>'livre')::boolean,
+                        'e sabe que "premier" ja e de alguem');
+  PERFORM public.exigir(((public.codigo_empresa_disponivel('premier', 'premier'))->>'livre')::boolean,
+                        'mas para a propria empresa o codigo dela conta como livre');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.resumo_admin_das_contas() WHERE contaid = 1),
+                        'o admin ve lojas e codigos pendentes por cliente (so numeros)');
+  UPDATE public.contas SET redeid = NULL WHERE contaid = 1;
+  DELETE FROM public.redes WHERE redeid = 70 AND NOT EXISTS (SELECT 1 FROM public.anexosadmin WHERE redeid = 70);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.redes WHERE redeid = 70), 'sem cliente, a rede se apaga');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['public.limpar_codigos_vencidos()', 'public.codigo_livre(text, integer)',
+                           'public.codigo_sugerido(text, integer)', 'public.conta_pelo_codigo_ou_antigo(text)'] LOOP
+    PERFORM public.exigir(NOT has_function_privilege('anon', f, 'EXECUTE')
+                          AND NOT has_function_privilege('authenticated', f, 'EXECUTE'),
+                          f || ': so o servidor chama');
+  END LOOP;
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.redes_admin()', 'EXECUTE'),
+                        'o visitante sem login nao chama nada da administracao');
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

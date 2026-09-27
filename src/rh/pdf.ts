@@ -23,10 +23,10 @@ export async function usuarioAtual() {
   return nome || u?.email || "usuário";
 }
 
-/** Nome da conta de quem está logado. */
+/** Nome (fantasia) da conta de quem está logado: é o que vai nos PDFs da equipe. */
 export async function nomeDaConta() {
-  const { data } = await supabase.from("contas").select("nome").limit(1).maybeSingle();
-  return data?.nome ?? "";
+  const { data } = await supabase.from("contas").select("nomefantasia").limit(1).maybeSingle();
+  return data?.nomefantasia ?? "";
 }
 
 class Documento {

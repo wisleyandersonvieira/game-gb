@@ -13,6 +13,8 @@
 
 ## Regras de isolamento (obrigatórias em todo código novo)
 - **Toda** tabela de dados tem `contaid NOT NULL` com padrão `minha_conta()`. As tabelas de nível loja têm também `lojaid`. Consulte a classificação conta/loja em `docs/DICIONARIO_BANCO.md`.
+- **Única exceção: tabela da PLATAFORMA**, que não pertence a conta nenhuma e é só do admin geral (hoje: `redes`). Ela entra na lista declarada na seção 14 do teste de isolamento, que confere que toda policy dela é só `eh_admin_geral()`. Não use a exceção para dado de cliente.
+- **Nunca recrie uma função que foi apagada de propósito.** Antes de copiar "a versão mais recente", procure também `DROP FUNCTION ... <nome>` depois dela (em 27/09/2026 `conta_por_codigo`, apagada por dizer o nome da empresa a quem tivesse o código, quase voltou assim; o teste de isolamento pegou).
 - **Toda** tabela tem RLS com `contaid = minha_conta()`. **Nunca** crie policy `USING (true)`.
 - O front-end **nunca** envia `contaid`, e nunca confie em `contaid` vindo do navegador. O banco preenche e confere.
 - FKs entre tabelas precisam garantir a mesma conta (ex.: um funcionário só pode ser ligado a lojas da própria conta). Use triggers ou FKs compostas (`contaid`, id).

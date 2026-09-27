@@ -220,8 +220,10 @@ export function Layout({
     staleTime: ESTAVEL,
     enabled: comLoja,
     queryFn: async () => {
-      const { data } = await supabase.from("contas").select("nome").limit(1).maybeSingle();
-      return data?.nome ?? "";
+      // O NOME FANTASIA é o que aparece no produto; a razão social fica para
+      // contrato e cobrança.
+      const { data } = await supabase.from("contas").select("nomefantasia").limit(1).maybeSingle();
+      return data?.nomefantasia ?? "";
     },
   });
 
