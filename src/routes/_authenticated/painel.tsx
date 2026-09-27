@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
@@ -12,7 +12,8 @@ export const Route = createFileRoute("/_authenticated/painel")({
 });
 
 const BUCKET = "entregas";
-const DIAS_DE_HISTORICO = 7;
+/** O maior período do histórico (o banco também recusa acima disto). */
+const MAXIMO_DE_DIAS = 93;
 
 const campo =
   "rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
@@ -28,6 +29,29 @@ function dataHora(iso: string | null) {
     minute: "2-digit",
   });
 }
+
+/** Uma linha como vem de quadro_validacao. */
+type LinhaDoQuadro = {
+  entregaid: number;
+  tarefaid: number;
+  statusvalidacao: string;
+  dataenvio: string;
+  dataaprovacao?: string | null;
+  datarecusa?: string | null;
+  dataestorno?: string | null;
+  pontosganhos: number | null;
+  observacao: string | null;
+  motivorecusa?: string | null;
+  motivoestorno?: string | null;
+  pathfotoevidencia: string | null;
+  fotoexpiradaem: string | null;
+  semhorafoto?: boolean;
+  titulo: string | null;
+  pontostarefa: number | null;
+  nome: string | null;
+};
+
+type PaginaDoQuadro = { de: string; ate: string; temmais: boolean; pendentes: Entrega[]; historico: Entrega[] };
 
 type Entrega = {
   entregaid: number;
@@ -97,9 +121,13 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
   const [foto, setFoto] = useState<File | null>(null);
   const [jaAprovada, setJaAprovada] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
+  // Nasce FECHADO. A lista só é buscada quando abre: uma consulta a menos ao
+  // abrir o Quadro. Se der erro, fica aberto, com o que foi digitado.
+  const [aberto, setAberto] = useState(false);
 
   const opcoes = useQuery({
     queryKey: ["para-entregar", lojaid],
+    enabled: aberto,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("atribuicoes_para_entregar", { p_lojaid: lojaid });
       if (error) throw error;
@@ -160,12 +188,19 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
       }}
       className="space-y-3 rounded-xl border border-border bg-card p-4"
     >
-      <div>
-        <p className="text-sm font-semibold">Registrar entrega</p>
-        <p className="text-xs text-muted-foreground">
-          Aparecem só as tarefas que caem hoje ou estão atrasadas, e que ainda não foram entregues.
-        </p>
-      </div>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        className="flex w-full items-center justify-between text-left"
+        aria-expanded={aberto}
+      >
+        <span className="text-sm font-semibold">Registrar entrega</span>
+        <span className="text-muted-foreground">{aberto ? "▲" : "▼"}</span>
+      </button>
+      {aberto && (<>
+      <p className="text-xs text-muted-foreground">
+        Aparecem só as tarefas que caem hoje ou estão atrasadas, e que ainda não foram entregues.
+      </p>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <select
@@ -219,6 +254,7 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
       {registrar.isError && (
         <p className="text-sm text-destructive">{(registrar.error as Error).message}</p>
       )}
+      </>)}
     </form>
   );
 }
@@ -233,57 +269,73 @@ function Validacao({ lojaid }: { lojaid: number }) {
   // "Só as sem hora da foto": para conferir de uma vez as que pedem atenção.
   const [soSemHora, setSoSemHora] = useState(false);
 
-  const quadro = useQuery({
-    queryKey: ["quadro", lojaid],
-    queryFn: async (): Promise<Entrega[]> => {
-      const desde = new Date(Date.now() - DIAS_DE_HISTORICO * 24 * 3600 * 1000).toISOString();
-      const { data, error } = await supabase
-        .from("entregas")
-        .select(
-          "entregaid, tarefaid, funcionarioid, statusvalidacao, dataenvio, dataaprovacao, datarecusa, dataestorno, pontosganhos, observacao, motivorecusa, motivoestorno, pathfotoevidencia, fotoexpiradaem, semhorafoto",
-        )
-        .eq("lojaid", lojaid)
-        .or(`statusvalidacao.eq.Pendente,dataenvio.gte.${desde}`)
-        .order("dataenvio", { ascending: false });
+  // O período do HISTÓRICO. Vazio = o padrão do banco (os 7 dias até ontem).
+  const [periodo, setPeriodo] = useState<{ de: string; ate: string } | null>(null);
+  const [digitado, setDigitado] = useState<{ de: string; ate: string } | null>(null);
+  const [erroPeriodo, setErroPeriodo] = useState<string | null>(null);
+
+  // UMA consulta traz pendentes + a página do histórico, com títulos e nomes
+  // (quadro_validacao). Depois, só os links das fotos. Antes eram duas
+  // rodadas: as entregas, e depois tarefas, nomes e fotos.
+  const quadro = useInfiniteQuery({
+    queryKey: ["quadro", lojaid, periodo?.de ?? null, periodo?.ate ?? null],
+    initialPageParam: 0,
+    getNextPageParam: (ultima: PaginaDoQuadro, todas: PaginaDoQuadro[]) => (ultima.temmais ? todas.length * 50 : undefined),
+    queryFn: async ({ pageParam }): Promise<PaginaDoQuadro> => {
+      const { data, error } = await supabase.rpc("quadro_validacao", {
+        p_lojaid: lojaid,
+        p_de: periodo?.de ?? undefined,
+        p_ate: periodo?.ate ?? undefined,
+        p_offset: pageParam,
+      });
       if (error) throw error;
-      const linhas = data ?? [];
-      if (linhas.length === 0) return [];
-
-      // As três dependem da lista acima, mas não uma da outra: vão juntas.
-      // Em fila, eram três idas ao servidor; assim é uma só espera.
+      const r = data as unknown as {
+        de: string; ate: string; temmais: boolean;
+        pendentes: LinhaDoQuadro[]; historico: LinhaDoQuadro[];
+      };
+      // Os pendentes vêm só na primeira página: nas seguintes, só o histórico.
+      const linhas = [...(pageParam === 0 ? r.pendentes : []), ...r.historico];
       const caminhos = linhas.map((l) => l.pathfotoevidencia).filter((c): c is string => !!c);
-      const [{ data: tarefas }, { data: pessoas }, assinadas] = await Promise.all([
-        supabase
-          .from("tarefas")
-          .select("tarefaid, titulo, pontos")
-          .in("tarefaid", [...new Set(linhas.map((l) => l.tarefaid))]),
-        supabase
-          .from("funcionarios")
-          .select("funcionarioid, nomecompleto")
-          .in("funcionarioid", [...new Set(linhas.map((l) => l.funcionarioid))]),
-        // Link temporário (1 hora). O bucket é privado: não há link público.
-        caminhos.length > 0
-          ? supabase.storage.from(BUCKET).createSignedUrls(caminhos, 3600)
-          : Promise.resolve({ data: [] as { path: string | null; signedUrl: string }[] }),
-      ]);
-
+      // Link temporário (1 hora). O bucket é privado: não há link público.
+      const assinadas = caminhos.length > 0
+        ? await supabase.storage.from(BUCKET).createSignedUrls(caminhos, 3600)
+        : { data: [] as { path: string | null; signedUrl: string }[] };
       const links = new Map<string, string>();
       for (const a of assinadas.data ?? []) if (a.path && a.signedUrl) links.set(a.path, a.signedUrl);
-
-      const tarefa = new Map((tarefas ?? []).map((t) => [t.tarefaid, t]));
-      const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
-
-      return linhas.map((l) => ({
+      const montar = (l: LinhaDoQuadro): Entrega => ({
         ...l,
-        titulo: tarefa.get(l.tarefaid)?.titulo ?? `Tarefa ${l.tarefaid}`,
-        pontosDaTarefa: tarefa.get(l.tarefaid)?.pontos ?? 0,
-        nome: nome.get(l.funcionarioid) ?? "—",
+        dataaprovacao: l.dataaprovacao ?? null,
+        datarecusa: l.datarecusa ?? null,
+        dataestorno: l.dataestorno ?? null,
+        motivorecusa: l.motivorecusa ?? null,
+        motivoestorno: l.motivoestorno ?? null,
+        titulo: l.titulo ?? `Tarefa ${l.tarefaid}`,
+        pontosDaTarefa: l.pontostarefa ?? 0,
+        nome: l.nome ?? "—",
         foto: l.pathfotoevidencia ? (links.get(l.pathfotoevidencia) ?? null) : null,
         fotoExpirada: l.fotoexpiradaem !== null,
-        semHoraDaFoto: l.semhorafoto === true,
-      }));
+        // Só PENDENTE carrega o aviso: nas decididas, a decisão já foi tomada.
+        semHoraDaFoto: l.statusvalidacao === "Pendente" && l.semhorafoto === true,
+      });
+      return {
+        de: r.de, ate: r.ate, temmais: r.temmais,
+        pendentes: pageParam === 0 ? r.pendentes.map(montar) : [],
+        historico: r.historico.map(montar),
+      };
     },
   });
+  const paginas = quadro.data?.pages ?? [];
+  const primeira = paginas[0];
+
+  function carregarPeriodo() {
+    const p = digitado ?? (primeira ? { de: primeira.de, ate: primeira.ate } : null);
+    if (!p?.de || !p?.ate) return setErroPeriodo("Escolha a data inicial e a final.");
+    if (p.de > p.ate) return setErroPeriodo("A data inicial é depois da final.");
+    const dias = (Date.parse(`${p.ate}T00:00:00Z`) - Date.parse(`${p.de}T00:00:00Z`)) / 86_400_000;
+    if (dias > MAXIMO_DE_DIAS - 1) return setErroPeriodo(`Escolha um período de no máximo ${MAXIMO_DE_DIAS} dias.`);
+    setErroPeriodo(null);
+    setPeriodo(p);
+  }
 
   function atualizar() {
     qc.invalidateQueries({ queryKey: ["quadro", lojaid] });
@@ -338,13 +390,13 @@ function Validacao({ lojaid }: { lojaid: number }) {
     onError: (err) => setAviso({ texto: (err as Error).message, grave: true }),
   });
 
-  const todas = quadro.data ?? [];
-  const pendentes = todas
-    .filter((e) => e.statusvalidacao === "Pendente")
-    .filter((e) => !soSemHora || e.semHoraDaFoto);
-  const semHora = todas.filter((e) => e.statusvalidacao === "Pendente" && e.semHoraDaFoto).length;
-  const aprovadas = todas.filter((e) => e.statusvalidacao === "Aprovada");
-  const recusadas = todas.filter((e) => e.statusvalidacao === "Recusada" || e.statusvalidacao === "Estornada");
+  const todosPendentes = primeira?.pendentes ?? [];
+  const pendentes = todosPendentes.filter((e) => !soSemHora || e.semHoraDaFoto);
+  const semHora = todosPendentes.filter((e) => e.semHoraDaFoto).length;
+  const historico = paginas.flatMap((p) => p.historico);
+  const aprovadas = historico.filter((e) => e.statusvalidacao === "Aprovada");
+  const recusadas = historico.filter((e) => e.statusvalidacao === "Recusada" || e.statusvalidacao === "Estornada");
+  const deBr = (d?: string) => (d ? d.split("-").reverse().join("/") : "");
 
   return (
     <section className="space-y-3">
@@ -361,8 +413,39 @@ function Validacao({ lojaid }: { lojaid: number }) {
       {quadro.isLoading && <p className="text-muted-foreground">Carregando...</p>}
       {quadro.isError && <p className="text-sm text-destructive">{(quadro.error as Error).message}</p>}
 
+      {/* O período vale só para Aprovadas e Recusadas. Pendentes é lista de
+          coisa a fazer: mostra TUDO o que espera, de qualquer dia. */}
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+        <span className="font-medium">Histórico (aprovadas e recusadas), pela data da entrega:</span>
+        <label className="flex items-center gap-1">
+          de
+          <input
+            type="date"
+            value={digitado?.de ?? primeira?.de ?? ""}
+            onChange={(e) => setDigitado({ de: e.target.value, ate: digitado?.ate ?? primeira?.ate ?? "" })}
+            className={campo}
+          />
+        </label>
+        <label className="flex items-center gap-1">
+          até
+          <input
+            type="date"
+            value={digitado?.ate ?? primeira?.ate ?? ""}
+            onChange={(e) => setDigitado({ de: digitado?.de ?? primeira?.de ?? "", ate: e.target.value })}
+            className={campo}
+          />
+        </label>
+        <button onClick={carregarPeriodo} className="rounded-md border border-border px-3 py-2">
+          Carregar
+        </button>
+        <span className="text-xs text-muted-foreground">
+          Padrão: os 7 dias até ontem (o de hoje está em "Feitas hoje"). Até {MAXIMO_DE_DIAS} dias, 50 por vez.
+        </span>
+        {erroPeriodo && <span className="w-full text-destructive">{erroPeriodo}</span>}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-3">
-        <Coluna titulo="Pendentes" quantidade={pendentes.length}>
+        <Coluna titulo="Pendentes (todas)" quantidade={pendentes.length}>
           {semHora > 0 && (
             <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
               <input type="checkbox" checked={soSemHora} onChange={(ev) => setSoSemHora(ev.target.checked)} />
@@ -390,7 +473,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
           {pendentes.length === 0 && <Vazio texto="Nada esperando validação." />}
         </Coluna>
 
-        <Coluna titulo={`Aprovadas (${DIAS_DE_HISTORICO} dias)`} quantidade={aprovadas.length}>
+        <Coluna titulo={`Aprovadas (${deBr(primeira?.de)} a ${deBr(primeira?.ate)})`} quantidade={aprovadas.length}>
           {aprovadas.map((e) => (
             <Cartao key={e.entregaid} e={e}>
               <p className="text-xs text-muted-foreground">
@@ -406,7 +489,7 @@ function Validacao({ lojaid }: { lojaid: number }) {
           {aprovadas.length === 0 && <Vazio texto="Nenhuma aprovação recente." />}
         </Coluna>
 
-        <Coluna titulo={`Recusadas e estornadas (${DIAS_DE_HISTORICO} dias)`} quantidade={recusadas.length}>
+        <Coluna titulo={`Recusadas e estornadas (${deBr(primeira?.de)} a ${deBr(primeira?.ate)})`} quantidade={recusadas.length}>
           {recusadas.map((e) => (
             <Cartao key={e.entregaid} e={e}>
               {e.statusvalidacao === "Recusada" ? (
@@ -423,6 +506,15 @@ function Validacao({ lojaid }: { lojaid: number }) {
           {recusadas.length === 0 && <Vazio texto="Nada recusado recentemente." />}
         </Coluna>
       </div>
+      {quadro.hasNextPage && (
+        <button
+          onClick={() => void quadro.fetchNextPage()}
+          disabled={quadro.isFetchingNextPage}
+          className="w-full rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-50"
+        >
+          {quadro.isFetchingNextPage ? "Carregando..." : "Carregar mais 50 do histórico"}
+        </button>
+      )}
     </section>
   );
 }

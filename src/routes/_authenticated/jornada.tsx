@@ -203,6 +203,11 @@ function Jornadas() {
             Dia desmarcado: sem horário naquele dia. Saída menor que a entrada: turno da noite (acaba no dia seguinte). A
             folga continua sendo de cada pessoa, no cadastro dela.
           </p>
+          <p className="rounded-md border border-azul px-3 py-2 text-xs text-azul">
+            A saída é um horário escrito, não uma conta: se você mudar a entrada, confira a saída — ela{" "}
+            <strong>não acompanha a entrada sozinha</strong>. (Nas jornadas criadas a partir dos horários antigos, a
+            saída que antes era calculada — entrada + 8h20 — foi escrita por extenso.)
+          </p>
           {ORDEM_NA_TELA.map((n) => {
             const d = form.dias[n - 1];
             const mudar = (novo: Partial<Dia>) =>

@@ -98,6 +98,7 @@ export const CONTRATO: Record<string, string[]> = {
   preparar_envio_documento: ["p_funcionarioid", "p_nomearquivo"],
   publicar_comunicado: ["p_alvo", "p_conteudo", "p_funcionarios", "p_lojas", "p_pontos", "p_titulo"],
   publicar_politica_de_uso: ["p_conteudo"],
+  quadro_validacao: ["p_ate", "p_de", "p_lojaid", "p_offset"],
   quem_trabalha_hoje: ["p_lojaid"],
   ranking_mensal: ["p_ano", "p_lojaid", "p_mes"],
   ranking_pontos: ["p_ate", "p_de", "p_lojaid"],

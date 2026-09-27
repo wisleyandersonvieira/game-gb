@@ -9221,4 +9221,85 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 74. Intervalo que passa do fim do turno; o Quadro numa consulta so
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '74. intervalo e quadro'; END $$;
+
+-- Duas jornadas de teste, os sete dias iguais: 08h-17h com intervalo
+-- 16h30-18h (passa do fim), e turno da noite 22h-06h com intervalo
+-- 23h30-00h30 (cruza a meia-noite).
+INSERT INTO public.jornadas (jornadaid, contaid, nome, pausainicio, pausafim) OVERRIDING SYSTEM VALUE VALUES
+  (7401, 1, 'Teste 74 dia', '16:30', '18:00'), (7402, 1, 'Teste 74 noite', '23:30', '00:30');
+INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
+SELECT 1, 7401, d, '08:00'::time, '17:00'::time FROM generate_series(1, 7) d
+UNION ALL SELECT 1, 7402, d, '22:00'::time, '06:00'::time FROM generate_series(1, 7) d;
+
+DO $$
+DECLARE v jsonb; h date := public.hoje_da_conta(1);
+BEGIN
+  UPDATE public.funcionarios SET jornadaid = 7401, diadefolga = 0 WHERE funcionarioid = 9972;
+  v := public.bot_janela(1, 9972, public.instante_local(h, '16:45'));
+  PERFORM public.exigir(v->>'motivo' = 'intervalo' AND (v->>'proxima')::timestamptz = public.instante_local(h, '17:00'),
+                        'intervalo que passa do fim do turno: silencio so ate o fim do turno (antes era ignorado)');
+  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h, '17:00'))->>'motivo') IS DISTINCT FROM 'intervalo',
+                        'e no fim do turno a mensagem volta a andar (nao fica presa no intervalo)');
+  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h, '18:30'))->>'motivo') = 'fora_do_turno',
+                        'depois do expediente vale o de sempre: espera a proxima entrada');
+
+  UPDATE public.funcionarios SET jornadaid = 7402 WHERE funcionarioid = 9972;
+  v := public.bot_janela(1, 9972, public.instante_local(h + 1, '00:10'));
+  PERFORM public.exigir(v->>'motivo' = 'intervalo' AND (v->>'proxima')::timestamptz = public.instante_local(h + 1, '00:30'),
+                        'turno da noite, intervalo cruzando a meia-noite: espera ate 00h30 do dia seguinte');
+  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h + 1, '00:40'))->>'pode')::boolean,
+                        'e depois do intervalo volta a enviar');
+  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h, '23:00'))->>'pode')::boolean,
+                        'antes do intervalo, dentro do turno da noite, envia');
+  UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid = 9972;
+END $$;
+
+-- O Quadro: pendentes de qualquer dia; historico pela data da entrega, ate ontem por padrao.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v jsonb; deu_erro boolean;
+BEGIN
+  v := public.quadro_validacao(10);
+  PERFORM public.exigir((v->>'ate')::date = (v->>'hoje')::date - 1 AND (v->>'de')::date = (v->>'hoje')::date - 7,
+                        'historico por padrao: os 7 dias ate ONTEM');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'historico') x WHERE x->>'titulo' = 'TV hoje'),
+                        'a aprovada de hoje nao entra no historico padrao (ja esta em "Feitas hoje")');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v->'historico') x WHERE x->>'titulo' = 'TV ontem'),
+                        'a entregue ontem entra');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'historico') x WHERE x ? 'semhorafoto'),
+                        'o historico nao traz "sem hora da foto": a decisao ja foi tomada');
+  PERFORM public.exigir((SELECT count(*) FROM jsonb_array_elements(v->'pendentes')) =
+                        (SELECT count(*) FROM public.entregas WHERE lojaid = 10 AND statusvalidacao = 'Pendente'),
+                        'pendentes: todas, de qualquer dia');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.quadro_validacao(10, (v->>'hoje')::date, (v->>'hoje')::date)->'historico') x
+                                 WHERE x->>'titulo' = 'TV hoje'),
+                        'escolhendo o periodo de hoje, ela aparece');
+  BEGIN PERFORM public.quadro_validacao(10, '2026-09-20', '2026-09-10'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'periodo invertido e recusado');
+  BEGIN PERFORM public.quadro_validacao(10, '2026-01-01', '2026-09-10'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'periodo maior que 93 dias e recusado');
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE v jsonb := public.quadro_validacao(10, '2026-01-01', '2026-03-01');
+BEGIN
+  v := public.quadro_validacao(10);
+  PERFORM public.exigir(jsonb_array_length(v->'pendentes') = 0 AND jsonb_array_length(v->'historico') = 0,
+                        'a conta B nao ve o quadro de uma loja de A');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.quadro_validacao(integer, date, date, integer)', 'EXECUTE'),
+                        'o visitante sem login nao le o quadro');
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

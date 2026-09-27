@@ -5,6 +5,9 @@
 // assumiu ainda. Quem estava atribuído e não pegou fica neutro na nota, então
 // o que ninguém pegou precisa aparecer aqui para o gestor decidir.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AindaNaoLiberadas } from "@/painel/AindaNaoLiberadas";
+import { ListaRolavel } from "@/painel/ListaRolavel";
+import { separarParaPegar, textoDisponivel } from "@/painel/textoDaFila";
 import { supabase } from "@/integrations/supabase/client";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import { quandoFoi } from "@/ui/hoje";
@@ -28,6 +31,9 @@ type Item = {
   /** O dia de hoje DA CONTA e o fuso dela, ditos pelo servidor. */
   hoje: string;
   fuso: string;
+  /** false enquanto não chegou a hora de liberação. */
+  liberada: boolean;
+  liberaas: string | null;
 };
 
 export function FilaDoDia({ lojaid }: { lojaid: number }) {
@@ -65,6 +71,8 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
   const lista = fila.data ?? [];
   const agora = lista[0]?.agora ?? null;
   const faixa = (s: Item["situacao"]) => lista.filter((i) => i.situacao === s);
+  // A MESMA separação do tablet: "Para pegar" só com o que já liberou.
+  const { liberadas: paraPegar, aindaNao } = separarParaPegar(lista);
 
   return (
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -81,7 +89,7 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
       <div className="grid gap-3 md:grid-cols-3">
         <Faixa
           titulo="Para pegar"
-          itens={faixa("para_pegar")}
+          itens={paraPegar}
           vazio="Ninguém está esperando tarefa."
           agora={agora}
         />
@@ -98,6 +106,7 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
         />
         <Faixa titulo="Feitas hoje" itens={faixa("feita")} vazio="Nada entregue ainda." agora={agora} />
       </div>
+      <AindaNaoLiberadas itens={aindaNao} />
     </section>
   );
 }
@@ -125,7 +134,7 @@ function Faixa({
       {itens.length === 0 ? (
         <p className="text-xs text-muted-foreground">{vazio}</p>
       ) : (
-        <ul className="space-y-2">
+        <ListaRolavel quantos={itens.length}>
           {itens.map((i) => (
             <li key={i.atribuicaoid} className="rounded-lg bg-background p-2 text-sm">
               <p className="font-medium">
@@ -134,8 +143,9 @@ function Faixa({
               <p className="text-xs text-muted-foreground">
                 {i.quempegounome
                   ? `com ${i.quempegounome} ${faz(minutosDesde(i.pegaem, agora))} (${quandoFoi(i.pegaem, i.hoje, i.fuso)})`
-                  : i.aberta
-                    ? `aberta ${faz(minutosDesde(i.disponiveldesde, agora))}: a primeira que pegar leva`
+                  : i.situacao === "para_pegar"
+                    ? // As MESMAS palavras do tablet (textoDaFila).
+                      `${textoDisponivel(i, agora)}${i.aberta ? " · a primeira que pegar leva" : " · com dono"}`
                     : "com dono"}
                 {i.rodizio && i.situacao === "para_pegar" && " · rodízio ativo"}
                 {i.atrasada && " · atrasada"}
@@ -151,7 +161,7 @@ function Faixa({
               )}
             </li>
           ))}
-        </ul>
+        </ListaRolavel>
       )}
     </div>
   );

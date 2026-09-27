@@ -5684,6 +5684,10 @@ export type Database = {
         Returns: Json
       }
       meu_hoje: { Args: never; Returns: Json }
+      quadro_validacao: {
+        Args: { p_ate?: string; p_de?: string; p_lojaid: number; p_offset?: number }
+        Returns: Json
+      }
       salvar_jornada: {
         Args: {
           p_ativa: boolean
