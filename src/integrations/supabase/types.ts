@@ -267,6 +267,8 @@ export type Database = {
       }
       anexosadmin: {
         Row: {
+          removidoem: string | null
+          removidopor: string | null
           anexoid: number
           caminho: string
           contaid: number | null
@@ -278,6 +280,8 @@ export type Database = {
           tipo: string
         }
         Insert: {
+          removidoem?: string | null
+          removidopor?: string | null
           anexoid?: number
           caminho: string
           contaid?: number | null
@@ -289,6 +293,8 @@ export type Database = {
           tipo: string
         }
         Update: {
+          removidoem?: string | null
+          removidopor?: string | null
           anexoid?: number
           caminho?: string
           contaid?: number | null
@@ -5628,6 +5634,21 @@ export type Database = {
         Returns: Json
       }
       meu_hoje: { Args: never; Returns: Json }
+      anexos_admin: {
+        Args: never
+        Returns: {
+          anexoid: number
+          contaid: number | null
+          enviadoem: string
+          enviadopor: string | null
+          nomearquivo: string
+          redeid: number | null
+          removidoem: string | null
+          removidopor: string | null
+          tamanho: number
+          tipo: string
+        }[]
+      }
       sugerir_codigo_empresa: { Args: { p_codigoatual?: string; p_nome: string }; Returns: Json }
       codigo_empresa_disponivel: { Args: { p_codigo: string; p_codigoatual?: string }; Returns: Json }
       cnpj_valido: { Args: { p_cnpj: string }; Returns: boolean }

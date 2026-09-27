@@ -467,3 +467,45 @@ export const logosDasRedes = createServerFn({ method: "GET" })
     const porCaminho = new Map((links ?? []).map((l) => [l.path, l.signedUrl]));
     return Object.fromEntries(lista.map((r) => [r.redeid, porCaminho.get(r.logocaminho) ?? ""])) as Record<number, string>;
   });
+
+/**
+ * Remove um anexo: o ARQUIVO sai de verdade do armazenamento, e só depois o
+ * registro é marcado (quem removeu, quando; o nome do arquivo sai junto).
+ * Contrato no cliente errado é dado de uma empresa na pasta de outra, e
+ * cliente que encerra pode pedir a exclusão (LGPD).
+ *
+ * Se algo falhar no meio, repetir resolve: arquivo que já não existe conta
+ * como removido.
+ */
+export const removerAnexoAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { anexoid: number }) => {
+    if (!Number.isInteger(d?.anexoid)) throw new Error("Anexo inválido.");
+    return { anexoid: d.anexoid };
+  })
+  .handler(async ({ data, context }) => {
+    await exigirAdminGeral(context.supabase as unknown as ClienteDoUsuario);
+    const { userId } = context as unknown as { userId: string };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: anexo } = await supabaseAdmin
+      .from("anexosadmin").select("caminho, removidoem").eq("anexoid", data.anexoid).maybeSingle();
+    if (!anexo) throw new Error("Anexo não encontrado.");
+    if (anexo.removidoem) return { ok: true as const };
+
+    const { error: erroArquivo } = await supabaseAdmin.storage.from(BUCKET_ANEXOS).remove([anexo.caminho]);
+    if (erroArquivo) throw new Error("Não foi possível apagar o arquivo agora. Nada foi alterado; tente de novo.");
+    // Confere no próprio armazenamento que o arquivo sumiu.
+    const pasta = anexo.caminho.slice(0, anexo.caminho.lastIndexOf("/"));
+    const nome = anexo.caminho.slice(anexo.caminho.lastIndexOf("/") + 1);
+    const { data: resta } = await supabaseAdmin.storage.from(BUCKET_ANEXOS).list(pasta, { search: nome, limit: 5 });
+    if ((resta ?? []).some((o) => o.name === nome)) {
+      throw new Error("O arquivo ainda está no armazenamento. Tente remover de novo.");
+    }
+
+    const { error } = await supabaseAdmin
+      .from("anexosadmin")
+      .update({ removidoem: new Date().toISOString(), removidopor: userId, nomearquivo: "(arquivo removido)" })
+      .eq("anexoid", data.anexoid);
+    if (error) throw new Error("O arquivo foi apagado, mas o registro não foi atualizado. Tente remover de novo.");
+    return { ok: true as const };
+  });

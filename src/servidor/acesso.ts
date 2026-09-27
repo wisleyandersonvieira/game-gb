@@ -183,8 +183,12 @@ async function abrirSessao(userid: string) {
  * passar inteira por cima do teto — era assim que o adivinhador voltava.
  */
 /** Mensagens únicas: nunca dizem se o CPF existe. */
-const ERRO_LOGIN = "CPF ou senha inválidos.";
-const ERRO_CODIGO = "CPF ou código inválidos.";
+// A MESMA resposta para código da empresa que não existe, CPF errado e senha
+// errada: dizer qual dos três errou contaria a quem chuta se aquele código de
+// empresa existe. Por isso o texto cobre os três campos — senão quem erra o
+// código da empresa acha que errou a senha.
+const ERRO_LOGIN = "Não deu certo. Confira o código da empresa, o CPF e a senha.";
+const ERRO_CODIGO = "Não deu certo. Confira o código da empresa, o CPF e o código de acesso.";
 const ERRO_LOGIN_EMAIL = "E-mail ou senha inválidos.";
 
 // ---------------------------------------------------------------------------
@@ -199,20 +203,25 @@ export const entrarColaborador = createServerFn({ method: "POST" })
     const cpf = soNumeros(data.cpf);
     const origem = origemDaChamada();
 
-    const { data: contaid } = await supabaseAdmin.rpc("conta_do_codigo", {
-      p_codigo: (data.codigo ?? "").trim().toLowerCase(),
-    });
-    if (typeof contaid !== "number") throw new Error(ERRO_LOGIN);
+    const codigoEmpresa = (data.codigo ?? "").trim().toLowerCase();
+    const { data: achada } = await supabaseAdmin.rpc("conta_do_codigo", { p_codigo: codigoEmpresa });
+    const contaid = typeof achada === "number" ? achada : null;
 
-    const chave = await embaralhar(`cpf:${contaid}:${cpf}`);
+    // Código de empresa que não existe segue o MESMO caminho: conta na trava
+    // (por origem) e confere uma senha de mentira. Antes ele voltava na hora,
+    // sem trava — pelo tempo de resposta dava para descobrir que códigos
+    // existem, chutando sem limite.
+    const chave = await embaralhar(contaid ? `cpf:${contaid}:${cpf}` : `empresa:${codigoEmpresa}`);
     const tentativa = await abrirTentativa(contaid, "senha", chave, origem);
 
-    const { data: pessoa } = await supabaseAdmin.rpc("senha_app_de", { p_contaid: contaid, p_cpf: cpf });
+    const { data: pessoa } = contaid
+      ? await supabaseAdmin.rpc("senha_app_de", { p_contaid: contaid, p_cpf: cpf })
+      : { data: null };
     const dados = pessoa as { funcionarioid: number; userid: string; senhahash: string | null } | null;
     const ok = await senhaConfere(data.senha ?? "", dados?.senhahash ?? null);
 
     await fecharTentativa(tentativa, ok);
-    if (!ok || !dados) throw new Error(ERRO_LOGIN);
+    if (!ok || !dados || !contaid) throw new Error(ERRO_LOGIN);
 
     return abrirSessao(dados.userid);
   });
@@ -225,13 +234,17 @@ export const entrarComCodigo = createServerFn({ method: "POST" })
     const cpf = soNumeros(data.cpf);
     const origem = origemDaChamada();
 
-    const { data: contaid } = await supabaseAdmin.rpc("conta_do_codigo", {
-      p_codigo: (data.codigo ?? "").trim().toLowerCase(),
-    });
-    if (typeof contaid !== "number") throw new Error(ERRO_CODIGO);
+    const codigoEmpresa = (data.codigo ?? "").trim().toLowerCase();
+    const { data: achada } = await supabaseAdmin.rpc("conta_do_codigo", { p_codigo: codigoEmpresa });
+    const contaid = typeof achada === "number" ? achada : null;
 
-    const chave = await embaralhar(`cpf:${contaid}:${cpf}`);
+    // Empresa que não existe: o mesmo caminho, contando na trava.
+    const chave = await embaralhar(contaid ? `cpf:${contaid}:${cpf}` : `empresa:${codigoEmpresa}`);
     const tentativa = await abrirTentativa(contaid, "senha", chave, origem);
+    if (!contaid) {
+      await fecharTentativa(tentativa, false);
+      throw new Error(ERRO_CODIGO);
+    }
 
     const codigoLimpo = (data.codigoacesso ?? "").trim().toUpperCase().replace(/\s/g, "");
     const { data: usado } = await supabaseAdmin.rpc("usar_codigo_acesso", {

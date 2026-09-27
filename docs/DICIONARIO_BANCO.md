@@ -1296,4 +1296,6 @@ Redes de franquia. Não tem `contaid`: reúne clientes, não pertence a nenhum. 
 Rede com cliente ligado não se apaga (o banco diz quantos são).
 
 ## anexosadmin (27/09/2026)
-Contratos da administração, de um cliente **ou** de uma rede. **Documento sigiloso**: o arquivo fica no bucket privado `administracao`, sem regra de acesso para ninguém (só o servidor, depois de conferir que é o admin geral); o link de abertura vale 5 minutos. PDF ou imagem, até 10 MB. Guarda quem subiu e quando. Não se apaga.
+Contratos da administração, de um cliente **ou** de uma rede. **Documento sigiloso**: o arquivo fica no bucket privado `administracao`, sem regra de acesso para ninguém (só o servidor, depois de conferir que é o admin geral); o link de abertura vale 5 minutos. PDF ou imagem, até 10 MB. Guarda quem subiu e quando.
+
+**Remover (27/09/2026):** o arquivo sai de verdade do armazenamento (cliente errado, ou exclusão pedida pelo cliente — LGPD). Fica o registro: `removidoem` / `removidopor`, tipo, tamanho e datas; o **nome do arquivo sai junto** (ele pode carregar o nome de outra empresa ou de uma pessoa). Rede com anexo ativo não se apaga; apagada a rede, o registro dos anexos dela (já removidos) vai junto.

@@ -21,6 +21,22 @@ export const hex = (b: ArrayBuffer) =>
 export const deHex = (s: string) => Uint8Array.from((s.match(/../g) ?? []).map((h) => parseInt(h, 16)));
 
 /**
+ * AS DUAS CHAVES (27/09/2026). O segredo STGAME_PIN_PEPPER dá origem a duas
+ * chaves distintas, cada uma com uma finalidade:
+ *
+ *   1. CONFERIR (esta função): HMAC com o próprio segredo. Resume PIN, código
+ *      de acesso, CPF da trava, passe e bilhete — cada um com o seu prefixo
+ *      ("pin:", "codigo:", "cpf:", "passe:", "foto:"), para um resumo nunca
+ *      servir no lugar de outro. Fica com o segredo direto porque mudá-la
+ *      invalidaria todos os PINs guardados (o sistema não sabe os números
+ *      para recalcular).
+ *   2. CIFRAR o código de acesso (chaveDaCifra, mais abaixo): DERIVADA do
+ *      segredo por HKDF, com rótulo próprio. É outra chave: conhecer uma não
+ *      dá a outra, e nenhuma serve no lugar da outra.
+ *
+ * Perder o segredo invalida as duas: todo PIN e todo código pendente (as
+ * pessoas precisam redefinir o acesso). Trocar o segredo tem o mesmo efeito.
+ *
  * Embaralha com a chave do servidor (HMAC-SHA256). O resultado e sempre o mesmo
  * para a mesma entrada, e so por isso o banco acha a pessoa pelo PIN direto no
  * indice — sem comparar uma a uma, que ficaria lento com 20+ pessoas.
@@ -213,6 +229,11 @@ const bytesDe = (t: string) => new TextEncoder().encode(t);
 const paraBase64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
 const deBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
+/**
+ * A chave de CIFRAR: derivada do segredo (HKDF-SHA256, rótulo
+ * "codigo-de-acesso"), distinta da chave de conferir. Existe assim desde o
+ * primeiro código cifrado: nenhum precisa ser regravado.
+ */
 async function chaveDaCifra() {
   const base = await crypto.subtle.importKey("raw", bytesDe(chaveDoServidor()), "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(

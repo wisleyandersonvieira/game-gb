@@ -4684,7 +4684,8 @@ BEGIN
       'meu_hoje',
       -- 27/09/2026: telas do admin geral. Nao recebem conta, e todas
       -- recusam quem nao e o admin geral (provado na secao 70).
-      'sugerir_codigo_empresa', 'codigo_empresa_disponivel', 'resumo_admin_das_contas', 'redes_admin'
+      'sugerir_codigo_empresa', 'codigo_empresa_disponivel', 'resumo_admin_das_contas', 'redes_admin',
+      'anexos_admin'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -8898,6 +8899,78 @@ BEGIN
   END LOOP;
   PERFORM public.exigir(NOT has_function_privilege('anon', 'public.redes_admin()', 'EXECUTE'),
                         'o visitante sem login nao chama nada da administracao');
+END $$;
+
+-- ===========================================================================
+-- 71. Remover anexo; chute de codigo de empresa conta na trava (27/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '71. remover anexo e trava do codigo de empresa'; END $$;
+
+INSERT INTO public.redes (redeid, nome) OVERRIDING SYSTEM VALUE VALUES (71, 'Rede Setenta e Um');
+INSERT INTO public.anexosadmin (anexoid, redeid, nomearquivo, caminho, tipo, tamanho) OVERRIDING SYSTEM VALUE
+VALUES (7101, 71, 'contrato-cliente-errado.pdf', 'redes/71/c.pdf', 'application/pdf', 500);
+
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN DELETE FROM public.redes WHERE redeid = 71; deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 anexo%'; END;
+  PERFORM public.exigir(deu_erro, 'rede com anexo ativo nao se apaga (remova os anexos antes)');
+
+  -- O servidor remove: o arquivo sai do armazenamento, e o registro fica sem o nome.
+  UPDATE public.anexosadmin SET removidoem = now(), removidopor = 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+                                nomearquivo = '(arquivo removido)'
+   WHERE anexoid = 7101;
+END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.anexos_admin(); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o master nao le a lista de anexos');
+  BEGIN UPDATE public.anexosadmin SET removidoem = NULL WHERE anexoid = 7101; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem desfaz uma remocao (nao tem permissao nenhuma na tabela)');
+END $$;
+SET teste.uid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+DO $$
+DECLARE r record;
+BEGIN
+  SELECT * INTO r FROM public.anexos_admin() WHERE anexoid = 7101;
+  PERFORM public.exigir(r.removidoem IS NOT NULL AND r.removidopor = 'wisley_anderson@hotmail.com'
+                        AND r.nomearquivo = '(arquivo removido)',
+                        'o admin ve o registro: removido, por quem, quando — e sem o nome do arquivo');
+  PERFORM public.exigir(r.tamanho = 500 AND r.enviadoem IS NOT NULL, 'o registro guarda tamanho e data de envio');
+  DELETE FROM public.redes WHERE redeid = 71;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.redes WHERE redeid = 71),
+                        'com os anexos removidos, a rede se apaga');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.anexosadmin WHERE anexoid = 7101),
+                        'e o registro dos anexos dela vai junto');
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.anexos_admin()', 'EXECUTE'),
+                        'o visitante sem login nao le a lista de anexos');
+END $$;
+
+-- Chutar codigos de empresa: cada chute conta na trava da ORIGEM, mesmo com
+-- empresa nenhuma (contaid vazio). Na sexta tentativa a porta fecha.
+DO $$
+DECLARE v jsonb; v_abertas integer := 0;
+BEGIN
+  FOR i IN 1..7 LOOP
+    v := public.tentativa_abrir_ex(NULL, 'senha', md5('empresa:chute' || i) || md5('x'), '198.51.100.71');
+    IF v->>'tentativaid' IS NOT NULL THEN
+      v_abertas := v_abertas + 1;
+      PERFORM public.tentativa_fechar((v->>'tentativaid')::bigint, false);
+    END IF;
+  END LOOP;
+  PERFORM public.exigir(v_abertas = 5, 'chute de codigo de empresa: 5 tentativas por origem, depois a trava fecha');
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

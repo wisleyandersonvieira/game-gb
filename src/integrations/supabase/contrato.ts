@@ -15,6 +15,7 @@ export const CONTRATO: Record<string, string[]> = {
   alterar_hora_da_atribuicao: ["p_atribuicaoid", "p_hora"],
   alterar_pagamento_agendamento: ["p_agendamentoid", "p_status", "p_valor"],
   analise_de_tarefas: ["p_ate", "p_de", "p_lojaid"],
+  anexos_admin: [],
   anular_feedback: ["p_feedbackid", "p_motivo"],
   aprovar_entrega: ["p_entregaid"],
   arquivar_documento_pessoal: ["p_documentoid"],

@@ -3,11 +3,12 @@
 // Documento SIGILOSO: o arquivo sobe direto para um bucket privado, com uma
 // autorização de poucos minutos para um único caminho, e o servidor confere
 // tamanho e tipo antes de registrar. Para abrir, um link que vale 5 minutos.
-// Não há "apagar": contrato anexado fica no histórico.
+// Remover apaga o ARQUIVO de verdade (e o nome dele); fica o registro de que
+// existiu, de quem removeu e quando.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { abrirAnexoAdmin, autorizarAnexoAdmin, registrarAnexoAdmin } from "@/servidor/contas";
+import { abrirAnexoAdmin, autorizarAnexoAdmin, registrarAnexoAdmin, removerAnexoAdmin } from "@/servidor/contas";
 import { dataHoraBr } from "@/rh/datas";
 
 const TIPOS = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
@@ -23,14 +24,9 @@ export function Anexos({ alvo, id }: { alvo: "conta" | "rede"; id: number }) {
   const lista = useQuery({
     queryKey: chave,
     queryFn: async () => {
-      const coluna = alvo === "conta" ? "contaid" : "redeid";
-      const { data, error } = await supabase
-        .from("anexosadmin")
-        .select("anexoid, nomearquivo, tipo, tamanho, enviadoem")
-        .eq(coluna, id)
-        .order("enviadoem", { ascending: false });
+      const { data, error } = await supabase.rpc("anexos_admin");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []).filter((a) => (alvo === "conta" ? a.contaid : a.redeid) === id);
     },
   });
 
@@ -44,6 +40,22 @@ export function Anexos({ alvo, id }: { alvo: "conta" | "rede"; id: number }) {
       await registrarAnexoAdmin({
         data: { alvo, id, caminho: a.caminho, passe: a.passe, nome: arquivo.name, tipo: arquivo.type, tamanho: arquivo.size },
       });
+    },
+    onMutate: () => setErro(null),
+    onError: (e) => setErro((e as Error).message),
+    onSuccess: () => qc.invalidateQueries({ queryKey: chave }),
+  });
+
+  const remover = useMutation({
+    mutationFn: async (a: { anexoid: number; nomearquivo: string }) => {
+      if (
+        !confirm(
+          `Remover "${a.nomearquivo}"?\n\nO arquivo é apagado do armazenamento e não volta. Fica só o registro de que existiu, de quem removeu e quando.`,
+        )
+      ) {
+        return;
+      }
+      await removerAnexoAdmin({ data: { anexoid: a.anexoid } });
     },
     onMutate: () => setErro(null),
     onError: (e) => setErro((e as Error).message),
@@ -93,23 +105,42 @@ export function Anexos({ alvo, id }: { alvo: "conta" | "rede"; id: number }) {
       {lista.isLoading && <p className="text-xs text-muted-foreground">Carregando...</p>}
       {lista.data?.length === 0 && <p className="text-xs text-muted-foreground">Nenhum anexo.</p>}
       <ul className="space-y-1">
-        {lista.data?.map((a) => (
-          <li key={a.anexoid} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="min-w-0 truncate">
-              {a.nomearquivo}{" "}
-              <span className="text-xs text-muted-foreground">
-                · {tamanhoLegivel(a.tamanho)} · enviado em {dataHoraBr(a.enviadoem)}
+        {lista.data?.map((a) =>
+          a.removidoem ? (
+            <li key={a.anexoid} className="text-xs text-muted-foreground">
+              Arquivo removido em {dataHoraBr(a.removidoem)}
+              {a.removidopor ? ` por ${a.removidopor}` : ""} · tinha {tamanhoLegivel(a.tamanho)}, enviado em{" "}
+              {dataHoraBr(a.enviadoem)}
+              {a.enviadopor ? ` por ${a.enviadopor}` : ""}
+            </li>
+          ) : (
+            <li key={a.anexoid} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">
+                {a.nomearquivo}{" "}
+                <span className="text-xs text-muted-foreground">
+                  · {tamanhoLegivel(a.tamanho)} · enviado em {dataHoraBr(a.enviadoem)}
+                  {a.enviadopor ? ` por ${a.enviadopor}` : ""}
+                </span>
               </span>
-            </span>
-            <button
-              onClick={() => abrir.mutate(a.anexoid)}
-              disabled={abrir.isPending}
-              className="rounded-md border border-border px-2 py-0.5 text-xs"
-            >
-              Abrir
-            </button>
-          </li>
-        ))}
+              <span className="flex gap-1">
+                <button
+                  onClick={() => abrir.mutate(a.anexoid)}
+                  disabled={abrir.isPending}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs"
+                >
+                  Abrir
+                </button>
+                <button
+                  onClick={() => remover.mutate(a)}
+                  disabled={remover.isPending}
+                  className="rounded-md border border-destructive px-2 py-0.5 text-xs text-destructive"
+                >
+                  Remover
+                </button>
+              </span>
+            </li>
+          ),
+        )}
       </ul>
     </div>
   );
