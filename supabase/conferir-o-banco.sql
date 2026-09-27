@@ -188,7 +188,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE n.nspname = 'public' AND p.proname = 'visao_mural')),
   (160, 'B2', 'versao', 'o PIN do tablet confere numa ida so', 'aplicar-pin-do-tablet-numa-ida.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'visao_pegar_com_pin'))
+                WHERE n.nspname = 'public' AND p.proname = 'visao_pegar_com_pin')),
+  (170, 'B2', 'versao', 'o dia de hoje vem de um lugar so (hoje_da_conta)', 'aplicar-hoje-da-conta.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'hoje_da_conta'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

@@ -24,6 +24,7 @@ import { entregarNoTabletAntigo, filaDoTabletAntiga } from "@/servidor/tabletAnt
 import { modoDeMedicao, montarDetalhes, montarEtapas, type Medida, type TemposDoTablet } from "@/painel/medicaoDoTablet";
 import { reduzirFoto, type FotoPreparada } from "@/painel/reduzirFoto";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
+import { quandoFoi } from "@/ui/hoje";
 import {
   decidirRepeticao,
   liberarSom,
@@ -591,7 +592,7 @@ function AindaNaoLiberadas({ itens }: { itens: ItemDaFila[] }) {
         <ul className="mt-2 space-y-2">
           {itens.map((i) => (
             <li key={i.atribuicaoid} className="rounded-xl bg-background px-3 py-2 text-lg">
-              {i.titulo} <span className="text-muted-foreground">— a partir das {hora(i.liberaas)}</span>
+              {i.titulo} <span className="text-muted-foreground">— libera {quandoFoi(i.liberaas, i.hoje, i.fuso)}</span>
             </li>
           ))}
         </ul>
@@ -673,7 +674,9 @@ function QuemFez({ item }: { item: ItemDaFila }) {
   return (
     <p className="text-sm">
       por <strong>{item.feitapor}</strong>
-      {item.feitaem ? ` às ${hora(item.feitaem)}` : ""}
+      {/* "às 14h37" se é de hoje, "ontem às 19h47" se não é: data errada
+          fica à vista, em vez de passar por hora de hoje. */}
+      {item.feitaem ? ` ${quandoFoi(item.feitaem, item.hoje, item.fuso)}` : ""}
       {" · "}
       <span className={aprovada ? "text-sucesso" : "text-muted-foreground"}>
         {aprovada ? "aprovada" : "aguardando o gestor"}

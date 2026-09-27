@@ -72,6 +72,9 @@ export type ItemDaFila = {
   liberada: boolean;
   /** Quando ela libera hoje. Vazio = o dia todo. */
   liberaas: string | null;
+  /** O dia de hoje DA CONTA e o fuso dela, ditos pelo servidor. */
+  hoje: string;
+  fuso: string;
 };
 
 /**

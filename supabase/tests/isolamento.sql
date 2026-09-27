@@ -4664,7 +4664,11 @@ BEGIN
       -- Etapa 1.12: o som do tablet, por loja. Le a conta de quem chamou
       -- (minha_conta_editavel) e so altera loja DELA — irma de
       -- salvar_tv_da_loja, e provada na secao 66.
-      'salvar_som_da_loja'
+      'salvar_som_da_loja',
+      -- 27/09/2026: o dia de hoje e o fuso da conta de QUEM CHAMOU (a conta
+      -- sai do proprio login, como em meu_acesso). Nao recebe conta nenhuma e
+      -- so devolve data e fuso. Provada na secao 68.
+      'meu_hoje'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -5970,8 +5974,12 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE v_atr integer := current_setting('teste.unica')::integer; deu_erro boolean;
 BEGIN
-  PERFORM public.exigir((SELECT situacao FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr) = 'feita',
-                        'tarefa unica compartilhada entregue ontem continua "feita" hoje');
+  -- Antes (revisao B1) ela ficava "feita" para sempre, para nao voltar a
+  -- "para pegar". Em 27/09/2026 isso apareceu no tablet como entrega de ONTEM
+  -- em "Feitas hoje". Agora ela SAI da fila; o que a revisao protegia (nao
+  -- voltar a ser pega pelos pontos) continua provado nas duas linhas abaixo.
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr),
+                        'tarefa unica compartilhada entregue ontem sai da fila (nem "para pegar", nem "Feitas hoje")');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr),
                         'e nao volta para o cartao "Ninguem pegou"');
   BEGIN PERFORM public.pegar_tarefa(v_atr, 9503); deu_erro := false;
@@ -8278,5 +8286,135 @@ BEGIN
     PERFORM public.exigir(has_function_privilege('service_role', f, 'EXECUTE'), f || ': o servidor chama');
   END LOOP;
 END $$;
+
+-- ===========================================================================
+-- 68. "Que dia e hoje": um lugar so (27/09/2026)
+-- ===========================================================================
+-- O defeito: "Feitas hoje" no tablet mostrava entregas de ONTEM, marcadas
+-- como atrasadas. A tarefa Unica entregue uma vez ficava para sempre na fila.
+-- Aqui: a entrega de ontem as 23h50 sai, a de hoje as 00h10 fica, e o dia e
+-- sempre o da CONTA, com o relogio do servidor (o banco de teste roda em UTC:
+-- o fuso do servidor nao mascara nada).
+DO $$ BEGIN RAISE NOTICE '68. que dia e hoje: um lugar so'; END $$;
+SET TIME ZONE 'UTC';
+
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (9868, 1, 'Unica de ontem', 2), (9869, 1, 'Unica de hoje', 2);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9868, 10), (1, 9869, 10);
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  -- Marcadas para ONTEM: assim, se voltassem, voltariam "atrasadas".
+  PERFORM set_config('teste.u_ontem',
+    public.atribuir_tarefa(9868, 10, ARRAY[9767], 'Unica', NULL, now() - interval '1 day', NULL)::text, false);
+  PERFORM set_config('teste.u_hoje',
+    public.atribuir_tarefa(9869, 10, ARRAY[9767], 'Unica', NULL, now() - interval '1 day', NULL)::text, false);
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE
+  v jsonb;
+  v_ontem integer := current_setting('teste.u_ontem')::integer;
+  v_hj    integer := current_setting('teste.u_hoje')::integer;
+  v_dia   date := public.hoje_da_conta(1);
+  v_chave text := repeat('e', 64);
+  v_n     integer;
+  f       record;
+BEGIN
+  -- Olga aceita e entrega as duas pelo tablet.
+  FOREACH v_n IN ARRAY ARRAY[v_ontem, v_hj] LOOP
+    v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', v_n);
+    PERFORM public.exigir(v ? 'nome', 'Olga aceita a Unica ' || v_n || coalesce(' (' || (v->>'erro') || ')', ''));
+    v := public.visao_entregar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', v_n, NULL, NULL, NULL, true);
+    PERFORM public.exigir(v ? 'nome', 'e entrega ' || coalesce(v->>'erro', ''));
+  END LOOP;
+
+  -- A hora das entregas, no RELOGIO DA LOJA: ontem 23h50 e hoje 00h10.
+  UPDATE public.entregas SET dataenvio = public.instante_na_conta(1, v_dia - 1, '23:50')
+   WHERE contaid = 1 AND atribuicaoid = v_ontem;
+  UPDATE public.entregas SET dataenvio = public.instante_na_conta(1, v_dia, '00:10')
+   WHERE contaid = 1 AND atribuicaoid = v_hj;
+
+  -- A fila do tablet.
+  v := public.visao_fila(1, 10);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                     WHERE (x->>'atribuicaoid')::integer = v_ontem),
+                        'entrega de ONTEM as 23h50 nao aparece em "Feitas hoje"');
+  SELECT * INTO f FROM jsonb_to_record((SELECT x FROM jsonb_array_elements(v) x
+                                         WHERE (x->>'atribuicaoid')::integer = v_hj))
+                    AS r(situacao text, atrasada boolean, hoje date, fuso text);
+  PERFORM public.exigir(f.situacao = 'feita', 'entrega de HOJE as 00h10 aparece em "Feitas hoje"');
+  PERFORM public.exigir(NOT f.atrasada, 'e feita nao e atrasada, mesmo marcada para ontem');
+  PERFORM public.exigir(f.hoje = v_dia AND f.fuso = 'America/Sao_Paulo',
+                        'a fila diz o dia e o fuso DA CONTA, para a tela nao perguntar ao aparelho');
+
+  -- O celular: a mesma regra.
+  v := public.eu_tarefas(1, 9767);
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                     WHERE (x->>'atribuicaoid')::integer = v_ontem),
+                        'no celular, a Unica entregue ontem tambem sai');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v) x
+                                 WHERE (x->>'atribuicaoid')::integer = v_hj),
+                        'e a entregue hoje continua');
+
+  -- O dia e o da CONTA. Um instante fixo: 27/09 03h30 UTC e 27/09 00h30 em Sao
+  -- Paulo, mas ainda 26/09 22h30 em Rio Branco.
+  PERFORM public.exigir(public.dia_da_conta(1, '2026-09-27 03:30+00') = '2026-09-27',
+                        'conta em Sao Paulo: 03h30 UTC ja e dia 27');
+  UPDATE public.configuracoes SET valor = 'America/Rio_Branco' WHERE contaid = 2 AND chave = 'FUSO_HORARIO';
+  PERFORM public.exigir(public.dia_da_conta(2, '2026-09-27 03:30+00') = '2026-09-26',
+                        'conta em Rio Branco: o mesmo instante ainda e dia 26');
+  PERFORM public.exigir(public.hoje_da_conta(2) = (now() AT TIME ZONE 'America/Rio_Branco')::date,
+                        'hoje da conta usa o fuso da conta e o relogio do servidor');
+  PERFORM public.exigir(public.tarefa_cai_no_dia('Unica', NULL, '2026-09-27 03:30+00', '2026-09-26', 'America/Rio_Branco')
+                        AND NOT public.tarefa_cai_no_dia('Unica', NULL, '2026-09-27 03:30+00', '2026-09-26'),
+                        'a Unica agendada cai no dia DA CONTA (em Sao Paulo ela so cairia no dia 27)');
+  UPDATE public.configuracoes SET valor = 'America/Sao_Paulo' WHERE contaid = 2 AND chave = 'FUSO_HORARIO';
+
+  -- Nada do que a loja ve decide o dia sozinho.
+  SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('fila_da_loja', 'tarefas_nao_pegas', 'pegar_tarefa', 'visao_pessoa_do_pin',
+                       'visao_entregar', 'registrar_entrega', 'eu_entregar', 'eu_tarefas', 'eu_inicio',
+                       'eu_extrato', 'montar_painel')
+     AND (p.prosrc LIKE '%dia_em_sao_paulo(%' OR p.prosrc LIKE '%AT TIME ZONE ''America/Sao_Paulo''%'
+          OR p.prosrc LIKE '%instante_local(%');
+  PERFORM public.exigir(v_n = 0, 'tablet, celular e TV perguntam o dia ao lugar unico');
+
+  -- A CATRACA: quantas funcoes ainda decidem o dia sozinhas (Sao Paulo fixo).
+  -- Este numero so pode DESCER. Funcao nova que calcular o dia por conta
+  -- propria reprova aqui: use hoje_da_conta / dia_da_conta / dia_no_fuso.
+  SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname NOT IN ('dia_em_sao_paulo', 'instante_local', 'tarefa_cai_no_dia')
+     AND (p.prosrc LIKE '%dia_em_sao_paulo(%' OR p.prosrc LIKE '%AT TIME ZONE ''America/Sao_Paulo''%'
+          OR p.prosrc LIKE '%instante_local(%');
+  PERFORM public.exigir(v_n <= 46, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 46, so pode descer)');
+END $$;
+
+-- As telas perguntam meu_hoje(); o resto e so do servidor.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.exigir((public.meu_hoje()->>'hoje')::date = (now() AT TIME ZONE 'America/Sao_Paulo')::date
+                        AND public.meu_hoje()->>'fuso' = 'America/Sao_Paulo',
+                        'a tela do gestor recebe o dia e o fuso da conta dele');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.meu_hoje()', 'EXECUTE'),
+                        'o visitante sem login nao pergunta o dia de conta nenhuma');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.hoje_da_conta(integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.dia_da_conta(integer, timestamp with time zone)', 'EXECUTE'),
+                        'quem esta logado nao pergunta o dia passando a conta de outro');
+END $$;
+RESET TIME ZONE;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

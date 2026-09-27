@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
+import { quandoFoi } from "@/ui/hoje";
 
 type Item = {
   atribuicaoid: number;
@@ -24,12 +25,10 @@ type Item = {
   disponiveldesde: string | null;
   rodizio: boolean;
   agora: string;
+  /** O dia de hoje DA CONTA e o fuso dela, ditos pelo servidor. */
+  hoje: string;
+  fuso: string;
 };
-
-function hora(iso: string | null) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
 
 export function FilaDoDia({ lojaid }: { lojaid: number }) {
   const qc = useQueryClient();
@@ -44,7 +43,10 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
 
   const revogar = useMutation({
     mutationFn: async ({ atribuicaoid, motivo }: { atribuicaoid: number; motivo: string }) => {
-      const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      // O dia do aceite é o que a FILA disse que é hoje (o servidor, no fuso
+      // da conta), e não o do relógio deste computador.
+      const hoje = fila.data?.[0]?.hoje;
+      if (!hoje) throw new Error("A fila ainda não carregou. Tente de novo.");
       const { error } = await supabase.rpc("revogar_aceite", {
         p_atribuicaoid: atribuicaoid,
         p_dia: hoje,
@@ -131,7 +133,7 @@ function Faixa({
               </p>
               <p className="text-xs text-muted-foreground">
                 {i.quempegounome
-                  ? `com ${i.quempegounome} ${faz(minutosDesde(i.pegaem, agora))} (desde ${hora(i.pegaem)})`
+                  ? `com ${i.quempegounome} ${faz(minutosDesde(i.pegaem, agora))} (${quandoFoi(i.pegaem, i.hoje, i.fuso)})`
                   : i.aberta
                     ? `aberta ${faz(minutosDesde(i.disponiveldesde, agora))}: a primeira que pegar leva`
                     : "com dono"}

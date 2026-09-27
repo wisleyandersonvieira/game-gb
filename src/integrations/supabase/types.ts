@@ -5382,6 +5382,13 @@ export type Database = {
           situacao: string
           tipofrequencia: string
           titulo: string
+          feitapor: string | null
+          feitaem: string | null
+          feitasituacao: string | null
+          liberada: boolean
+          liberaas: string | null
+          hoje: string
+          fuso: string
         }[]
       }
       rodizio_espera: {
@@ -5475,6 +5482,10 @@ export type Database = {
         }
         Returns: Json
       }
+      meu_hoje: { Args: never; Returns: Json }
+      hoje_da_conta: { Args: { p_contaid: number }; Returns: string }
+      dia_da_conta: { Args: { p_contaid: number; p_instante: string }; Returns: string }
+      dia_no_fuso: { Args: { p_fuso: string; p_instante: string }; Returns: string }
       ms_entre: {
         Args: { p_ate: string; p_de: string }
         Returns: number

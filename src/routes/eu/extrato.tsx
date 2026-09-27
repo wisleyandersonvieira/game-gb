@@ -8,29 +8,31 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { meuExtrato } from "@/servidor/colaborador";
 import { DINHEIRO } from "@/ui/prazos";
+import { diaNoFuso, primeiroDoMes, useHojeDaConta } from "@/ui/hoje";
 
 export const Route = createFileRoute("/eu/extrato")({ component: Extrato });
 
-function primeiroDoMes() {
-  const h = new Date();
-  return new Date(h.getFullYear(), h.getMonth(), 1).toISOString().slice(0, 10);
-}
-
-function hoje() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function dia(iso: string) {
-  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+/** "26/09", no fuso da conta (a mesma régua com que o banco filtra o período). */
+function dia(iso: string, fuso: string | undefined) {
+  const [, mes, dd] = diaNoFuso(iso, fuso || "America/Sao_Paulo").split("-");
+  return `${dd}/${mes}`;
 }
 
 function Extrato() {
-  const [de, setDe] = useState(primeiroDoMes);
-  const [ate, setAte] = useState(hoje);
+  // O período padrão (do dia 1 até hoje) parte do dia de hoje DA CONTA, dito
+  // pelo servidor. Antes era o relógio do celular, em UTC: depois das 21h o
+  // extrato já achava que era amanhã.
+  const conta = useHojeDaConta();
+  const [escolhidoDe, setDe] = useState<string | null>(null);
+  const [escolhidoAte, setAte] = useState<string | null>(null);
+  const hoje = conta.data?.hoje;
+  const de = escolhidoDe ?? (hoje ? primeiroDoMes(hoje) : "");
+  const ate = escolhidoAte ?? hoje ?? "";
 
   const extrato = useQuery({
     queryKey: ["eu-extrato", de, ate],
     queryFn: () => meuExtrato({ data: { de, ate } }),
+    enabled: !!de && !!ate,
     ...DINHEIRO,
   });
 
@@ -83,7 +85,7 @@ function Extrato() {
             <li key={i} className="flex items-start justify-between gap-3 p-4">
               <div className="min-w-0">
                 <p className="truncate text-sm">{l.descricao}</p>
-                <p className="text-xs text-muted-foreground">{dia(l.quando)}</p>
+                <p className="text-xs text-muted-foreground">{dia(l.quando, conta.data?.fuso)}</p>
               </div>
               <span
                 className={`shrink-0 tabular-nums text-sm font-medium ${

@@ -78,6 +78,7 @@ export const CONTRATO: Record<string, string[]> = {
   marcar_senha_amao: ["p_amao", "p_contaid", "p_userid"],
   metas_do_mes: ["p_lojaid", "p_mes"],
   meu_acesso: [],
+  meu_hoje: [],
   minha_conta: [],
   minha_politica_de_uso: [],
   minha_taxa: [],
