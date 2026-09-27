@@ -10,8 +10,13 @@
 //   * expediente — a hora inteira dentro do expediente, fora do intervalo;
 //   * parcial    — entra ou sai no meio da hora (mostra a hora de entrada ou
 //                  de saída).
-// O total conta só "expediente": quem está na hora INTEIRA. É ele que mostra
-// a hora em que a loja fica descoberta.
+// O TOTAL (28/09/2026, regra do Wisley): a pessoa conta na hora em que está
+// presente pelo menos METADE dela — a mesma regra para entrada, saída e
+// intervalo. Meia hora exata é empate: conta se for a SEGUNDA metade
+// (presente às h:30). É o desempate que faz a equipe que entra às 10h30
+// contar nas 10h, e um intervalo das 14h30 às 15h30 tirar a pessoa de UMA
+// hora só (a das 14h), não de duas nem de nenhuma. Consequência: quem sai às
+// 17h30 não conta nas 17h. As células não mudam; muda só a conta.
 //
 // O turno é do dia em que começa: saída menor que a entrada vai até o dia
 // seguinte, e as colunas passam da meia-noite (00h, 01h...).
@@ -43,21 +48,32 @@ export type LinhaDoMapa = {
   celulas: Celula[] | null;
   /** O que aparece na linha no lugar das horas ("folga"...), ou um lembrete. */
   aviso: string | null;
+  /** Em quais horas a pessoa entra no total (vazio sem expediente). */
+  contaEm: boolean[];
   /** O intervalo do mapa não cai no expediente deste dia. */
   intervaloFora: boolean;
 };
 
 export type Mapa = { horas: number[]; linhas: LinhaDoMapa[]; totais: number[] };
 
+/** Minutos de presença na hora que começa em h0 (expediente menos intervalo). */
+function contaNaHora(e: [number, number], int: [number, number] | null, h0: number) {
+  const presente = sobreposicao(e[0], e[1], h0, h0 + 60) - (int ? sobreposicao(int[0], int[1], h0, h0 + 60) : 0);
+  if (presente !== 30) return presente > 30;
+  const meio = h0 + 30;
+  return meio >= e[0] && meio < e[1] && !(int && meio >= int[0] && meio < int[1]);
+}
+
 /** O aviso da tela Jornada, palavra por palavra. */
 export const AVISO_DA_JORNADA =
   "Estes horários servem para o sistema saber quando enviar tarefas e avisos. O STGame não registra ponto nem controla jornada.";
 
 export const LEGENDA_DO_MAPA = [
-  "X = em expediente a hora inteira (conta no total).",
+  "X = em expediente a hora inteira.",
   "••• = Intervalo (planejamento, não afeta o sistema).",
-  "10:30 = entra ou sai no meio da hora (não conta no total).",
-  "Total = pessoas em expediente a hora inteira, fora do intervalo. O turno da noite fica no dia em que começa.",
+  "10:30 = entra ou sai no meio da hora.",
+  "Total = quem está presente pelo menos metade da hora, fora do intervalo. Meia hora exata conta se for a segunda metade (entra 10:30: conta nas 10h; sai 17:30: não conta nas 17h).",
+  "O turno da noite fica no dia em que começa.",
 ];
 
 const DIA = 24 * 60;
@@ -131,7 +147,7 @@ export function montarMapa(pessoas: PessoaDoMapa[]): Mapa {
 
   const linhas: LinhaDoMapa[] = pessoas.map((p, i) => {
     const e = expedientes[i];
-    if (!e) return { pessoa: p, celulas: null, aviso: avisoSemHoras(p), intervaloFora: false };
+    if (!e) return { pessoa: p, celulas: null, contaEm: [], aviso: avisoSemHoras(p), intervaloFora: false };
     const int = intervalo(p, e);
     const celulas = horas.map<Celula>((h) => {
       const h0 = h * 60;
@@ -146,11 +162,12 @@ export function montarMapa(pessoas: PessoaDoMapa[]): Mapa {
     return {
       pessoa: p,
       celulas,
+      contaEm: horas.map((h) => contaNaHora(e, int, h * 60)),
       aviso: domingo,
       intervaloFora: !!p.intervaloinicio && !int,
     };
   });
 
-  const totais = horas.map((_, c) => linhas.filter((l) => l.celulas?.[c].tipo === "expediente").length);
+  const totais = horas.map((_, c) => linhas.filter((l) => l.contaEm[c]).length);
   return { horas, linhas, totais };
 }
