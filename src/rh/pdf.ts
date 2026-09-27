@@ -4,7 +4,7 @@
 import { jsPDF } from "jspdf";
 import { dataHoraBr } from "@/rh/datas";
 import { supabase } from "@/integrations/supabase/client";
-import { AVISO_DA_JORNADA, LEGENDA_DO_MAPA, REGRAS_DO_TOTAL, rotuloDaHora, type Mapa } from "@/jornada/mapa";
+import { AVISO_DA_JORNADA, rotuloDaHora, type Mapa } from "@/jornada/mapa";
 
 const FUSO = "America/Sao_Paulo";
 const MARGEM = 18;
@@ -171,7 +171,13 @@ class Documento {
    * coluna é alinhada à esquerda; as outras, ao centro. Uma célula pode
    * ocupar várias colunas (span), ter fundo e cor de texto.
    */
-  tabela(colunas: { titulo: string; largura: number }[], linhas: CelulaPdf[][], alturaLinha = 6.5) {
+  tabela(
+    colunas: { titulo: string; largura: number }[],
+    linhas: CelulaPdf[][],
+    alturaLinha = 6.5,
+    /** Escrito no topo de cada página de continuação (ex.: "Segunda-feira (continuação)"). */
+    tituloAoContinuar?: string,
+  ) {
     const cinza = 205;
     const desenhar = (celulas: CelulaPdf[], titulos = false) => {
       let x = MARGEM;
@@ -207,6 +213,12 @@ class Documento {
       if (this.y + alturaLinha > this.fimDoConteudo) {
         this.doc.addPage();
         this.y = MARGEM;
+        if (tituloAoContinuar) {
+          this.doc.setFont("helvetica", "bold");
+          this.doc.setFontSize(11);
+          this.doc.text(tituloAoContinuar, MARGEM, this.y);
+          this.y += 6;
+        }
         desenhar(titulos, true);
       }
       desenhar(linha);
@@ -445,16 +457,35 @@ const AZUL_CLARO: Cor = [226, 234, 252];
  * nada além — sem CPF), o total de cada hora e a legenda. No rodapé, o mesmo
  * aviso da tela: parece documento de escala, então o aviso vai junto.
  */
-export async function pdfMapaDaJornada(m: { loja: string; dia: string; mapa: Mapa }) {
+export async function pdfMapaDaJornada(m: {
+  loja: string;
+  /** Um dia (exportar Dia) ou vários (exportar Semana): uma página por dia. */
+  paginas: { dia: string; mapa: Mapa }[];
+  /** Dias sem ninguém em expediente, que não foram impressos (Semana). */
+  pulados: string[];
+  /** O dia ("Segunda-feira") ou "semana": entra no nome do arquivo. */
+  nomeDoArquivo: string;
+}) {
   const [conta, usuario] = await Promise.all([nomeDaConta(), usuarioAtual()]);
-  const d = new Documento(conta, m.loja, `Mapa da jornada — ${m.dia}`, {
-    marca: true,
-    paisagem: true,
-    // As duas regras do total vão em toda página: quem lê o papel entende a conta.
-    rodape: REGRAS_DO_TOTAL,
-  });
-  const { horas, linhas, totais } = m.mapa;
+  // O papel sai limpo: sem legenda e sem as frases de regra do total (elas
+  // ficam na tela). O aviso da jornada vai no rodapé de toda página.
+  let d: Documento | null = null;
+  for (const pagina of m.paginas) {
+    const titulo = `Mapa da jornada — ${pagina.dia}`;
+    if (!d) d = new Documento(conta, m.loja, titulo, { marca: true, paisagem: true });
+    else d.novaPagina(conta, m.loja, titulo);
+    tabelaDoMapa(d, pagina.mapa, `${pagina.dia} (continuação)`);
+    if (pagina === m.paginas[0] && m.pulados.length > 0) {
+      d.paragrafo(`Dias sem ninguém em expediente, não impressos: ${m.pulados.join(", ")}.`, { italico: true, tamanho: 9 });
+    }
+  }
+  if (!d) return;
+  d.salvar(arquivo("mapa", `${m.loja}-${m.nomeDoArquivo}`), usuario, { aviso: AVISO_DA_JORNADA });
+}
 
+/** A tabela de um dia: uma linha por pessoa (cargo e nome, sem CPF) e o total. */
+function tabelaDoMapa(d: Documento, mapa: Mapa, tituloAoContinuar: string) {
+  const { horas, linhas, totais } = mapa;
   const primeira = 64;
   const cada = horas.length > 0 ? Math.min(16, (d.largura - primeira) / horas.length) : d.largura - primeira;
   const colunas = [
@@ -487,11 +518,6 @@ export async function pdfMapaDaJornada(m: { loja: string; dia: string; mapa: Map
       ...totais.map<CelulaPdf>((t) => ({ texto: String(t), negrito: true, fundo: AZUL_CLARO, cor: t === 0 ? VERMELHO : undefined })),
     ]);
   }
-  d.tabela(colunas, corpo);
-
+  d.tabela(colunas, corpo, 6.5, tituloAoContinuar);
   if (horas.length === 0) d.paragrafo("Ninguém desta loja tem expediente neste dia.", { italico: true });
-  d.paragrafo("Legenda", { negrito: true, tamanho: 9 });
-  for (const l of LEGENDA_DO_MAPA) d.paragrafo(l, { tamanho: 8.5 });
-
-  d.salvar(arquivo("mapa", `${m.loja}-${m.dia}`), usuario, { aviso: AVISO_DA_JORNADA });
 }

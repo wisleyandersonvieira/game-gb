@@ -218,7 +218,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE n.nspname = 'public' AND p.proname = 'atribuicoes_da_loja')),
   (260, 'OPERACAO', 'versao', 'teto de pontos por ciencia, fotos que nao mentem, saude e agenda', 'aplicar-teto-fotos-e-agenda.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'agendamentos_sem_tarefa'))
+                WHERE n.nspname = 'public' AND p.proname = 'agendamentos_sem_tarefa')),
+  (270, 'PESSOAS', 'versao', 'intervalo do mapa por dia da semana', 'aplicar-mapa-intervalo-por-dia.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'mapa_da_semana'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

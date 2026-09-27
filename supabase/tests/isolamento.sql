@@ -9391,11 +9391,14 @@ GRANT SELECT ON mapa_antes TO authenticated;
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
-DECLARE v jsonb; p jsonb; deu_erro boolean;
+DECLARE v jsonb; p jsonb; deu_erro boolean; d integer;
 BEGIN
-  PERFORM public.salvar_intervalo_do_mapa(9972, '09:00', '16:00');
-  PERFORM public.salvar_intervalo_do_mapa(7551, '23:00', '05:00');
-  PERFORM public.exigir((SELECT count(*) FROM public.intervalosdomapa) = 2, 'o master grava o intervalo do mapa');
+  -- 29/09/2026: um intervalo por dia da semana; aqui, os sete dias.
+  FOR d IN 1..7 LOOP
+    PERFORM public.salvar_intervalo_do_mapa(9972, d, '09:00', '16:00');
+    PERFORM public.salvar_intervalo_do_mapa(7551, d, '23:00', '05:00');
+  END LOOP;
+  PERFORM public.exigir((SELECT count(*) FROM public.intervalosdomapa) = 14, 'o master grava o intervalo do mapa, um por dia');
 
   v := public.mapa_da_jornada(10, 2);
   SELECT x INTO p FROM jsonb_array_elements(v->'pessoas') x WHERE (x->>'funcionarioid')::integer = 7551;
@@ -9411,7 +9414,30 @@ BEGIN
                         = extract(dow FROM (public.meu_hoje()->>'hoje')::date)::integer + 1,
                         'sem dia escolhido, o mapa abre no dia da semana de hoje');
 
-  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, '12:00', NULL); deu_erro := false;
+  -- Cada dia tem o seu: mudar a quarta (4) nao mexe na segunda (2).
+  PERFORM public.salvar_intervalo_do_mapa(7551, 4, '01:00', '02:00');
+  PERFORM public.exigir((SELECT x->>'intervaloinicio' FROM jsonb_array_elements(public.mapa_da_jornada(10, 4)->'pessoas') x
+                          WHERE (x->>'funcionarioid')::integer = 7551) = '01:00'
+                        AND (SELECT x->>'intervaloinicio' FROM jsonb_array_elements(public.mapa_da_jornada(10, 2)->'pessoas') x
+                              WHERE (x->>'funcionarioid')::integer = 7551) = '23:00',
+                        'intervalo por dia: o de quarta muda sem mexer no de segunda');
+  PERFORM public.salvar_intervalo_do_mapa(7551, 4, NULL, NULL);
+  PERFORM public.exigir((SELECT x->>'intervaloinicio' FROM jsonb_array_elements(public.mapa_da_jornada(10, 4)->'pessoas') x
+                          WHERE (x->>'funcionarioid')::integer = 7551) IS NULL
+                        AND (SELECT count(*) FROM public.intervalosdomapa WHERE funcionarioid = 7551) = 6,
+                        'tirar o intervalo de quarta tira so o de quarta');
+  PERFORM public.salvar_intervalo_do_mapa(7551, 4, '23:00', '05:00');
+  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, 8, '12:00', '13:00'); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'dia da semana fora de 1 a 7 e recusado ao gravar');
+  PERFORM public.exigir(to_regprocedure('public.salvar_intervalo_do_mapa(integer, time, time)') IS NULL,
+                        'a gravacao sem dia saiu (nao grava sem saber de que dia e)');
+  v := public.mapa_da_semana(10);
+  PERFORM public.exigir(jsonb_array_length(v->'dias') = 7
+                        AND (SELECT bool_and((x.d->>'diasemana')::integer = x.n)
+                               FROM jsonb_array_elements(v->'dias') WITH ORDINALITY x(d, n)),
+                        'a semana vem inteira numa consulta so, de domingo a sabado');
+  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, 2, '12:00', NULL); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'intervalo sem fim e recusado');
   BEGIN PERFORM public.mapa_da_jornada(10, 8); deu_erro := false;
@@ -9429,7 +9455,10 @@ BEGIN
   PERFORM public.exigir(jsonb_array_length(v->'pessoas') = 0 AND v->>'loja' IS NULL,
                         'a conta B nao ve o mapa de uma loja de A');
   PERFORM public.exigir((SELECT count(*) FROM public.intervalosdomapa) = 0, 'a conta B nao le o intervalo do mapa de A');
-  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, '10:00', '11:00'); deu_erro := false;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.mapa_da_semana(10)->'dias') x
+                                     WHERE jsonb_array_length(x->'pessoas') > 0),
+                        'a conta B nao ve a semana de uma loja de A');
+  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, 2, '10:00', '11:00'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(deu_erro, 'a conta B nao grava intervalo em pessoa de A');
 END $$;
@@ -9445,7 +9474,8 @@ BEGIN
   PERFORM public.exigir(v_casos > 1500 AND v_dif = 0,
                         'com o intervalo do mapa em cima do expediente, o bot decide exatamente igual');
   PERFORM public.exigir(NOT has_function_privilege('anon', 'public.mapa_da_jornada(integer, integer)', 'EXECUTE')
-                        AND NOT has_function_privilege('anon', 'public.salvar_intervalo_do_mapa(integer, time, time)', 'EXECUTE'),
+                        AND NOT has_function_privilege('anon', 'public.salvar_intervalo_do_mapa(integer, integer, time, time)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.mapa_da_semana(integer)', 'EXECUTE'),
                         'o visitante sem login nao ve nem grava o mapa');
 END $$;
 UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid IN (9972, 7551);

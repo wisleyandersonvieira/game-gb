@@ -29,7 +29,7 @@ const QUEM_PODE = [
 describe("intervalo do mapa", () => {
   it("só a tela do Mapa lê ou grava o intervalo de planejamento", () => {
     const quem = [...arquivos(join(RAIZ, "src")), ...arquivos(join(RAIZ, "scripts"))]
-      .filter((f) => /intervalosdomapa|salvar_intervalo_do_mapa|mapa_da_jornada/.test(readFileSync(f, "utf8")))
+      .filter((f) => /intervalosdomapa|salvar_intervalo_do_mapa|mapa_da_jornada|mapa_da_semana/.test(readFileSync(f, "utf8")))
       .map((f) => relative(RAIZ, f))
       .sort();
     expect(quem.filter((f) => !QUEM_PODE.includes(f))).toEqual([]);

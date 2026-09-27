@@ -2299,6 +2299,7 @@ export type Database = {
         Row: {
           atualizadoem: string
           contaid: number
+          diasemana: number
           fim: string
           funcionarioid: number
           inicio: string
@@ -2306,6 +2307,7 @@ export type Database = {
         Insert: {
           atualizadoem?: string
           contaid?: number
+          diasemana: number
           fim: string
           funcionarioid: number
           inicio: string
@@ -2313,6 +2315,7 @@ export type Database = {
         Update: {
           atualizadoem?: string
           contaid?: number
+          diasemana?: number
           fim?: string
           funcionarioid?: number
           inicio?: string
@@ -5524,6 +5527,7 @@ export type Database = {
         }
         Returns: number
       }
+      mapa_da_semana: { Args: { p_lojaid: number }; Returns: Json }
       mapa_da_jornada: {
         Args: { p_diasemana?: number; p_lojaid: number }
         Returns: Json
@@ -5737,7 +5741,7 @@ export type Database = {
       saude_da_minha_conta: { Args: never; Returns: Json }
       saude_das_rotinas: { Args: never; Returns: Json }
       salvar_intervalo_do_mapa: {
-        Args: { p_fim: string | null; p_funcionarioid: number; p_inicio: string | null }
+        Args: { p_diasemana: number; p_fim: string | null; p_funcionarioid: number; p_inicio: string | null }
         Returns: undefined
       }
       salvar_jornada: {
