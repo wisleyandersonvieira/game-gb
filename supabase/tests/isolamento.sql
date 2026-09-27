@@ -17,6 +17,32 @@ BEGIN
   END IF;
   RAISE NOTICE '  ok  %', descricao;
 END $$;
+
+-- Desde 27/09/2026 o horario da pessoa mora numa JORNADA. Os testes antigos do
+-- bot davam "entrada e saida" direto na pessoa; este ajudante faz o mesmo pela
+-- jornada (os sete dias iguais), para cada teste continuar provando o que
+-- provava. Entrada vazia = sem jornada.
+CREATE OR REPLACE FUNCTION public.teste_horario(p_funcionarioid integer, p_entrada time, p_saida time)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE v_conta integer; v_saida time; v_nome text; v_j integer;
+BEGIN
+  SELECT contaid INTO v_conta FROM public.funcionarios WHERE funcionarioid = p_funcionarioid;
+  IF p_entrada IS NULL THEN
+    UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid = p_funcionarioid;
+    RETURN;
+  END IF;
+  v_saida := coalesce(p_saida, (p_entrada + interval '8 hours 20 minutes')::time);
+  v_nome := 'teste ' || to_char(p_entrada, 'HH24:MI:SS') || '-' || to_char(v_saida, 'HH24:MI:SS');
+  SELECT jornadaid INTO v_j FROM public.jornadas WHERE contaid = v_conta AND nome = v_nome;
+  IF v_j IS NULL THEN
+    INSERT INTO public.jornadas (contaid, nome) VALUES (v_conta, v_nome) RETURNING jornadaid INTO v_j;
+    INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
+    SELECT v_conta, v_j, d, p_entrada, v_saida FROM generate_series(1, 7) d;
+  END IF;
+  UPDATE public.funcionarios SET jornadaid = v_j WHERE funcionarioid = p_funcionarioid;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.teste_horario(integer, time, time) FROM public, anon, authenticated;
 -- Funcao nova nasce sem permissao (negada por padrao): libera so esta, de teste.
 GRANT EXECUTE ON FUNCTION public.exigir(boolean, text) TO authenticated;
 
@@ -4106,13 +4132,15 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 RESET ROLE;
 SET teste.uid = '';
 
-INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, horarionotificacao, horariosaida)
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga)
 OVERRIDING SYSTEM VALUE VALUES
-  (7510, 1, 'Diana Diurna',   0, '08:00', '17:00'),
-  (7511, 1, 'Nelson Noturno', 0, '18:00', '02:00'),
-  (7512, 1, 'Sandra Sem Horario', 0, NULL, NULL),
-  (7513, 1, 'Fabio Folga', (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1), '08:00', '17:00'),
-  (7610, 2, 'Bruno de B',    0, '08:00', '17:00');
+  (7510, 1, 'Diana Diurna',   0),
+  (7511, 1, 'Nelson Noturno', 0),
+  (7512, 1, 'Sandra Sem Horario', 0),
+  (7513, 1, 'Fabio Folga', (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1)),
+  (7610, 2, 'Bruno de B',    0);
+SELECT public.teste_horario(7510, '08:00', '17:00'), public.teste_horario(7511, '18:00', '02:00'),
+       public.teste_horario(7513, '08:00', '17:00'), public.teste_horario(7610, '08:00', '17:00');
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
   (1, 7510, 10), (1, 7510, 11), (1, 7511, 10), (1, 7512, 10), (1, 7513, 10), (2, 7610, 20);
 INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
@@ -4271,10 +4299,7 @@ BEGIN
   -- O teste nao pode depender da hora em que roda: poe a Diana DENTRO do
   -- turno agora (entrada 1 h atras, saida daqui a 1 h). O horario fixo dela
   -- volta no fim do bloco.
-  UPDATE public.funcionarios
-     SET horarionotificacao = ((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time,
-         horariosaida       = ((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, (((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time)::time, (((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time)::time);
 
   -- Lembrete sem nada em aberto: some na hora de enviar.
   INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao, dataenvio)
@@ -4300,8 +4325,7 @@ BEGIN
                           WHERE contaid = 1 AND status = 'descartada' AND erro = 'juntada') = 1,
                         'a segunda mensagem nao e enviada de novo');
 
-  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00'
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
@@ -4311,9 +4335,7 @@ DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE; v_hora time;
 BEGIN
   v_hora := (now() AT TIME ZONE 'America/Sao_Paulo')::time;
   -- Turno curto daqui a 2 horas: agora a Diana está fora do turno dela.
-  UPDATE public.funcionarios SET horarionotificacao = v_hora + interval '2 hours',
-                                 horariosaida = v_hora + interval '4 hours'
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, (v_hora + interval '2 hours')::time, (v_hora + interval '4 hours')::time);
   v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
             jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
   v_saida := public.bot_fila_pegar(10);
@@ -4321,7 +4343,7 @@ BEGIN
   PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
                         'aviso fora do turno espera a proxima entrada');
   PERFORM public.exigir(jsonb_array_length(v_saida) = 0, 'nada e enviado fora do turno');
-  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00' WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
@@ -4335,9 +4357,7 @@ BEGIN
   DELETE FROM public.mensagensfila WHERE contaid = 1;
   v_hora := (now() AT TIME ZONE 'America/Sao_Paulo')::time;
   -- Turno que COMECOU ha 3 horas e TERMINOU ha 1 hora: expediente encerrado.
-  UPDATE public.funcionarios SET horarionotificacao = (v_hora - interval '3 hours')::time,
-                                 horariosaida       = (v_hora - interval '1 hour')::time
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, ((v_hora - interval '3 hours')::time)::time, ((v_hora - interval '1 hour')::time)::time);
   j := public.bot_janela(1, 7510, now());
   PERFORM public.exigir((j->>'motivo') = 'fora_do_turno',
                         'depois do expediente o motivo e fora_do_turno, nao folga');
@@ -4361,8 +4381,8 @@ BEGIN
   SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
   PERFORM public.exigir(r.status = 'guardada', 'na folga o aviso continua sendo guardado para o resumo');
 
-  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00', diadefolga = 0
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
+  UPDATE public.funcionarios SET diadefolga = 0 WHERE funcionarioid = 7510;
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
@@ -4453,10 +4473,7 @@ BEGIN
   DELETE FROM public.mensagensfila WHERE contaid = 1;
   -- Independente da hora em que o teste roda: a Diana precisa estar DENTRO do
   -- turno para a mensagem sair da fila. O horario fixo dela volta no fim.
-  UPDATE public.funcionarios
-     SET horarionotificacao = ((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time,
-         horariosaida       = ((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, (((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time)::time, (((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time)::time);
   v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
             jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
   v_saida := public.bot_fila_pegar(10);
@@ -4472,8 +4489,7 @@ BEGIN
   PERFORM public.bot_visto(5010);
   PERFORM public.exigir((SELECT bloqueadoem IS NULL FROM public.telegramvinculos WHERE chatid = 5010 AND ativo),
                         'quando a pessoa volta a usar o bot, o bloqueio some sozinho');
-  UPDATE public.funcionarios SET horarionotificacao = '08:00', horariosaida = '17:00'
-   WHERE funcionarioid = 7510;
+  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
   DELETE FROM public.mensagensfila WHERE contaid = 1;
 END $$;
 
@@ -4529,16 +4545,16 @@ BEGIN
   PERFORM public.exigir(deu_erro, 'B nao desliga uma rotina de uma loja de A');
 
   -- A função existe para B, mas não alcança ninguém de A: 0 pessoas mudadas.
-  PERFORM public.exigir(public.definir_horario_equipe(ARRAY[7510], '07:00', '15:00') = 0,
-                        'B pede para mudar o horario de alguem de A e nao muda ninguem');
+  PERFORM public.exigir(public.vincular_jornada(ARRAY[7510], NULL) = 0,
+                        'B pede para mudar a jornada de alguem de A e nao muda ninguem');
 END $$;
 
 RESET ROLE;
 SET teste.uid = '';
 DO $$
 BEGIN
-  PERFORM public.exigir((SELECT horarionotificacao FROM public.funcionarios WHERE funcionarioid = 7510) = '08:00',
-                        'B nao muda o horario de ninguem de A');
+  PERFORM public.exigir((SELECT jornadaid FROM public.funcionarios WHERE funcionarioid = 7510) IS NOT NULL,
+                        'B nao muda a jornada de ninguem de A');
   PERFORM public.exigir((SELECT md5(string_agg(t::text, '' ORDER BY atribuicaoid)) FROM public.tarefasatribuidas t
                           WHERE contaid = 2) = (SELECT atribuicoes FROM b1_b_antes),
                         'nada da conta B foi alterado pelas rotinas de A');
@@ -4657,7 +4673,7 @@ BEGIN
       'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding',
       'rodar_geracao_hoje', 'passar_tarefa_de_folga', 'refazer_fechamento', 'rotinas_resumo_admin',
       'criar_convite_telegram', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'desligar_telegram', 'marcar_aviso_lido',
-      'definir_rotina_mensagem', 'definir_horario_equipe',
+      'definir_rotina_mensagem',
       -- Etapa 1.12: falam so do proprio login (meu_acesso) ou exigem master
       -- (publicar_politica_de_uso, situacao_dos_acessos).
       'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso',
@@ -4685,7 +4701,10 @@ BEGIN
       -- 27/09/2026: telas do admin geral. Nao recebem conta, e todas
       -- recusam quem nao e o admin geral (provado na secao 70).
       'sugerir_codigo_empresa', 'codigo_empresa_disponivel', 'resumo_admin_das_contas', 'redes_admin',
-      'anexos_admin'
+      'anexos_admin',
+      -- 27/09/2026: jornadas. Leem a conta de quem chamou
+      -- (exige_master_editavel) e so mexem na conta dele (secao 73).
+      'salvar_jornada', 'vincular_jornada'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -9083,5 +9102,123 @@ BEGIN
                           WHERE funcionarioid = 9972 AND public.dia_da_conta(1, datamovimento) = public.hoje_da_conta(1)) > 100,
                         'o livro do dia ainda tem o bonus da conquista, que a TV nao mostra (nem antes mostrava)');
 END $$;
+
+-- ===========================================================================
+-- 73. Jornadas: horario de EXPEDIENTE por dia, intervalo de silencio
+-- ===========================================================================
+-- Nao e controle de jornada: e so quando o sistema envia tarefas e avisos.
+DO $$ BEGIN RAISE NOTICE '73. jornadas'; END $$;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v_j integer; v_hoje date := (public.meu_hoje()->>'hoje')::date; v_dow integer; deu_erro boolean;
+BEGIN
+  v_dow := extract(dow FROM v_hoje)::integer + 1;
+  -- Hoje 08h-17h com almoco 12h-13h; amanha 14h-22h; depois de amanha, turno da noite 22h-06h.
+  v_j := public.salvar_jornada(NULL, 'Teste 73', jsonb_build_array(
+           jsonb_build_object('dia', v_dow, 'entrada', '08:00', 'saida', '17:00'),
+           jsonb_build_object('dia', (v_dow % 7) + 1, 'entrada', '14:00', 'saida', '22:00'),
+           jsonb_build_object('dia', ((v_dow + 1) % 7) + 1, 'entrada', '22:00', 'saida', '06:00')),
+         '12:00', '13:00', 'almoco', true);
+  PERFORM set_config('teste.j73', v_j::text, false);
+  PERFORM public.exigir(public.vincular_jornada(ARRAY[9972], v_j) = 1, 'o master vincula a pessoa a uma jornada da conta dele');
+
+  BEGIN PERFORM public.salvar_jornada(NULL, 'Teste 73', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nome de jornada nao se repete na conta');
+  BEGIN PERFORM public.salvar_jornada(NULL, 'Sem fim', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', '12:00', NULL, NULL, true); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'intervalo precisa de comeco e fim');
+
+  -- Jornada com gente nao se apaga nem se desativa; a mensagem diz quantos.
+  BEGIN DELETE FROM public.jornadas WHERE jornadaid = v_j; deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 pessoa%'; END;
+  PERFORM public.exigir(deu_erro, 'jornada com gente vinculada nao se apaga (e diz quantos)');
+  BEGIN PERFORM public.salvar_jornada(v_j, 'Teste 73', jsonb_build_array(jsonb_build_object('dia', v_dow, 'entrada', '08:00', 'saida', '17:00')), NULL, NULL, NULL, false); deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem se desativa');
+  -- O master nao grava a jornada da pessoa direto (so pela funcao).
+  BEGIN UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid = 9972; deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a jornada da pessoa so muda por vincular_jornada');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- O que o sistema faz com isso: o turno de cada dia, a noite, e o silencio do intervalo.
+DO $$
+DECLARE v_hoje date := public.hoje_da_conta(1); j record; v jsonb;
+BEGIN
+  SELECT * INTO j FROM public.jornada_da_pessoa(1, 9972, v_hoje);
+  PERFORM public.exigir(j.temhorario AND j.inicio = public.instante_local(v_hoje, '08:00') AND j.fim = public.instante_local(v_hoje, '17:00'),
+                        'hoje: 08h as 17h');
+  SELECT * INTO j FROM public.jornada_da_pessoa(1, 9972, v_hoje + 1);
+  PERFORM public.exigir(j.inicio = public.instante_local(v_hoje + 1, '14:00'), 'amanha, outro horario: cada dia pode ser diferente');
+  SELECT * INTO j FROM public.jornada_da_pessoa(1, 9972, v_hoje + 2);
+  PERFORM public.exigir(j.fim = public.instante_local(v_hoje + 3, '06:00'), 'turno da noite: saida menor que a entrada vira o dia');
+  SELECT * INTO j FROM public.jornada_da_pessoa(1, 9972, v_hoje + 3);
+  PERFORM public.exigir(NOT j.temhorario, 'dia sem horario na jornada: sem horario (vale so o silencio da empresa)');
+
+  IF (SELECT t.trabalha FROM public.jornada_da_pessoa(1, 9972, v_hoje) t) THEN
+    v := public.bot_janela(1, 9972, public.instante_local(v_hoje, '12:30'));
+    PERFORM public.exigir(v->>'motivo' = 'intervalo' AND (v->>'proxima')::timestamptz = public.instante_local(v_hoje, '13:00'),
+                          'no intervalo o sistema nao envia: espera ate 13h');
+    PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(v_hoje, '10:00'))->>'pode')::boolean
+                          AND (public.bot_janela(1, 9972, public.instante_local(v_hoje, '13:10'))->>'pode')::boolean,
+                          'fora do intervalo, dentro do turno, envia');
+  END IF;
+END $$;
+
+-- A conta B nao ve, nao usa e nao mexe na jornada da conta A.
+SET ROLE authenticated;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE v_j integer := current_setting('teste.j73')::integer; deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = v_j)
+                        AND NOT EXISTS (SELECT 1 FROM public.jornadasdias WHERE jornadaid = v_j),
+                        'a conta B nao ve a jornada da conta A');
+  BEGIN PERFORM public.vincular_jornada(ARRAY[200], v_j); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a conta B nao vincula gente dela a uma jornada de A');
+  PERFORM public.exigir(public.vincular_jornada(ARRAY[9972], NULL) = 0, 'nem desvincula gente de A');
+  BEGIN PERFORM public.salvar_jornada(v_j, 'Invadida', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem edita a jornada de A');
+  DELETE FROM public.jornadas WHERE jornadaid = v_j;
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = current_setting('teste.j73')::integer),
+                        'o DELETE da conta B nao apagou a jornada de A');
+  -- Mesmo pelo dono do banco: pessoa de B nao aponta para jornada de A.
+  BEGIN UPDATE public.funcionarios SET jornadaid = current_setting('teste.j73')::integer WHERE funcionarioid = 200; deu_erro := false;
+  EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a chave composta impede pessoa de uma conta na jornada de outra');
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.salvar_jornada(integer, text, jsonb, time, time, text, boolean)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.vincular_jornada(integer[], integer)', 'EXECUTE'),
+                        'o visitante sem login nao mexe em jornada');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                     WHERE table_schema = 'public' AND table_name = 'funcionarios'
+                                       AND column_name IN ('horarionotificacao', 'horariosaida')),
+                        'o horario solto na pessoa saiu: a jornada e a fonte unica');
+END $$;
+
+-- Sem gente, a jornada se apaga.
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+BEGIN
+  PERFORM public.vincular_jornada(ARRAY[9972], NULL);
+  DELETE FROM public.jornadas WHERE jornadaid = current_setting('teste.j73')::integer;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = current_setting('teste.j73')::integer),
+                        'sem ninguem vinculado, a jornada se apaga (e os dias vao junto)');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

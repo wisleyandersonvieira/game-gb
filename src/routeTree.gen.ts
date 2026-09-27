@@ -31,6 +31,7 @@ import { Route as AuthenticatedFeedbacksRouteImport } from './routes/_authentica
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
 import { Route as AuthenticatedGestaoRouteImport } from './routes/_authenticated/gestao'
 import { Route as AuthenticatedInicioRouteImport } from './routes/_authenticated/inicio'
+import { Route as AuthenticatedJornadaRouteImport } from './routes/_authenticated/jornada'
 import { Route as AuthenticatedJustificativasRouteImport } from './routes/_authenticated/justificativas'
 import { Route as AuthenticatedMetasRouteImport } from './routes/_authenticated/metas'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
@@ -166,6 +167,11 @@ const AuthenticatedGestaoRoute = AuthenticatedGestaoRouteImport.update({
 const AuthenticatedInicioRoute = AuthenticatedInicioRouteImport.update({
   id: '/inicio',
   path: '/inicio',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedJornadaRoute = AuthenticatedJornadaRouteImport.update({
+  id: '/jornada',
+  path: '/jornada',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedJustificativasRoute =
@@ -304,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/inicio': typeof AuthenticatedInicioRoute
+  '/jornada': typeof AuthenticatedJornadaRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
   '/metas': typeof AuthenticatedMetasRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -347,6 +354,7 @@ export interface FileRoutesByTo {
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/gestao': typeof AuthenticatedGestaoRoute
   '/inicio': typeof AuthenticatedInicioRoute
+  '/jornada': typeof AuthenticatedJornadaRoute
   '/justificativas': typeof AuthenticatedJustificativasRoute
   '/metas': typeof AuthenticatedMetasRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -394,6 +402,7 @@ export interface FileRoutesById {
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
   '/_authenticated/gestao': typeof AuthenticatedGestaoRoute
   '/_authenticated/inicio': typeof AuthenticatedInicioRoute
+  '/_authenticated/jornada': typeof AuthenticatedJornadaRoute
   '/_authenticated/justificativas': typeof AuthenticatedJustificativasRoute
   '/_authenticated/metas': typeof AuthenticatedMetasRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
@@ -441,6 +450,7 @@ export interface FileRouteTypes {
     | '/funcionarios'
     | '/gestao'
     | '/inicio'
+    | '/jornada'
     | '/justificativas'
     | '/metas'
     | '/onboarding'
@@ -484,6 +494,7 @@ export interface FileRouteTypes {
     | '/funcionarios'
     | '/gestao'
     | '/inicio'
+    | '/jornada'
     | '/justificativas'
     | '/metas'
     | '/onboarding'
@@ -530,6 +541,7 @@ export interface FileRouteTypes {
     | '/_authenticated/funcionarios'
     | '/_authenticated/gestao'
     | '/_authenticated/inicio'
+    | '/_authenticated/jornada'
     | '/_authenticated/justificativas'
     | '/_authenticated/metas'
     | '/_authenticated/onboarding'
@@ -727,6 +739,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInicioRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/jornada': {
+      id: '/_authenticated/jornada'
+      path: '/jornada'
+      fullPath: '/jornada'
+      preLoaderRoute: typeof AuthenticatedJornadaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/justificativas': {
       id: '/_authenticated/justificativas'
       path: '/justificativas'
@@ -896,6 +915,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
   AuthenticatedGestaoRoute: typeof AuthenticatedGestaoRoute
   AuthenticatedInicioRoute: typeof AuthenticatedInicioRoute
+  AuthenticatedJornadaRoute: typeof AuthenticatedJornadaRoute
   AuthenticatedJustificativasRoute: typeof AuthenticatedJustificativasRoute
   AuthenticatedMetasRoute: typeof AuthenticatedMetasRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
@@ -921,6 +941,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,
   AuthenticatedGestaoRoute: AuthenticatedGestaoRoute,
   AuthenticatedInicioRoute: AuthenticatedInicioRoute,
+  AuthenticatedJornadaRoute: AuthenticatedJornadaRoute,
   AuthenticatedJustificativasRoute: AuthenticatedJustificativasRoute,
   AuthenticatedMetasRoute: AuthenticatedMetasRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,

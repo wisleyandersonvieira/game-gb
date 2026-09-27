@@ -78,6 +78,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `codigosantigos` | conta | codigo | contas |
 | `anexosadmin` | conta (ou rede) | anexoid | contas / redes |
 | `redes` | **plataforma** (sem conta) | redeid | — |
+| `jornadas` | conta | jornadaid | — |
+| `jornadasdias` | conta | (jornadaid, diasemana) | jornadas |
 | `senhasgestor` | conta (vazia no admin geral) | userid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
@@ -1299,3 +1301,19 @@ Rede com cliente ligado não se apaga (o banco diz quantos são).
 Contratos da administração, de um cliente **ou** de uma rede. **Documento sigiloso**: o arquivo fica no bucket privado `administracao`, sem regra de acesso para ninguém (só o servidor, depois de conferir que é o admin geral); o link de abertura vale 5 minutos. PDF ou imagem, até 10 MB. Guarda quem subiu e quando.
 
 **Remover (27/09/2026):** o arquivo sai de verdade do armazenamento (cliente errado, ou exclusão pedida pelo cliente — LGPD). Fica o registro: `removidoem` / `removidopor`, tipo, tamanho e datas; o **nome do arquivo sai junto** (ele pode carregar o nome de outra empresa ou de uma pessoa). Rede com anexo ativo não se apaga; apagada a rede, o registro dos anexos dela (já removidos) vai junto.
+
+## jornadas e jornadasdias (27/09/2026)
+Horários de **expediente** com nome ("Balcão manhã"), para o sistema saber **quando enviar tarefas e avisos**. **Não é controle de jornada** (CLAUDE.md): não há total de horas, carga semanal, banco de horas, marcação de entrada e saída, nem comparação entre previsto e feito.
+
+| jornadas | Tipo | Obs |
+|---|---|---|
+| nome | varchar(80) | único na conta |
+| pausainicio / pausafim | time | intervalo de **silêncio** do sistema (almoço), não marcação. Os dois ou nenhum |
+| observacao, ativa | | jornada inativa não aparece para vincular; com gente vinculada, não se desativa nem se apaga |
+
+| jornadasdias | Tipo | Obs |
+|---|---|---|
+| diasemana | smallint | 1 = domingo ... 7 = sábado (igual a `funcionarios.diadefolga`) |
+| entrada / saida | time | saída menor que a entrada = turno da noite. Dia sem linha = sem horário naquele dia |
+
+`funcionarios.jornadaid` (vazio = sem jornada: não recebe as mensagens do dia) substituiu `horarionotificacao` e `horariosaida`, que foram migradas e **apagadas**. A **folga** continua sendo da pessoa. Quem lê: `jornada_da_pessoa` (mesmas respostas de antes, mais o intervalo), usada pelo bot (`bot_janela`, `rotina_mensagens`). Quem grava: `salvar_jornada` (tudo ou nada) e `vincular_jornada`.

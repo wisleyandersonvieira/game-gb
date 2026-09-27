@@ -1856,6 +1856,7 @@ export type Database = {
       }
       funcionarios: {
         Row: {
+          jornadaid: number | null
           acessoredefinidoem: string | null
           acessoredefinidopor: string | null
           ativo: boolean
@@ -1868,8 +1869,6 @@ export type Database = {
           diadefolga: number
           domingofolgamensal: number | null
           funcionarioid: number
-          horarionotificacao: string | null
-          horariosaida: string | null
           isgestor: boolean | null
           nomecompleto: string
           pinhash: string | null
@@ -1881,6 +1880,7 @@ export type Database = {
           telefonewhatsapp: string | null
         }
         Insert: {
+          jornadaid?: number | null
           acessoredefinidoem?: string | null
           acessoredefinidopor?: string | null
           ativo?: boolean
@@ -1893,8 +1893,6 @@ export type Database = {
           diadefolga?: number
           domingofolgamensal?: number | null
           funcionarioid?: number
-          horarionotificacao?: string | null
-          horariosaida?: string | null
           isgestor?: boolean | null
           nomecompleto: string
           pinhash?: string | null
@@ -1906,6 +1904,7 @@ export type Database = {
           telefonewhatsapp?: string | null
         }
         Update: {
+          jornadaid?: number | null
           acessoredefinidoem?: string | null
           acessoredefinidopor?: string | null
           ativo?: boolean
@@ -1918,8 +1917,6 @@ export type Database = {
           diadefolga?: number
           domingofolgamensal?: number | null
           funcionarioid?: number
-          horarionotificacao?: string | null
-          horariosaida?: string | null
           isgestor?: boolean | null
           nomecompleto?: string
           pinhash?: string | null
@@ -2294,6 +2291,63 @@ export type Database = {
             referencedColumns: ["contaid", "produtofornecedorid"]
           },
         ]
+      }
+      jornadas: {
+        Row: {
+          ativa: boolean
+          contaid: number
+          criadoem: string
+          jornadaid: number
+          nome: string
+          observacao: string | null
+          pausafim: string | null
+          pausainicio: string | null
+        }
+        Insert: {
+          ativa?: boolean
+          contaid?: number
+          criadoem?: string
+          jornadaid?: number
+          nome: string
+          observacao?: string | null
+          pausafim?: string | null
+          pausainicio?: string | null
+        }
+        Update: {
+          ativa?: boolean
+          contaid?: number
+          criadoem?: string
+          jornadaid?: number
+          nome?: string
+          observacao?: string | null
+          pausafim?: string | null
+          pausainicio?: string | null
+        }
+        Relationships: []
+      }
+      jornadasdias: {
+        Row: {
+          contaid: number
+          diasemana: number
+          entrada: string
+          jornadaid: number
+          saida: string
+        }
+        Insert: {
+          contaid?: number
+          diasemana: number
+          entrada: string
+          jornadaid: number
+          saida: string
+        }
+        Update: {
+          contaid?: number
+          diasemana?: number
+          entrada?: string
+          jornadaid?: number
+          saida?: string
+        }
+        Relationships: []
       }
       justificativas: {
         Row: {
@@ -5225,10 +5279,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      definir_horario_equipe: {
-        Args: { p_entrada: string; p_funcionarios: number[]; p_saida: string }
-        Returns: number
-      }
       definir_pin: {
         Args: {
           p_contaid: number
@@ -5634,6 +5684,19 @@ export type Database = {
         Returns: Json
       }
       meu_hoje: { Args: never; Returns: Json }
+      salvar_jornada: {
+        Args: {
+          p_ativa: boolean
+          p_dias: Json
+          p_jornadaid: number | null
+          p_nome: string
+          p_observacao: string | null
+          p_pausafim: string | null
+          p_pausainicio: string | null
+        }
+        Returns: number
+      }
+      vincular_jornada: { Args: { p_funcionarios: number[]; p_jornadaid: number | null }; Returns: number }
       conferir_codigo_acesso: { Args: { p_codigohash: string; p_contaid: number; p_cpf: string }; Returns: boolean }
       concluir_primeiro_acesso: {
         Args: { p_codigohash: string; p_contaid: number; p_cpf: string; p_pinhash: string; p_senhahash: string }

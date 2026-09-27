@@ -15,6 +15,7 @@ import { IconeTelegram, JanelaConvite, useDesligarTelegram, useVinculosTelegram 
 import { Pagina } from "@/ui/Pagina";
 import { useHojeDaConta } from "@/ui/hoje";
 import { dataHoraBr } from "@/rh/datas";
+import { EscolherDaLista } from "@/ui/EscolherDaLista";
 
 export const Route = createFileRoute("/_authenticated/funcionarios")({
   component: Funcionarios,
@@ -104,10 +105,11 @@ function Funcionarios() {
   const [editando, setEditando] = useState<number | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
   const [filtroLoja, setFiltroLoja] = useState<number | "todas">("todas");
-  // Horário da jornada: dá para marcar várias pessoas e aplicar de uma vez.
+  // Pessoas marcadas nas caixinhas: PDF de acesso e jornada em lote.
   const [selecionados, setSelecionados] = useState<number[]>([]);
-  const [horaEntrada, setHoraEntrada] = useState("");
-  const [horaSaida, setHoraSaida] = useState("");
+  // A jornada escolhida para o lote (undefined = ainda não escolheu; null = sem jornada).
+  const [jornadaDoLote, setJornadaDoLote] = useState<number | null | undefined>(undefined);
+  const [vinculandoJornada, setVinculandoJornada] = useState<number | null>(null);
 
   const equipe = useQuery({
     queryKey: ["equipe"],
@@ -118,7 +120,7 @@ function Funcionarios() {
         supabase
           .from("funcionarios")
           .select(
-            "funcionarioid, nomecompleto, cpf, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, horarionotificacao, horariosaida",
+            "funcionarioid, nomecompleto, cpf, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, jornadaid",
           )
           .order("nomecompleto"),
         supabase.from("funcionarioslojas").select("funcionarioid, lojaid, ativo, validador"),
@@ -216,20 +218,32 @@ function Funcionarios() {
     },
   });
 
-  const aplicarHorario = useMutation({
-    mutationFn: async () => {
-      if (selecionados.length === 0) throw new Error("Marque pelo menos uma pessoa.");
-      // Vazio = tirar o horário; o banco aceita nulo nos dois campos.
-      const { error } = await supabase.rpc("definir_horario_equipe", {
-        p_funcionarios: selecionados,
-        p_entrada: (horaEntrada || null) as unknown as string,
-        p_saida: (horaEntrada && horaSaida ? horaSaida : null) as unknown as string,
-      });
+  // As jornadas da conta (a página Jornada cadastra). Só as ATIVAS aparecem
+  // para vincular; o nome de todas aparece no cartão.
+  const jornadas = useQuery({
+    queryKey: ["jornadas-para-vincular"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("jornadas").select("jornadaid, nome, ativa");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const nomeDaJornada = (id: number | null) => jornadas.data?.find((j) => j.jornadaid === id)?.nome;
+  const jornadasAtivas = (jornadas.data ?? []).filter((j) => j.ativa).map((j) => ({ id: j.jornadaid, nome: j.nome }));
+
+  // Vincular uma ou várias pessoas a uma jornada (null = sem jornada).
+  const vincularJornada = useMutation({
+    mutationFn: async ({ ids, jornadaid }: { ids: number[]; jornadaid: number | null }) => {
+      if (ids.length === 0) throw new Error("Marque pelo menos uma pessoa.");
+      const { error } = await supabase.rpc("vincular_jornada", { p_funcionarios: ids, p_jornadaid: jornadaid });
       if (error) throw error;
     },
-    onSuccess: () => {
-      setSelecionados([]);
+    onSuccess: (_r, { ids }) => {
+      if (ids.length > 1) setSelecionados([]);
+      setJornadaDoLote(undefined);
+      setVinculandoJornada(null);
       qc.invalidateQueries({ queryKey: ["equipe"] });
+      qc.invalidateQueries({ queryKey: ["jornadas"] });
     },
   });
 
@@ -353,7 +367,6 @@ function Funcionarios() {
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
   const telegramDe = (id: number) =>
     (vinculos.data ?? []).find((v) => v.tipo === "pessoa" && v.funcionarioid === id);
-  const hhmm = (h: string | null) => (h ? h.slice(0, 5) : null);
 
   return (
     <Pagina
@@ -556,50 +569,22 @@ function Funcionarios() {
         )}
       </div>
 
-      <section className="space-y-2 rounded-xl border border-border bg-card p-4">
-        <div>
-          <h2 className="text-sm font-semibold">Horário da jornada</h2>
-          <p className="text-xs text-muted-foreground">
-            O bot usa este horário para mandar as tarefas do dia, os lembretes e o resumo do fim do expediente. Quem
-            fica sem horário não recebe essas mensagens (continua recebendo os avisos). Saída em branco = entrada + 8h20.
-            Saída menor que a entrada = turno da noite.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            Entrada
-            <input type="time" value={horaEntrada} onChange={(e) => setHoraEntrada(e.target.value)} className={`${campo} ml-2`} />
-          </label>
-          <label className="text-sm">
-            Saída
-            <input type="time" value={horaSaida} onChange={(e) => setHoraSaida(e.target.value)} className={`${campo} ml-2`} />
-          </label>
-          <button
-            onClick={() => aplicarHorario.mutate()}
-            disabled={aplicarHorario.isPending || selecionados.length === 0}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-          >
-            Aplicar a {selecionados.length} {selecionados.length === 1 ? "pessoa" : "pessoas"}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <button
+          onClick={() => setSelecionados(visiveis.filter((f) => f.ativo).map((f) => f.funcionarioid))}
+          className="rounded-lg border border-border px-3 py-1.5"
+        >
+          Marcar todos
+        </button>
+        {selecionados.length > 0 && (
+          <button onClick={() => setSelecionados([])} className="rounded-lg border border-border px-3 py-1.5">
+            Limpar
           </button>
-          <button
-            onClick={() => setSelecionados(visiveis.filter((f) => f.ativo).map((f) => f.funcionarioid))}
-            className="rounded-lg border border-border px-3 py-2 text-sm"
-          >
-            Marcar todos
-          </button>
-          {selecionados.length > 0 && (
-            <button onClick={() => setSelecionados([])} className="rounded-lg border border-border px-3 py-2 text-sm">
-              Limpar
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Deixe a entrada em branco e aplique para tirar o horário das pessoas marcadas.
-        </p>
-        {aplicarHorario.isError && (
-          <p className="text-sm text-destructive">{(aplicarHorario.error as Error).message}</p>
         )}
-      </section>
+        <span className="text-xs text-muted-foreground">
+          Marque pessoas para gerar o PDF de acesso ou vincular uma jornada de uma vez.
+        </span>
+      </div>
 
       {selecionados.length > 0 && (
         <section className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
@@ -618,6 +603,28 @@ function Funcionarios() {
             de fora: a folha dessas pessoas redefine o acesso e é feita no cartão de cada uma.
           </p>
           {erroDoLote && <p className="w-full text-sm text-destructive">{erroDoLote}</p>}
+          <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-3">
+            <div className="w-64">
+              <EscolherDaLista
+                itens={jornadasAtivas}
+                valor={jornadaDoLote ?? null}
+                mudar={(id) => setJornadaDoLote(id)}
+                rotulo="Jornada"
+                semItem={jornadaDoLote === undefined ? "escolha" : "sem jornada"}
+                buscaTexto="Buscar jornada por parte do nome"
+              />
+            </div>
+            <button
+              onClick={() => vincularJornada.mutate({ ids: selecionados, jornadaid: jornadaDoLote ?? null })}
+              disabled={vincularJornada.isPending || jornadaDoLote === undefined}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              Vincular a {selecionados.length} {selecionados.length === 1 ? "pessoa" : "pessoas"}
+            </button>
+            {vincularJornada.isError && (
+              <p className="w-full text-sm text-destructive">{(vincularJornada.error as Error).message}</p>
+            )}
+          </div>
         </section>
       )}
 
@@ -682,9 +689,9 @@ function Funcionarios() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {hhmm(f.horarionotificacao)
-                  ? `Jornada: ${hhmm(f.horarionotificacao)} às ${hhmm(f.horariosaida) ?? "(entrada + 8h20)"}`
-                  : "Sem horário: não recebe as mensagens da jornada"}
+                {f.jornadaid
+                  ? `Jornada: ${nomeDaJornada(f.jornadaid) ?? "…"}`
+                  : "Sem jornada: não recebe as mensagens do dia"}
               </p>
               <p className="text-xs text-muted-foreground">
                 {cpfMascarado(f.cpf) ? `CPF ${cpfMascarado(f.cpf)}` : "Sem CPF cadastrado"} ·{" "}
@@ -732,6 +739,29 @@ function Funcionarios() {
               >
                 Editar
               </button>
+              {f.ativo && (
+                <div className="relative">
+                  <button
+                    onClick={() => setVinculandoJornada(vinculandoJornada === f.funcionarioid ? null : f.funcionarioid)}
+                    className="rounded-md border border-border px-3 py-1 text-sm"
+                  >
+                    Vincular jornada
+                  </button>
+                  {vinculandoJornada === f.funcionarioid && (
+                    <div className="absolute right-0 z-30 mt-1 w-64">
+                      <EscolherDaLista
+                        itens={jornadasAtivas}
+                        valor={f.jornadaid}
+                        mudar={(id) => vincularJornada.mutate({ ids: [f.funcionarioid], jornadaid: id })}
+                        rotulo="Jornada"
+                        semItem="sem jornada"
+                        buscaTexto="Buscar jornada por parte do nome"
+                        abertoDeInicio
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               {codigoNovo && codigoNovo.nome === f.nomecompleto && (
                 <span className="rounded-md border border-primary px-2 py-1 font-mono text-sm">
                   {codigoNovo.codigo}
