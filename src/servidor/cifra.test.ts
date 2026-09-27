@@ -19,10 +19,19 @@ describe("cifra do código de acesso", () => {
     expect(await decifrar(c, "codigo:2:100")).toBeNull();
   });
 
+  // Troca um caractere do MEIO dos dados (29/09/2026). Antes trocava o
+  // último antes do "==" do base64, cujos bits mais baixos são só
+  // preenchimento: em 1 de cada 4 vezes a troca não mudava byte nenhum, o
+  // código abria e o teste falhava sozinho. No meio, todo bit conta. Repete
+  // 200 vezes: se voltar a ser instável, aparece aqui, não de vez em quando.
   it("não abre se alguém mexeu num caractere", async () => {
-    const c = await cifrar("ABCD-EF23", "codigo:1:100");
-    const mexido = c.slice(0, -3) + (c.at(-3) === "A" ? "B" : "A") + c.slice(-2);
-    expect(await decifrar(mexido, "codigo:1:100")).toBeNull();
+    for (let i = 0; i < 200; i++) {
+      const c = await cifrar("ABCD-EF23", "codigo:1:100");
+      const [versao, iv, dados] = c.split(".");
+      const meio = Math.floor(dados.length / 2);
+      const mexido = `${versao}.${iv}.${dados.slice(0, meio)}${dados[meio] === "A" ? "B" : "A"}${dados.slice(meio + 1)}`;
+      expect(await decifrar(mexido, "codigo:1:100")).toBeNull();
+    }
   });
 
   it("não abre com outra chave de servidor", async () => {
