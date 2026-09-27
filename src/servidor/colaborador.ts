@@ -9,6 +9,7 @@
 //
 // ACEITAR tarefa continua sendo so no tablet da loja. O celular entrega,
 // consulta e pede.
+import { descartarFotoDaTentativa } from "@/servidor/fotoSemEntrega";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
@@ -166,23 +167,32 @@ export const entregarPeloCelular = createServerFn({ method: "POST" })
     if (data.caminho) {
       if (!data.bilhete) throw new Error("Envio de foto inválido.");
       await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, p.funcionarioid);
-      const prova = await provaDaFoto(data.caminho);
-      fotoidunico = prova.fotoidunico;
-      ({ semhorafoto } = await conferirHoraDaFoto(p.contaid, prova.horafoto));
     }
+    // Daqui em diante a foto é desta tentativa: se a entrega não acontecer,
+    // ela sai do armazenamento (tentativa que falha não deixa nada para trás).
+    try {
+      if (data.caminho) {
+        const prova = await provaDaFoto(data.caminho);
+        fotoidunico = prova.fotoidunico;
+        ({ semhorafoto } = await conferirHoraDaFoto(p.contaid, prova.horafoto));
+      }
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: id, error } = await supabaseAdmin.rpc("eu_entregar", {
-      p_contaid: p.contaid,
-      p_funcionarioid: p.funcionarioid,
-      p_atribuicaoid: data.atribuicaoid,
-      p_caminho: data.caminho,
-      p_observacao: data.observacao,
-      p_fotoidunico: fotoidunico,
-      p_semhorafoto: semhorafoto,
-    });
-    if (error) throw new Error(error.message);
-    return { entregaid: id as number, semhorafoto };
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: id, error } = await supabaseAdmin.rpc("eu_entregar", {
+        p_contaid: p.contaid,
+        p_funcionarioid: p.funcionarioid,
+        p_atribuicaoid: data.atribuicaoid,
+        p_caminho: data.caminho,
+        p_observacao: data.observacao,
+        p_fotoidunico: fotoidunico,
+        p_semhorafoto: semhorafoto,
+      });
+      if (error) throw new Error(error.message);
+      return { entregaid: id as number, semhorafoto };
+    } catch (e) {
+      if (data.caminho) await descartarFotoDaTentativa(data.caminho);
+      throw e;
+    }
   });
 
 export type MeuExtrato = {

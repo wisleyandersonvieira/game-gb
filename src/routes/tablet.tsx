@@ -243,7 +243,12 @@ function Tablet() {
         );
       }
     },
-    onError: () => setEtapa(null),
+    // Recusou: a fila vem de novo na hora. A tela nunca pode continuar
+    // oferecendo o que o servidor acabou de recusar (29/09/2026).
+    onError: () => {
+      setEtapa(null);
+      qc.invalidateQueries({ queryKey: ["fila-tablet"] });
+    },
   });
 
   /** Caminho antigo: depois da ação, a fila era recarregada numa chamada à parte. */

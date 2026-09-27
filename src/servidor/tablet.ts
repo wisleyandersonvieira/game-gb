@@ -8,6 +8,7 @@
 // Toda acao com dono (pegar, entregar) e assinada com o PIN de 6 digitos:
 // o servidor descobre quem e e registra em nome dela. O PIN nunca fica
 // guardado em lugar nenhum — vem no pedido, e some quando ele acaba.
+import { descartarFotoDaTentativa } from "@/servidor/fotoSemEntrega";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { conferirPasse, emitirPasse, mensagemDaTrava, ondeRodou, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
@@ -321,6 +322,29 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
     const c = cronometro(recebidoem);
     const t = await tabletDoToken(userId);
     c.marcar("tablet");
+
+    // A foto só é desta tentativa se o bilhete deste servidor confere. Daí em
+    // diante, se a entrega não acontecer, ela sai do armazenamento (tentativa
+    // que falha não deixa nada para trás; 29/09/2026).
+    if (data.caminho) {
+      if (!data.bilhete) throw new Error("Envio de foto inválido.");
+      await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, -t.lojaid);
+    }
+    try {
+      return await entregarComFoto(t, data, c, onde);
+    } catch (e) {
+      if (data.caminho) await descartarFotoDaTentativa(data.caminho);
+      throw e;
+    }
+  });
+
+/** O resto da entrega pelo tablet, depois de a foto ser desta tentativa. */
+async function entregarComFoto(
+  t: Awaited<ReturnType<typeof tabletDoToken>>,
+  data: { pin: string; atribuicaoid: number; caminho: string | null; observacao: string | null },
+  c: ReturnType<typeof cronometro>,
+  onde: ResultadoNoTablet["onde"],
+): Promise<ResultadoNoTablet> {
     // O formato do PIN é conferido antes de baixar a foto: número torto não
     // gasta download.
     const args = await assinaturaDoPin(t, data.pin);
@@ -329,8 +353,6 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
     let fotoidunico: string | null = null;
     let semhorafoto = false;
     if (data.caminho) {
-      if (!data.bilhete) throw new Error("Envio de foto inválido.");
-      await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, -t.lojaid);
       // Baixar a foto e ler a tolerância da conta vão juntos.
       const [prova, tolerancia] = await Promise.all([provaDaFoto(data.caminho), toleranciaDaFoto(t.contaid)]);
       c.marcar("foto_baixar_e_conferir");
@@ -353,7 +375,7 @@ export const entregarNoTablet = createServerFn({ method: "POST" })
       c,
       onde,
     );
-  });
+}
 
 /**
  * Abrir pedido (compra ou manutenção) pelo tablet.

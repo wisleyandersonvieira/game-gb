@@ -9824,4 +9824,86 @@ UPDATE public.entregas SET pathfotoevidencia = NULL, fotoexpiradaem = NULL, foto
  WHERE entregaid = current_setting('teste.foto_vencida')::integer;
 DELETE FROM public.fotosexpurgo;
 
+-- ===========================================================================
+-- 78. PIN errado, depois PIN certo: a entrega funciona na segunda tentativa
+--     (o defeito do Wisley no tablet, 29/09/2026)
+-- ===========================================================================
+-- Tarefa DIARIA da equipe (missao), que outra pessoa entregou ONTEM pela
+-- copia dela. Hoje a Olga pega pelo tablet, erra o PIN, acerta o PIN.
+-- Antes do conserto: a copia de hoje nasce "Unica", a regra da Unica achava a
+-- entrega de ONTEM e recusava para sempre ("ja foi entregue"), com o tablet
+-- mostrando "Em andamento".
+DO $$ BEGIN RAISE NOTICE '78. PIN errado, depois PIN certo'; END $$;
+SET TIME ZONE 'UTC';
+-- O rodizio (secao 68 deixou a Olga com uma tarefa recente) nao e o assunto aqui.
+UPDATE public.configuracoes SET valor = '0' WHERE contaid = 1 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (9878, 1, 'Missao diaria 78', 3);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9878, 10);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo)
+  OVERRIDING SYSTEM VALUE VALUES (9878, 1, 9878, NULL, 10, 'Diaria', '00:00');
+-- Ontem: a copia de outra pessoa (110), entregue.
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                      dataatribuicao, dataagendamento, origematribuicaoid)
+  OVERRIDING SYSTEM VALUE VALUES (9879, 1, 9878, 110, 10, 'Unica', now() - interval '1 day', now() - interval '1 day', 9878);
+INSERT INTO public.entregas (contaid, atribuicaoid, tarefaid, funcionarioid, lojaid, statusvalidacao, dataenvio)
+  VALUES (1, 9879, 9878, 110, 10, 'Pendente', now() - interval '1 day');
+
+DO $$
+DECLARE
+  v jsonb; v_chave text := repeat('e', 64); v_mov integer; v_ent integer; v_copia integer; f record;
+BEGIN
+  v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', 9878);
+  PERFORM public.exigir(v ? 'nome', 'Olga pega a missao diaria de hoje' || coalesce(' (' || (v->>'erro') || ')', ''));
+  SELECT novaatribuicaoid INTO v_copia FROM public.missoesaceites
+   WHERE atribuicaoid = 9878 AND dia = public.hoje_da_conta(1) AND revogadoem IS NULL;
+  SELECT * INTO f FROM jsonb_to_record((SELECT to_jsonb(x) FROM public.visao_fila(1, 10) q, jsonb_array_elements(q) x
+                                          WHERE (x->>'atribuicaoid')::integer = 9878 LIMIT 1)) AS r(situacao text);
+  PERFORM public.exigir(f.situacao = 'em_andamento', 'o tablet mostra "Em andamento"');
+
+  -- PIN ERRADO: nada fica para tras, so a contagem da trava.
+  SELECT count(*) INTO v_mov FROM public.movimentospontos WHERE contaid = 1;
+  SELECT count(*) INTO v_ent FROM public.entregas WHERE contaid = 1;
+  v := public.visao_entregar_com_pin(1, 10, repeat('9', 64), v_chave, 'sem-ip', 9878, NULL, NULL, NULL, true);
+  PERFORM public.exigir(v ? 'pinerrado', 'PIN errado e recusado');
+  PERFORM public.exigir((SELECT count(*) FROM public.entregas WHERE contaid = 1) = v_ent
+                        AND (SELECT count(*) FROM public.movimentospontos WHERE contaid = 1) = v_mov,
+                        'o PIN errado nao grava entrega nem lanca ponto');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.missoesaceites WHERE atribuicaoid = 9878
+                                   AND dia = public.hoje_da_conta(1) AND revogadoem IS NULL AND novaatribuicaoid = v_copia),
+                        'o PIN errado nao mexe no aceite');
+
+  -- PIN CERTO: a entrega funciona na segunda tentativa.
+  v := public.visao_entregar_com_pin(1, 10, repeat('1', 64), v_chave, 'sem-ip', 9878, NULL, NULL, NULL, true);
+  PERFORM public.exigir(v ? 'nome', 'PIN certo depois do errado: a entrega funciona' || coalesce(' (' || (v->>'erro') || ')', ''));
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.entregas WHERE atribuicaoid = v_copia AND statusvalidacao = 'Pendente'),
+                        'a entrega de hoje fica na copia da Olga');
+  SELECT * INTO f FROM jsonb_to_record((SELECT to_jsonb(x) FROM public.visao_fila(1, 10) q, jsonb_array_elements(q) x
+                                          WHERE (x->>'atribuicaoid')::integer = 9878 LIMIT 1)) AS r(situacao text);
+  PERFORM public.exigir(f.situacao = 'feita', 'e o cartao sai de "Em andamento" na hora');
+END $$;
+
+-- A Unica DE VERDADE continua acabando na primeira entrega, mesmo pela copia.
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (9880, 1, 'Missao unica 78', 3);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9880, 10);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo)
+  OVERRIDING SYSTEM VALUE VALUES (9880, 1, 9880, NULL, 10, 'Unica', '00:00');
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                      dataatribuicao, dataagendamento, origematribuicaoid)
+  OVERRIDING SYSTEM VALUE VALUES (9881, 1, 9880, 110, 10, 'Unica', now() - interval '1 day', now() - interval '1 day', 9880),
+                                 (9882, 1, 9880, 9767, 10, 'Unica', now(), now(), 9880);
+INSERT INTO public.entregas (contaid, atribuicaoid, tarefaid, funcionarioid, lojaid, statusvalidacao, dataenvio)
+  VALUES (1, 9881, 9880, 110, 10, 'Pendente', now() - interval '1 day');
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.registrar_entrega(9882); deu_erro := false;
+  EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a copia de uma tarefa UNICA ja entregue continua recusada');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+SET TIME ZONE 'UTC';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

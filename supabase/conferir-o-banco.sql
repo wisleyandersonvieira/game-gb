@@ -221,7 +221,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE n.nspname = 'public' AND p.proname = 'agendamentos_sem_tarefa')),
   (270, 'PESSOAS', 'versao', 'intervalo do mapa por dia da semana', 'aplicar-mapa-intervalo-por-dia.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'mapa_da_semana'))
+                WHERE n.nspname = 'public' AND p.proname = 'mapa_da_semana')),
+  (280, 'OPERACAO', 'versao', 'entrega da copia de tarefa que se repete (tablet travado)', 'aplicar-entrega-da-copia.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'registrar_entrega'
+                  AND p.prosrc LIKE '%vale pelo tipo da tarefa ORIGINAL%'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",
