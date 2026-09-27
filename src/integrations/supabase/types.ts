@@ -2292,6 +2292,30 @@ export type Database = {
           },
         ]
       }
+      intervalosdomapa: {
+        Row: {
+          atualizadoem: string
+          contaid: number
+          fim: string
+          funcionarioid: number
+          inicio: string
+        }
+        Insert: {
+          atualizadoem?: string
+          contaid?: number
+          fim: string
+          funcionarioid: number
+          inicio: string
+        }
+        Update: {
+          atualizadoem?: string
+          contaid?: number
+          fim?: string
+          funcionarioid?: number
+          inicio?: string
+        }
+        Relationships: []
+      }
       jornadas: {
         Row: {
           ativa: boolean
@@ -5482,6 +5506,10 @@ export type Database = {
         }
         Returns: number
       }
+      mapa_da_jornada: {
+        Args: { p_diasemana?: number; p_lojaid: number }
+        Returns: Json
+      }
       marcar_agendamento_realizado: {
         Args: { p_agendamentoid: number }
         Returns: undefined
@@ -5687,6 +5715,10 @@ export type Database = {
       quadro_validacao: {
         Args: { p_ate?: string; p_de?: string; p_lojaid: number; p_offset?: number }
         Returns: Json
+      }
+      salvar_intervalo_do_mapa: {
+        Args: { p_fim: string | null; p_funcionarioid: number; p_inicio: string | null }
+        Returns: undefined
       }
       salvar_jornada: {
         Args: {

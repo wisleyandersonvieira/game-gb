@@ -4704,7 +4704,10 @@ BEGIN
       'anexos_admin',
       -- 27/09/2026: jornadas. Leem a conta de quem chamou
       -- (exige_master_editavel) e so mexem na conta dele (secao 73).
-      'salvar_jornada', 'vincular_jornada'
+      'salvar_jornada', 'vincular_jornada',
+      -- 27/09/2026: intervalo do mapa. Le a conta de quem chamou
+      -- (exige_master_editavel) e so grava pessoa dela (secao 75).
+      'salvar_intervalo_do_mapa'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -9301,5 +9304,117 @@ BEGIN
   PERFORM public.exigir(NOT has_function_privilege('anon', 'public.quadro_validacao(integer, date, date, integer)', 'EXECUTE'),
                         'o visitante sem login nao le o quadro');
 END $$;
+
+-- ===========================================================================
+-- 75. Mapa da jornada; o intervalo do mapa NAO afeta o sistema
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '75. mapa da jornada'; END $$;
+
+-- Quem le a tabela do intervalo do mapa: SO as duas funcoes do mapa. Se
+-- qualquer outra funcao (bot, fila, tarefas, nota, rodizio...), visao ou
+-- regra de acesso passar a ler, este teste reprova.
+DO $$
+DECLARE sobrou text;
+BEGIN
+  SELECT string_agg(p.proname, ', ') INTO sobrou
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND p.prosrc ILIKE '%intervalosdomapa%'
+     AND p.proname NOT IN ('mapa_da_jornada', 'salvar_intervalo_do_mapa');
+  PERFORM public.exigir(sobrou IS NULL,
+    'nenhuma funcao alem do mapa le o intervalo do mapa' || coalesce(' (sobrou: ' || sobrou || ')', ''));
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_views WHERE definition ILIKE '%intervalosdomapa%')
+                        AND NOT EXISTS (SELECT 1 FROM pg_matviews WHERE definition ILIKE '%intervalosdomapa%'),
+                        'nenhuma visao le o intervalo do mapa');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_policies
+                                     WHERE tablename <> 'intervalosdomapa'
+                                       AND coalesce(qual, '') || coalesce(with_check, '') ILIKE '%intervalosdomapa%'),
+                        'nenhuma regra de acesso de outra tabela le o intervalo do mapa');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.intervalosdomapa'::regclass
+                                                             AND NOT tgisinternal),
+                        'gravar o intervalo do mapa nao dispara nada');
+END $$;
+
+-- Uma pessoa de teste na loja 10, turno da noite (jornada 7402 da secao 74),
+-- folga na terca (3).
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cargo, jornadaid, diadefolga)
+  OVERRIDING SYSTEM VALUE VALUES (7551, 1, 'Mapa Noturno', 'Atendente', 7402, 3);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 7551, 10);
+
+-- A prova de que o intervalo do mapa nao muda nada: a decisao do bot a cada
+-- 15 minutos, por 9 dias, para uma pessoa de dia (jornada 7401, que tem
+-- intervalo de silencio) e uma da noite, SEM e COM intervalo do mapa em cima
+-- do expediente. Tem de dar 0 diferencas.
+UPDATE public.funcionarios SET jornadaid = 7401, diadefolga = 0 WHERE funcionarioid = 9972;
+CREATE TEMP TABLE mapa_antes AS
+SELECT p.id, g.t, public.bot_janela(1, p.id, g.t) AS decisao
+  FROM (VALUES (9972), (7551)) p(id)
+ CROSS JOIN generate_series(public.instante_local(public.hoje_da_conta(1) - 1, '00:00'),
+                            public.instante_local(public.hoje_da_conta(1) + 7, '23:45'),
+                            interval '15 minutes') g(t);
+GRANT SELECT ON mapa_antes TO authenticated;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE v jsonb; p jsonb; deu_erro boolean;
+BEGIN
+  PERFORM public.salvar_intervalo_do_mapa(9972, '09:00', '16:00');
+  PERFORM public.salvar_intervalo_do_mapa(7551, '23:00', '05:00');
+  PERFORM public.exigir((SELECT count(*) FROM public.intervalosdomapa) = 2, 'o master grava o intervalo do mapa');
+
+  v := public.mapa_da_jornada(10, 2);
+  SELECT x INTO p FROM jsonb_array_elements(v->'pessoas') x WHERE (x->>'funcionarioid')::integer = 7551;
+  PERFORM public.exigir(v->>'loja' = 'Loja A1' AND p->>'situacao' = 'trabalha'
+                        AND p->>'entrada' = '22:00' AND p->>'saida' = '06:00' AND p->>'cargo' = 'Atendente'
+                        AND p->>'intervaloinicio' = '23:00' AND p->>'intervalofim' = '05:00',
+                        'o mapa traz o turno da noite como esta cadastrado, com o intervalo do mapa');
+  PERFORM public.exigir(NOT (p ? 'cpf') AND NOT (p ? 'telefonewhatsapp'), 'o mapa nao traz dado pessoal alem de nome e cargo');
+  SELECT x INTO p FROM jsonb_array_elements(public.mapa_da_jornada(10, 3)->'pessoas') x
+   WHERE (x->>'funcionarioid')::integer = 7551;
+  PERFORM public.exigir(p->>'situacao' = 'folga', 'no dia de folga, a pessoa aparece de folga');
+  PERFORM public.exigir((public.mapa_da_jornada(10)->>'diasemana')::integer
+                        = extract(dow FROM (public.meu_hoje()->>'hoje')::date)::integer + 1,
+                        'sem dia escolhido, o mapa abre no dia da semana de hoje');
+
+  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, '12:00', NULL); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'intervalo sem fim e recusado');
+  BEGIN PERFORM public.mapa_da_jornada(10, 8); deu_erro := false;
+  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'dia da semana fora de 1 a 7 e recusado');
+  BEGIN INSERT INTO public.intervalosdomapa (funcionarioid, inicio, fim) VALUES (100, '12:00', '13:00'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o navegador nao grava a tabela direto: so pela funcao');
+END $$;
+
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+DECLARE v jsonb := public.mapa_da_jornada(10, 2); deu_erro boolean;
+BEGIN
+  PERFORM public.exigir(jsonb_array_length(v->'pessoas') = 0 AND v->>'loja' IS NULL,
+                        'a conta B nao ve o mapa de uma loja de A');
+  PERFORM public.exigir((SELECT count(*) FROM public.intervalosdomapa) = 0, 'a conta B nao le o intervalo do mapa de A');
+  BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, '10:00', '11:00'); deu_erro := false;
+  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'a conta B nao grava intervalo em pessoa de A');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+DO $$
+DECLARE v_casos integer; v_dif integer;
+BEGIN
+  SELECT count(*), count(*) FILTER (WHERE a.decisao IS DISTINCT FROM public.bot_janela(1, a.id, a.t))
+    INTO v_casos, v_dif FROM mapa_antes a;
+  RAISE NOTICE '   intervalo do mapa: % decisoes do bot comparadas, % diferencas', v_casos, v_dif;
+  PERFORM public.exigir(v_casos > 1500 AND v_dif = 0,
+                        'com o intervalo do mapa em cima do expediente, o bot decide exatamente igual');
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.mapa_da_jornada(integer, integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.salvar_intervalo_do_mapa(integer, time, time)', 'EXECUTE'),
+                        'o visitante sem login nao ve nem grava o mapa');
+END $$;
+UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid IN (9972, 7551);
+DROP TABLE mapa_antes;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

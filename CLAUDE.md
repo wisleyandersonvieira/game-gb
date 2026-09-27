@@ -75,6 +75,8 @@ O sistema **não** acompanha entrada e saída de turno, e nenhuma tela mostra "q
 
 Na prática: não construa contagem de presença, relógio de ponto, "na equipe agora" nem nada que se pareça, em tela nenhuma — e menos ainda na TV, que fica à vista de todos. Se um pedido levar a isso, diga antes de implementar. (Recusado em 25/09/2026, na faixa de números do rodapé da TV.)
 
+O **Mapa da jornada** (Pessoas → Jornada → Mapa, 27/09/2026) é **planejamento de escala**, montado só com o cadastro: não olha a hora de agora, não destaca "a hora atual" e não vai para a TV. O **intervalo do mapa** (`intervalosdomapa`, "Intervalo (planejamento, não afeta o sistema)") é outro campo que o intervalo da jornada (silêncio do bot): **nenhuma regra do sistema pode lê-lo** — bot, tarefa, liberação, nota, rodízio. Só `mapa_da_jornada` e `salvar_intervalo_do_mapa`; a seção 75 do teste de isolamento e `src/jornada/mapa-catraca.test.ts` reprovam qualquer outra leitura. Se um dia ele precisar afetar algo, é decisão do Wisley, com prova de antes e depois.
+
 ## Como fechar uma entrega (obrigatório)
 Commit **não** é publicação: o Lovable publica do GitHub, e commit que não foi **enviado** não chega no ar. Isso já custou um dia de teste em 25/09/2026, com o Wisley procurando defeito numa tela que nunca tinha sido publicada.
 

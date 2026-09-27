@@ -209,7 +209,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE table_schema = 'public' AND table_name = 'jornadas')),
   (230, 'OPERACAO', 'versao', 'quadro (historico por periodo) e intervalo cortado no fim do expediente', 'aplicar-quadro-e-intervalo.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'quadro_validacao'))
+                WHERE n.nspname = 'public' AND p.proname = 'quadro_validacao')),
+  (240, 'PESSOAS', 'versao', 'mapa da jornada (intervalo de planejamento)', 'aplicar-mapa-da-jornada.sql',
+       EXISTS (SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'intervalosdomapa'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

@@ -80,6 +80,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `redes` | **plataforma** (sem conta) | redeid | — |
 | `jornadas` | conta | jornadaid | — |
 | `jornadasdias` | conta | (jornadaid, diasemana) | jornadas |
+| `intervalosdomapa` | conta | (contaid, funcionarioid) | funcionarios |
 | `senhasgestor` | conta (vazia no admin geral) | userid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
 | `tarefas` | conta | tarefaid |  |
@@ -1317,3 +1318,14 @@ Horários de **expediente** com nome ("Balcão manhã"), para o sistema saber **
 | entrada / saida | time | saída menor que a entrada = turno da noite. Dia sem linha = sem horário naquele dia |
 
 `funcionarios.jornadaid` (vazio = sem jornada: não recebe as mensagens do dia) substituiu `horarionotificacao` e `horariosaida`, que foram migradas e **apagadas**. A **folga** continua sendo da pessoa. Quem lê: `jornada_da_pessoa` (mesmas respostas de antes, mais o intervalo), usada pelo bot (`bot_janela`, `rotina_mensagens`). Quem grava: `salvar_jornada` (tudo ou nada) e `vincular_jornada`.
+
+## intervalosdomapa (27/09/2026)
+O **intervalo de PLANEJAMENTO** do Mapa da jornada ("Intervalo (planejamento, não afeta o sistema)"), um por pessoa, mostrado nos dias em que ela trabalha. Serve **só para enxergar e imprimir a escala**.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| contaid, funcionarioid | integer | chave; → funcionarios (junto com contaid). Apagada a pessoa, vai junto |
+| inicio / fim | time | fim menor que o começo = cruza a meia-noite |
+| atualizadoem | timestamptz | |
+
+**Não confundir com `jornadas.pausainicio/pausafim`** (o silêncio do bot, que continua igual). Este aqui **não afeta nada**: não cala o bot, não mexe em tarefa, liberação, nota nem rodízio. **Só duas funções tocam a tabela:** `mapa_da_jornada` (lê, junto com a jornada e a folga, uma loja num dia da semana) e `salvar_intervalo_do_mapa` (grava, só o master). A seção 75 do teste de isolamento e `src/jornada/mapa-catraca.test.ts` reprovam qualquer outra leitura.
