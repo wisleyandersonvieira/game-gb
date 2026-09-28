@@ -440,3 +440,35 @@ sistema nunca apaga login de gestor; só o painel do Supabase faria. (No livro
 de pontos o apagamento já é barrado, por acaso: o livro não aceita alteração.)
 Proposta: login que já fez algo nunca se apaga, só se desativa — com a trava no
 banco, como a do último master.
+
+---
+
+## Três pedidos antes da parte 2 (29/09/2026)
+
+**1. As 61 tabelas cegas:** a seção 92 agora dá a TODA tabela com conta dados
+de pelo menos duas contas (copia uma linha existente para a outra conta, ou
+monta uma linha mínima coluna por coluna, respeitando as listas de valores), e
+desfaz tudo no fim. **94 de 94 cobertas.** Tabela nova que o gerador não
+conseguir preencher reprova com o nome e o motivo. Provado: um vazamento em
+`fornecedores` (antes vazia no teste), com a checagem de texto desligada, foi
+pego por 13 logins.
+
+**2. Negações pelo resultado:** antes, **386** testes de negação provavam só
+com "deu erro" (382 sozinhos + 4 "deu erro E o saldo não mudou"). Depois, **0**:
+347 conferem que o banco inteiro não mudou e 39 que nada voltou. Nenhum passou a
+reprovar (nenhuma porta nova). Provado: sem a trava do CPF, o teste convertido
+reprovou; com a foto cega, passou (e o seguinte pegou) — é a foto que decide.
+Catraca `src/ui/negacao-catraca.test.ts`, também provada reprovando. Os 27
+`toThrow` dos testes das telas são de funções puras (validar senha, foto): lá a
+recusa É o resultado, não há estado.
+
+**3. Login que já fez alguma coisa não se apaga, só se desativa (aprovado).**
+Condições decididas, para construir no começo da parte 2:
+- (a) o histórico guarda o NOME de quem fez no momento, não só o apontamento;
+- (b) **exclusão de dados (LGPD), em duas linhas:**
+  1. o pedido é atendido por uma função do admin que APAGA os dados pessoais
+     (nome, e-mail, CPF, telefone) do cadastro e do login, bloqueia o login e
+     troca o nome guardado nos registros por "pessoa removida";
+  2. os ATOS continuam (o que foi feito, quando, quantos pontos), presos a um
+     identificador sem dado pessoal — a trava impede apagar o ato, nunca
+     impede atender o pedido.

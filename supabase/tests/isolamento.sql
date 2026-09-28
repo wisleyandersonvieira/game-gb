@@ -57,6 +57,59 @@ END $$;
 GRANT EXECUTE ON FUNCTION public.pular(text, text) TO authenticated;
 
 -- ---------------------------------------------------------------------------
+-- TESTE DE NEGACAO CONFERE O RESULTADO, NUNCA O ERRO (regra do Wisley,
+-- 29/09/2026). "Nao deu erro" e "nao aconteceu nada" sao coisas diferentes:
+-- tres sabotagens em dois dias passaram ou reprovaram pelo motivo errado
+-- porque o teste so olhava SE DEU ERRO. Agora:
+--   * negacao de GRAVACAO: guardar_foto() antes, nada_mudou() depois. A foto
+--     e o banco INTEIRO (todas as tabelas de public, os logins e o Storage),
+--     lido por cima das regras de acesso;
+--   * negacao de LEITURA: guardar_resultado(o que voltou), nada_voltou()
+--     depois: erro, vazio ou so campos nulos.
+-- Os erros ESPERADOS continuam sendo pegos; erro de outro tipo (um nome
+-- errado no proprio teste, por exemplo) derruba a rodada, em vez de passar.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.foto_do_banco()
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE t record; h text; tudo text := '';
+BEGIN
+  FOR t IN SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r' AND (n.nspname = 'public' OR (n.nspname, c.relname) IN (('auth', 'users'), ('storage', 'objects')))
+            ORDER BY 1, 2 LOOP
+    EXECUTE format('SELECT md5(coalesce(string_agg(md5(x::text), %L ORDER BY md5(x::text)), %L)) FROM %I.%I x',
+                   '', '', t.nspname, t.relname) INTO h;
+    tudo := tudo || t.relname || ':' || h || ';';
+  END LOOP;
+  RETURN md5(tudo);
+END $$;
+CREATE OR REPLACE FUNCTION public.guardar_foto()
+RETURNS void LANGUAGE sql AS $$ SELECT set_config('teste.foto', public.foto_do_banco(), false); $$;
+CREATE OR REPLACE FUNCTION public.nada_mudou()
+RETURNS boolean LANGUAGE sql AS $$ SELECT public.foto_do_banco() = current_setting('teste.foto', true); $$;
+CREATE OR REPLACE FUNCTION public.guardar_resultado(p jsonb)
+RETURNS void LANGUAGE sql AS $$ SELECT set_config('teste.voltou', coalesce(p::text, ''), false); $$;
+CREATE OR REPLACE FUNCTION public.limpar_resultado()
+RETURNS void LANGUAGE sql AS $$ SELECT set_config('teste.voltou', '', false); $$;
+-- Nada voltou: nenhuma linha, ou so valores nulos/vazios.
+CREATE OR REPLACE FUNCTION public.nada_voltou()
+RETURNS boolean LANGUAGE plpgsql AS $$
+DECLARE v text := coalesce(current_setting('teste.voltou', true), '');
+BEGIN
+  IF v = '' OR v = 'null' THEN RETURN true; END IF;
+  RETURN NOT EXISTS (
+    WITH RECURSIVE folhas(j) AS (
+      SELECT v::jsonb
+      UNION ALL
+      SELECT e FROM folhas f, LATERAL (
+        SELECT x FROM jsonb_array_elements(CASE WHEN jsonb_typeof(f.j) = 'array' THEN f.j ELSE '[]' END) x
+        UNION ALL
+        SELECT y FROM jsonb_each(CASE WHEN jsonb_typeof(f.j) = 'object' THEN f.j ELSE '{}' END) kv(k, y)) z(e))
+    SELECT 1 FROM folhas WHERE jsonb_typeof(j) NOT IN ('null', 'array', 'object'));
+END $$;
+GRANT EXECUTE ON FUNCTION public.foto_do_banco(), public.guardar_foto(), public.nada_mudou(),
+  public.guardar_resultado(jsonb), public.limpar_resultado(), public.nada_voltou() TO authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Preparacao (como dono do banco: a RLS nao se aplica aqui)
 -- ---------------------------------------------------------------------------
 
@@ -210,21 +263,23 @@ DECLARE deu_erro boolean;
 BEGIN
   RAISE NOTICE '4. o contaid vindo do navegador nao e acreditado';
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.funcionarios (contaid, nomecompleto) VALUES (2, 'Infiltrado');
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'A nao cria funcionario dentro da conta B (contaid forjado)');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao cria funcionario dentro da conta B (contaid forjado)');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.lojas (contaid, nome) VALUES (2, 'Loja infiltrada');
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'A nao cria loja dentro da conta B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao cria loja dentro da conta B');
 END $$;
 
 -- ===========================================================================
@@ -236,29 +291,32 @@ DECLARE deu_erro boolean;
 BEGIN
   RAISE NOTICE '5. vinculos nao atravessam contas';
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 20);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'funcionario de A nao entra em loja de B');
+  PERFORM public.exigir(public.nada_mudou(), 'funcionario de A nao entra em loja de B');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (1000, 20);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'tarefa de A nao vale em loja de B');
+  PERFORM public.exigir(public.nada_mudou(), 'tarefa de A nao vale em loja de B');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.entregas (tarefaid, funcionarioid, lojaid) VALUES (1000, 200, 10);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'entrega nao mistura funcionario de B com loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'entrega nao mistura funcionario de B com loja de A');
 END $$;
 
 -- ===========================================================================
@@ -270,6 +328,7 @@ DECLARE deu_erro boolean;
 BEGIN
   RAISE NOTICE '6. regra de atribuicao garantida pelo banco';
 
+  PERFORM public.guardar_foto();
   BEGIN
     -- Ana (100) nao trabalha na Loja A2 (11)
     INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 11);
@@ -277,8 +336,9 @@ BEGIN
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'nao atribui a funcionario que nao trabalha naquela loja');
+  PERFORM public.exigir(public.nada_mudou(), 'nao atribui a funcionario que nao trabalha naquela loja');
 
+  PERFORM public.guardar_foto();
   BEGIN
     -- a tarefa 1000 nao vale na Loja A2 (11)
     INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11);
@@ -287,7 +347,7 @@ BEGIN
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'nao atribui tarefa que nao vale naquela loja');
+  PERFORM public.exigir(public.nada_mudou(), 'nao atribui tarefa que nao vale naquela loja');
 END $$;
 
 -- ===========================================================================
@@ -299,13 +359,14 @@ DECLARE deu_erro boolean; afetadas integer;
 BEGIN
   RAISE NOTICE '7. tirar alguem da loja = desativar o vinculo';
 
+  PERFORM public.guardar_foto();
   BEGIN
     DELETE FROM public.funcionarioslojas WHERE funcionarioid = 100 AND lojaid = 10;
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'nao apaga vinculo que ja tem historico (ON DELETE RESTRICT)');
+  PERFORM public.exigir(public.nada_mudou(), 'nao apaga vinculo que ja tem historico (ON DELETE RESTRICT)');
 
   UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 100 AND lojaid = 10;
   GET DIAGNOSTICS afetadas = ROW_COUNT;
@@ -327,13 +388,14 @@ BEGIN
 
   PERFORM public.exigir((SELECT count(*) FROM storage.objects) = 1, 'A so ve o proprio arquivo');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '2/20/invasao.jpg');
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'A nao grava na pasta da conta B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao grava na pasta da conta B');
 END $$;
 
 -- ===========================================================================
@@ -345,13 +407,14 @@ DECLARE deu_erro boolean; nova integer; afetadas integer;
 BEGIN
   RAISE NOTICE '9. limite de lojas da conta (limite 2, ja usa 2)';
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.lojas (nome) VALUES ('Loja A3 (acima do limite)');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'conta com limite 2 nao cria a terceira loja ativa');
+  PERFORM public.exigir(public.nada_mudou(), 'conta com limite 2 nao cria a terceira loja ativa');
 
   -- Loja desativada nao ocupa vaga.
   UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
@@ -362,13 +425,14 @@ BEGIN
   PERFORM public.exigir(nova IS NOT NULL, 'com uma loja desativada, a vaga liberada permite criar outra');
 
   -- Reativar tambem passa pela conferencia do limite.
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'reativar loja acima do limite e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'reativar loja acima do limite e recusado');
 
   -- Desativar nao apaga nada: o historico da loja continua inteiro.
   UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
@@ -400,13 +464,14 @@ BEGIN
   GET DIAGNOSTICS afetadas = ROW_COUNT;
   PERFORM public.exigir(afetadas = 0, 'A nao desativa a loja de B');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 20);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'A nao usa a loja de B numa atribuicao');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao usa a loja de B numa atribuicao');
 END $$;
 
 -- ===========================================================================
@@ -421,21 +486,23 @@ BEGIN
   RAISE NOTICE '10. conta suspensa: le, mas nao escreve';
   PERFORM public.exigir((SELECT public.minha_conta()) = 3,          'a conta suspensa continua identificada');
   PERFORM public.exigir((SELECT public.minha_conta_editavel()) IS NULL, 'a conta suspensa nao e editavel');
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.funcionarios (nomecompleto) VALUES ('Novo em conta suspensa');
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR not_null_violation OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao cadastra funcionario');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao cadastra funcionario');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.lojas (nome) VALUES ('Loja em conta suspensa');
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR not_null_violation OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao cria loja');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao cria loja');
 END $$;
 
 -- A conta suspensa continua enxergando o que e dela (so leitura de verdade).
@@ -518,17 +585,19 @@ BEGIN
   GET DIAGNOSTICS afetadas = ROW_COUNT;
   PERFORM public.exigir(afetadas = 0, 'master nao apaga a conta de outro cliente');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.contas (nome, email) VALUES ('Conta pirata', 'pirata@exemplo.com');
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'master nao cria conta nova (so o admin geral)');
+  PERFORM public.exigir(public.nada_mudou(), 'master nao cria conta nova (so o admin geral)');
 
   -- Nem se auto-inscreve na conta alheia para enxerga-la depois.
   PERFORM public.exigir((SELECT count(*) FROM public.contasusuarios WHERE contaid = 2) = 0,
                         'master nao le os usuarios de outro cliente');
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.contasusuarios (contaid, userid)
     VALUES (2, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
@@ -536,7 +605,7 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege OR unique_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'master nao se adiciona a conta de outro cliente');
+  PERFORM public.exigir(public.nada_mudou(), 'master nao se adiciona a conta de outro cliente');
 END $$;
 
 -- ===========================================================================
@@ -579,13 +648,14 @@ BEGIN
   -- 28/09/2026: virou tarefa comum. Apagar segue a regra de qualquer
   -- tarefa: ligada a uma loja, o banco segura (a mesma chave de todas), e nao
   -- mais a trava especial "do sistema".
+  PERFORM public.guardar_foto();
   BEGIN
     DELETE FROM public.tarefas WHERE sistema = 'feedback_diario';
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
   END;
-  PERFORM public.exigir(deu_erro, 'tarefa do sistema se apaga como qualquer outra (ligada a loja, o banco segura)');
+  PERFORM public.exigir(public.nada_mudou(), 'tarefa do sistema se apaga como qualquer outra (ligada a loja, o banco segura)');
 
   -- Mas pode ser editada.
   UPDATE public.tarefas SET titulo = 'Feedback do dia' WHERE sistema = 'feedback_diario';
@@ -701,30 +771,34 @@ BEGIN
   RAISE NOTICE '17. aprovar, recusar e estornar';
 
   -- Pontos e status so mudam pelas funcoes.
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.entregas SET statusvalidacao = 'Aprovada' WHERE entregaid = ea;
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem aprova direto na tabela, so pela funcao');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem aprova direto na tabela, so pela funcao');
 
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.funcionarios SET saldopontos = 999 WHERE funcionarioid = 100;
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem mexe no saldo direto na tabela');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem mexe no saldo direto na tabela');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.funcionarios (nomecompleto, saldopontos) VALUES ('Rico', 1000);
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem cadastra funcionario ja com saldo');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem cadastra funcionario ja com saldo');
 
   -- Recusar sem motivo.
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.recusar_entrega(ea, '   ');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'recusar sem motivo e recusado pelo banco');
+  PERFORM public.exigir(public.nada_mudou(), 'recusar sem motivo e recusado pelo banco');
 
   -- Aprovar uma vez, e tentar de novo.
   creditou := public.aprovar_entrega(ea);
@@ -736,20 +810,22 @@ BEGIN
                          FROM public.entregas WHERE entregaid = ea),
                         'a aprovacao tem data propria e a data de envio continua la');
 
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.aprovar_entrega(ea);
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'aprovar de novo e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'aprovar de novo e recusado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 5,
                         'aprovar duas vezes NAO credita em dobro');
 
   -- Estornar.
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.estornar_entrega(ea, '');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'estornar sem motivo e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'estornar sem motivo e recusado');
 
   saldo := public.estornar_entrega(ea, 'Foto de outro dia');
   PERFORM public.exigir(saldo = 0, 'estornar desconta os pontos do saldo');
@@ -760,20 +836,22 @@ BEGIN
                          FROM public.entregas WHERE entregaid = ea),
                         'o estorno registra quem, quando e por que');
 
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.estornar_entrega(ea, 'de novo');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'estornar de novo e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'estornar de novo e recusado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 0,
                         'estornar duas vezes NAO desconta em dobro');
 
   -- Foto fora da pasta da propria loja.
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.registrar_entrega(5000, NULL, '2/20/foto.jpg');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'foto fora da pasta da propria loja e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'foto fora da pasta da propria loja e recusada');
 END $$;
 
 DO $$
@@ -785,11 +863,12 @@ BEGIN
   VALUES (1000, 100, 10, 'Diaria') RETURNING atribuicaoid INTO atr;
 
   e1 := public.registrar_entrega(atr, 'Feito', NULL, false);
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.registrar_entrega(atr);
     deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'segunda entrega da mesma atribuicao no mesmo dia e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'segunda entrega da mesma atribuicao no mesmo dia e recusada');
 
   PERFORM public.recusar_entrega(e1, 'Sem foto');
   e2 := public.registrar_entrega(atr, NULL, NULL, true);
@@ -812,21 +891,25 @@ DECLARE eb integer := current_setting('teste.entrega_b')::integer; deu_erro bool
 BEGIN
   RAISE NOTICE '17c. entregas de outro cliente';
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.aprovar_entrega(eb); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao aprova entrega de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao aprova entrega de B');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.recusar_entrega(eb, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao recusa entrega de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao recusa entrega de B');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.estornar_entrega(eb, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao estorna entrega de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao estorna entrega de B');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_entrega(6000); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao registra entrega em atribuicao de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao registra entrega em atribuicao de B');
 
   PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE name LIKE '2/%') = 0,
                         'A nao ve nenhuma foto de B');
@@ -878,17 +961,19 @@ BEGIN
   PERFORM public.exigir((SELECT gestorid FROM public.lojas WHERE lojaid = 10) = 100,
                         'quem trabalha na loja pode ser o gestor dela');
 
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.lojas SET gestorid = 101 WHERE lojaid = 10;
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem nao trabalha na loja nao pode ser o gestor');
+  PERFORM public.exigir(public.nada_mudou(), 'quem nao trabalha na loja nao pode ser o gestor');
 
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.lojas SET responsavelagendamentosid = 200 WHERE lojaid = 10;
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'funcionario de outro cliente nao pode ser o responsavel');
+  PERFORM public.exigir(public.nada_mudou(), 'funcionario de outro cliente nao pode ser o responsavel');
 
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoes
                                     WHERE chave IN ('ID_GESTOR_PADRAO', 'RESPONSAVEL_AGENDAMENTOS_ID')),
@@ -919,9 +1004,10 @@ BEGIN
     'a barra fecha: total = aprovadas + em validacao + em andamento + para fazer + ainda nao liberadas');
   PERFORM public.exigir(p::text NOT LIKE '%id"%', 'o painel nao expoe nenhum id');
 
-  BEGIN PERFORM public.painel_da_loja(20); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.painel_da_loja(20) r)); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao ve o painel da loja de B');
+  PERFORM public.exigir(public.nada_voltou(), 'A nao ve o painel da loja de B');
 
   PERFORM public.exigir(public.resumo_das_lojas()::text NOT LIKE '%Loja B1%', 'o resumo de A nao tem lojas de B');
   PERFORM public.exigir(jsonb_array_length(public.resumo_das_lojas()) = (SELECT count(*) FROM public.lojas WHERE ativa),
@@ -931,17 +1017,20 @@ BEGIN
   PERFORM set_config('teste.tv_a2', public.criar_link_tv(11, 'TV da cozinha'), false);
   PERFORM public.exigir(length(current_setting('teste.tv_a')) = 64, 'o codigo do link tem 64 caracteres');
 
-  BEGIN PERFORM tokenhash FROM public.linkstv; deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM (SELECT tokenhash FROM public.linkstv) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono le a impressao digital do link');
+  PERFORM public.exigir(public.nada_voltou(), 'nem o dono le a impressao digital do link');
 
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.linkstv (lojaid, nome, tokenhash) VALUES (10, 'pirata', repeat('a', 64)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'link so nasce pela funcao');
+  PERFORM public.exigir(public.nada_mudou(), 'link so nasce pela funcao');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_link_tv(20, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao cria link de TV para a loja de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao cria link de TV para a loja de B');
 END $$;
 
 RESET ROLE;
@@ -956,15 +1045,17 @@ DECLARE deu_erro boolean;
 BEGIN
   PERFORM set_config('teste.tv_b', public.criar_link_tv(20, 'TV de B'), false);
 
-  BEGIN PERFORM public.painel_da_loja(10); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.painel_da_loja(10) r)); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao ve o painel da loja de A');
+  PERFORM public.exigir(public.nada_voltou(), 'B nao ve o painel da loja de A');
 
   PERFORM public.exigir((SELECT count(*) FROM public.linkstv) = 1, 'B so ve o proprio link de TV');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.revogar_link_tv(current_setting('teste.id_tv_a')::integer); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao revoga o link de TV de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao revoga o link de TV de A');
 END $$;
 
 -- Como um visitante sem login (a TV).
@@ -1075,9 +1166,10 @@ BEGIN
   INSERT INTO public.produtosloja (nome, custoempontos, estoquedisponivel) VALUES ('Caneca', 1, 0)    RETURNING produtoid INTO caneca;
   PERFORM set_config('teste.bombom', bombom::text, false);
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, bombom); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'com saldo negativo (-3) nao se resgata nada');
+  PERFORM public.exigir(public.nada_mudou(), 'com saldo negativo (-3) nao se resgata nada');
 
   INSERT INTO public.tarefas (titulo, pontos) VALUES ('Tarefa grande', 30) RETURNING tarefaid INTO t;
   INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (t, 10);
@@ -1087,13 +1179,15 @@ BEGIN
   SELECT saldopontos INTO saldo FROM public.funcionarios WHERE funcionarioid = 100;
   PERFORM public.exigir(saldo = 27, 'aprovar 30 pontos leva o saldo de -3 a 27');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, caneca); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'premio com estoque 0 (esgotado) nao se resgata');
+  PERFORM public.exigir(public.nada_mudou(), 'premio com estoque 0 (esgotado) nao se resgata');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, camiseta); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'resgatar sem saldo suficiente e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'resgatar sem saldo suficiente e recusado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
                         'tentativas recusadas nao mexem no saldo');
 
@@ -1104,17 +1198,20 @@ BEGIN
                     AND (SELECT status FROM public.resgates WHERE resgateid = r) = 'Entregue',
                         'resgatar desconta saldo e estoque de uma vez (e ja entrega)');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, bombom); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o estoque acabou: o segundo bombom e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'o estoque acabou: o segundo bombom e recusado');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.cancelar_troca(r, 'desistiu'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'resgate ja entregue nao se cancela (se estorna)');
+  PERFORM public.exigir(public.nada_mudou(), 'resgate ja entregue nao se cancela (se estorna)');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.estornar_troca(r, '  '); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'estornar resgate sem motivo e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'estornar resgate sem motivo e recusado');
 
   PERFORM public.estornar_troca(r, 'Veio estragado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27
@@ -1122,9 +1219,10 @@ BEGIN
                     AND (SELECT status FROM public.resgates WHERE resgateid = r) = 'Estornado',
                         'estornar devolve os pontos e o estoque');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.estornar_troca(r, 'de novo'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
+  PERFORM public.exigir(public.nada_mudou() AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
                         'estornar duas vezes NAO devolve em dobro');
 
   r := public.registrar_troca(100, bombom, NULL, false);
@@ -1136,9 +1234,10 @@ BEGIN
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27
                     AND (SELECT estoquedisponivel FROM public.produtosloja WHERE produtoid = bombom) = 1,
                         'cancelar devolve os pontos e o estoque');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.cancelar_troca(r, 'de novo'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
+  PERFORM public.exigir(public.nada_mudou() AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 27,
                         'cancelar duas vezes NAO devolve em dobro');
 
   r := public.registrar_troca(100, bombom, NULL, false);
@@ -1146,13 +1245,15 @@ BEGIN
   PERFORM public.exigir((SELECT status FROM public.resgates WHERE resgateid = r) = 'Entregue'
                     AND (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 17,
                         'entregar um pendente nao cobra de novo');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.concluir_troca(r); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'entregar duas vezes e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'entregar duas vezes e recusado');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.resgates SET status = 'Cancelado' WHERE resgateid = r; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'resgate so muda pelas funcoes');
+  PERFORM public.exigir(public.nada_mudou(), 'resgate so muda pelas funcoes');
 END $$;
 
 DO $$
@@ -1168,13 +1269,15 @@ BEGIN
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 6,
                         'a comanda desconta os pontos');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca_por_valor(100, 15.50); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'comanda acima do saldo e recusada pelo banco');
+  PERFORM public.exigir(public.nada_mudou(), 'comanda acima do saldo e recusada pelo banco');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca_por_valor(100, 0); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'comanda de valor zero e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'comanda de valor zero e recusada');
 
   PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.05');
   r2 := public.registrar_troca_por_valor(100, 0.30);
@@ -1184,18 +1287,21 @@ BEGIN
   PERFORM public.exigir(linha.pontosgastos = 11 AND linha.valorreais = 0.31 AND linha.taxaconversao = 0.03,
                         'a comanda antiga mantem o valor, os pontos e a taxa que registrou');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, (SELECT produtoid FROM public.produtosloja WHERE sistema = 'abate_comanda'));
         deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o premio do sistema nao sai pelo catalogo');
+  PERFORM public.exigir(public.nada_mudou(), 'o premio do sistema nao sai pelo catalogo');
 
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.produtosloja WHERE sistema = 'abate_comanda'; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o premio do sistema nao pode ser apagado');
+  PERFORM public.exigir(public.nada_mudou(), 'o premio do sistema nao pode ser apagado');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.produtosloja SET sistema = 'abate_comanda' WHERE nome = 'Camiseta'; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem marca um premio comum como do sistema');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem marca um premio comum como do sistema');
 
   PERFORM public.estornar_troca(r, 'Lancado errado');
   PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 100) = 11,
@@ -1225,14 +1331,16 @@ BEGIN
                     AND jsonb_array_length(x->'movimentos') = 0,
                         'periodo futuro: saldo inicial = saldo atual, sem movimentos');
 
-  BEGIN PERFORM public.extrato_pontos(200, DATE '2000-01-01', DATE '2100-01-01'); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.extrato_pontos(200, DATE '2000-01-01', DATE '2100-01-01') r)); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao ve o extrato de ninguem de B');
+  PERFORM public.exigir(public.nada_voltou(), 'A nao ve o extrato de ninguem de B');
 
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.movimentospontos (funcionarioid, tipo, pontos, descricao) VALUES (100, 'bonus', 1000, 'presente');
         deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o navegador nao grava movimento de pontos');
+  PERFORM public.exigir(public.nada_mudou(), 'o navegador nao grava movimento de pontos');
 END $$;
 
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -1248,26 +1356,30 @@ BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.resgates) = 0, 'B nao ve os resgates de A');
   PERFORM public.exigir((SELECT count(*) FROM public.movimentospontos) = 0, 'B nao ve os movimentos de A');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, pb); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao resgata para um funcionario de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao resgata para um funcionario de A');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.estornar_troca(current_setting('teste.resgate_a')::integer, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao estorna resgate de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao estorna resgate de A');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca_por_valor(100, 1); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao faz comanda para funcionario de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao faz comanda para funcionario de A');
 END $$;
 
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_troca(100, current_setting('teste.premio_b')::integer); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao resgata um premio de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao resgata um premio de B');
 END $$;
 
 -- ===========================================================================
@@ -1377,39 +1489,46 @@ BEGIN
                         'o estorno tira so os pontos da tarefa (34 - 3 = 31)');
 
   -- A regra nao muda depois de criada; nome, bonus e ativa podem mudar.
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.conquistas SET criteriovalor = 1 WHERE conquistaid = k2; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a regra da conquista nao muda depois de criada');
+  PERFORM public.exigir(public.nada_mudou(), 'a regra da conquista nao muda depois de criada');
   UPDATE public.conquistas SET nome = 'Tres tarefas!', pontosbonus = 12 WHERE conquistaid = k2;
   PERFORM public.exigir((SELECT nome FROM public.conquistas WHERE conquistaid = k2) = 'Tres tarefas!', 'o nome e o bonus podem mudar');
 
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.conquistasfuncionarios (funcionarioid, conquistaid) VALUES (100, k6); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem concede conquista na mao');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem concede conquista na mao');
 
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.conquistas (nome, descricao, criteriotipo, criteriovalor) VALUES ('X', 'X', 'total_tarefas_aprovadas', 1);
         deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conquista so e criada pela funcao (que decide o historico)');
+  PERFORM public.exigir(public.nada_mudou(), 'conquista so e criada pela funcao (que decide o historico)');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_conquista('X', NULL, NULL, 'tipo_inventado', 1, NULL, 0, true); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'tipo de regra desconhecido e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'tipo de regra desconhecido e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_conquista('X', NULL, NULL, 'tarefas_aprovadas_periodo', 3, NULL, 0, true); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, '"N tarefas em X dias" exige o X');
+  PERFORM public.exigir(public.nada_mudou(), '"N tarefas em X dias" exige o X');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_conquista('X', NULL, NULL, 'total_tarefas_aprovadas', 0, NULL, 0, true); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'meta zero e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'meta zero e recusada');
 END $$;
 
 RESET ROLE;
 DO $$
 DECLARE deu_erro boolean; k5 integer := current_setting('teste.k5')::integer;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.conquistas SET criteriovalor = 1 WHERE conquistaid = k5; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco muda a regra de uma conquista');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco muda a regra de uma conquista');
 
   PERFORM public.exigir(public.avaliar_conquistas(1, 110) = 0, 'avaliar de novo nao concede nada repetido');
 
@@ -1532,15 +1651,18 @@ DECLARE deu_erro boolean; h record; v text;
 BEGIN
   RAISE NOTICE '26. configuracoes';
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'taxa zero e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'taxa zero e recusada');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '-0.01'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'taxa negativa e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'taxa negativa e recusada');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', 'abc'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'taxa que nao e numero e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'taxa que nao e numero e recusada');
 
   v := public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0,04');
   PERFORM public.exigir(v = '0.04', 'taxa com virgula e aceita (0,04)');
@@ -1550,32 +1672,39 @@ BEGIN
                         'a mudanca fica registrada: quem, quando, valor antigo e novo');
   PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.03');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('HORARIO_FECHAMENTO_MENSAL', '25:00'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'horario invalido e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'horario invalido e recusado');
   PERFORM public.exigir(public.alterar_configuracao('HORARIO_FECHAMENTO_MENSAL', '07:30') = '07:30', 'horario valido e aceito');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('PONTOS_BONUS_NOTA_FISCAL', '-5'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'pontos de bonus negativos sao recusados');
+  PERFORM public.exigir(public.nada_mudou(), 'pontos de bonus negativos sao recusados');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('PONTOS_BONUS_NOTA_FISCAL', '2.5'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'pontos de bonus quebrados sao recusados');
+  PERFORM public.exigir(public.nada_mudou(), 'pontos de bonus quebrados sao recusados');
   PERFORM public.exigir(public.alterar_configuracao('PONTOS_BONUS_NOTA_FISCAL', '15') = '15', 'pontos de bonus validos sao aceitos');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('TAREFA_ID_LEITURA', '1'); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'os IDs do sistema nao se alteram pela tela');
+  PERFORM public.exigir(public.nada_mudou(), 'os IDs do sistema nao se alteram pela tela');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('CHAVE_INVENTADA', '1'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'chave que nao existe e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'chave que nao existe e recusada');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.configuracoes SET valor = '9' WHERE chave = 'TAXA_CONVERSAO_PONTO_REAL'; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem altera a tabela direto (so pela funcao, que registra)');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem altera a tabela direto (so pela funcao, que registra)');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.configuracoes (chave, valor) VALUES ('NOVA', '1'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem cria chave nova');
+  PERFORM public.exigir(public.nada_mudou(), 'nem cria chave nova');
 END $$;
 
 SET teste.uid = '12121212-1212-1212-1212-121212121212';
@@ -1591,9 +1720,10 @@ SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('TAXA_CONVERSAO_PONTO_REAL', '0.05'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao altera configuracao');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao altera configuracao');
 END $$;
 
 -- ===========================================================================
@@ -1666,29 +1796,36 @@ BEGIN
                           SELECT 1 FROM jsonb_array_elements(x->'movimentos') m WHERE m->>'descricao' LIKE 'Feedback do dia%'),
                         'o bonus do feedback aparece no extrato, e o extrato bate');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_feedback(120, hoje, 3); deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'feedback duplicado no mesmo dia e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'feedback duplicado no mesmo dia e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_feedback(120, hoje - 2, 5); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'so hoje ou ontem (anteontem e recusado)');
+  PERFORM public.exigir(public.nada_mudou(), 'so hoje ou ontem (anteontem e recusado)');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_feedback(120, hoje + 1, 5); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'amanha tambem e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'amanha tambem e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_feedback(120, hoje - 1, 11); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nota fora de 0 a 10 e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'nota fora de 0 a 10 e recusada');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.feedbacks SET notadia = 10 WHERE feedbackid = f1; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a nota nao se altera pelo navegador');
+  PERFORM public.exigir(public.nada_mudou(), 'a nota nao se altera pelo navegador');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.feedbacks (funcionarioid, datafeedback, notadia) VALUES (120, hoje - 1, 5); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'feedback so entra pela funcao (que paga o bonus pelo livro)');
+  PERFORM public.exigir(public.nada_mudou(), 'feedback so entra pela funcao (que paga o bonus pelo livro)');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.anular_feedback(f1, ''); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'anular exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'anular exige motivo');
   PERFORM public.anular_feedback(f1, 'Lancado na pessoa errada');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.movimentospontos
                                  WHERE feedbackid = f1 AND tipo = 'estorno_bonus' AND pontos = -5),
@@ -1697,9 +1834,10 @@ BEGIN
                         'saldo volta (so fica o bonus da conquista)');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 120 AND conquistaid = k7),
                         'a conquista fica');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.anular_feedback(f1, 'de novo'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao se anula duas vezes (o bonus nao sai em dobro)');
+  PERFORM public.exigir(public.nada_mudou(), 'nao se anula duas vezes (o bonus nao sai em dobro)');
 
   f2 := public.registrar_feedback(120, hoje, 9);
   PERFORM public.exigir(f2 IS NOT NULL, 'depois de anular, o lancamento certo do dia e aceito');
@@ -1711,9 +1849,10 @@ SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_feedback(120, public.dia_em_sao_paulo(now()), 5); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao registra feedback');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao registra feedback');
 END $$;
 
 -- Sequencia de feedback: a folga nao quebra. Edu (121) deu feedback em
@@ -1729,12 +1868,14 @@ SELECT 1, 121, public.dia_em_sao_paulo(now()) - d, 7 FROM unnest(ARRAY[5, 4, 2])
 DO $$
 DECLARE deu_erro boolean; f integer := (SELECT min(feedbackid) FROM public.feedbacks WHERE funcionarioid = 121);
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.feedbacks SET notadia = 0 WHERE feedbackid = f; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco altera a nota');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco altera a nota');
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.feedbacks WHERE feedbackid = f; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem apaga feedback');
+  PERFORM public.exigir(public.nada_mudou(), 'nem apaga feedback');
 END $$;
 
 SET ROLE authenticated;
@@ -1781,12 +1922,14 @@ BEGIN
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x) p WHERE p->>'justificativa' = 'Pendente'),
                         'pendente: continua nas pendencias, marcada como justificativa pendente');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_justificativa(5100, ontem, 'de novo', true); deu_erro := false;
   EXCEPTION WHEN check_violation OR unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'uma justificativa so por tarefa e dia');
+  PERFORM public.exigir(public.nada_mudou(), 'uma justificativa so por tarefa e dia');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.decidir_justificativa(j1, false, NULL); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'recusar exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'recusar exige motivo');
 
   PERFORM public.decidir_justificativa(j1, true);
   PERFORM public.exigir(public.pendencias_da_pessoa(110, ontem, ontem) = '[]'::jsonb,
@@ -1795,9 +1938,10 @@ BEGIN
    WHERE funcionarioid = 110;
   PERFORM public.exigir(depois = antes - 3,
                         'aceita: sai dos pontos possiveis da nota do mes (' || antes || ' -> ' || depois || ')');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.decidir_justificativa(j1, false, 'mudei de ideia'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'justificativa decidida nao muda');
+  PERFORM public.exigir(public.nada_mudou(), 'justificativa decidida nao muda');
 
   -- Recusada: continua pendencia e conta na nota.
   j3 := public.registrar_justificativa(5100, hoje - 2, 'Esqueci', false);
@@ -1810,20 +1954,24 @@ BEGIN
   PERFORM public.registrar_justificativa(5100, hoje, 'Loja fechada hoje', true);
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = 5100),
                         'justificada hoje: sai da lista do que entregar');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_entrega(5100); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e nao da para entregar a tarefa justificada no mesmo dia');
+  PERFORM public.exigir(public.nada_mudou(), 'e nao da para entregar a tarefa justificada no mesmo dia');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_justificativa(5100, hoje + 1, 'amanha', true); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'dia futuro nao se justifica');
+  PERFORM public.exigir(public.nada_mudou(), 'dia futuro nao se justifica');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_justificativa(5100, ontem, '', true); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'justificativa exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'justificativa exige motivo');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.justificativas (lojaid, atribuicaoid, funcionarioid, dia, motivo, status)
         VALUES (10, 5100, 110, hoje - 3, 'na mao', 'Aceita'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'justificativa so entra pela funcao');
+  PERFORM public.exigir(public.nada_mudou(), 'justificativa so entra pela funcao');
 
   x := public.analise_de_tarefas(hoje - 10, hoje, 10);
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x) t
@@ -1866,21 +2014,25 @@ BEGIN
   s1 := public.abrir_solicitacao(10, 100, 'Compra', 'Limpeza', 'Detergente', 5, 'litros');
   PERFORM public.exigir((SELECT status FROM public.solicitacoesinternas WHERE solicitacaoid = s1) = 'Aberta',
                         'nasce aberta');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.abrir_solicitacao(10, 120, 'Compra', NULL, 'Papel'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem pediu precisa trabalhar na loja');
+  PERFORM public.exigir(public.nada_mudou(), 'quem pediu precisa trabalhar na loja');
 
   PERFORM public.mudar_situacao_solicitacao(s1, 'Em andamento');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.mudar_situacao_solicitacao(s1, 'Aberta'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao volta para aberta');
+  PERFORM public.exigir(public.nada_mudou(), 'nao volta para aberta');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.mudar_situacao_solicitacao(s1, 'Recusada'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'recusar exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'recusar exige motivo');
   PERFORM public.mudar_situacao_solicitacao(s1, 'Concluída', 'Comprado no atacado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.mudar_situacao_solicitacao(s1, 'Em andamento'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'concluida e final');
+  PERFORM public.exigir(public.nada_mudou(), 'concluida e final');
 
   SELECT string_agg(coalesce(statusanterior, '-') || '>' || statusnovo, ' ' ORDER BY historicoid) INTO h
     FROM public.solicitacoeshistorico WHERE solicitacaoid = s1;
@@ -1897,12 +2049,14 @@ BEGIN
                            FROM public.solicitacoesinternas WHERE solicitacaoid = s2),
                         'recusada guarda o motivo e a data');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.solicitacoesinternas SET status = 'Aberta' WHERE solicitacaoid = s1; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'situacao so muda pela funcao');
+  PERFORM public.exigir(public.nada_mudou(), 'situacao so muda pela funcao');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.solicitacoeshistorico SET observacao = 'x'; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'historico nao se altera pelo navegador');
+  PERFORM public.exigir(public.nada_mudou(), 'historico nao se altera pelo navegador');
   PERFORM set_config('teste.s1', s1::text, false);
 END $$;
 
@@ -1910,12 +2064,14 @@ RESET ROLE;
 DO $$
 DECLARE deu_erro boolean; s1 integer := current_setting('teste.s1')::integer;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.solicitacoeshistorico SET observacao = 'x' WHERE solicitacaoid = s1; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco altera o historico');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco altera o historico');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.solicitacoesinternas SET status = 'Aberta' WHERE solicitacaoid = s1; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem pula a regra das situacoes');
+  PERFORM public.exigir(public.nada_mudou(), 'nem pula a regra das situacoes');
 END $$;
 
 -- ===========================================================================
@@ -1977,12 +2133,14 @@ BEGIN
   PERFORM public.exigir((SELECT status = 'Tratada' AND resposta IS NOT NULL AND respondidoem IS NOT NULL
                            FROM public.denunciasanonimas WHERE denunciaid = d),
                         'o master marca como tratado e responde');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.denunciasanonimas (mensagem) VALUES ('forjado'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao grava relato');
+  PERFORM public.exigir(public.nada_mudou(), 'o master nao grava relato');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.denunciasanonimas SET mensagem = 'editado'; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem edita o texto');
+  PERFORM public.exigir(public.nada_mudou(), 'nem edita o texto');
   PERFORM set_config('teste.relato', d::text, false);
 END $$;
 
@@ -2001,9 +2159,10 @@ DO $$
 DECLARE deu_erro boolean;
 BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.denunciasanonimas) = 1, 'B le so o relato dela');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.tratar_relato(current_setting('teste.relato')::integer, 'Tratada', 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao trata relato de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao trata relato de A');
 END $$;
 
 RESET ROLE;
@@ -2012,12 +2171,14 @@ DECLARE deu_erro boolean;
 BEGIN
   PERFORM public.exigir((public.consultar_relato(1, current_setting('teste.protocolo'))->>'resposta') = 'Conversamos com a equipe da tarde',
                         'quem enviou ve a resposta pelo protocolo');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.denunciasanonimas SET mensagem = 'x'; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco altera o texto');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco altera o texto');
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.denunciasanonimas; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem apaga relato');
+  PERFORM public.exigir(public.nada_mudou(), 'nem apaga relato');
 END $$;
 
 -- ===========================================================================
@@ -2036,21 +2197,26 @@ BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.solicitacoeshistorico) = 0, 'B nao ve o historico das solicitacoes de A');
   PERFORM public.exigir(public.justificaveis(110, hoje - 1) = '[]'::jsonb, 'B nao ve o que A pode justificar');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_feedback(120, hoje, 5); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao registra feedback para funcionario de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao registra feedback para funcionario de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.anular_feedback((SELECT max(feedbackid) FROM public.feedbacks), 'x'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao anula feedback de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao anula feedback de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_justificativa(5100, hoje - 3, 'invasao', true); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao justifica tarefa de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao justifica tarefa de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.mudar_situacao_solicitacao(current_setting('teste.s1')::integer, 'Recusada', 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao mexe em solicitacao de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao mexe em solicitacao de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.abrir_solicitacao(10, 100, 'Compra', NULL, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao abre solicitacao em loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao abre solicitacao em loja de A');
 END $$;
 
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -2064,9 +2230,10 @@ SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.decidir_justificativa(current_setting('teste.jus')::integer, false, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao decide justificativa de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao decide justificativa de A');
 END $$;
 
 -- ===========================================================================
@@ -2119,9 +2286,10 @@ BEGIN
                         'cada um recebe os pontos da meta do dia (10)');
 
   -- Correcao.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lancar_venda_do_dia(11, ontem, 1500); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'correcao sem motivo e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'correcao sem motivo e recusada');
 
   PERFORM public.lancar_venda_do_dia(11, ontem, 1500, 'Faltou somar o cartao');
   PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE apuracaoid = a1) = 1
@@ -2169,34 +2337,41 @@ BEGIN
                         'mudar a meta especial depois nao muda o dia ja lancado');
 
   -- So o mes atual e o anterior.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lancar_venda_do_dia(11, (date_trunc('month', hoje) - interval '2 months')::date + 4, 100, 'x'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'lancamento ou correcao de dois meses atras e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'lancamento ou correcao de dois meses atras e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lancar_venda_do_dia(11, hoje + 1, 100); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'dia futuro e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'dia futuro e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lancar_venda_do_dia(11, hoje, -1); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'valor negativo e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'valor negativo e recusado');
 
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_pontos(anteontem, hoje, 11) WHERE funcionarioid = 121),
                         'bonus de meta fica fora do ranking');
 
   -- Nada muda por fora das funcoes.
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.metasdiariasapuracoes (lojaid, dataapuracao, valordia) VALUES (11, hoje - 3, 1); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'lancamento so pela funcao (que registra no historico)');
+  PERFORM public.exigir(public.nada_mudou(), 'lancamento so pela funcao (que registra no historico)');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.metaspremiacoes SET estornadoem = now(); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'premio nao se mexe na mao');
+  PERFORM public.exigir(public.nada_mudou(), 'premio nao se mexe na mao');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.metashistorico SET motivo = 'x'; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'historico nao se altera pelo navegador');
+  PERFORM public.exigir(public.nada_mudou(), 'historico nao se altera pelo navegador');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.metasprincipais (lojaid, nomemeta, valormetatotal, datainicio, datafim, pontospremio)
         VALUES (11, 'x', 1, date_trunc('month', hoje)::date, (date_trunc('month', hoje) + interval '1 month - 1 day')::date, 1);
         deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'meta do mes so pela funcao');
+  PERFORM public.exigir(public.nada_mudou(), 'meta do mes so pela funcao');
   PERFORM set_config('teste.a1', a1::text, false);
 END $$;
 
@@ -2230,9 +2405,10 @@ BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE metaprincipalid = m AND estornadoem IS NULL) = 1,
                         'baixar a meta do mes para o que ja foi vendido paga de novo, uma vez');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_meta_do_mes(11, (date_trunc('month', ontem) - interval '3 months')::date, 'x', 10, 1); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'meta de meses atras nao se mexe');
+  PERFORM public.exigir(public.nada_mudou(), 'meta de meses atras nao se mexe');
 END $$;
 
 -- TV: sem a opcao da loja, nenhum valor em reais sai do banco.
@@ -2282,24 +2458,28 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.meta_do_dia(11, hoje)), 'B nao ve a meta do dia de A');
   PERFORM public.exigir((public.metas_do_mes(11, hoje)->>'vendido')::numeric = 0 AND public.metas_do_mes(11, hoje)->'mes' = 'null'::jsonb,
                         'B nao ve o resumo do mes de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lancar_venda_do_dia(11, hoje, 1); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao lanca venda em loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao lanca venda em loja de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_meta_do_mes(11, hoje, 'x', 1, 0); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao mexe na meta do mes de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao mexe na meta do mes de A');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.metasespeciais (lojaid, data, descricao, valormeta) VALUES (11, hoje, 'invasao', 1); deu_erro := false;
   EXCEPTION WHEN foreign_key_violation OR insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao cria meta especial em loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao cria meta especial em loja de A');
 END $$;
 
 SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lancar_venda_do_dia(11, public.dia_em_sao_paulo(now()), 1); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao lanca venda');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao lanca venda');
 END $$;
 
 -- ===========================================================================
@@ -2339,15 +2519,18 @@ BEGIN
   PERFORM public.exigir(ta.descricaooverride = '15:00 — Aniversário' AND ta.descricaooverride NOT LIKE '%Maria%',
                         'a tarefa nao leva dados do cliente (so "15:00 — Aniversário")');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_agendamento(10, t, d1, 'X', NULL, NULL, NULL, NULL, 'Pendente', 120); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'responsavel que nao trabalha na loja e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'responsavel que nao trabalha na loja e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_agendamento(10, t, now() - interval '3 days', 'X'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'data no passado e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'data no passado e recusada');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_agendamento(10, t, d1, 'X', '123'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'CPF incompleto e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'CPF incompleto e recusado');
 
   PERFORM public.exigir(jsonb_array_length(public.conflitos_agendamento(10, d1 + interval '1 hour')) = 1
                         AND jsonb_array_length(public.conflitos_agendamento(10, d1 + interval '3 hours')) = 0,
@@ -2369,13 +2552,15 @@ BEGIN
   PERFORM public.trocar_responsavel_agendamento(ag, 124);
   PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE agendamentoid = ag) = 124,
                         'trocou o responsavel: a tarefa vai para a nova pessoa');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.trocar_responsavel_agendamento(ag, 120); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o novo responsavel tambem precisa trabalhar na loja');
+  PERFORM public.exigir(public.nada_mudou(), 'o novo responsavel tambem precisa trabalhar na loja');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.tarefasatribuidas SET datafimvigencia = hoje WHERE agendamentoid = ag; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a tarefa do agendamento nao se mexe por fora da agenda');
+  PERFORM public.exigir(public.nada_mudou(), 'a tarefa do agendamento nao se mexe por fora da agenda');
   -- 28/09/2026: "Atender agendamento" virou tarefa comum e se atribui a mao;
   -- o que continua so pela Agenda e a atribuicao PRESA a um agendamento.
   BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
@@ -2385,11 +2570,12 @@ BEGIN
   EXCEPTION WHEN restrict_violation THEN deu_erro := true;
             WHEN raise_exception THEN NULL; END;
   PERFORM public.exigir(NOT deu_erro, '"Atender agendamento" agora se atribui a mao');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia, agendamentoid)
         VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica', ag);
         deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem cria na mao uma atribuicao presa a um agendamento');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem cria na mao uma atribuicao presa a um agendamento');
 
   PERFORM public.alterar_pagamento_agendamento(ag, 'Pago', 150);
   PERFORM public.exigir((SELECT valoranterior = 'Sinal pago (R$ 150,00)' AND valornovo = 'Pago (R$ 150,00)'
@@ -2398,12 +2584,14 @@ BEGIN
 
   -- Realizado e volta para confirmado com motivo.
   PERFORM public.marcar_agendamento_realizado(ag);
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.remarcar_agendamento(ag, d1); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'realizado nao se remarca');
+  PERFORM public.exigir(public.nada_mudou(), 'realizado nao se remarca');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.reabrir_agendamento(ag, ''); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'voltar de realizado exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'voltar de realizado exige motivo');
   PERFORM public.reabrir_agendamento(ag, 'Marquei no errado');
   PERFORM public.exigir((SELECT statusagendamento FROM public.agendamentos WHERE agendamentoid = ag) = 'Confirmado'
                         AND EXISTS (SELECT 1 FROM public.agendamentoshistorico WHERE agendamentoid = ag AND acao = 'reaberto'
@@ -2411,26 +2599,31 @@ BEGIN
                         'realizado volta para confirmado, com motivo no historico');
 
   -- Cancelar.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.cancelar_agendamento(ag, '  '); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o banco recusa cancelar sem motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'o banco recusa cancelar sem motivo');
   PERFORM public.cancelar_agendamento(ag, 'Cliente desistiu');
   PERFORM public.exigir((SELECT statusagendamento = 'Cancelado' AND motivocancelamento = 'Cliente desistiu'
                            FROM public.agendamentos WHERE agendamentoid = ag)
                         AND (SELECT datafimvigencia FROM public.tarefasatribuidas WHERE agendamentoid = ag) = hoje,
                         'cancelou: a tarefa e encerrada');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.remarcar_agendamento(ag, d1); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'cancelado e final (nao se remarca)');
+  PERFORM public.exigir(public.nada_mudou(), 'cancelado e final (nao se remarca)');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.marcar_agendamento_realizado(ag); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem vira realizado');
+  PERFORM public.exigir(public.nada_mudou(), 'nem vira realizado');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.agendamentos SET statusagendamento = 'Confirmado' WHERE agendamentoid = ag; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'agendamento so muda pelas funcoes');
+  PERFORM public.exigir(public.nada_mudou(), 'agendamento so muda pelas funcoes');
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.agendamentos WHERE agendamentoid = ag; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'agendamento nao se apaga');
+  PERFORM public.exigir(public.nada_mudou(), 'agendamento nao se apaga');
   PERFORM set_config('teste.ag', ag::text, false);
 END $$;
 
@@ -2473,12 +2666,14 @@ BEGIN
   INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', caminho);
   anexo := public.registrar_anexo_agendamento(ag3, caminho, 'contrato.pdf', 'application/pdf', 1000);
   PERFORM public.exigir(anexo IS NOT NULL, 'anexo guardado na pasta da conta, da loja e do agendamento');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/11/' || ag3 || '/errado.pdf'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'anexo fora da pasta do agendamento e recusado pelo Storage');
+  PERFORM public.exigir(public.nada_mudou(), 'anexo fora da pasta do agendamento e recusado pelo Storage');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_anexo_agendamento(ag3, '1/10/999999/x.pdf', 'x.pdf', 'application/pdf', 10); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e pela funcao tambem');
+  PERFORM public.exigir(public.nada_mudou(), 'e pela funcao tambem');
   PERFORM set_config('teste.anexo', anexo::text, false);
 END $$;
 
@@ -2527,15 +2722,18 @@ BEGIN
                         'B nao ve a agenda, o historico, os anexos nem os tipos de A');
   PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'agendamentos') = 0,
                         'documento de outro cliente nao abre (B nao le o arquivo de A)');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '2/10/' || ag3 || '/x.pdf'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao grava arquivo no agendamento de A, nem na pasta dela');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao grava arquivo no agendamento de A, nem na pasta dela');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.cancelar_agendamento(ag3, 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao cancela agendamento de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao cancela agendamento de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_agendamento(10, 1, now() + interval '1 day', 'invasao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao cria agendamento em loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao cria agendamento em loja de A');
   PERFORM public.exigir(public.conflitos_agendamento(10, now() + interval '2 days') = '[]'::jsonb,
                         'B nao ve os horarios de A');
 END $$;
@@ -2544,22 +2742,25 @@ SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.cancelar_agendamento(current_setting('teste.ag3')::integer, 'x'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao mexe na agenda');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao mexe na agenda');
 END $$;
 
 RESET ROLE;
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.agendamentos WHERE agendamentoid = current_setting('teste.ag')::integer; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco apaga agendamento');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco apaga agendamento');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.agendamentos SET statusagendamento = 'Confirmado' WHERE agendamentoid = current_setting('teste.ag')::integer;
         deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem reabre cancelado');
+  PERFORM public.exigir(public.nada_mudou(), 'nem reabre cancelado');
 END $$;
 
 SET ROLE authenticated;
@@ -2587,12 +2788,14 @@ BEGIN
   PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = c1) = 3,
                         'os pontos sugeridos vem da tarefa do sistema "Leitura de comunicado"');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.publicar_comunicado('X', 'Y', 1, 'funcionarios', NULL, ARRAY[200]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'funcionario de outra conta nao pode ser destinatario');
+  PERFORM public.exigir(public.nada_mudou(), 'funcionario de outra conta nao pode ser destinatario');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.publicar_comunicado('X', 'Y', 1, 'funcionarios', NULL, ARRAY[123]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'funcionario inativo nao pode ser destinatario');
+  PERFORM public.exigir(public.nada_mudou(), 'funcionario inativo nao pode ser destinatario');
 
   c2 := public.publicar_comunicado('Aviso geral', 'Texto geral', 5, 'conta');
   SELECT count(*) INTO ativos FROM public.funcionarios WHERE ativo;
@@ -2618,12 +2821,14 @@ BEGIN
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(x->'movimentos') m WHERE m->>'descricao' LIKE 'Ciência do comunicado%'),
                         'o bonus da ciencia aparece no extrato');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.editar_comunicado(c1, 'Outro', 'Outro texto', 4); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'comunicado com ciencia nao tem o texto editado');
+  PERFORM public.exigir(public.nada_mudou(), 'comunicado com ciencia nao tem o texto editado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.editar_comunicado(c1, 'Nova regra do caixa (v2)', 'Texto 1 revisto', 10); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem os pontos, depois da primeira ciencia');
+  PERFORM public.exigir(public.nada_mudou(), 'nem os pontos, depois da primeira ciencia');
 
   k := (public.criar_conquista('Leitor', NULL, NULL, 'total_comunicados_cientes', 1, NULL, 0, true))->>'conquistaid';
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistasfuncionarios WHERE funcionarioid = 120 AND conquistaid = k),
@@ -2632,14 +2837,16 @@ BEGIN
   PERFORM set_config('teste.c1', c1::text, false);
   PERFORM set_config('teste.kleitor', k::text, false);
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.incluir_destinatarios(c1, ARRAY[200]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem acrescentado depois');
+  PERFORM public.exigir(public.nada_mudou(), 'nem acrescentado depois');
   PERFORM public.exigir(public.incluir_destinatarios(c1, ARRAY[124, 120]) = 1, 'acrescimo manual depois (ignora quem ja esta)');
 
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.documentosassinaturas (documentoid, funcionarioid) VALUES (c1, 110); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'destinatario so entra pelas funcoes');
+  PERFORM public.exigir(public.nada_mudou(), 'destinatario so entra pelas funcoes');
 
   r := (SELECT min(resgateid) FROM public.resgates WHERE funcionarioid = 100);
   x := public.recibo_resgate(r);
@@ -2664,9 +2871,10 @@ DO $$
 DECLARE s integer := current_setting('teste.s')::integer; deu_erro boolean; c1 integer := current_setting('teste.c1')::integer;
         outra integer;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.desfazer_ciencia(s, ' '); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'desfazer exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'desfazer exige motivo');
   PERFORM public.desfazer_ciencia(s, 'Marquei a pessoa errada');
   PERFORM public.exigir((SELECT statusassinatura = 'Pendente' FROM public.documentosassinaturas WHERE assinaturaid = s)
                         AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE assinaturaid = s AND tipo = 'estorno_bonus' AND pontos = -4),
@@ -2681,12 +2889,14 @@ BEGIN
   -- Arquivado: mantem historico e recibo, recusa ciencia e destinatario novos.
   PERFORM public.arquivar_comunicado(c1);
   outra := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c1 AND funcionarioid = 121);
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_ciencia(outra); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'comunicado arquivado recusa ciencia nova');
+  PERFORM public.exigir(public.nada_mudou(), 'comunicado arquivado recusa ciencia nova');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.incluir_destinatarios(c1, ARRAY[110]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e recusa destinatario novo');
+  PERFORM public.exigir(public.nada_mudou(), 'e recusa destinatario novo');
   PERFORM public.exigir((public.recibo_ciencia(s)->>'protocolo') = 'C-' || s, 'o recibo de ciencia continua disponivel');
   PERFORM public.exigir(public.fora_do_comunicado(current_setting('teste.c2')::integer) = '[]'::jsonb,
                         'ninguem ficou de fora do comunicado geral');
@@ -2697,12 +2907,14 @@ INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto) OVERRIDIN
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.documentos SET pontosporciencia = 99 WHERE documentoid = current_setting('teste.c1')::integer; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco muda os pontos depois da ciencia');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco muda os pontos depois da ciencia');
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.documentos WHERE documentoid = current_setting('teste.c2')::integer; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'comunicado nao se apaga');
+  PERFORM public.exigir(public.nada_mudou(), 'comunicado nao se apaga');
 END $$;
 
 SET ROLE authenticated;
@@ -2720,9 +2932,10 @@ DECLARE
   deu_erro boolean; cam text; d1 integer; d2 integer; d3 integer; d4 integer;
 BEGIN
   RAISE NOTICE '36b. RH: documentos pessoais';
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', '1/funcionarios/100/solto.pdf'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o Storage recusa envio sem preparar (e registrar) antes');
+  PERFORM public.exigir(public.nada_mudou(), 'o Storage recusa envio sem preparar (e registrar) antes');
 
   cam := public.preparar_envio_documento(100, 'holerite set.pdf');
   PERFORM public.exigir(cam LIKE '1/funcionarios/100/%', 'caminho privado <conta>/funcionarios/<pessoa>/');
@@ -2730,10 +2943,11 @@ BEGIN
   d1 := public.registrar_documento_pessoal(100, 'Holerite', date '2026-08-01', NULL, cam, 'holerite set.pdf', 'application/pdf', 5000);
   PERFORM set_config('teste.d1', d1::text, false);
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_documento_pessoal(100, 'Holerite', NULL, NULL, cam || 'x', 'a.exe', 'application/x-msdownload', 10);
         deu_erro := false;
   EXCEPTION WHEN no_data_found OR check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'arquivo que nao e PDF, JPG ou PNG e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'arquivo que nao e PDF, JPG ou PNG e recusado');
 
   PERFORM public.exigir(public.liberar_documento_pessoal(d1) = cam, 'o master gera o link do documento');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.documentosacessos WHERE documentoid = d1 AND acao = 'visualizacao'
@@ -2752,17 +2966,19 @@ BEGIN
                         'a exclusao tambem fica no registro de acessos');
   DELETE FROM storage.objects WHERE bucket_id = 'documentos-rh' AND name = cam;
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM storage.objects WHERE name = cam), 'o arquivo sai do Storage');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.liberar_documento_pessoal(d1); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'documento excluido nao abre mais');
+  PERFORM public.exigir(public.nada_mudou(), 'documento excluido nao abre mais');
 
   cam := public.preparar_envio_documento(100, 'advertencia.pdf');
   INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', cam);
   d2 := public.registrar_documento_pessoal(100, 'Advertência', NULL, NULL, cam, 'advertencia.pdf', 'application/pdf', 3000);
   PERFORM public.registrar_ciencia_documento(d2);
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.excluir_documento_por_engano(d2, 'x'); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'exclusao por engano recusada quando ha ciencia');
+  PERFORM public.exigir(public.nada_mudou(), 'exclusao por engano recusada quando ha ciencia');
 
   cam := public.preparar_envio_documento(100, 'nova.pdf');
   INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', cam);
@@ -2790,9 +3006,10 @@ ALTER TABLE public.documentospessoais ENABLE TRIGGER documentospessoais_protege;
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.documentospessoais WHERE documentoid = current_setting('teste.d3')::integer; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco apaga documento pessoal');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco apaga documento pessoal');
 END $$;
 
 SET ROLE authenticated;
@@ -2800,9 +3017,10 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.excluir_documento_por_engano(current_setting('teste.d3')::integer, 'x'); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'exclusao por engano recusada depois de 7 dias');
+  PERFORM public.exigir(public.nada_mudou(), 'exclusao por engano recusada depois de 7 dias');
 END $$;
 
 SET teste.uid = '12121212-1212-1212-1212-121212121212';
@@ -2833,12 +3051,14 @@ BEGIN
   UPDATE public.onboardingetapas SET ativo = false WHERE nome = 'Treinamento inicial';
   PERFORM public.exigir((SELECT count(*) FROM public.onboardingitens WHERE funcionarioid = 125) = 6,
                         'desativar uma etapa nao apaga o que ja foi marcado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.iniciar_onboarding(123); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'onboarding so para funcionario ativo');
+  PERFORM public.exigir(public.nada_mudou(), 'onboarding so para funcionario ativo');
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.onboardingetapas; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'etapa nao se apaga (desativa)');
+  PERFORM public.exigir(public.nada_mudou(), 'etapa nao se apaga (desativa)');
 END $$;
 
 -- Outro cliente
@@ -2857,24 +3077,30 @@ BEGIN
                         'B nao le documentos pessoais nem acessos de A');
   PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'documentos-rh') = 0,
                         'B nao abre arquivo de documentos-rh de A, nem pelo caminho direto do Storage');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.liberar_documento_pessoal(current_setting('teste.d3')::integer); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao libera documento de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao libera documento de A');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', '1/funcionarios/100/invasao.pdf'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao grava na pasta de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao grava na pasta de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.preparar_envio_documento(100, 'x.pdf'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao prepara envio para funcionario de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao prepara envio para funcionario de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_ciencia(current_setting('teste.s')::integer); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao registra ciencia em comunicado de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao registra ciencia em comunicado de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.iniciar_onboarding(100); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao mexe no onboarding de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao mexe no onboarding de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.publicar_comunicado('X', 'Y', 0, 'lojas', ARRAY[10]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao publica para loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao publica para loja de A');
   PERFORM public.exigir(public.recibo_ciencia(current_setting('teste.s')::integer) IS NULL, 'B nao gera recibo de ciencia de A');
 END $$;
 
@@ -2939,9 +3165,10 @@ BEGIN
                         'Inicio nao contem CPF nem telefone do cliente da agenda');
 
   -- Loja de outra conta: some, como se nao existisse.
-  BEGIN PERFORM public.painel_inicio(20); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.painel_inicio(20) r)); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao abre o Inicio da loja de B');
+  PERFORM public.exigir(public.nada_voltou(), 'A nao abre o Inicio da loja de B');
 END $$;
 
 RESET ROLE;
@@ -2961,9 +3188,10 @@ SET teste.uid = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  BEGIN PERFORM public.painel_inicio(NULL); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.painel_inicio(NULL) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'login sem conta nao abre o Inicio');
+  PERFORM public.exigir(public.nada_voltou(), 'login sem conta nao abre o Inicio');
 END $$;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
@@ -3116,21 +3344,24 @@ DO $$
 DECLARE deu_erro boolean;
 BEGIN
   -- (as datas simuladas estão no futuro; o gatilho usa o dia real)
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.tarefasdodia (contaid, lojaid, dia, atribuicaoid, funcionarioid, tarefaid, tipofrequencia, pontos, situacao)
     VALUES (1, 10, '2020-01-01', 7401, 7001, 7201, 'Diaria', 10, 'devida');
     UPDATE public.tarefasdodia SET situacao = 'cancelada' WHERE dia = '2020-01-01' AND atribuicaoid = 7401;
     deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'item de dia que ja passou nao se altera');
+  PERFORM public.exigir(public.nada_mudou(), 'item de dia que ja passou nao se altera');
+  PERFORM public.guardar_foto();
   BEGIN
     DELETE FROM public.tarefasdodia WHERE atribuicaoid = 7401 AND dia = '2026-12-29'; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'item da lista nunca se apaga');
+  PERFORM public.exigir(public.nada_mudou(), 'item da lista nunca se apaga');
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.tarefasdodia SET pontos = 99 WHERE atribuicaoid = 7401 AND dia = '2026-12-29'; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'pontos de um item nao mudam depois de gerado');
+  PERFORM public.exigir(public.nada_mudou(), 'pontos de um item nao mudam depois de gerado');
 END $$;
 
 -- Parada de 3 dias (30/12, 31/12 e 01/01): na volta, recupera sem duplicar.
@@ -3299,14 +3530,16 @@ BEGIN
   SELECT fechamentoid INTO f FROM public.fechamentosmensais WHERE contaid = 1 AND ano = 2026 AND mes = 12 AND situacao <> 'substituido';
   PERFORM public.exigir((SELECT pontosregulares FROM public.historicoranking WHERE fechamentoid = f AND lojaid IS NULL AND funcionarioid = 7005) = 20,
                         'fechamento definitivo nao muda com dados novos');
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.historicoranking SET nota = 100 WHERE fechamentoid = f; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'linha de fechamento definitivo nao se altera (nem pelo dono do banco)');
+  PERFORM public.exigir(public.nada_mudou(), 'linha de fechamento definitivo nao se altera (nem pelo dono do banco)');
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.fechamentosmensais SET situacao = 'provisorio' WHERE fechamentoid = f; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'definitivo nao volta a provisorio');
+  PERFORM public.exigir(public.nada_mudou(), 'definitivo nao volta a provisorio');
 END $$;
 
 -- Refazer fechamento: só o master, com motivo, guardando a versão anterior.
@@ -3316,12 +3549,14 @@ DO $$
 DECLARE deu_erro boolean; v integer; antigo integer;
 BEGIN
   SELECT fechamentoid INTO antigo FROM public.fechamentosmensais WHERE ano = 2026 AND mes = 12 AND situacao <> 'substituido';
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.refazer_fechamento(2026, 12, '  '); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'refazer fechamento exige motivo');
+  PERFORM public.exigir(public.nada_mudou(), 'refazer fechamento exige motivo');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.historicoranking (contaid, fechamentoid, ano, mes, funcionarioid) VALUES (1, antigo, 2026, 12, 7005); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem grava no historico do ranking direto pela tela');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem grava no historico do ranking direto pela tela');
 
   v := public.refazer_fechamento(2026, 12, 'Entrega de 30/12 aprovada depois do fechamento');
   PERFORM public.exigir((SELECT situacao = 'definitivo' AND versao = 2 AND origem = 'master' FROM public.fechamentosmensais WHERE fechamentoid = v),
@@ -3349,21 +3584,26 @@ BEGIN
                         'B nao le a lista nem o ranking de A passando a conta de A');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.fechamentosmensais WHERE ano = 2026 AND mes = 12),
                         'B tem o proprio fechamento');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.rotinas_despachar(); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama o despachante');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama o despachante');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.lista_do_dia_gerar(1, '2026-12-29', '2026-12-29', false); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama a geracao interna');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama a geracao interna');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.rotina_lista_do_dia(1, now(), 'manual'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama a rotina de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama a rotina de outra conta');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.fechamento_calcular(1, 1); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama o calculo interno do fechamento');
-  BEGIN PERFORM * FROM public.rotinas_resumo_admin(); deu_erro := false;
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama o calculo interno do fechamento');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.rotinas_resumo_admin() r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'master nao ve o resumo do admin');
+  PERFORM public.exigir(public.nada_voltou(), 'master nao ve o resumo do admin');
 END $$;
 RESET ROLE;
 
@@ -3650,18 +3890,22 @@ BEGIN
                         AND NOT gente @> '[{"funcionarioid": 7014}]',
                         '"Passar para" so mostra ativos da mesma loja que trabalham hoje');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7012); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao passa para quem e de outra loja');
+  PERFORM public.exigir(public.nada_mudou(), 'nao passa para quem e de outra loja');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7013); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao passa para funcionario inativo');
+  PERFORM public.exigir(public.nada_mudou(), 'nao passa para funcionario inativo');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7014); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao passa para quem esta afastado');
+  PERFORM public.exigir(public.nada_mudou(), 'nao passa para quem esta afastado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.passar_tarefa_de_folga(7411, 7010); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'tarefa de quem trabalha hoje nao se passa');
+  PERFORM public.exigir(public.nada_mudou(), 'tarefa de quem trabalha hoje nao se passa');
 
   nova := public.passar_tarefa_de_folga(7410, 7011);
   PERFORM public.exigir((SELECT tipofrequencia = 'Unica' AND funcionarioid = 7011 AND origematribuicaoid = 7410 AND tarefaid = 7203
@@ -3672,12 +3916,14 @@ BEGIN
                         'na lista do dia, o item original fica "passada para"');
   PERFORM public.exigir(public.tarefas_de_folga_hoje(10) @> '[{"atribuicaoid": 7410, "passadapara": "Gabi Trabalha"}]',
                         'o bloco mostra para quem foi passada');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.passar_tarefa_de_folga(7410, 7011); deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'uma tarefa nao e passada duas vezes no mesmo dia');
+  PERFORM public.exigir(public.nada_mudou(), 'uma tarefa nao e passada duas vezes no mesmo dia');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_entrega(7410); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a original passada nao recebe entrega');
+  PERFORM public.exigir(public.nada_mudou(), 'a original passada nao recebe entrega');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = 7410)
                         AND EXISTS (SELECT 1 FROM public.atribuicoes_para_entregar(10) WHERE atribuicaoid = nova),
                         'no quadro sai a original e entra a de quem recebeu');
@@ -3715,18 +3961,20 @@ DECLARE deu_erro boolean;
 BEGIN
   PERFORM public.exigir(public.tarefas_de_folga_hoje(10) = '[]'::jsonb AND public.quem_trabalha_hoje(10) = '[]'::jsonb,
                         'B nao ve as folgas nem a equipe da loja de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.passar_tarefa_de_folga(7414, 7011); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao passa tarefa de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao passa tarefa de A');
 END $$;
 
 SET teste.uid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.rodar_geracao_hoje(); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conta suspensa nao roda a rotina');
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao roda a rotina');
 END $$;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 RESET ROLE;
@@ -3734,12 +3982,13 @@ RESET ROLE;
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao, dataagendamento, origematribuicaoid)
     VALUES (1, 7203, 7011, 10, 'Unica', now(), now(), 7410);
     deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o banco impede passar a mesma tarefa duas vezes no mesmo dia, por qualquer caminho');
+  PERFORM public.exigir(public.nada_mudou(), 'o banco impede passar a mesma tarefa duas vezes no mesmo dia, por qualquer caminho');
   PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.rotinas_despachar(timestamptz)', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.rotinas_despachar(timestamptz)', 'EXECUTE')
                         AND NOT has_function_privilege('authenticated', 'public.lista_do_dia_gerar(integer, date, date, boolean)', 'EXECUTE')
@@ -3801,12 +4050,14 @@ BEGIN
   PERFORM set_config('stgame.bot_canal', 'telegram', false);
   PERFORM public.exigir(public.minha_conta() IS NULL AND (SELECT count(*) FROM public.funcionarios) = 0,
                         'usuario logado que tenta ativar o contexto do bot nao ve nada');
-  BEGIN PERFORM public.bot_quem(6001); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.bot_quem(6001) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama as funcoes do bot');
+  PERFORM public.exigir(public.nada_voltou(), 'usuario logado nao chama as funcoes do bot');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.bot_entrar(2, 7601, NULL); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao entra no contexto do bot');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao entra no contexto do bot');
 END $$;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
@@ -3832,12 +4083,14 @@ BEGIN
   PERFORM public.exigir(current_setting('teste.c_tina') ~ '^[0-9a-f]{64}$', 'convite tem codigo longo e aleatorio (64 caracteres)');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.telegramvinculos WHERE contaid = 2),
                         'A nao ve vinculos de B');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_convite_telegram(7601); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao cria convite para funcionario de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao cria convite para funcionario de B');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.criar_convite_grupo(20, 'gestao'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'A nao cria convite de grupo para loja de B');
+  PERFORM public.exigir(public.nada_mudou(), 'A nao cria convite de grupo para loja de B');
 END $$;
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
@@ -4104,10 +4357,11 @@ SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.desligar_telegram(-1); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'desligar vinculo inexistente da erro');
+  PERFORM public.exigir(public.nada_mudou(), 'desligar vinculo inexistente da erro');
 END $$;
 RESET ROLE;
 DO $$
@@ -4120,9 +4374,10 @@ SET ROLE authenticated;
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.desligar_telegram(current_setting('teste.v_tina')::integer); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao desliga o Telegram de alguem de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao desliga o Telegram de alguem de A');
 END $$;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
@@ -4587,9 +4842,10 @@ BEGIN
   SELECT count(*) INTO v_n FROM public.missoesaceites WHERE contaid <> 2;
   PERFORM public.exigir(v_n = 0, 'B nao le as missoes aceitas em A');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.definir_rotina_mensagem(10, 'inicio_jornada', false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao desliga uma rotina de uma loja de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao desliga uma rotina de uma loja de A');
 
   -- A função existe para B, mas não alcança ninguém de A: 0 pessoas mudadas.
   PERFORM public.exigir(public.vincular_jornada(ARRAY[7510], NULL) = 0,
@@ -4621,9 +4877,10 @@ BEGIN
                            'public.rotina_mensagens(1, now())',
                            'public.bot_janela(1, 7510, now())',
                            'public.pegar_missao(7813, 7510)'] LOOP
-    BEGIN EXECUTE format('SELECT %s', f); deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN EXECUTE format('SELECT %s', f); deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'usuario logado nao chama ' || split_part(f, '(', 1));
+    PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama ' || split_part(f, '(', 1));
   END LOOP;
 END $$;
 RESET ROLE;
@@ -4831,7 +5088,10 @@ BEGIN
       'liberar_pin',
       -- 29/09/2026: permissoes. Nao recebem conta: olham so o login de quem
       -- chamou (auth.uid) e a loja pedida contra a conta DELE (secao 91).
-      'pode', 'lojas_onde_posso'
+      'pode', 'lojas_onde_posso',
+      -- Ajudante do PROPRIO teste (nao existe no banco de verdade): a foto do
+      -- banco inteiro para as negacoes conferirem o resultado.
+      'foto_do_banco'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -4884,36 +5144,43 @@ DECLARE deu_erro boolean; sobra text;
 BEGIN
   RAISE NOTICE '21. o saldo so muda pelo livro de movimentos';
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.funcionarios SET saldopontos = saldopontos + 1 WHERE funcionarioid = 100; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono do banco muda o saldo sem gravar movimento');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o dono do banco muda o saldo sem gravar movimento');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.funcionarios SET pontostotal = 999 WHERE funcionarioid = 100; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o total de pontos');
+  PERFORM public.exigir(public.nada_mudou(), 'nem o total de pontos');
 
-  BEGIN PERFORM public.teste_burla_saldo(); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.teste_burla_saldo() r)); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem uma funcao com poder total escrita para burlar');
+  PERFORM public.exigir(public.nada_voltou(), 'nem uma funcao com poder total escrita para burlar');
 
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM set_config('gamegb.aplicando_movimento', 'sim', true);
     UPDATE public.funcionarios SET saldopontos = saldopontos + 1 WHERE funcionarioid = 100;
     deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem imitando o aviso do gatilho do livro');
+  PERFORM public.exigir(public.nada_mudou(), 'nem imitando o aviso do gatilho do livro');
 
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.funcionarios (contaid, nomecompleto, saldopontos) VALUES (1, 'Ja rico', 500); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem cadastrando alguem ja com saldo');
+  PERFORM public.exigir(public.nada_mudou(), 'nem cadastrando alguem ja com saldo');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.movimentospontos SET pontos = 1000 WHERE funcionarioid = 100; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'movimento de pontos nao se altera');
+  PERFORM public.exigir(public.nada_mudou(), 'movimento de pontos nao se altera');
 
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.movimentospontos WHERE funcionarioid = 100; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'movimento de pontos nao se apaga');
+  PERFORM public.exigir(public.nada_mudou(), 'movimento de pontos nao se apaga');
 
   -- A conta de verdade: em todas as contas, saldo e total batem com o livro.
   SELECT string_agg(f.nomecompleto || ' (saldo ' || f.saldopontos || ', livro ' || coalesce(m.soma, 0) || ')', ', ')
@@ -4960,20 +5227,23 @@ BEGIN
   PERFORM public.exigir((SELECT cpf FROM public.funcionarios WHERE funcionarioid = 8200) = '52998224725',
                         'o mesmo CPF pode existir em outra conta');
 
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.funcionarios SET cpf = '52998224725' WHERE funcionarioid = 8101; deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o mesmo CPF nao se repete dentro da conta');
+  PERFORM public.exigir(public.nada_mudou(), 'o mesmo CPF nao se repete dentro da conta');
 
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.funcionarios SET cpf = '11111111111' WHERE funcionarioid = 8101; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'CPF com todos os digitos iguais e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'CPF com todos os digitos iguais e recusado');
 
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.funcionarios SET cpf = '12345678900' WHERE funcionarioid = 8101; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'CPF com verificador errado e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'CPF com verificador errado e recusado');
 
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
                                      WHERE table_schema = 'public' AND table_name = 'funcionarios'
@@ -5016,10 +5286,11 @@ BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.denunciasanonimas) = 0, 'o acesso da loja nao le o canal confidencial');
   PERFORM public.exigir(NOT public.sou_master(), 'o acesso da loja nao e master');
 
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.funcionarios (contaid, nomecompleto) VALUES (1, 'Intruso'); deu_erro := false;
   EXCEPTION WHEN others THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o acesso da loja nao grava nada');
+  PERFORM public.exigir(public.nada_mudou(), 'o acesso da loja nao grava nada');
 
   -- Mas sabe quem e, para o app saber para onde levar.
   PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'loja', 'meu_acesso diz que e o acesso da loja');
@@ -5028,10 +5299,11 @@ BEGIN
   -- E nao consegue ligar o contexto das visoes por conta propria.
   -- Erro TEM de ser de permissao: com "WHEN others" o teste passaria ate se a
   -- funcao nao existisse.
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem esta logado nao liga o contexto das visoes');
+  PERFORM public.exigir(public.nada_mudou(), 'quem esta logado nao liga o contexto das visoes');
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -5071,10 +5343,11 @@ BEGIN
   PERFORM public.exigir((SELECT pinhash FROM public.funcionarios WHERE funcionarioid = 8100) = repeat('1', 64),
                         'a pessoa escolhe o proprio PIN');
 
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.definir_pin(1, 8101, repeat('1', 64), false); deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; v_msg := SQLERRM; END;
-  PERFORM public.exigir(deu_erro, 'PIN repetido na mesma conta e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'PIN repetido na mesma conta e recusado');
   PERFORM public.exigir(v_msg = 'Escolha outro número.', 'o erro do PIN repetido nao diz de quem e o numero');
 
   -- O mesmo PIN pode existir em outra conta.
@@ -5296,11 +5569,12 @@ BEGIN
                         'codigo de uma conta nao vale em outra');
 
   -- Ninguem gera codigo para pessoa de outra conta.
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.criar_codigo_acesso(2, 8101, repeat('i', 64), NULL, 7, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
     deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao se gera codigo para pessoa de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nao se gera codigo para pessoa de outra conta');
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -5481,11 +5755,12 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.funcionarios SET cpf = '39053344705' WHERE funcionarioid = 8100;
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao troca sozinho o CPF de quem ja entra no app');
+  PERFORM public.exigir(public.nada_mudou(), 'o master nao troca sozinho o CPF de quem ja entra no app');
   PERFORM public.exigir((SELECT cpf FROM public.funcionarios WHERE funcionarioid = 8100) = '52998224725',
                         'o CPF continua o mesmo depois da recusa');
 END $$;
@@ -5742,14 +6017,16 @@ BEGIN
                         'marcada como aberta (qualquer um da lista pega)');
 
   -- Quem nao esta na lista nao pega.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(v_atr, 9503); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem nao esta na lista nao pega a tarefa compartilhada');
+  PERFORM public.exigir(public.nada_mudou(), 'quem nao esta na lista nao pega a tarefa compartilhada');
 
   -- Quem nem e da loja tambem nao.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(v_atr, 9504); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem nao trabalha nesta loja nao pega');
+  PERFORM public.exigir(public.nada_mudou(), 'quem nao trabalha nesta loja nao pega');
 
   -- A primeira que pega leva.
   v_nova := public.pegar_tarefa(v_atr, 9502);
@@ -5762,9 +6039,10 @@ BEGIN
                         'e passa para "em andamento"');
 
   -- A segunda nao leva.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(v_atr, 9501); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a segunda pessoa recebe recusa: a tarefa ja foi pega');
+  PERFORM public.exigir(public.nada_mudou(), 'a segunda pessoa recebe recusa: a tarefa ja foi pega');
 
   -- Nao aparece mais como "nao pega".
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr),
@@ -5790,15 +6068,17 @@ BEGIN
                         'tarefa que nao esta feita nao mostra o nome de ninguem');
 
   -- Revogar com entrega no caminho: recusado.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.revogar_aceite(v_atr, v_hoje, 'pegou por engano'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao revoga o aceite com entrega pendente: recuse a entrega antes');
+  PERFORM public.exigir(public.nada_mudou(), 'nao revoga o aceite com entrega pendente: recuse a entrega antes');
 
   -- Revogar sem motivo: recusado.
   PERFORM public.recusar_entrega(v_ent, 'foto ilegivel');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.revogar_aceite(v_atr, v_hoje, '   '); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'revogar sem motivo e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'revogar sem motivo e recusado');
 
   -- Revogar de verdade: a tarefa volta a ficar disponivel.
   PERFORM public.revogar_aceite(v_atr, v_hoje, 'trocamos quem faz');
@@ -5830,9 +6110,10 @@ BEGIN
   PERFORM public.exigir(NOT (SELECT aberta FROM public.fila_da_loja(10) WHERE atribuicaoid = v_atr),
                         'tarefa com dono nao aparece como aberta');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(v_atr, 9501); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o PIN de outra pessoa nao pega a tarefa de quem tem dono');
+  PERFORM public.exigir(public.nada_mudou(), 'o PIN de outra pessoa nao pega a tarefa de quem tem dono');
 
   -- Entregar sem ter pegado conta como aceite.
   PERFORM public.registrar_entrega(v_atr);
@@ -5941,17 +6222,20 @@ BEGIN
   -- o teste passaria testando o id -1, que nao existe para ninguem.
   v_atr := current_setting('teste.atr_de_a')::integer;
   PERFORM public.exigir(v_atr > 0, 'o teste usa uma tarefa REAL da conta A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(coalesce(v_atr, -1), 9501); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao pega uma tarefa de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao pega uma tarefa de A');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.revogar_aceite(coalesce(v_atr, -1), v_hoje, 'invasao'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao revoga um aceite de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao revoga um aceite de A');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.atribuir_tarefa(9600, 10, ARRAY[9501], 'Unica', NULL, now(), NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'B nao atribui tarefa de A para gente de A');
+  PERFORM public.exigir(public.nada_mudou(), 'B nao atribui tarefa de A para gente de A');
 END $$;
 
 RESET ROLE;
@@ -5999,9 +6283,10 @@ BEGIN
 
   -- Pegar pelo tablet.
   v_atr := public.atribuir_tarefa(9600, 10, ARRAY[9501, 9503], 'Unica', NULL, now(), NULL);
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_pegar(2, 10, 9501, v_atr); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o tablet de B nao pega tarefa de A');
+  PERFORM public.exigir(public.nada_mudou(), 'o tablet de B nao pega tarefa de A');
 
   v_alvo := public.visao_pegar(1, 10, 9501, v_atr);
   PERFORM public.exigir((SELECT funcionarioid FROM public.tarefasatribuidas WHERE atribuicaoid = v_alvo) = 9501,
@@ -6011,14 +6296,16 @@ BEGIN
                         'e fica registrado que veio do tablet');
 
   -- Entregar: so o PIN de quem pegou.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o PIN de outra pessoa nao entrega a tarefa que ela nao pegou');
+  PERFORM public.exigir(public.nada_mudou(), 'o PIN de outra pessoa nao entrega a tarefa que ela nao pegou');
 
   -- Foto: so na pasta da propria loja.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9501, v_atr, '2/20/roubada.jpg', NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a foto da entrega tem de estar na pasta da propria loja');
+  PERFORM public.exigir(public.nada_mudou(), 'a foto da entrega tem de estar na pasta da propria loja');
 
   PERFORM public.visao_entregar(1, 10, 9501, v_atr, '1/10/ok.jpg', 'feito');
   PERFORM public.exigir((SELECT canalenvio FROM public.entregas WHERE atribuicaoid = v_alvo) = 'tablet',
@@ -6029,9 +6316,10 @@ BEGIN
   -- REGRA NOVA (25/09/2026): entregar sem ter pegado NAO vale mais como
   -- aceite. Antes valia; agora o caminho e sempre aceitar e depois entregar.
   v_atr := public.atribuir_tarefa(9601, 10, ARRAY[9501, 9503], 'Unica', NULL, now(), NULL);
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'entregar no tablet sem ter pegado e RECUSADO');
+  PERFORM public.exigir(public.nada_mudou(), 'entregar no tablet sem ter pegado e RECUSADO');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.missoesaceites
                                      WHERE contaid = 1 AND atribuicaoid = v_atr AND dia = v_hoje),
                         'e a recusa nao deixa aceite nenhum para tras');
@@ -6062,9 +6350,10 @@ BEGIN
   END LOOP;
 
   -- E o PIN nao vaza pela tabela, nem para o dono da conta.
-  BEGIN PERFORM pinhash FROM public.funcionarios WHERE funcionarioid = 9501; deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM (SELECT pinhash FROM public.funcionarios WHERE funcionarioid = 9501) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o dono da conta le o PIN de ninguem');
+  PERFORM public.exigir(public.nada_voltou(), 'nem o dono da conta le o PIN de ninguem');
 END $$;
 
 RESET ROLE;
@@ -6153,9 +6442,10 @@ BEGIN
                         'tarefa unica compartilhada entregue ontem sai da fila (nem "para pegar", nem "Feitas hoje")');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefas_nao_pegas(10) WHERE atribuicaoid = v_atr),
                         'e nao volta para o cartao "Ninguem pegou"');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(v_atr, 9503); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem ninguem a pega de novo para receber os pontos outra vez');
+  PERFORM public.exigir(public.nada_mudou(), 'nem ninguem a pega de novo para receber os pontos outra vez');
 END $$;
 
 -- (3) MEDIO: a mesma foto nao prova duas tarefas.
@@ -6165,9 +6455,10 @@ BEGIN
   v_a := public.atribuir_tarefa(9600, 10, ARRAY[9501], 'Unica', NULL, now(), NULL);
   v_b := public.atribuir_tarefa(9601, 10, ARRAY[9503], 'Unica', NULL, now(), NULL);
   PERFORM public.registrar_entrega(v_a, NULL, '1/10/prova-unica.jpg');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_entrega(v_b, NULL, '1/10/prova-unica.jpg'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a foto de uma entrega nao serve para provar outra');
+  PERFORM public.exigir(public.nada_mudou(), 'a foto de uma entrega nao serve para provar outra');
   PERFORM set_config('teste.desativar', v_b::text, false);
 END $$;
 
@@ -6183,13 +6474,15 @@ SET teste.uid = '';
 DO $$
 DECLARE v_atr integer := current_setting('teste.desativar')::integer; deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_pegar(1, 10, 9503, v_atr); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o tablet nao pega tarefa que nao esta na fila de hoje');
+  PERFORM public.exigir(public.nada_mudou(), 'o tablet nao pega tarefa que nao esta na fila de hoje');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9503, v_atr, NULL, NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem entrega nela');
+  PERFORM public.exigir(public.nada_mudou(), 'nem entrega nela');
 END $$;
 
 SET ROLE authenticated;
@@ -6283,9 +6576,10 @@ BEGIN
                         'e a de B traz so a dela');
 
   -- Registrar evento numa loja de outra conta nao cola.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_evento_acesso_loja(2, 10, 'senha_nova', NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao da para registrar evento de uma loja que nao e da conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nao da para registrar evento de uma loja que nao e da conta');
 END $$;
 
 -- Quem esta logado no navegador nao chama nenhuma das duas funcoes: elas
@@ -6354,9 +6648,10 @@ BEGIN
   PERFORM public.marcar_senha_amao('10100000-0000-0000-0000-000000000001', 1, true);
 
   -- Marcar senha de outra conta nao cola.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.marcar_senha_amao('10100000-0000-0000-0000-000000000001', 2, true); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao da para marcar a senha de um acesso de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nao da para marcar a senha de um acesso de outra conta');
 END $$;
 
 -- O ATRASO cresce a cada erro, e o ACERTO zera. E NUNCA bloqueia.
@@ -6559,9 +6854,10 @@ BEGIN
 
   PERFORM public.pegar_tarefa(a, 9701);
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(b, 9701); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; msg := SQLERRM; END;
-  PERFORM public.exigir(deu_erro, 'quem pegou a ultima nao pega a proxima na hora');
+  PERFORM public.exigir(public.nada_mudou(), 'quem pegou a ultima nao pega a proxima na hora');
   PERFORM public.exigir(msg LIKE 'Você pegou a última tarefa%' AND msg LIKE '%min.%',
                         'a mensagem diz o tempo que falta');
   PERFORM public.exigir(msg NOT LIKE '%Calma%' AND msg NOT LIKE '%Media%' AND msg NOT LIKE '%Rapida%',
@@ -6644,9 +6940,10 @@ BEGIN
   PERFORM public.pegar_tarefa(current_setting('teste.rod_d')::integer, 9702);
   PERFORM public.exigir(true, 'a dona pega a tarefa dela mesmo tendo pegado a ultima disputada');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(current_setting('teste.rod_m')::integer, 9702); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a impedida nao pega a missao');
+  PERFORM public.exigir(public.nada_mudou(), 'e a impedida nao pega a missao');
 END $$;
 
 -- --- O cronometro: igual em qualquer aparelho -----------------------------
@@ -6819,14 +7116,16 @@ BEGIN
   PERFORM public.exigir(v->0->>'situacao' = 'a_fazer', 'e comecam como "a fazer"');
 
   -- Entregar: a tarefa tem de ser dela.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9502, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem entrega a tarefa de outra pessoa pelo celular');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem entrega a tarefa de outra pessoa pelo celular');
 
   -- REGRA NOVA (25/09/2026): sem aceite, o celular tambem recusa.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9801, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'sem aceite, o celular recusa a entrega');
+  PERFORM public.exigir(public.nada_mudou(), 'sem aceite, o celular recusa a entrega');
 
   -- O aceite e sempre no TABLET da loja.
   PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet');
@@ -6841,10 +7140,11 @@ BEGIN
                         'o celular do colaborador conta como "app"');
 
   -- A mesma imagem nao vale duas vezes.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9801, v_atr, '1/10/outra.jpg', NULL, 'digital-abc', false);
     deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a mesma foto nao prova duas tarefas, nem com outro nome de arquivo');
+  PERFORM public.exigir(public.nada_mudou(), 'a mesma foto nao prova duas tarefas, nem com outro nome de arquivo');
 
   -- Depois de entregar, a tarefa muda de situacao para ela.
   v := public.eu_tarefas(1, 9801);
@@ -6881,22 +7181,26 @@ SET teste.uid = '';
 DO $$
 DECLARE v jsonb; deu_erro boolean;
 BEGIN
-  BEGIN v := public.eu_inicio(2, 9801); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN v := public.eu_inicio(2, 9801); PERFORM public.guardar_resultado(to_jsonb(v)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a conta B nao abre o Inicio de uma pessoa de A');
+  PERFORM public.exigir(public.nada_voltou(), 'a conta B nao abre o Inicio de uma pessoa de A');
   -- Depois do conserto de 25/09/2026 estas duas RECUSAM em vez de devolver
   -- vazio: a pessoa nao e da conta que pediu.
-  BEGIN v := public.eu_tarefas(2, 9801); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN v := public.eu_tarefas(2, 9801); PERFORM public.guardar_resultado(to_jsonb(v)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem ve as tarefas dela');
+  PERFORM public.exigir(public.nada_voltou(), 'nem ve as tarefas dela');
+  PERFORM public.limpar_resultado();
   BEGIN v := public.eu_extrato(2, 9801, public.dia_em_sao_paulo(now()) - 30,
-                               public.dia_em_sao_paulo(now())); deu_erro := false;
+                               public.dia_em_sao_paulo(now())); PERFORM public.guardar_resultado(to_jsonb(v)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o extrato dela');
+  PERFORM public.exigir(public.nada_voltou(), 'nem o extrato dela');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(2, 9801, current_setting('teste.eu_atr')::integer,
                                    NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem entrega no nome dela');
+  PERFORM public.exigir(public.nada_mudou(), 'nem entrega no nome dela');
 END $$;
 
 -- ===========================================================================
@@ -6941,18 +7245,20 @@ BEGIN
   UPDATE public.tarefas SET ativa = false WHERE tarefaid = 9830;
   PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
                         'tarefa desativada some da lista do celular');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a entrega dela e RECUSADA (era aceita antes do conserto)');
+  PERFORM public.exigir(public.nada_mudou(), 'e a entrega dela e RECUSADA (era aceita antes do conserto)');
   UPDATE public.tarefas SET ativa = true WHERE tarefaid = 9830;
 
   -- (b) LOJA DESATIVADA. Importa para o SaaS: limitelojas conta loja ativa.
   UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
   PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
                         'loja desativada nao mostra mais tarefa no celular');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a entrega em loja desativada e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'e a entrega em loja desativada e recusada');
   UPDATE public.lojas SET ativa = true WHERE lojaid = 10;
 
   -- (c) DIA DE FOLGA dela. Entregar na folga inflava a nota no ranking.
@@ -6962,18 +7268,20 @@ BEGIN
    WHERE funcionarioid = 9803;
   PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
                         'no dia de folga a lista do celular vem vazia');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e ninguem entrega no proprio dia de folga');
+  PERFORM public.exigir(public.nada_mudou(), 'e ninguem entrega no proprio dia de folga');
   UPDATE public.funcionarios SET diadefolga = 0 WHERE funcionarioid = 9803;
 
   -- (d) VINCULO COM A LOJA DESLIGADO.
   UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 9803 AND lojaid = 10;
   PERFORM public.exigir(jsonb_array_length(public.eu_tarefas(1, 9803)) = 0,
                         'tirada da loja, a tarefa some do celular dela');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e a entrega dela naquela loja e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'e a entrega dela naquela loja e recusada');
   UPDATE public.funcionarioslojas SET ativo = true WHERE funcionarioid = 9803 AND lojaid = 10;
 
   -- Desfeito tudo, a tarefa volta: as travas nao ficaram grudadas.
@@ -6982,19 +7290,23 @@ BEGIN
 
   -- (e) PESSOA DESLIGADA: as QUATRO portas fecham, nao so o Inicio.
   UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 9803;
-  BEGIN PERFORM public.eu_inicio(1, 9803); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_inicio(1, 9803) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'pessoa desligada nao abre o Inicio');
-  BEGIN PERFORM public.eu_tarefas(1, 9803); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'pessoa desligada nao abre o Inicio');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_tarefas(1, 9803) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem a lista de tarefas (antes devolvia as tarefas dela)');
-  BEGIN PERFORM public.eu_extrato(1, 9803, public.dia_em_sao_paulo(now()) - 30,
-                                  public.dia_em_sao_paulo(now())); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'nem a lista de tarefas (antes devolvia as tarefas dela)');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_extrato(1, 9803, public.dia_em_sao_paulo(now()) - 30,
+                                  public.dia_em_sao_paulo(now())) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o extrato (antes abria)');
+  PERFORM public.exigir(public.nada_voltou(), 'nem o extrato (antes abria)');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9803, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem entrega nada (antes entregava)');
+  PERFORM public.exigir(public.nada_mudou(), 'nem entrega nada (antes entregava)');
   UPDATE public.funcionarios SET ativo = true WHERE funcionarioid = 9803;
 END $$;
 
@@ -7015,10 +7327,11 @@ BEGIN
                         'e o tablet passou a gravar a impressao digital da imagem');
 
   -- E a mesma imagem nao vale de novo, nem vinda do tablet.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9803, v_atr, '1/10/outra-do-tablet.jpg', NULL,
                                       'digital-do-tablet', true); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a mesma foto nao prova duas tarefas pelo tablet');
+  PERFORM public.exigir(public.nada_mudou(), 'a mesma foto nao prova duas tarefas pelo tablet');
 END $$;
 
 -- A funcao nova e interna: recebe contaid, entao nunca e liberada (Etapa 1.6).
@@ -7027,9 +7340,10 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  BEGIN PERFORM public.eu_confere_pessoa(1, 9803); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_confere_pessoa(1, 9803) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.eu_confere_pessoa');
+  PERFORM public.exigir(public.nada_voltou(), 'usuario logado nao chama public.eu_confere_pessoa');
 END $$;
 
 RESET ROLE;
@@ -7060,17 +7374,20 @@ BEGIN
   PERFORM public.exigir((SELECT status FROM public.contas WHERE contaid = 1) = 'cancelada',
                         'a conta ficou mesmo cancelada (senao as provas abaixo nao valem nada)');
 
-  BEGIN PERFORM public.eu_inicio(1, 9803); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_inicio(1, 9803) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'conta cancelada nao abre o Inicio do colaborador');
+  PERFORM public.exigir(public.nada_voltou(), 'conta cancelada nao abre o Inicio do colaborador');
 
-  BEGIN PERFORM public.eu_tarefas(1, 9803); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_tarefas(1, 9803) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem a lista de tarefas dela');
+  PERFORM public.exigir(public.nada_voltou(), 'nem a lista de tarefas dela');
 
-  BEGIN PERFORM public.eu_extrato(1, 9803, current_date - 30, current_date); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_extrato(1, 9803, current_date - 30, current_date) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem o extrato dela');
+  PERFORM public.exigir(public.nada_voltou(), 'nem o extrato dela');
 
   UPDATE public.contas SET status = 'ativa' WHERE contaid = 1;
 
@@ -7191,19 +7508,22 @@ DO $$
 DECLARE v_cod text := current_setting('teste.tvcod'); deu_erro boolean;
 BEGIN
   -- Loja de OUTRA conta: recusado.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.parear_tv(v_cod, 20, 'TV roubada'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem pareia uma TV numa loja de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem pareia uma TV numa loja de outra conta');
 
   -- Sem nome: recusado.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.parear_tv(v_cod, 10, '   '); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a TV precisa de um nome');
+  PERFORM public.exigir(public.nada_mudou(), 'a TV precisa de um nome');
 
   -- Codigo que nao existe: recusado.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.parear_tv('ZZZZZZ', 10, 'TV do balcao'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'codigo inventado nao pareia nada');
+  PERFORM public.exigir(public.nada_mudou(), 'codigo inventado nao pareia nada');
 
   -- Agora o certo.
   PERFORM public.parear_tv(v_cod, 10, 'TV do balcao');
@@ -7213,9 +7533,10 @@ BEGIN
                         'o pareamento cria o link da TV na loja escolhida');
 
   -- O mesmo codigo nao serve duas vezes.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.parear_tv(v_cod, 10, 'TV clonada'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o codigo e de uso unico: nao pareia de novo');
+  PERFORM public.exigir(public.nada_mudou(), 'o codigo e de uso unico: nao pareia de novo');
 END $$;
 
 -- A conta B nao alcanca nada disso.
@@ -7225,17 +7546,20 @@ DECLARE deu_erro boolean;
 BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.linkstv WHERE nome = 'TV do balcao'),
                         'a conta B nao ve a TV da conta A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.tv_buscar_link(repeat('a', 64)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.tv_buscar_link');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama public.tv_buscar_link');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.tv_novo_codigo(repeat('d', 64)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.tv_novo_codigo');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama public.tv_novo_codigo');
   -- A tabela dos codigos NEGA a leitura para quem esta logado: nem o dono da
   -- conta a alcanca. E mais forte do que "devolve vazio".
-  BEGIN PERFORM 1 FROM public.codigostv; deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM (SELECT 1 FROM public.codigostv) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem le a tabela dos codigos pelo navegador (nem o dono)');
+  PERFORM public.exigir(public.nada_voltou(), 'ninguem le a tabela dos codigos pelo navegador (nem o dono)');
 END $$;
 
 -- A TV busca o link: sai UMA vez, e some da linha.
@@ -7287,9 +7611,10 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE v_cod text := current_setting('teste.tvcod2'); deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.parear_tv(v_cod, 10, 'TV atrasada'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'codigo vencido nao pareia');
+  PERFORM public.exigir(public.nada_mudou(), 'codigo vencido nao pareia');
 END $$;
 
 RESET ROLE;
@@ -7356,9 +7681,10 @@ BEGIN
                         'o cronometro conta a partir da hora de liberacao, nao do inicio do dia');
 
   -- Ninguem pega antes da hora.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.pegar_tarefa(v_tarde, 9503); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem pega a tarefa antes da hora');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem pega a tarefa antes da hora');
 
   -- Mas pega a que ja liberou.
   PERFORM public.exigir((SELECT liberada FROM public.fila_da_loja(10) WHERE atribuicaoid = v_cedo),
@@ -7373,9 +7699,10 @@ BEGIN
                         'e da para tirar a hora, voltando ao dia todo');
 
   -- Atribuicao de outra conta nao se altera.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_hora_da_atribuicao(-1, '10:00'::time); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao se altera a hora de atribuicao que nao existe');
+  PERFORM public.exigir(public.nada_mudou(), 'nao se altera a hora de atribuicao que nao existe');
 END $$;
 
 -- O FUSO. Esta e a prova que o Wisley pediu: num servidor em UTC, as 15h da
@@ -7418,16 +7745,18 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('FUSO_HORARIO', 'Marte/Olympus'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'fuso que nao existe e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'fuso que nao existe e recusado');
   PERFORM public.exigir((SELECT valor FROM public.configuracoes
                           WHERE contaid = 1 AND chave = 'FUSO_HORARIO') = 'America/Sao_Paulo',
                         'e o fuso bom continua valendo');
   -- A funcao do fuso recebe a conta: nunca e liberada para quem esta logado.
-  BEGIN PERFORM public.fuso_da_conta(1); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.fuso_da_conta(1) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.fuso_da_conta');
+  PERFORM public.exigir(public.nada_voltou(), 'usuario logado nao chama public.fuso_da_conta');
 END $$;
 
 RESET ROLE;
@@ -7469,14 +7798,16 @@ DO $$
 DECLARE v_atr integer := current_setting('teste.dono_atr')::integer; deu_erro boolean; v_ent integer;
 BEGIN
   -- (a) O TABLET recusa entregar sem aceite.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9501, v_atr, NULL, NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o tablet RECUSA entregar sem aceite (antes isso valia como aceite)');
+  PERFORM public.exigir(public.nada_mudou(), 'o tablet RECUSA entregar sem aceite (antes isso valia como aceite)');
 
   -- (b) O CELULAR recusa entregar sem aceite.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9501, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e o celular tambem recusa');
+  PERFORM public.exigir(public.nada_mudou(), 'e o celular tambem recusa');
 
   -- (c) Com o aceite, passa.
   PERFORM public.entrar_na_visao(1, NULL, 10, 'tablet');
@@ -7489,12 +7820,14 @@ BEGIN
                         'e ela passa para "em andamento"');
 
   -- (d) Quem NAO aceitou nao entrega, nem no tablet nem no celular.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_entregar(1, 10, 9502, v_atr, NULL, NULL); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem nao aceitou nao entrega (tablet)');
+  PERFORM public.exigir(public.nada_mudou(), 'quem nao aceitou nao entrega (tablet)');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar(1, 9502, v_atr, NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem nao aceitou nao entrega (celular)');
+  PERFORM public.exigir(public.nada_mudou(), 'quem nao aceitou nao entrega (celular)');
 
   -- (e) Quem aceitou entrega.
   v_ent := public.visao_entregar(1, 10, 9501, v_atr, NULL, NULL);
@@ -7631,43 +7964,52 @@ BEGIN
                         'manutencao nao leva quantidade');
 
   -- NO NOME DE OUTRA PESSOA: recusado. 9504 trabalha na loja 11.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9504, 'Compra', 'Sabao'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao se abre pedido no nome de quem nao trabalha nesta loja');
+  PERFORM public.exigir(public.nada_mudou(), 'nao se abre pedido no nome de quem nao trabalha nesta loja');
 
   -- EM OUTRA LOJA: recusado (a loja 20 e da conta B).
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 20, 9501, 'Compra', 'Sabao'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem numa loja de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nem numa loja de outra conta');
 
   -- Obrigatorios e limites.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', '   ', 1); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o item e obrigatorio');
+  PERFORM public.exigir(public.nada_mudou(), 'o item e obrigatorio');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', ''); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a descricao da manutencao tambem e obrigatoria');
+  PERFORM public.exigir(public.nada_mudou(), 'a descricao da manutencao tambem e obrigatoria');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Sabao', 0); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quantidade zero nao passa');
+  PERFORM public.exigir(public.nada_mudou(), 'quantidade zero nao passa');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Sabao', -3); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem quantidade negativa');
+  PERFORM public.exigir(public.nada_mudou(), 'nem quantidade negativa');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', NULL, 1); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'compra sem item nao passa');
+  PERFORM public.exigir(public.nada_mudou(), 'compra sem item nao passa');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', repeat('x', 600), 1); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'texto grande demais e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'texto grande demais e recusado');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Outra coisa', 'Sabao'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'tipo inventado nao passa');
+  PERFORM public.exigir(public.nada_mudou(), 'tipo inventado nao passa');
 
   -- LIMITE POR HORA: a loja nao enche a tela do gestor sem querer.
   -- Solicitacao nao se apaga (o banco impede, e faz bem). Entao o limite e
@@ -7679,9 +8021,10 @@ BEGIN
 
   PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'um');
   PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'dois');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Manutencao', 'tres'); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'passado o limite da hora, a loja espera um pouco');
+  PERFORM public.exigir(public.nada_mudou(), 'passado o limite da hora, a loja espera um pouco');
   PERFORM public.exigir((SELECT count(*) FROM public.solicitacoesinternas s
                           WHERE s.contaid = 1 AND s.lojaid = 10
                             AND s.datasolicitacao > now() - interval '1 hour') = v_n + 2,
@@ -7695,9 +8038,10 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_abrir_pedido(1, 10, 9501, 'Compra', 'Sabao', 1); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.visao_abrir_pedido');
+  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama public.visao_abrir_pedido');
 END $$;
 
 -- A conta B nao ve os pedidos da A.
@@ -7780,34 +8124,40 @@ BEGIN
                         'o extrato fecha com o saldo depois de pedir e desistir');
 
   -- SALDO INSUFICIENTE diz quanto falta.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, v_caro); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'sem saldo, o pedido e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'sem saldo, o pedido e recusado');
 
   -- PREMIO DE OUTRA CONTA: recusado.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, 9902); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'premio que nao existe na conta dela e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'premio que nao existe na conta dela e recusado');
 
   -- VALOR INVALIDO no abate.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, NULL, 0); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'abate de valor zero e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'abate de valor zero e recusado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, NULL, -5); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem valor negativo');
+  PERFORM public.exigir(public.nada_mudou(), 'nem valor negativo');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, v_prod, 10); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'premio E valor ao mesmo tempo nao passa');
+  PERFORM public.exigir(public.nada_mudou(), 'premio E valor ao mesmo tempo nao passa');
 
   -- LIMITE DE PENDENTES.
   UPDATE public.configuracoes SET valor = '2' WHERE contaid = 1 AND chave = 'MAX_RESGATES_PENDENTES';
   UPDATE public.produtosloja SET estoquedisponivel = 10 WHERE produtoid = v_prod;
   PERFORM public.eu_pedir_resgate(1, 9801, v_prod);
   PERFORM public.eu_pedir_resgate(1, 9801, v_prod);
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, v_prod); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'no limite de pendentes, o pedido e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'no limite de pendentes, o pedido e recusado');
   UPDATE public.configuracoes SET valor = '3' WHERE contaid = 1 AND chave = 'MAX_RESGATES_PENDENTES';
 END $$;
 
@@ -7831,9 +8181,10 @@ BEGIN
   PERFORM public.eu_cancelar_resgate(1, 9801, v_id);
 
   -- Loja que nao e dela: recusada, mesmo sendo da mesma conta.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(1, 9801, NULL, 1, 11); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'loja onde ela nao trabalha e recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'loja onde ela nao trabalha e recusada');
 END $$;
 
 -- Ninguem pede no nome de outra pessoa, e ninguem cancela pedido alheio.
@@ -7843,14 +8194,16 @@ BEGIN
   SELECT resgateid INTO v_id FROM public.resgates
    WHERE contaid = 1 AND funcionarioid = 9801 AND status = 'Pendente' LIMIT 1;
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_cancelar_resgate(1, 9501, v_id); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem cancela o pedido de outra pessoa');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem cancela o pedido de outra pessoa');
 
   -- Pessoa de outra conta: recusada.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_pedir_resgate(2, 9801, 9900); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao se pede resgate misturando conta e pessoa');
+  PERFORM public.exigir(public.nada_mudou(), 'nao se pede resgate misturando conta e pessoa');
 END $$;
 
 -- As funcoes recebem a conta: nunca liberadas para quem esta logado.
@@ -7920,14 +8273,16 @@ BEGIN
                         'o tempo da troca fica gravado');
 
   -- Tempo invalido nao passa.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_tv_da_loja(10, '{}'::jsonb, 45, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'tempo fora de 30, 60 ou 120 e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'tempo fora de 30, 60 ou 120 e recusado');
 
   -- Loja de OUTRA conta: recusada.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_tv_da_loja(20, '{}'::jsonb, 60, false); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem configura a TV de uma loja de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem configura a TV de uma loja de outra conta');
 END $$;
 
 RESET ROLE;
@@ -7987,9 +8342,10 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  BEGIN PERFORM public.tv_blocos_da_loja(1, 10); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.tv_blocos_da_loja(1, 10) r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'usuario logado nao chama public.tv_blocos_da_loja');
+  PERFORM public.exigir(public.nada_voltou(), 'usuario logado nao chama public.tv_blocos_da_loja');
 END $$;
 
 RESET ROLE;
@@ -8045,14 +8401,16 @@ BEGIN
                         'e nunca o comunicado do colega');
 
   -- Ninguem da ciencia no nome de outra pessoa.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.visao_dar_ciencia(1, 10, 9501, v_outra); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem da ciencia no comunicado de outra pessoa');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem da ciencia no comunicado de outra pessoa');
 
   -- Quem nao trabalha nesta loja nao abre o mural aqui.
-  BEGIN PERFORM public.visao_mural(1, 10, 9504); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.visao_mural(1, 10, 9504) r)); deu_erro := false;
   EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem nao trabalha nesta loja nao abre o mural nela');
+  PERFORM public.exigir(public.nada_voltou(), 'quem nao trabalha nesta loja nao abre o mural nela');
 
   -- Dar ciencia paga o bonus, UMA vez.
   SELECT saldopontos INTO v_saldo FROM public.funcionarios WHERE funcionarioid = 9501;
@@ -8247,32 +8605,38 @@ BEGIN
                         'desligar o som da loja funciona');
 
   -- Volume fora dos tres niveis: recusado. A tela escolhe nivel, nao numero.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_som_da_loja(10, true, 87, 0); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'volume fora dos tres niveis e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'volume fora dos tres niveis e recusado');
 
   -- Intervalo menor que 5 minutos: recusado pelo BANCO, nao pela tela.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_som_da_loja(10, true, 19, 2); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'repetir a cada 2 minutos e recusado: o minimo e 5');
+  PERFORM public.exigir(public.nada_mudou(), 'repetir a cada 2 minutos e recusado: o minimo e 5');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_som_da_loja(10, true, 19, 7); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'intervalo que nao esta na lista e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'intervalo que nao esta na lista e recusado');
 
   -- E nem mexendo na coluna direto: o CHECK da tabela tambem barra.
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.lojas SET somrepetirminutos = 3 WHERE lojaid = 10; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a tabela barra intervalo invalido mesmo por UPDATE direto');
+  PERFORM public.exigir(public.nada_mudou(), 'a tabela barra intervalo invalido mesmo por UPDATE direto');
 
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.lojas SET somvolume = 140 WHERE lojaid = 10; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a tabela barra volume acima de 100');
+  PERFORM public.exigir(public.nada_mudou(), 'a tabela barra volume acima de 100');
 
   -- Loja de outra conta: nao existe para quem pergunta.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_som_da_loja(20, true, 45, 30); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a conta A nao configura o tablet da loja da conta B');
+  PERFORM public.exigir(public.nada_mudou(), 'a conta A nao configura o tablet da loja da conta B');
 
   -- Conta nova nao recebe mais as chaves de som da conta: o som so se
   -- configura por loja. (Nas contas que ja existiam as duas linhas continuam
@@ -8292,9 +8656,10 @@ BEGIN
                         'a conta B configura o tablet da sua loja');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.lojas WHERE lojaid IN (10, 11)),
                         'a conta B nao ve nem a configuracao de som das lojas de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_som_da_loja(10, true, 45, 0); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a conta B nao configura o tablet da loja da conta A');
+  PERFORM public.exigir(public.nada_mudou(), 'a conta B nao configura o tablet da loja da conta A');
 END $$;
 
 RESET ROLE;
@@ -8728,11 +9093,12 @@ UPDATE public.configuracoes SET valor = '10' WHERE contaid = 1 AND chave = 'MINU
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN
     UPDATE public.configuracoes SET valor = 'America/Rio_Branco' WHERE contaid = 1 AND chave = 'FUSO_HORARIO';
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'fuso fora do horario de Brasilia e recusado (ainda nao esta disponivel)');
+  PERFORM public.exigir(public.nada_mudou(), 'fuso fora do horario de Brasilia e recusado (ainda nao esta disponivel)');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoes
                                      WHERE chave = 'FUSO_HORARIO' AND valor <> 'America/Sao_Paulo'),
                         'nenhuma conta fica fora de Sao Paulo');
@@ -8751,11 +9117,12 @@ BEGIN
 
   -- Ela escolhe o PIN: ja fez o primeiro acesso.
   PERFORM public.definir_pin(1, 9964, repeat('4', 64), false);
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.criar_codigo_acesso(1, 9964, repeat('l', 64), NULL, 7, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'quem ja fez o primeiro acesso nao ganha codigo (o caminho e redefinir)');
+  PERFORM public.exigir(public.nada_mudou(), 'quem ja fez o primeiro acesso nao ganha codigo (o caminho e redefinir)');
   PERFORM public.exigir(public.usar_codigo_acesso(1, '39053344705', repeat('k', 64)) IS NULL,
                         'e um codigo que sobrou nao abre a conta de quem ja tem PIN');
 
@@ -8779,16 +9146,18 @@ BEGIN
 
   -- O registro de cada folha.
   PERFORM public.registrar_folha_de_acesso(1, 9964, v_cod, true, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.registrar_folha_de_acesso(1, 200, v_cod, false, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nao se registra folha de pessoa de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nao se registra folha de pessoa de outra conta');
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.registrar_folha_de_acesso(2, 200, v_cod, false, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem com o codigo de outra conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nem com o codigo de outra conta');
 END $$;
 
 SET ROLE authenticated;
@@ -8802,11 +9171,12 @@ BEGIN
   PERFORM public.exigir(r.folhas = 1 AND r.folhaemitidapor = 'master.a@exemplo.com'
                         AND r.codigogeradopor = 'master.a@exemplo.com' AND r.codigoreimprimivel,
                         'o cartao mostra quem gerou o codigo e quem imprimiu a folha');
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.folhasacesso (funcionarioid, codigoid) VALUES (9964, 1);
     deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'ninguem registra folha pelo navegador: so o servidor');
+  PERFORM public.exigir(public.nada_mudou(), 'ninguem registra folha pelo navegador: so o servidor');
 END $$;
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
@@ -8889,12 +9259,14 @@ BEGIN
   UPDATE public.contas SET cnpj = '11.222.333/0001-81' WHERE contaid = 1;
   PERFORM public.exigir((SELECT cnpj FROM public.contas WHERE contaid = 1) = '11222333000181',
                         'CNPJ e guardado so com os digitos');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.contas SET cnpj = '11222333000181' WHERE contaid = 2; deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'dois clientes nao tem o mesmo CNPJ');
+  PERFORM public.exigir(public.nada_mudou(), 'dois clientes nao tem o mesmo CNPJ');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.contas SET cnpj = '11222333000182' WHERE contaid = 2; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'CNPJ com digito errado e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'CNPJ com digito errado e recusado');
   UPDATE public.contas SET cnpj = NULL WHERE contaid = 2;
   PERFORM public.exigir((SELECT cnpj FROM public.contas WHERE contaid = 2) IS NULL, 'CNPJ vazio e aceito');
 
@@ -8909,23 +9281,26 @@ BEGIN
 
   -- Trocar: formato novo; o antigo abre a empresa por 30 dias e fica reservado.
   v_antigo := (SELECT codigo FROM public.contas WHERE contaid = 1);
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.contas SET codigo = 'Pr' WHERE contaid = 1; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'codigo novo fora do formato (4 a 20, minusculas e numeros) e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'codigo novo fora do formato (4 a 20, minusculas e numeros) e recusado');
   UPDATE public.contas SET codigo = 'premier' WHERE contaid = 1;
   PERFORM public.exigir(public.conta_do_codigo('premier') = 1, 'o codigo novo abre a empresa');
   PERFORM public.exigir(public.conta_do_codigo(v_antigo) = 1, 'o codigo antigo continua abrindo a empresa (30 dias)');
   PERFORM public.exigir((SELECT valeate FROM public.codigosantigos WHERE codigo = v_antigo) > now() + interval '29 days',
                         'o antigo vale 30 dias');
   UPDATE public.contas SET codigo = 'outrocodigo' WHERE contaid = 1;
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.contas SET codigo = 'premier' WHERE contaid = 2; deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o codigo que ja foi de um cliente fica reservado: outro nao pega');
+  PERFORM public.exigir(public.nada_mudou(), 'o codigo que ja foi de um cliente fica reservado: outro nao pega');
   UPDATE public.codigosantigos SET valeate = now() - interval '1 second' WHERE codigo = 'premier';
   PERFORM public.exigir(public.conta_do_codigo('premier') IS NULL, 'depois dos 30 dias o antigo nao abre mais');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.contas SET codigo = 'premier' WHERE contaid = 2; deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'e continua reservado para sempre (um PDF velho nunca leva a outra empresa)');
+  PERFORM public.exigir(public.nada_mudou(), 'e continua reservado para sempre (um PDF velho nunca leva a outra empresa)');
   UPDATE public.contas SET codigo = 'premier' WHERE contaid = 1;
   PERFORM public.exigir(public.conta_do_codigo('premier') = 1 AND NOT EXISTS (SELECT 1 FROM public.codigosantigos WHERE codigo = 'premier'),
                         'a propria empresa pode voltar a um codigo que ja foi dela');
@@ -8938,31 +9313,35 @@ BEGIN
   -- Rede com cliente nao se apaga.
   INSERT INTO public.redes (redeid, nome, lojascontratadas) OVERRIDING SYSTEM VALUE VALUES (70, 'Rede Setenta', 5);
   UPDATE public.contas SET redeid = 70 WHERE contaid = 1;
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.redes WHERE redeid = 70; deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 cliente%'; END;
-  PERFORM public.exigir(deu_erro, 'rede com cliente nao se apaga, e a mensagem diz quantos');
+  PERFORM public.exigir(public.nada_mudou(), 'rede com cliente nao se apaga, e a mensagem diz quantos');
 
   -- Anexos: registro so pelo servidor, de um cliente OU de uma rede.
   INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
   VALUES (1, 'contrato-a.pdf', 'contas/1/contrato.pdf', 'application/pdf', 1000);
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.anexosadmin (contaid, redeid, nomearquivo, caminho, tipo, tamanho)
     VALUES (1, 70, 'x.pdf', 'contas/1/x.pdf', 'application/pdf', 1000);
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'anexo e de um cliente OU de uma rede, nunca dos dois');
+  PERFORM public.exigir(public.nada_mudou(), 'anexo e de um cliente OU de uma rede, nunca dos dois');
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
     VALUES (1, 'x.exe', 'contas/1/x.exe', 'application/x-msdownload', 1000);
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'anexo so PDF ou imagem');
+  PERFORM public.exigir(public.nada_mudou(), 'anexo so PDF ou imagem');
+  PERFORM public.guardar_foto();
   BEGIN
     INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
     VALUES (1, 'grande.pdf', 'contas/1/grande.pdf', 'application/pdf', 20000000);
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'anexo de mais de 10 MB e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'anexo de mais de 10 MB e recusado');
   INSERT INTO storage.objects (bucket_id, name) VALUES ('administracao', 'contas/1/contrato.pdf'),
                                                        ('logos-redes', 'redes/70/logo.png');
 END $$;
@@ -8979,34 +9358,41 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.codigosantigos), 'o master nao ve codigos antigos');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id IN ('administracao', 'logos-redes')),
                         'nem os arquivos dos buckets da administracao');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.redes (nome) VALUES ('Rede pirata'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao cria rede');
+  PERFORM public.exigir(public.nada_mudou(), 'o master nao cria rede');
   UPDATE public.redes SET nome = 'invadida' WHERE redeid = 70;
   DELETE FROM public.redes WHERE redeid = 70;
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.anexosadmin (contaid, nomearquivo, caminho, tipo, tamanho)
         VALUES (1, 'x.pdf', 'contas/1/y.pdf', 'application/pdf', 10); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao registra anexo');
+  PERFORM public.exigir(public.nada_mudou(), 'o master nao registra anexo');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('administracao', '1/entrou.pdf'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao sobe arquivo no bucket da administracao');
+  PERFORM public.exigir(public.nada_mudou(), 'o master nao sobe arquivo no bucket da administracao');
   BEGIN UPDATE public.contas SET codigo = 'tomada' WHERE contaid = 1; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir((SELECT codigo FROM public.contas WHERE contaid = 1) = 'premier',
                         'o master nao troca o codigo da propria empresa');
-  BEGIN PERFORM public.redes_admin(); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.redes_admin() r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao chama redes_admin');
-  BEGIN PERFORM public.resumo_admin_das_contas(); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'o master nao chama redes_admin');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.resumo_admin_das_contas() r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem resumo_admin_das_contas');
-  BEGIN PERFORM public.sugerir_codigo_empresa('x'); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'nem resumo_admin_das_contas');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.sugerir_codigo_empresa('x') r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem a sugestao de codigo');
-  BEGIN PERFORM public.codigo_empresa_disponivel('x'); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'nem a sugestao de codigo');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.codigo_empresa_disponivel('x') r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem a conferencia de codigo');
+  PERFORM public.exigir(public.nada_voltou(), 'nem a conferencia de codigo');
   PERFORM public.exigir((public.meu_acesso())->>'conta' = 'Empresa A', 'o produto mostra o NOME FANTASIA');
 END $$;
 RESET ROLE;
@@ -9067,9 +9453,10 @@ VALUES (7101, 71, 'contrato-cliente-errado.pdf', 'redes/71/c.pdf', 'application/
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.redes WHERE redeid = 71; deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 anexo%'; END;
-  PERFORM public.exigir(deu_erro, 'rede com anexo ativo nao se apaga (remova os anexos antes)');
+  PERFORM public.exigir(public.nada_mudou(), 'rede com anexo ativo nao se apaga (remova os anexos antes)');
 
   -- O servidor remove: o arquivo sai do armazenamento, e o registro fica sem o nome.
   UPDATE public.anexosadmin SET removidoem = now(), removidopor = 'cccccccc-cccc-cccc-cccc-cccccccccccc',
@@ -9082,12 +9469,14 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  BEGIN PERFORM public.anexos_admin(); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.anexos_admin() r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o master nao le a lista de anexos');
+  PERFORM public.exigir(public.nada_voltou(), 'o master nao le a lista de anexos');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.anexosadmin SET removidoem = NULL WHERE anexoid = 7101; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem desfaz uma remocao (nao tem permissao nenhuma na tabela)');
+  PERFORM public.exigir(public.nada_mudou(), 'nem desfaz uma remocao (nao tem permissao nenhuma na tabela)');
 END $$;
 SET teste.uid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 DO $$
@@ -9153,11 +9542,12 @@ BEGIN
                         'codigo com o CPF de outra pessoa nao confere');
 
   -- Passo 2 com PIN que ja e de alguem: NADA e gravado.
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.concluir_primeiro_acesso(1, '85312746053', repeat('r', 64), 'pbkdf2$1$aa$bb', repeat('1', 64));
     deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := SQLERRM LIKE 'Escolha outro%'; END;
-  PERFORM public.exigir(deu_erro, 'PIN que ja e de alguem: "escolha outro numero"');
+  PERFORM public.exigir(public.nada_mudou(), 'PIN que ja e de alguem: "escolha outro numero"');
   PERFORM public.exigir((SELECT senhahashapp IS NULL AND pinhash IS NULL FROM public.funcionarios WHERE funcionarioid = 9972),
                         'e nem a senha fica gravada (tudo ou nada)');
   PERFORM public.exigir((SELECT usadoem IS NULL FROM public.codigosacesso WHERE codigoid = v_cod),
@@ -9176,11 +9566,12 @@ BEGIN
 
   -- Quem ja esta logado sem senha nem PIN: completa os dois juntos, ou nenhum.
   UPDATE public.funcionarios SET senhahashapp = NULL, pinhash = NULL WHERE funcionarioid = 9972;
+  PERFORM public.guardar_foto();
   BEGIN
     PERFORM public.completar_senha_e_pin(1, 9972, 'pbkdf2$1$ee$ff', repeat('1', 64));
     deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro AND (SELECT senhahashapp IS NULL FROM public.funcionarios WHERE funcionarioid = 9972),
+  PERFORM public.exigir(public.nada_mudou() AND (SELECT senhahashapp IS NULL FROM public.funcionarios WHERE funcionarioid = 9972),
                         'completar com PIN repetido nao grava nem a senha');
   PERFORM public.completar_senha_e_pin(1, 9972, 'pbkdf2$1$ee$ff', repeat('6', 64));
   PERFORM public.exigir((SELECT senhahashapp = 'pbkdf2$1$ee$ff' AND pinhash = repeat('6', 64)
@@ -9259,24 +9650,29 @@ BEGIN
   PERFORM set_config('teste.j73', v_j::text, false);
   PERFORM public.exigir(public.vincular_jornada(ARRAY[9972], v_j) = 1, 'o master vincula a pessoa a uma jornada da conta dele');
 
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_jornada(NULL, 'Teste 73', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nome de jornada nao se repete na conta');
+  PERFORM public.exigir(public.nada_mudou(), 'nome de jornada nao se repete na conta');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_jornada(NULL, 'Sem fim', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', '12:00', NULL, NULL, true); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'intervalo precisa de comeco e fim');
+  PERFORM public.exigir(public.nada_mudou(), 'intervalo precisa de comeco e fim');
 
   -- Jornada com gente nao se apaga nem se desativa; a mensagem diz quantos.
+  PERFORM public.guardar_foto();
   BEGIN DELETE FROM public.jornadas WHERE jornadaid = v_j; deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 pessoa%'; END;
-  PERFORM public.exigir(deu_erro, 'jornada com gente vinculada nao se apaga (e diz quantos)');
+  PERFORM public.exigir(public.nada_mudou(), 'jornada com gente vinculada nao se apaga (e diz quantos)');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_jornada(v_j, 'Teste 73', jsonb_build_array(jsonb_build_object('dia', v_dow, 'entrada', '08:00', 'saida', '17:00')), NULL, NULL, NULL, false); deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem se desativa');
+  PERFORM public.exigir(public.nada_mudou(), 'nem se desativa');
   -- O master nao grava a jornada da pessoa direto (so pela funcao).
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid = 9972; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a jornada da pessoa so muda por vincular_jornada');
+  PERFORM public.exigir(public.nada_mudou(), 'a jornada da pessoa so muda por vincular_jornada');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -9314,13 +9710,15 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = v_j)
                         AND NOT EXISTS (SELECT 1 FROM public.jornadasdias WHERE jornadaid = v_j),
                         'a conta B nao ve a jornada da conta A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.vincular_jornada(ARRAY[200], v_j); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a conta B nao vincula gente dela a uma jornada de A');
+  PERFORM public.exigir(public.nada_mudou(), 'a conta B nao vincula gente dela a uma jornada de A');
   PERFORM public.exigir(public.vincular_jornada(ARRAY[9972], NULL) = 0, 'nem desvincula gente de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_jornada(v_j, 'Invadida', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem edita a jornada de A');
+  PERFORM public.exigir(public.nada_mudou(), 'nem edita a jornada de A');
   DELETE FROM public.jornadas WHERE jornadaid = v_j;
 END $$;
 RESET ROLE;
@@ -9331,9 +9729,10 @@ BEGIN
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = current_setting('teste.j73')::integer),
                         'o DELETE da conta B nao apagou a jornada de A');
   -- Mesmo pelo dono do banco: pessoa de B nao aponta para jornada de A.
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.funcionarios SET jornadaid = current_setting('teste.j73')::integer WHERE funcionarioid = 200; deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a chave composta impede pessoa de uma conta na jornada de outra');
+  PERFORM public.exigir(public.nada_mudou(), 'a chave composta impede pessoa de uma conta na jornada de outra');
   PERFORM public.exigir(NOT has_function_privilege('anon', 'public.salvar_jornada(integer, text, jsonb, time, time, text, boolean)', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.vincular_jornada(integer[], integer)', 'EXECUTE'),
                         'o visitante sem login nao mexe em jornada');
@@ -9414,12 +9813,14 @@ BEGIN
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.quadro_validacao(10, (v->>'hoje')::date, (v->>'hoje')::date)->'historico') x
                                  WHERE x->>'titulo' = 'TV hoje'),
                         'escolhendo o periodo de hoje, ela aparece');
-  BEGIN PERFORM public.quadro_validacao(10, '2026-09-20', '2026-09-10'); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.quadro_validacao(10, '2026-09-20', '2026-09-10') r)); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'periodo invertido e recusado');
-  BEGIN PERFORM public.quadro_validacao(10, '2026-01-01', '2026-09-10'); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'periodo invertido e recusado');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.quadro_validacao(10, '2026-01-01', '2026-09-10') r)); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'periodo maior que 93 dias e recusado');
+  PERFORM public.exigir(public.nada_voltou(), 'periodo maior que 93 dias e recusado');
 END $$;
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
@@ -9525,9 +9926,10 @@ BEGIN
                         AND (SELECT count(*) FROM public.intervalosdomapa WHERE funcionarioid = 7551) = 6,
                         'tirar o intervalo de quarta tira so o de quarta');
   PERFORM public.salvar_intervalo_do_mapa(7551, 4, '23:00', '05:00');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, 8, '12:00', '13:00'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'dia da semana fora de 1 a 7 e recusado ao gravar');
+  PERFORM public.exigir(public.nada_mudou(), 'dia da semana fora de 1 a 7 e recusado ao gravar');
   PERFORM public.exigir(to_regprocedure('public.salvar_intervalo_do_mapa(integer, time, time)') IS NULL,
                         'a gravacao sem dia saiu (nao grava sem saber de que dia e)');
   v := public.mapa_da_semana(10);
@@ -9535,15 +9937,18 @@ BEGIN
                         AND (SELECT bool_and((x.d->>'diasemana')::integer = x.n)
                                FROM jsonb_array_elements(v->'dias') WITH ORDINALITY x(d, n)),
                         'a semana vem inteira numa consulta so, de domingo a sabado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, 2, '12:00', NULL); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'intervalo sem fim e recusado');
-  BEGIN PERFORM public.mapa_da_jornada(10, 8); deu_erro := false;
+  PERFORM public.exigir(public.nada_mudou(), 'intervalo sem fim e recusado');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.mapa_da_jornada(10, 8) r)); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'dia da semana fora de 1 a 7 e recusado');
+  PERFORM public.exigir(public.nada_voltou(), 'dia da semana fora de 1 a 7 e recusado');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.intervalosdomapa (funcionarioid, inicio, fim) VALUES (100, '12:00', '13:00'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o navegador nao grava a tabela direto: so pela funcao');
+  PERFORM public.exigir(public.nada_mudou(), 'o navegador nao grava a tabela direto: so pela funcao');
 END $$;
 
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -9556,9 +9961,10 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.mapa_da_semana(10)->'dias') x
                                      WHERE jsonb_array_length(x->'pessoas') > 0),
                         'a conta B nao ve a semana de uma loja de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.salvar_intervalo_do_mapa(7551, 2, '10:00', '11:00'); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a conta B nao grava intervalo em pessoa de A');
+  PERFORM public.exigir(public.nada_mudou(), 'a conta B nao grava intervalo em pessoa de A');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -9643,12 +10049,14 @@ BEGIN
   UPDATE public.tarefas SET ativa = true, titulo = 'Leitura de comunicado', pontos = 3 WHERE sistema = 'leitura';
 
   -- O codigo interno nao muda e o navegador nao inventa codigo.
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.tarefas SET sistema = NULL WHERE sistema = 'leitura'; deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o codigo interno da tarefa nao muda');
+  PERFORM public.exigir(public.nada_mudou(), 'o codigo interno da tarefa nao muda');
+  PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.tarefas (titulo, pontos, sistema) VALUES ('Falsa', 1, 'nota_fiscal'); deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'tarefa nova nao recebe codigo interno pelo navegador');
+  PERFORM public.exigir(public.nada_mudou(), 'tarefa nova nao recebe codigo interno pelo navegador');
 END $$;
 
 -- A prova de que o padrao dos comunicados nao mudou com a tarefa ATIVA: a
@@ -9713,12 +10121,14 @@ BEGIN
   PERFORM public.exigir(jsonb_array_length(public.atribuicoes_da_loja(10, true, NULL, NULL, NULL, NULL, false, 50)->'linhas')
                         >= jsonb_array_length(public.atribuicoes_da_loja(10, false, NULL, NULL, NULL, NULL, false, 50)->'linhas'),
                         '"mostrar tambem as encerradas" continua valendo junto com o filtro');
-  BEGIN PERFORM public.atribuicoes_da_loja(10, false, hoje, hoje - 1); deu_erro := false;
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.atribuicoes_da_loja(10, false, hoje, hoje - 1) r)); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'data final antes da inicial e recusada');
-  BEGIN PERFORM public.atribuicoes_da_loja(10, false, hoje - 400, hoje); deu_erro := false;
+  PERFORM public.exigir(public.nada_voltou(), 'data final antes da inicial e recusada');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.atribuicoes_da_loja(10, false, hoje - 400, hoje) r)); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'periodo maior que 366 dias e recusado');
+  PERFORM public.exigir(public.nada_voltou(), 'periodo maior que 366 dias e recusado');
 END $$;
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 DO $$
@@ -9753,16 +10163,19 @@ BEGIN
   doc := public.publicar_comunicado('Teto 77 a', 'Texto', 50, 'funcionarios', NULL, ARRAY[110]);
   PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 50,
                         'no teto, o comunicado passa');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.publicar_comunicado('Teto 77 b', 'Texto', 1000, 'funcionarios', NULL, ARRAY[110]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; msg := SQLERRM; END;
-  PERFORM public.exigir(deu_erro AND msg LIKE '%máximo permitido nesta conta (50 pontos)%',
+  PERFORM public.exigir(public.nada_mudou() AND msg LIKE '%máximo permitido nesta conta (50 pontos)%',
                         '1000 por engano e recusado, com mensagem que diz o maximo');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.editar_comunicado(doc, 'Teto 77 a', 'Texto', 51); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'editar comunicado tambem respeita o teto');
+  PERFORM public.exigir(public.nada_mudou(), 'editar comunicado tambem respeita o teto');
+  PERFORM public.guardar_foto();
   BEGIN UPDATE public.tarefas SET pontos = 60 WHERE sistema = 'leitura'; deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a tarefa Leitura de comunicado tambem respeita o teto');
+  PERFORM public.exigir(public.nada_mudou(), 'a tarefa Leitura de comunicado tambem respeita o teto');
   UPDATE public.tarefas SET titulo = 'Leitura renomeada' WHERE sistema = 'leitura';
   UPDATE public.tarefas SET titulo = 'Leitura de comunicado' WHERE sistema = 'leitura';
   PERFORM public.exigir(true, 'mudar so o nome da leitura nao esbarra no teto');
@@ -9771,13 +10184,15 @@ BEGIN
   PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '10');
   PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 50,
                         'baixar o teto nao mexe no comunicado ja publicado');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.publicar_comunicado('Teto 77 c', 'Texto', 11, 'funcionarios', NULL, ARRAY[110]); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o teto novo vale para o que se grava daqui em diante');
+  PERFORM public.exigir(public.nada_mudou(), 'o teto novo vale para o que se grava daqui em diante');
   PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '50');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.alterar_configuracao('MAX_PONTOS_CIENCIA', '20000'); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'teto acima de 10000 e recusado');
+  PERFORM public.exigir(public.nada_mudou(), 'teto acima de 10000 e recusado');
 END $$;
 
 -- So o master muda o teto: o gerente nao.
@@ -9866,9 +10281,10 @@ BEGIN
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(lista) x
                                  WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'responsavel_fora'),
                         'responsavel que saiu da loja: a Agenda mostra que a tarefa nao vai aparecer');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.recriar_tarefa_do_agendamento(ag); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'recriar com o responsavel fora da loja pede para trocar o responsavel');
+  PERFORM public.exigir(public.nada_mudou(), 'recriar com o responsavel fora da loja pede para trocar o responsavel');
   PERFORM public.trocar_responsavel_agendamento(ag, 110);
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
                                      WHERE (x->>'agendamentoid')::integer = ag)
@@ -9881,9 +10297,10 @@ BEGIN
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
                                  WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'sem_tarefa'),
                         'agendamento que nasceu sem tarefa aparece na lista');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.recriar_tarefa_do_agendamento(ag); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'recriar com a tarefa desativada pede para reativa-la');
+  PERFORM public.exigir(public.nada_mudou(), 'recriar com a tarefa desativada pede para reativa-la');
   UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
   PERFORM public.remarcar_agendamento(ag, d1 + interval '1 hour');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag AND datafimvigencia IS NULL),
@@ -9909,9 +10326,10 @@ DO $$
 DECLARE deu_erro boolean;
 BEGIN
   PERFORM public.exigir(jsonb_array_length(public.agendamentos_sem_tarefa(10)) = 0, 'a conta B nao ve a agenda de A');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.recriar_tarefa_do_agendamento((SELECT max(agendamentoid) FROM public.agendamentos)); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a conta B nao recria tarefa em agendamento de A');
+  PERFORM public.exigir(public.nada_mudou(), 'a conta B nao recria tarefa em agendamento de A');
   PERFORM public.exigir((public.saude_da_minha_conta()->'fotos'->>'vencidas')::integer = 0
                         OR public.saude_da_minha_conta() IS NOT NULL, 'a conta B ve so a propria saude');
 END $$;
@@ -9996,9 +10414,10 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.registrar_entrega(9882); deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'a copia de uma tarefa UNICA ja entregue continua recusada');
+  PERFORM public.exigir(public.nada_mudou(), 'a copia de uma tarefa UNICA ja entregue continua recusada');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -10115,12 +10534,14 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.eu_entregar_e_listar(1, 9767, 1, NULL, NULL, NULL, true); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'o navegador nao chama a entrega do celular direto');
-  BEGIN PERFORM public.eu_pessoa_do_usuario('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'); deu_erro := false;
+  PERFORM public.exigir(public.nada_mudou(), 'o navegador nao chama a entrega do celular direto');
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.eu_pessoa_do_usuario('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') r)); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(deu_erro, 'nem pergunta quem e a pessoa');
+  PERFORM public.exigir(public.nada_voltou(), 'nem pergunta quem e a pessoa');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -10399,16 +10820,19 @@ BEGIN
                                        WHERE (i->>'atribuicaoid')::integer = 98351 AND i->>'situacao' = 'para_pegar'),
                           'dia com foto: a fila inteira do fim do dia');
     -- So leitura, e so dentro do alcance.
-    v_ok := false;
-    BEGIN PERFORM public.fila_de_um_dia(8101, v_hoje); EXCEPTION WHEN check_violation THEN v_ok := true; END;
-    PERFORM public.exigir(v_ok, 'o dia de hoje nao vem da foto (e a fila ao vivo)');
-    v_ok := false;
-    BEGIN PERFORM public.fila_de_um_dia(8101, v_hoje + 1); EXCEPTION WHEN check_violation THEN v_ok := true; END;
-    PERFORM public.exigir(v_ok, 'dia futuro nao se escolhe');
-    v_ok := false;
-    BEGIN PERFORM public.fila_de_um_dia(8101, (public.alcance_da_fila()->>'primeirodia')::date - 1);
-    EXCEPTION WHEN check_violation THEN v_ok := true; END;
-    PERFORM public.exigir(v_ok AND (public.alcance_da_fila()->>'primeirodia')::date
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.fila_de_um_dia(8101, v_hoje) r));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'o dia de hoje nao vem da foto (e a fila ao vivo)');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.fila_de_um_dia(8101, v_hoje + 1) r));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'dia futuro nao se escolhe');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r))
+                                              FROM public.fila_de_um_dia(8101, (public.alcance_da_fila()->>'primeirodia')::date - 1) r));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou() AND (public.alcance_da_fila()->>'primeirodia')::date
                                    = (date_trunc('month', v_hoje) - interval '1 month')::date,
                           'o filtro alcanca o mes corrente e o anterior, e nada antes');
     RESET ROLE;
@@ -10418,9 +10842,10 @@ BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosdafila WHERE contaid = 81),
                           'a conta A nao enxerga a foto da fila da conta 81');
-    v_ok := false;
-    BEGIN PERFORM public.fila_de_um_dia(8101, v_ontem); EXCEPTION WHEN no_data_found THEN v_ok := true; END;
-    PERFORM public.exigir(v_ok, 'a conta A nao le um dia da loja da conta 81');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.fila_de_um_dia(8101, v_ontem) r));
+    EXCEPTION WHEN no_data_found THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'a conta A nao le um dia da loja da conta 81');
     RESET ROLE;
     PERFORM set_config('teste.uid', '81818181-8181-8181-8181-818181818181', true);
 
@@ -11318,20 +11743,23 @@ BEGIN
     PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.travaspin WHERE contaid = 82),
                           'outra conta nao le as travas da conta 82');
     PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.travas_do_pin()), 'nem pela funcao da tela');
-    BEGIN PERFORM public.liberar_pin(98201); deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN PERFORM public.liberar_pin(98201); deu_erro := false;
     EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'outra conta nao libera o PIN de uma pessoa da conta 82');
-    BEGIN UPDATE public.travaspin SET bloqueadoate = NULL; deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'outra conta nao libera o PIN de uma pessoa da conta 82');
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.travaspin SET bloqueadoate = NULL; deu_erro := false;
     EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'ninguem logado escreve na trava direto');
+    PERFORM public.exigir(public.nada_mudou(), 'ninguem logado escreve na trava direto');
     RESET ROLE;
     PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
     SET LOCAL ROLE authenticated;
     PERFORM public.exigir((SELECT minutosfaltam FROM public.travas_do_pin() WHERE funcionarioid = 98201) > 0,
                           'o gestor ve a Ana bloqueada, com os minutos que faltam');
-    BEGIN UPDATE public.travaspin SET bloqueadoate = NULL WHERE funcionarioid = 98201; deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.travaspin SET bloqueadoate = NULL WHERE funcionarioid = 98201; deu_erro := false;
     EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem o gestor escreve na trava direto: so pelo botao, que registra');
+    PERFORM public.exigir(public.nada_mudou(), 'nem o gestor escreve na trava direto: so pelo botao, que registra');
     PERFORM public.liberar_pin(98201);
     RESET ROLE;
     PERFORM public.exigir((public.pin_conferir_pessoa(82, 8201, 98201, ana)->>'funcionarioid')::integer = 98201,
@@ -11390,14 +11818,16 @@ BEGIN
     PERFORM public.exigir(n = 0, 'nem as tarefas');
     SELECT count(*) INTO n FROM public.lojas;
     PERFORM public.exigir(n = 0, 'nem as lojas');
-    BEGIN
+    PERFORM public.guardar_foto();
+  BEGIN
       INSERT INTO public.tarefas (titulo, pontos) VALUES ('do gerente', 1); deu_erro := false;
     EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'o gerente nao grava tarefa');
-    BEGIN
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao grava tarefa');
+    PERFORM public.guardar_foto();
+  BEGIN
       PERFORM public.aprovar_entrega(1); deu_erro := false;
     EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem aprova entrega');
+    PERFORM public.exigir(public.nada_mudou(), 'nem aprova entrega');
     RESET ROLE;
 
     -- O master da mesma conta segue igual.
@@ -11474,7 +11904,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.provolatile = 'v'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('exigir', 'pular')              -- ajudantes deste teste
+     AND p.proname NOT IN ('exigir', 'pular', 'guardar_foto', 'nada_mudou', 'guardar_resultado', 'limpar_resultado', 'nada_voltou', 'foto_do_banco')  -- ajudantes deste teste
      AND p.prosrc !~ 'public\.pode\('
      AND p.proname NOT IN (SELECT nome FROM classificacao_escrita);
   PERFORM public.exigir(sobra IS NULL,
@@ -11554,21 +11984,26 @@ BEGIN
     INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '91919191-9191-9191-9191-919191919191', 10);
 
     -- O que a estrutura garante.
-    BEGIN INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'inventada.x'); deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'inventada.x'); deu_erro := false;
     EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'cargo so recebe permissao que existe no catalogo');
-    BEGIN INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '91919191-9191-9191-9191-919191919191', 20); deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'cargo so recebe permissao que existe no catalogo');
+    PERFORM public.guardar_foto();
+  BEGIN INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '91919191-9191-9191-9191-919191919191', 20); deu_erro := false;
     EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'usuario gerencial nao recebe loja de outra conta');
-    BEGIN UPDATE public.usuariosgerenciais SET cargoid = v_outro WHERE userid = '91919191-9191-9191-9191-919191919191'; deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'usuario gerencial nao recebe loja de outra conta');
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.usuariosgerenciais SET cargoid = v_outro WHERE userid = '91919191-9191-9191-9191-919191919191'; deu_erro := false;
     EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem cargo de outra conta');
-    BEGIN UPDATE public.usuariosgerenciais SET funcionarioid = 200 WHERE userid = '91919191-9191-9191-9191-919191919191'; deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'nem cargo de outra conta');
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.usuariosgerenciais SET funcionarioid = 200 WHERE userid = '91919191-9191-9191-9191-919191919191'; deu_erro := false;
     EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem o vinculo com um funcionario de outra conta');
-    BEGIN INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_cargo); deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o vinculo com um funcionario de outra conta');
+    PERFORM public.guardar_foto();
+  BEGIN INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_cargo); deu_erro := false;
     EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'o master nao vira usuario gerencial (so login de gerente)');
+    PERFORM public.exigir(public.nada_mudou(), 'o master nao vira usuario gerencial (so login de gerente)');
 
     -- O gerente, pelo pode().
     PERFORM set_config('teste.uid', '91919191-9191-9191-9191-919191919191', true);
@@ -11639,9 +12074,10 @@ BEGIN
                           'as lojas do master: todas as dele (' || n || '), nenhuma de outra conta');
     SELECT count(*) INTO n FROM public.cargos;
     PERFORM public.exigir(n = 2, 'o master le so os cargos da propria conta (leu ' || n || ')');
-    BEGIN INSERT INTO public.cargos (nome) VALUES ('direto na tabela'); deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN INSERT INTO public.cargos (nome) VALUES ('direto na tabela'); deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem o master grava cargo direto na tabela (so pela pagina, parte 5)');
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava cargo direto na tabela (so pela pagina, parte 5)');
     RESET ROLE;
     PERFORM set_config('teste.uid', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', true);
     SET LOCAL ROLE authenticated;
@@ -11659,17 +12095,20 @@ BEGIN
                                    WHERE contaid = 1 AND tabela = 'contasusuarios' AND acao = 'INSERT'
                                      AND depois->>'papel' = 'gerente'),
                           'e o login de gerente criado');
-    BEGIN DELETE FROM public.permissoeshistorico WHERE contaid = 1; deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN DELETE FROM public.permissoeshistorico WHERE contaid = 1; deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'o historico nao se apaga, nem pelo dono do banco');
+    PERFORM public.exigir(public.nada_mudou(), 'o historico nao se apaga, nem pelo dono do banco');
 
     -- O ultimo master.
-    BEGIN DELETE FROM public.contasusuarios WHERE userid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'; deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN DELETE FROM public.contasusuarios WHERE userid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'; deu_erro := false;
     EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nao da para apagar o ultimo master');
-    BEGIN UPDATE public.contasusuarios SET papel = 'gerente' WHERE userid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'; deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'nao da para apagar o ultimo master');
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.contasusuarios SET papel = 'gerente' WHERE userid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'; deu_erro := false;
     EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem rebaixar o ultimo master');
+    PERFORM public.exigir(public.nada_mudou(), 'nem rebaixar o ultimo master');
     INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, '91919191-9191-9191-9191-919191919192', 'master');
     DELETE FROM public.contasusuarios WHERE userid = '91919191-9191-9191-9191-919191919192';
     PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contasusuarios WHERE userid = '91919191-9191-9191-9191-919191919192'),
@@ -11678,15 +12117,18 @@ BEGIN
     -- As 20 tabelas sem tela e as 2 colunas: fechadas ate para o master.
     PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
     SET LOCAL ROLE authenticated;
-    BEGIN INSERT INTO public.fornecedores (cnpj, nomefantasia) VALUES ('00000000000191', 'direto'); deu_erro := false;
+    PERFORM public.guardar_foto();
+  BEGIN INSERT INTO public.fornecedores (cnpj, nomefantasia) VALUES ('00000000000191', 'direto'); deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'tabela sem tela (fornecedores) nao aceita escrita direta nem do master');
-    BEGIN UPDATE public.funcionarios SET isgestor = true WHERE funcionarioid = 100; deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'tabela sem tela (fornecedores) nao aceita escrita direta nem do master');
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.funcionarios SET isgestor = true WHERE funcionarioid = 100; deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'a coluna isgestor nao se grava direto');
-    BEGIN UPDATE public.funcionarios SET chatidtelegram = 1 WHERE funcionarioid = 100; deu_erro := false;
+    PERFORM public.exigir(public.nada_mudou(), 'a coluna isgestor nao se grava direto');
+    PERFORM public.guardar_foto();
+  BEGIN UPDATE public.funcionarios SET chatidtelegram = 1 WHERE funcionarioid = 100; deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem a chatidtelegram');
+    PERFORM public.exigir(public.nada_mudou(), 'nem a chatidtelegram');
     RESET ROLE;
     PERFORM public.exigir(NOT EXISTS (
         SELECT 1 FROM information_schema.role_table_grants
@@ -11717,10 +12159,113 @@ RESET ROLE;
 -- teste tem dado de mais de uma conta: sem isso, "zero" nao provaria nada.
 DO $$ BEGIN RAISE NOTICE '92. nenhuma leitura devolve outra conta'; END $$;
 
+-- Para o zero valer em TODA tabela (pedido do Wisley, 29/09/2026), cada tabela
+-- com contaid recebe, so dentro desta secao, linhas de pelo menos duas contas:
+-- se ja tem uma linha, ela e copiada para a outra conta; se esta vazia, nasce
+-- uma linha minima, coluna por coluna, respeitando as listas de valores. Tudo
+-- e desfeito no fim da secao. Tabela nova que o gerador nao consiga preencher
+-- reprova aqui, com o nome e o motivo.
+-- Dá a toda tabela com contaid linhas de pelo menos DUAS contas (1 e 2).
+-- Devolve as tabelas que não deu, com o motivo.
+CREATE OR REPLACE FUNCTION pg_temp.cobrir_duas_contas()
+RETURNS TABLE (tabela text, motivo text)
+LANGUAGE plpgsql AS $$
+DECLARE
+  t record; col record; n int; modelo jsonb; novo jsonb; conta int; contas int[]; cols text; valor text; lit text;
+  seq int := 0;
+BEGIN
+  SET LOCAL session_replication_role = replica;   -- sem gatilhos e sem checagem de chave estrangeira
+  FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace
+            WHERE s.nspname = 'public' AND c.relkind = 'r'
+              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'contaid' AND NOT a.attisdropped)
+            ORDER BY 1 LOOP
+    EXECUTE format('SELECT count(DISTINCT contaid) FROM public.%I', t.relname) INTO n;
+    CONTINUE WHEN n >= 2;
+    IF n = 1 THEN
+      EXECUTE format('SELECT to_jsonb(x) FROM public.%I x WHERE contaid IS NOT NULL LIMIT 1', t.relname) INTO modelo;
+      contas := ARRAY[CASE WHEN (modelo->>'contaid')::int = 1 THEN 2 ELSE 1 END];
+    ELSE
+      -- Tabela vazia: uma linha mínima, coluna por coluna.
+      modelo := '{}';
+      FOR col IN SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS tipo, t2.typcategory
+                   FROM pg_attribute a JOIN pg_type t2 ON t2.oid = a.atttypid
+                  WHERE a.attrelid = ('public.' || t.relname)::regclass AND a.attnum > 0 AND NOT a.attisdropped
+                    AND a.attnotnull AND a.attgenerated = ''
+                    AND NOT EXISTS (SELECT 1 FROM pg_attrdef d WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum)
+                    AND a.attidentity = '' LOOP
+        -- Coluna com lista de valores permitidos: o primeiro da lista.
+        SELECT (regexp_match(pg_get_constraintdef(k.oid), '''([^'']*)''::(?:character varying|text|bpchar)'))[1] INTO lit
+          FROM pg_constraint k
+         WHERE k.conrelid = ('public.' || t.relname)::regclass AND k.contype = 'c'
+           AND pg_get_constraintdef(k.oid) ~ ('\m' || col.attname || '\M') LIMIT 1;
+        valor := CASE
+          WHEN lit IS NOT NULL AND col.typcategory = 'S' THEN to_jsonb(lit)::text
+          WHEN col.typcategory = 'N' THEN '1'
+          WHEN col.typcategory = 'S' THEN '"x"'
+          WHEN col.typcategory = 'B' THEN 'false'
+          WHEN col.tipo = 'date' THEN to_jsonb(current_date)::text
+          WHEN col.tipo LIKE 'timestamp%' THEN to_jsonb(now())::text
+          WHEN col.tipo LIKE 'time%' THEN '"08:00"'
+          WHEN col.tipo = 'uuid' THEN to_jsonb(gen_random_uuid())::text
+          WHEN col.tipo IN ('jsonb', 'json') THEN '{}'
+          WHEN col.tipo = 'interval' THEN '"1 hour"'
+          WHEN col.typcategory = 'A' THEN '[]'
+          ELSE NULL END;
+        IF valor IS NOT NULL THEN modelo := modelo || jsonb_build_object(col.attname, valor::jsonb); END IF;
+      END LOOP;
+      contas := ARRAY[1, 2];
+    END IF;
+    FOREACH conta IN ARRAY contas LOOP
+      seq := seq + 1;
+      novo := modelo || jsonb_build_object('contaid', conta);
+      -- Cada chave ou índice único que NÃO inclui a conta ganha um valor novo
+      -- em UMA coluna dele: a primeira que não tem lista de valores (CHECK).
+      -- (Se a chave inclui contaid, trocar a conta já basta.)
+      FOR col IN
+        WITH chaves AS (
+          SELECT i.indexrelid AS id, i.indkey::int2[] AS cols FROM pg_index i
+           WHERE i.indrelid = ('public.' || t.relname)::regclass AND i.indisunique
+             AND NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey::int2[]) AND a.attname = 'contaid'))
+        SELECT DISTINCT ON (c.id) a.attname, format_type(a.atttypid, a.atttypmod) AS tipo, t2.typcategory, a.atttypmod AS tamanho, t2.typname
+          FROM chaves c JOIN pg_attribute a ON a.attrelid = ('public.' || t.relname)::regclass AND a.attnum = ANY (c.cols)
+          JOIN pg_type t2 ON t2.oid = a.atttypid
+         WHERE NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = a.attrelid AND k.contype = 'c'
+                              AND pg_get_constraintdef(k.oid) ~ ('\m' || a.attname || '\M'))
+         ORDER BY c.id, a.attnum LOOP
+        IF col.typcategory = 'N' THEN
+          novo := novo || jsonb_build_object(col.attname, CASE WHEN col.typname = 'int2' THEN 20000 + seq ELSE 990000 + seq END);
+        ELSIF col.tipo = 'uuid' THEN
+          novo := novo || jsonb_build_object(col.attname, gen_random_uuid());
+        ELSIF col.typcategory = 'S' THEN
+          novo := novo || jsonb_build_object(col.attname,
+                    left(md5(t.relname || seq), CASE WHEN col.tamanho > 4 THEN least(col.tamanho - 4, 20) ELSE 20 END));
+        ELSIF col.tipo LIKE 'timestamp%' OR col.tipo = 'date' THEN
+          novo := novo || jsonb_build_object(col.attname, (now() - make_interval(days => 3000 + seq))::date);
+        END IF;
+      END LOOP;
+      SELECT string_agg(quote_ident(k), ', ') INTO cols
+        FROM jsonb_object_keys(novo) k
+       WHERE novo->k <> 'null'::jsonb
+         AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = ('public.' || t.relname)::regclass
+                        AND a.attname = k AND a.attgenerated = '' AND NOT a.attisdropped);
+      BEGIN
+        EXECUTE format('INSERT INTO public.%I (%s) OVERRIDING SYSTEM VALUE SELECT %s FROM jsonb_populate_record(NULL::public.%I, $1)',
+                       t.relname, cols, cols, t.relname) USING novo;
+      EXCEPTION WHEN OTHERS THEN
+        tabela := t.relname; motivo := SQLERRM; RETURN NEXT;
+      END;
+    END LOOP;
+  END LOOP;
+  SET LOCAL session_replication_role = origin;
+END $$;
+
 DO $$
 DECLARE
   u record; t record; n bigint; vazou text := ''; tabelas int := 0; cobertas int := 0; logins int := 0;
+  nao_deu text;
 BEGIN
+ BEGIN
+  SELECT string_agg(g.tabela || ' (' || g.motivo || ')', '; ') INTO nao_deu FROM pg_temp.cobrir_duas_contas() g;
   SELECT count(*) INTO tabelas
     FROM information_schema.columns c JOIN pg_class k ON k.relname = c.table_name
     JOIN pg_namespace s ON s.oid = k.relnamespace AND s.nspname = 'public'
@@ -11767,11 +12312,16 @@ BEGIN
   END LOOP;
   PERFORM set_config('teste.uid', '', true);
 
-  PERFORM public.exigir(cobertas >= 30,
-    'o teste tem dado de mais de uma conta em ' || cobertas || ' das ' || tabelas || ' tabelas com conta (sem isso "zero" nao provaria nada)');
+  PERFORM public.exigir(nao_deu IS NULL AND cobertas = tabelas,
+    'o teste tem dado de duas contas em ' || cobertas || ' das ' || tabelas || ' tabelas com conta'
+    || coalesce(' -- NAO DEU: ' || nao_deu, ''));
   PERFORM public.exigir(vazou = '',
     logins || ' logins x ' || tabelas || ' tabelas + Storage: nenhuma leitura devolve linha de outra conta'
     || CASE WHEN vazou <> '' THEN ' -- VAZOU: ' || vazou ELSE '' END);
+  RAISE EXCEPTION 'desfazer_92';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM <> 'desfazer_92' THEN RAISE; END IF;
+ END;
 END $$;
 SET teste.uid = '';
 RESET ROLE;
