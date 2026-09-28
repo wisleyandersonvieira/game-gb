@@ -400,7 +400,7 @@ export const definirSenhaDeGestor = createServerFn({ method: "POST" })
     const { data: acessoAtual, error: erroAcesso } = await supabase.rpc("meu_acesso");
     if (erroAcesso) throw new Error("Não foi possível confirmar quem é você.");
     const tipo = (acessoAtual as { tipo?: string } | null)?.tipo;
-    if (tipo !== "master" && tipo !== "gerente" && tipo !== "admin") {
+    if (tipo !== "master" && tipo !== "admin") {
       throw new Error("Esta tela é do gestor.");
     }
 
@@ -1249,7 +1249,7 @@ export const diagnostico = createServerFn({ method: "GET" })
   // 23/09/2026 e é a razão de esta tela existir.
   const tipo = await tipoPeloToken(data.token);
   const porChave = segredoConfere(data.chave ?? "", process.env["STGAME_SAUDE_CHAVE"] ?? "");
-  const detalhe = ["master", "gerente", "admin"].includes(tipo ?? "") || porChave;
+  const detalhe = ["master", "admin"].includes(tipo ?? "") || porChave;
 
   const temPepper = !!process.env["STGAME_PIN_PEPPER"] && process.env["STGAME_PIN_PEPPER"]!.length >= 16;
 

@@ -51,6 +51,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-etapa-1.12-parte-B1.sql', '20260928100800'),
   ('aplicar-etapa-1.12-parte-C.sql', '20260929100000'),
   ('aplicar-faixa-meta-do-mes.sql', '20260929241000'),
+  ('aplicar-fechar-papel-gerente.sql', '20260929247000'),
   ('aplicar-folha-de-acesso.sql', '20260929150000'),
   ('aplicar-foto-da-fila.sql', '20260929237000'),
   ('aplicar-hoje-da-conta.sql', '20260929140000'),
@@ -371,7 +372,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        pg_temp.tenta($q$SELECT ARRAY[public.pin_minutos_do_degrau(1), public.pin_minutos_do_degrau(2),
                                      public.pin_minutos_do_degrau(3), public.pin_minutos_do_degrau(9)] = ARRAY[1, 3, 10, 10]
                        AND public.visao_equipe_de_hoje(0, 0) = '[]'::jsonb
-                       AND to_regprocedure('public.liberar_pin(integer)') IS NOT NULL$q$))
+                       AND to_regprocedure('public.liberar_pin(integer)') IS NOT NULL$q$)),
+  -- O papel "gerente" fechado: nenhuma das três portas o aceita mais. (Não dá
+  -- para RODAR como um gerente daqui: o SQL Editor não tem o login dele.)
+  (410, 'OPERACAO', 'versao', 'papel gerente fechado (sem conta e sem login ate existir cargo)', 'aplicar-fechar-papel-gerente.sql',
+       NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public'
+                      AND p.proname IN ('minha_conta', 'minha_conta_editavel', 'acesso_por_email')
+                      AND p.prosrc LIKE '%gerente%'))
 ),
 tudo AS (
   SELECT x.*, a.versao

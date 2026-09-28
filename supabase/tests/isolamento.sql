@@ -11271,4 +11271,62 @@ END $$;
 SET teste.uid = '';
 RESET ROLE;
 
+-- ===========================================================================
+-- 90. O papel "gerente" esta FECHADO (29/09/2026)
+-- ===========================================================================
+-- Ate a permissao por cargo e loja existir, um login com papel "gerente" nao
+-- tem conta nenhuma: nao le, nao grava e nao entra pela tela do gestor. Antes
+-- ele entrava pela mesma porta do master e faria quase tudo.
+DO $$ BEGIN RAISE NOTICE '90. papel gerente fechado'; END $$;
+
+DO $$
+DECLARE deu_erro boolean; n integer;
+BEGIN
+  BEGIN
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+      ('90909090-9090-9090-9090-909090909090', 'gerente.90@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel)
+    VALUES (1, '90909090-9090-9090-9090-909090909090', 'gerente');
+
+    -- Nao entra pela tela de login do gestor.
+    PERFORM public.exigir(public.acesso_por_email('gerente.90@exemplo.com') IS NULL,
+                          'o gerente nao passa pela porta de login do gestor');
+    PERFORM public.exigir(public.acesso_por_email('master.a@exemplo.com')->>'papel' = 'master',
+                          'e o master continua entrando');
+
+    PERFORM set_config('teste.uid', '90909090-9090-9090-9090-909090909090', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.minha_conta() IS NULL, 'o gerente nao tem conta nenhuma para as regras de acesso');
+    PERFORM public.exigir(public.minha_conta_editavel() IS NULL, 'nem conta editavel');
+    PERFORM public.exigir(NOT public.sou_master(), 'e nao e master');
+    SELECT count(*) INTO n FROM public.funcionarios;
+    PERFORM public.exigir(n = 0, 'o gerente nao le a equipe da conta (leu ' || n || ')');
+    SELECT count(*) INTO n FROM public.tarefas;
+    PERFORM public.exigir(n = 0, 'nem as tarefas');
+    SELECT count(*) INTO n FROM public.lojas;
+    PERFORM public.exigir(n = 0, 'nem as lojas');
+    BEGIN
+      INSERT INTO public.tarefas (titulo, pontos) VALUES ('do gerente', 1); deu_erro := false;
+    EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+    PERFORM public.exigir(deu_erro, 'o gerente nao grava tarefa');
+    BEGIN
+      PERFORM public.aprovar_entrega(1); deu_erro := false;
+    EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+    PERFORM public.exigir(deu_erro, 'nem aprova entrega');
+    RESET ROLE;
+
+    -- O master da mesma conta segue igual.
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.minha_conta() = 1 AND public.minha_conta_editavel() = 1,
+                          'o master da conta 1 continua com a conta 1');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_90';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_90' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

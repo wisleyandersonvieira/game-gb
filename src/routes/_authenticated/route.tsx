@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_authenticated")({
     // levado para a visão dele — e, mesmo que digitasse o endereço, o banco
     // não entregaria nada (minha_conta() responde vazio para eles).
     const acesso = await meuAcesso();
-    if (acesso.tipo !== "master" && acesso.tipo !== "gerente") {
+    if (acesso.tipo !== "master") {
       throw redirect({ to: destinoDoAcesso(acesso) });
     }
     return {};

@@ -20,7 +20,7 @@ export const Route = createFileRoute("/medir")({
   // não entrou (pedido do Wisley, 25/09/2026).
   beforeLoad: async () => {
     const acesso = await meuAcesso();
-    if (acesso.tipo !== "master" && acesso.tipo !== "gerente" && acesso.tipo !== "admin") {
+    if (acesso.tipo !== "master" && acesso.tipo !== "admin") {
       throw redirect({ to: acesso.tipo === "semlogin" ? "/auth" : "/sem-acesso" });
     }
   },

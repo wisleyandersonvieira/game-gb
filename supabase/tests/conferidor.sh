@@ -53,8 +53,9 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP FUNCTION public.pin_minutos_do_degrau(integer) CASCADE;")"
-if echo "$s" | grep -q "|rode aplicar-trava-do-pin-por-pessoa.sql"; then
+antiga="$(awk '/FUNCTION public.minha_conta\(\)/,/^\$\$;/' "$RAIZ/supabase/migrations/20260927100300_acessos_papeis_e_contexto.sql")"
+s="$(conferir "$antiga")"
+if echo "$s" | grep -q "|rode aplicar-fechar-papel-gerente.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1
