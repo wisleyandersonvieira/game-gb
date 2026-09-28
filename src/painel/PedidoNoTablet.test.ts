@@ -42,10 +42,13 @@ describe("o menu do tablet", () => {
   });
 
   it("o PIN do menu usa a MESMA modal do pegar tarefa", () => {
-    // Nada de caminho de PIN separado: é o mesmo componente, com o título
-    // mudando conforme o item do menu.
-    expect(TABLET).toContain('"Quem está lendo?" : "Quem está pedindo?"');
-    const trecho = TABLET.slice(TABLET.indexOf('"Quem está lendo?"'));
+    // Nada de caminho de PIN separado: é o mesmo componente. Desde a trava
+    // por pessoa (29/09/2026), a pessoa toca no nome antes ("Quem está
+    // lendo?") e o teclado mostra de quem é o PIN.
+    expect(TABLET).toContain('doMenu === "mural" ? "Quem está lendo?" : doMenu === "pedido" ? "Quem está pedindo?"');
+    const trecho = TABLET.slice(TABLET.indexOf("{doMenu !== null && quem"));
+    expect(trecho.slice(0, 400)).toContain("<TecladoDoPin");
+    expect(trecho.slice(0, 400)).toContain("PIN de ${quem.nome}");
     expect(trecho.slice(0, 400)).toContain("erro={abrirPedido.isError");
   });
 });

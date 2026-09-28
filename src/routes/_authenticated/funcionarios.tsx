@@ -332,6 +332,27 @@ function Funcionarios() {
     },
   });
 
+  // PIN do tablet bloqueado por tentativas (29/09/2026): a trava é de cada
+  // pessoa, 1, 3 e no máximo 10 minutos. O gestor libera na hora, e o banco
+  // guarda quem liberou e quando.
+  const travasPin = useQuery({
+    queryKey: ["travas-pin"],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("travas_do_pin");
+      if (error) throw error;
+      return new Map((data ?? []).map((t) => [t.funcionarioid, t]));
+    },
+  });
+  const liberarPin = useMutation({
+    onError: (e, funcionarioid) => setErroDoAcesso({ funcionarioid, texto: (e as Error).message }),
+    mutationFn: async (funcionarioid: number) => {
+      const { error } = await supabase.rpc("liberar_pin", { p_funcionarioid: funcionarioid });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["travas-pin"] }),
+  });
+
   // Desativar passa pelo servidor: além de marcar no cadastro, ele derruba o
   // login da pessoa no mesmo movimento (o banco apaga senha e PIN).
   const alternarAtivo = useMutation({
@@ -828,6 +849,22 @@ function Funcionarios() {
                 >
                   Trocar CPF
                 </button>
+              )}
+              {travasPin.data?.get(f.funcionarioid) && (
+                <span className="flex items-center gap-2">
+                  <span className="text-sm text-destructive">
+                    {travasPin.data.get(f.funcionarioid)!.minutosfaltam > 0
+                      ? `PIN bloqueado por mais ${travasPin.data.get(f.funcionarioid)!.minutosfaltam} min`
+                      : `Errou o PIN ${travasPin.data.get(f.funcionarioid)!.erros}× seguidas`}
+                  </span>
+                  <button
+                    onClick={() => liberarPin.mutate(f.funcionarioid)}
+                    disabled={liberarPin.isPending}
+                    className="rounded-md border border-border px-3 py-1 text-sm disabled:opacity-50"
+                  >
+                    Liberar PIN agora
+                  </button>
+                </span>
               )}
               <button
                 onClick={() =>

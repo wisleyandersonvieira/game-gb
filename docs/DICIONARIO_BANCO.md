@@ -73,6 +73,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `rotinasexecucoes` | conta | execucaoid |  |
 | `fotosexpurgo` | conta | expurgoid | entregas |
 | `tentativasacesso` | conta | tentativaid |  |
+| `travaspin` | conta | (contaid, funcionarioid) | funcionarios |
+| `pinliberacoes` | conta | liberacaoid | funcionarios |
 | `codigosacesso` | conta | codigoid | funcionarios |
 | `folhasacesso` | conta | folhaid | funcionarios, codigosacesso |
 | `codigosantigos` | conta | codigo | contas |
@@ -585,7 +587,34 @@ Tentativas de entrar (senha) e de usar o PIN no tablet. Nível conta (vazio só 
 | sucesso | boolean | |
 | em | timestamptz | padrão now() |
 
-**Ninguém lê pelo navegador.** Conferir e registrar são **a mesma operação** (`tentativa_abrir`, que tranca a chave): sem isso, uma rajada de pedidos simultâneos passava toda de uma vez. PIN: 5 erros em 1 minuto travam, contados por pessoa e por tablet, **mais um teto de 30 tentativas por dia** (é o que impede usar a tela do PIN como adivinhador). Senha: 5 erros em 15 minutos e teto de 50 por dia, contados pelo CPF/e-mail **e** pela origem, que é definida pelo servidor. O que passa de 7 dias é apagado. Funções: `acesso_travado` e `registrar_tentativa` (só o servidor).
+**Ninguém lê pelo navegador.** Conferir e registrar são **a mesma operação** (`tentativa_abrir`, que tranca a chave): sem isso, uma rajada de pedidos simultâneos passava toda de uma vez. PIN: 5 erros em 1 minuto travam, contados por pessoa e por tablet, **mais um teto de 30 tentativas por dia** (é o que impede usar a tela do PIN como adivinhador). **Desde 29/09/2026 o PIN do tablet não usa mais esta tabela:** a trava é por pessoa, em `travaspin`. Senha: 5 erros em 15 minutos e teto de 50 por dia, contados pelo CPF/e-mail **e** pela origem, que é definida pelo servidor. O que passa de 7 dias é apagado. Funções: `acesso_travado` e `registrar_tentativa` (só o servidor).
+
+## travaspin (29/09/2026)
+A trava do PIN do tablet, **por pessoa**. Nível conta. Uma linha por pessoa que já errou.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| contaid | integer | → contas |
+| funcionarioid | integer | → funcionarios (junto com contaid); chave junto com contaid |
+| erros | integer | erros seguidos (zera no acerto, na liberação e depois de 24 h sem errar) |
+| nivel | integer | o degrau do bloqueio: 1 = 1 min, 2 = 3 min, 3 ou mais = 10 min (`pin_minutos_do_degrau`) |
+| bloqueadoate | timestamptz | até quando está bloqueada |
+| ultimoerro | timestamptz | |
+
+**Só as funções escrevem** (`pin_conferir_pessoa`, pelo servidor do tablet, e `liberar_pin`, pelo gestor). O navegador só lê a da própria conta. 2 erros são tolerados; do 3º em diante bloqueia 1, 3 e no máximo 10 minutos. Tentar durante o bloqueio não muda nada. PIN de quem está de folga não conta.
+
+## pinliberacoes (29/09/2026)
+Quem liberou o PIN de quem (Pessoas → Equipe → "Liberar PIN agora"). Nível conta. Nunca muda.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| liberacaoid | integer | ID automático |
+| contaid | integer | → contas |
+| funcionarioid | integer | → funcionarios (junto com contaid) |
+| liberadopor | uuid | o login do master que liberou |
+| liberadoem | timestamptz | padrão now() |
+| estavaate | timestamptz | até quando estava bloqueada |
+| erros | integer | quantos erros seguidos tinha |
 
 ## fotosexpurgo (Etapa 1.12)
 Fila do que precisa sair do Storage. Nível conta.

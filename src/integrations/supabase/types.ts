@@ -4830,6 +4830,93 @@ export type Database = {
           },
         ]
       }
+      pinliberacoes: {
+        Row: {
+          contaid: number
+          erros: number | null
+          estavaate: string | null
+          funcionarioid: number
+          liberacaoid: number
+          liberadoem: string
+          liberadopor: string | null
+        }
+        Insert: {
+          contaid?: number
+          erros?: number | null
+          estavaate?: string | null
+          funcionarioid: number
+          liberacaoid?: number
+          liberadoem?: string
+          liberadopor?: string | null
+        }
+        Update: {
+          contaid?: number
+          erros?: number | null
+          estavaate?: string | null
+          funcionarioid?: number
+          liberacaoid?: number
+          liberadoem?: string
+          liberadopor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pinliberacoes_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "pinliberacoes_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+        ]
+      }
+      travaspin: {
+        Row: {
+          bloqueadoate: string | null
+          contaid: number
+          erros: number
+          funcionarioid: number
+          nivel: number
+          ultimoerro: string | null
+        }
+        Insert: {
+          bloqueadoate?: string | null
+          contaid?: number
+          erros?: number
+          funcionarioid: number
+          nivel?: number
+          ultimoerro?: string | null
+        }
+        Update: {
+          bloqueadoate?: string | null
+          contaid?: number
+          erros?: number
+          funcionarioid?: number
+          nivel?: number
+          ultimoerro?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travaspin_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "travaspin_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+        ]
+      }
       usomensagens: {
         Row: {
           canal: string
@@ -5568,6 +5655,7 @@ export type Database = {
         }
         Returns: number
       }
+      liberar_pin: { Args: { p_funcionarioid: number }; Returns: undefined }
       liberar_documento_pessoal: {
         Args: { p_documentoid: number }
         Returns: string
@@ -5873,6 +5961,51 @@ export type Database = {
           p_lojaid: number
           p_origem: string
           p_pinhash: string
+        }
+        Returns: Json
+      }
+      pin_conferir_pessoa: {
+        Args: {
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+          p_pinhash: string
+        }
+        Returns: Json
+      }
+      pin_minutos_do_degrau: { Args: { p_nivel: number }; Returns: number }
+      travas_do_pin: {
+        Args: never
+        Returns: {
+          erros: number
+          funcionarioid: number
+          minutosfaltam: number
+        }[]
+      }
+      visao_equipe_de_hoje: {
+        Args: { p_contaid: number; p_lojaid: number }
+        Returns: Json
+      }
+      visao_pegar_com_pin_de: {
+        Args: {
+          p_atribuicaoid: number
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojaid: number
+          p_pinhash: string
+        }
+        Returns: Json
+      }
+      visao_entregar_com_pin_de: {
+        Args: {
+          p_atribuicaoid: number
+          p_caminho: string | null
+          p_contaid: number
+          p_fotoidunico: string | null
+          p_lojaid: number
+          p_observacao: string | null
+          p_pinhash: string
+          p_semhorafoto: boolean
         }
         Returns: Json
       }

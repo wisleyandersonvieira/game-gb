@@ -4743,7 +4743,10 @@ BEGIN
       'salvar_intervalo_do_mapa',
       -- 29/09/2026: a conta sai do login (minha_conta / agendamento_para_mudar)
       -- e so tocam a conta de quem chamou (secao 77).
-      'saude_da_minha_conta', 'recriar_tarefa_do_agendamento'
+      'saude_da_minha_conta', 'recriar_tarefa_do_agendamento',
+      -- 29/09/2026: liberar o PIN do tablet. A conta sai do login
+      -- (minha_conta_editavel + sou_master) e so solta pessoa dela (secao 89).
+      'liberar_pin'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -11112,6 +11115,157 @@ BEGIN
     RAISE EXCEPTION 'desfazer_88';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_88' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 89. A trava do PIN do tablet e POR PESSOA (29/09/2026)
+-- ===========================================================================
+-- Antes a trava era do TABLET: 20 erros em 24 horas travavam a loja inteira,
+-- e o PIN CERTO de quem estava de folga contava como erro (112 minutos
+-- travado). Agora: 2 erros tolerados, depois 1, 3 e no maximo 10 minutos;
+-- digitar durante o bloqueio nao estende; acerto zera; folga nao conta; a
+-- trava de uma pessoa nao atinge as outras; o gestor libera na hora.
+-- Usa a conta 82 (secao 82): Ana, Bia e Caio trabalham hoje; Davi esta de folga.
+DO $$ BEGIN RAISE NOTICE '89. trava do PIN por pessoa'; END $$;
+
+DO $$
+DECLARE
+  v jsonb; t public.travaspin%ROWTYPE; v_ate timestamptz; deu_erro boolean; i integer;
+  v_degraus integer[] := '{}';
+  ana  constant text := repeat('a', 64);
+  bia  constant text := repeat('b', 64);
+  caio constant text := repeat('c', 64);
+  davi constant text := repeat('d', 64);
+  errado constant text := repeat('9', 64);
+BEGIN
+  BEGIN
+    PERFORM public.definir_pin(82, 98201, ana, false);
+    PERFORM public.definir_pin(82, 98202, bia, false);
+    PERFORM public.definir_pin(82, 98203, caio, false);
+    PERFORM public.definir_pin(82, 98204, davi, false);
+
+    -- A lista "toque no seu nome": quem trabalha hoje, sem quem esta de folga.
+    PERFORM public.exigir(
+      (SELECT array_agg(e->>'nome' ORDER BY n) FROM jsonb_array_elements(public.visao_equipe_de_hoje(82, 8201))
+         WITH ORDINALITY x(e, n)) = ARRAY['Ana O.', 'Bia O.', 'Caio O.'],
+      'a lista de nomes tem quem trabalha hoje, e nao quem esta de folga');
+    PERFORM public.exigir(public.visao_equipe_de_hoje(1, 8201) = '[]'::jsonb,
+                          'outra conta nao ve a equipe da loja 82 nem passando a loja');
+
+    -- 1. A ESCADA: 2 erros tolerados; depois 1, 3, 10, 10, 10 (o teto).
+    FOR i IN 1..2 LOOP
+      v := public.pin_conferir_pessoa(82, 8201, 98201, errado);
+      PERFORM public.exigir(v ? 'pinerrado' AND NOT v ? 'bloqueado' AND v->>'nome' = 'Ana O.',
+                            'erro ' || i || ': "PIN errado para Ana", ainda sem bloqueio');
+    END LOOP;
+    FOR i IN 1..5 LOOP
+      v := public.pin_conferir_pessoa(82, 8201, 98201, errado);
+      PERFORM public.exigir(v ? 'pinerrado' AND (v->>'bloqueado')::boolean, 'erro ' || (i + 2) || ' bloqueia');
+      SELECT * INTO t FROM public.travaspin WHERE contaid = 82 AND funcionarioid = 98201;
+      PERFORM public.exigir(t.bloqueadoate = now() + make_interval(mins => (v->>'minutos')::integer),
+                            'o prazo gravado e o mesmo que a tela mostra');
+      v_degraus := v_degraus || (v->>'minutos')::integer;
+
+      -- 2. DURANTE o bloqueio: nem o PIN errado nem o certo mexem no prazo.
+      v := public.pin_conferir_pessoa(82, 8201, 98201, errado);
+      PERFORM public.exigir(v ? 'bloqueado' AND NOT v ? 'pinerrado', 'durante o bloqueio: so "bloqueado, faltam N min"');
+      v := public.pin_conferir_pessoa(82, 8201, 98201, ana);
+      PERFORM public.exigir(v ? 'bloqueado' AND NOT v ? 'funcionarioid', 'nem o PIN certo passa durante o bloqueio');
+      PERFORM public.exigir((SELECT bloqueadoate = t.bloqueadoate AND erros = t.erros AND nivel = t.nivel
+                               FROM public.travaspin WHERE contaid = 82 AND funcionarioid = 98201),
+                            'tentar durante o bloqueio NAO estende o prazo nem soma erro');
+
+      -- O tempo passa.
+      UPDATE public.travaspin SET bloqueadoate = now() - interval '1 second' WHERE contaid = 82 AND funcionarioid = 98201;
+    END LOOP;
+    PERFORM public.exigir(v_degraus = ARRAY[1, 3, 10, 10, 10],
+                          'a escada e 1, 3, 10 e para em 10 (foi ' || v_degraus::text || ')');
+
+    -- 3. O ACERTO ZERA.
+    v := public.pin_conferir_pessoa(82, 8201, 98201, ana);
+    PERFORM public.exigir((v->>'funcionarioid')::integer = 98201, 'depois do prazo, o PIN certo passa');
+    PERFORM public.exigir((SELECT erros = 0 AND nivel = 0 AND bloqueadoate IS NULL FROM public.travaspin
+                            WHERE contaid = 82 AND funcionarioid = 98201), 'e zera a conta');
+    v := public.pin_conferir_pessoa(82, 8201, 98201, errado);
+    PERFORM public.exigir(NOT v ? 'bloqueado', 'depois do acerto, um erro volta a ser so um erro');
+
+    -- 4. FOLGA: o PIN certo de quem esta de folga nao conta como erro, e a
+    --    resposta diz a verdade (o nome ja estava na tela).
+    FOR i IN 1..10 LOOP
+      v := public.pin_conferir_pessoa(82, 8201, 98204, davi);
+    END LOOP;
+    PERFORM public.exigir(v = '{"folga": true, "nome": "Davi O."}'::jsonb, 'folga: "Davi O. esta de folga"');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.travaspin WHERE contaid = 82 AND funcionarioid = 98204),
+                          '10 PINs certos de quem esta de folga: nenhum conta como erro');
+
+    -- 5. A TRAVA E DA PESSOA: Ana bloqueada, Bia e Caio no mesmo tablet seguem.
+    FOR i IN 1..3 LOOP PERFORM public.pin_conferir_pessoa(82, 8201, 98201, errado); END LOOP;
+    PERFORM public.exigir(public.pin_conferir_pessoa(82, 8201, 98201, ana) ? 'bloqueado', 'Ana bloqueada');
+    PERFORM public.exigir((public.pin_conferir_pessoa(82, 8201, 98202, bia)->>'funcionarioid')::integer = 98202,
+                          'o bloqueio da Ana nao atinge a Bia, no mesmo tablet');
+    v := public.visao_pegar_com_pin_de(82, 8201, bia, 98202, 98403);
+    PERFORM public.exigir(v->>'nome' = 'Bia O.', 'e a Bia pega a missao enquanto a Ana espera');
+    FOR i IN 1..3 LOOP PERFORM public.pin_conferir_pessoa(82, 8201, 98203, errado); END LOOP;
+    PERFORM public.exigir((SELECT erros FROM public.travaspin WHERE contaid = 82 AND funcionarioid = 98202) = 0,
+                          'os erros do Caio nao entram na conta da Bia');
+
+    -- Tarefa com dono: vale o PIN do DONO, seja qual for o nome que vier.
+    v := public.visao_pegar_com_pin_de(82, 8201, bia, 98202, 98401);
+    PERFORM public.exigir(v ? 'bloqueado' AND v->>'nome' = 'Ana O.', 'tarefa da Ana: o PIN conferido e o da Ana');
+    v := public.visao_pegar_com_pin_de(82, 8201, bia, NULL, 98403);
+    PERFORM public.exigir(v->>'erro' = 'Toque no seu nome antes do PIN.', 'missao sem nome: pede o nome');
+    -- Entregar: o PIN e de quem aceitou (Caio, bloqueado agora).
+    v := public.visao_entregar_com_pin_de(82, 8201, caio, 98404, NULL, NULL, NULL, false);
+    PERFORM public.exigir(v ? 'bloqueado' AND v->>'nome' = 'Caio O.', 'entrega: a trava e a de quem aceitou');
+    -- Pessoa de outra loja/conta: nao passa.
+    PERFORM public.exigir(public.pin_conferir_pessoa(82, 8201, 9501, 'pin-da-ana') ? 'naoeloja',
+                          'o nome de uma pessoa de outra conta nao vale neste tablet');
+    PERFORM public.exigir(public.pin_conferir_pessoa(1, 10, 98201, ana) ? 'naoeloja',
+                          'nem a Ana da conta 82 vale no tablet da conta 1');
+
+    -- 6. O GESTOR LIBERA NA HORA, e fica gravado quem e quando.
+    v_ate := (SELECT bloqueadoate FROM public.travaspin WHERE contaid = 82 AND funcionarioid = 98201);
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.travaspin WHERE contaid = 82),
+                          'outra conta nao le as travas da conta 82');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.travas_do_pin()), 'nem pela funcao da tela');
+    BEGIN PERFORM public.liberar_pin(98201); deu_erro := false;
+    EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+    PERFORM public.exigir(deu_erro, 'outra conta nao libera o PIN de uma pessoa da conta 82');
+    BEGIN UPDATE public.travaspin SET bloqueadoate = NULL; deu_erro := false;
+    EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+    PERFORM public.exigir(deu_erro, 'ninguem logado escreve na trava direto');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT minutosfaltam FROM public.travas_do_pin() WHERE funcionarioid = 98201) > 0,
+                          'o gestor ve a Ana bloqueada, com os minutos que faltam');
+    BEGIN UPDATE public.travaspin SET bloqueadoate = NULL WHERE funcionarioid = 98201; deu_erro := false;
+    EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
+    PERFORM public.exigir(deu_erro, 'nem o gestor escreve na trava direto: so pelo botao, que registra');
+    PERFORM public.liberar_pin(98201);
+    RESET ROLE;
+    PERFORM public.exigir((public.pin_conferir_pessoa(82, 8201, 98201, ana)->>'funcionarioid')::integer = 98201,
+                          'liberado: o PIN certo da Ana passa NA HORA');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.pinliberacoes
+                                   WHERE contaid = 82 AND funcionarioid = 98201
+                                     AND liberadopor = '82828282-8282-8282-8282-828282828282'
+                                     AND estavaate = v_ate AND liberadoem = now()),
+                          'a liberacao fica gravada: quem liberou, quando, e ate quando estava bloqueada');
+
+    -- As funcoes do tablet recebem conta e loja: so o servidor as chama.
+    PERFORM public.exigir(NOT has_function_privilege('authenticated', p, 'EXECUTE'), p || ' nao e liberada a ninguem logado')
+       FROM unnest(ARRAY['public.pin_conferir_pessoa(integer, integer, integer, text)',
+                         'public.visao_equipe_de_hoje(integer, integer)',
+                         'public.visao_pegar_com_pin_de(integer, integer, text, integer, integer)',
+                         'public.visao_entregar_com_pin_de(integer, integer, text, integer, text, text, text, boolean)']) p;
+    RAISE EXCEPTION 'desfazer_89';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_89' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

@@ -72,6 +72,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-tarefas-comuns-e-atribuicoes.sql', '20260929220000'),
   ('aplicar-tela-meta-especial.sql', '20260929243000'),
   ('aplicar-teto-fotos-e-agenda.sql', '20260929232000'),
+  ('aplicar-trava-do-pin-por-pessoa.sql', '20260929246000'),
   ('aplicar-tv-configuravel.sql', '20260929101100'),
   ('aplicar-tv-por-codigo.sql', '20260929100500')
 ),
@@ -363,7 +364,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
            (SELECT (public.meta_para_painel(mp.contaid, mp.lojaid, true)->'mes') ? 'diassemlancamento'
               FROM public.metasprincipais mp
              WHERE now() BETWEEN mp.datainicio AND mp.datafim + 1 ORDER BY mp.lojaid LIMIT 1),
-           (SELECT prosrc LIKE '%diassemlancamento%' FROM pg_proc WHERE proname = 'meta_para_painel'))$q$))
+           (SELECT prosrc LIKE '%diassemlancamento%' FROM pg_proc WHERE proname = 'meta_para_painel'))$q$)),
+  -- Comportamento: a escada do bloqueio responde 1, 3, 10 e para em 10, e a
+  -- lista "toque no seu nome" responde (numa loja que não existe: vazia).
+  (400, 'OPERACAO', 'versao', 'trava do PIN do tablet por pessoa (1, 3, 10 min) e liberar PIN', 'aplicar-trava-do-pin-por-pessoa.sql',
+       pg_temp.tenta($q$SELECT ARRAY[public.pin_minutos_do_degrau(1), public.pin_minutos_do_degrau(2),
+                                     public.pin_minutos_do_degrau(3), public.pin_minutos_do_degrau(9)] = ARRAY[1, 3, 10, 10]
+                       AND public.visao_equipe_de_hoje(0, 0) = '[]'::jsonb
+                       AND to_regprocedure('public.liberar_pin(integer)') IS NOT NULL$q$))
 ),
 tudo AS (
   SELECT x.*, a.versao

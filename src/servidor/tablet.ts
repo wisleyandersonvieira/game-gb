@@ -12,7 +12,8 @@ import type { QuemPode } from "@/painel/QuemPodeAceitar";
 import { descartarFotoDaTentativa } from "@/servidor/fotoSemEntrega";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { conferirPasse, emitirPasse, mensagemDaTrava, ondeRodou, origemDaChamada, embaralhar, resumoDoPin } from "@/servidor/segredos";
+import { conferirPasse, emitirPasse, ondeRodou, resumoDoPin } from "@/servidor/segredos";
+import { mensagemDoPin, type PessoaDaEquipe, type RespostaDoPin } from "@/servidor/mensagensDoPin";
 import { conferirBilhete, emitirBilhete, julgarHoraDaFoto, provaDaFoto, toleranciaDaFoto } from "@/servidor/fotodaentrega";
 
 /**
@@ -136,18 +137,14 @@ async function tabletDoToken(userId: string): Promise<Tablet> {
   return t;
 }
 
-/** Mensagem única: nunca diz se o PIN existe e a pessoa é que não pode. */
-const ERRO_PIN =
-  "PIN não reconhecido. Confira o número — e lembre que só quem trabalha hoje nesta loja aparece na fila.";
-
 /**
- * O que o banco precisa para conferir o PIN: o resumo do número e a chave da
- * trava. Os dois são feitos AQUI, com a chave do servidor; o banco nunca vê o
- * número.
+ * O que o banco precisa para conferir o PIN: o resumo do número, feito AQUI
+ * com a chave do servidor. O banco nunca vê o número.
  *
- * A trava é a da parte A com tipo "pintablet": a trava por origem vale (é ela
- * que segura um adivinhador), mas a por chave não bloqueia — senão um
- * engraçadinho deixaria o balcão sem sistema por 15 minutos no pico.
+ * A trava é DA PESSOA (29/09/2026): o tablet diz de quem é o PIN antes de ele
+ * ser conferido, e só essa pessoa fica bloqueada — 1, 3 e no máximo 10
+ * minutos. Antes era do tablet, e uma pessoa de folga digitando o PIN certo
+ * travou a loja por 112 minutos.
  */
 async function assinaturaDoPin(t: Tablet, pin: string) {
   const limpo = (pin ?? "").trim();
@@ -156,32 +153,28 @@ async function assinaturaDoPin(t: Tablet, pin: string) {
     p_contaid: t.contaid,
     p_lojaid: t.lojaid,
     p_pinhash: await resumoDoPin(t.contaid, limpo),
-    p_chave: await embaralhar(`pintablet:${t.contaid}:${t.lojaid}`),
-    p_origem: origemDaChamada(),
   };
 }
 
-/** Traduz a recusa do banco para a mensagem da tela. */
-function recusa(r: { travado?: boolean; minutos?: number | null; pinerrado?: boolean; erro?: string }) {
-  if (r.travado) return mensagemDaTrava(r.minutos);
-  if (r.pinerrado) return ERRO_PIN;
-  return r.erro ?? null;
+/** Pessoa escolhida na tela: um número inteiro positivo, ou nenhuma. */
+function pessoaEscolhida(v: unknown): number | null {
+  return Number.isInteger(v) && (v as number) > 0 ? (v as number) : null;
 }
 
 /**
- * Descobre quem digitou o PIN (pedido e mural). A trava abre, a pessoa é
- * procurada e a trava fecha numa ida só ao banco, na mesma transação.
+ * Confere o PIN de UMA pessoa (pedido e mural). A pessoa vem do nome que ela
+ * tocou; o PIN prova que é ela.
  */
-async function pessoaDoPin(t: Tablet, pin: string) {
+async function pessoaDoPin(t: Tablet, funcionarioid: number, pin: string) {
   const args = await assinaturaDoPin(t, pin);
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.rpc("visao_conferir_pin", args);
+  const { data, error } = await supabaseAdmin.rpc("pin_conferir_pessoa", { ...args, p_funcionarioid: funcionarioid });
   if (bancoDesatualizado(error)) throw new Error(ERRO_BANCO_DESATUALIZADO);
   if (error || !data) throw new Error("Não foi possível conferir o PIN agora.");
-  const r = data as { funcionarioid?: number; nome?: string; travado?: boolean; minutos?: number; pinerrado?: boolean };
-  const motivo = recusa(r);
-  if (motivo) throw new Error(motivo);
-  return { funcionarioid: r.funcionarioid as number, nome: r.nome as string };
+  const r = data as RespostaDoPin;
+  const motivo = mensagemDoPin(r);
+  if (motivo || !r.funcionarioid) throw new Error(motivo ?? "Não foi possível conferir o PIN agora.");
+  return { funcionarioid: r.funcionarioid, nome: r.nome as string };
 }
 
 /** A fila do dia. Não precisa de PIN: é o que está no balcão, à vista de todos. */
@@ -194,7 +187,7 @@ export const filaDoTablet = createServerFn({ method: "GET" })
 
     // As três perguntas não dependem uma da outra: vão juntas, e a fila
     // espera a mais lenta, não a soma.
-    const [fila, cfg, som] = await Promise.all([
+    const [fila, cfg, som, equipe] = await Promise.all([
       supabaseAdmin.rpc("visao_fila", { p_contaid: t.contaid, p_lojaid: t.lojaid }),
       // A partir de quantos minutos o cartão fica marcado como parado.
       supabaseAdmin
@@ -204,6 +197,8 @@ export const filaDoTablet = createServerFn({ method: "GET" })
         .eq("chave", "MINUTOS_TAREFA_PARADA")
         .maybeSingle(),
       somDaLoja(t.contaid, t.lojaid),
+      // A lista "toque no seu nome": quem trabalha hoje nesta loja.
+      supabaseAdmin.rpc("visao_equipe_de_hoje", { p_contaid: t.contaid, p_lojaid: t.lojaid }),
     ]);
     if (fila.error) throw new Error("Não foi possível carregar a fila agora.");
 
@@ -212,6 +207,7 @@ export const filaDoTablet = createServerFn({ method: "GET" })
       minutosParada: Number(cfg.data?.valor ?? 30) || 30,
       itens: (fila.data ?? []) as unknown as ItemDaFila[],
       som,
+      equipe: (equipe.data ?? []) as unknown as PessoaDaEquipe[],
     };
   });
 
@@ -240,11 +236,8 @@ async function numaIda(
   if (bancoDesatualizado(error)) throw new Error(ERRO_BANCO_DESATUALIZADO);
   if (error || !data) throw new Error("Não foi possível falar com o banco agora. Tente de novo.");
 
-  const r = data as {
-    nome?: string; fila?: ItemDaFila[]; tempos?: Record<string, number>;
-    travado?: boolean; minutos?: number; pinerrado?: boolean; erro?: string;
-  };
-  const motivo = recusa(r);
+  const r = data as RespostaDoPin & { fila?: ItemDaFila[]; tempos?: Record<string, number> };
+  const motivo = mensagemDoPin(r);
   if (motivo) throw new Error(motivo);
 
   const tempos = c.fechar();
@@ -259,10 +252,12 @@ async function numaIda(
  */
 export const pegarNoTablet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { pin: string; atribuicaoid: number }) => {
+  .validator((d: { pin: string; atribuicaoid: number; funcionarioid?: number | null }) => {
     if (typeof d?.pin !== "string") throw new Error("PIN inválido.");
     if (!Number.isInteger(d?.atribuicaoid) || d.atribuicaoid <= 0) throw new Error("Tarefa inválida.");
-    return { pin: d.pin, atribuicaoid: d.atribuicaoid };
+    // O nome tocado (missão e compartilhada). Na tarefa com dono o banco usa
+    // o dono, seja qual for o nome que vier.
+    return { pin: d.pin, atribuicaoid: d.atribuicaoid, funcionarioid: pessoaEscolhida(d?.funcionarioid) };
   })
   .handler(async ({ data, context }) => {
     const { userId, recebidoem } = context as unknown as Contexto;
@@ -273,7 +268,11 @@ export const pegarNoTablet = createServerFn({ method: "POST" })
     const args = await assinaturaDoPin(t, data.pin);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     return numaIda(
-      supabaseAdmin.rpc("visao_pegar_com_pin", { ...args, p_atribuicaoid: data.atribuicaoid }),
+      supabaseAdmin.rpc("visao_pegar_com_pin_de", {
+        ...args,
+        p_funcionarioid: data.funcionarioid as number,
+        p_atribuicaoid: data.atribuicaoid,
+      }),
       c,
       onde,
     );
@@ -369,7 +368,8 @@ async function entregarComFoto(
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     return numaIda(
-      supabaseAdmin.rpc("visao_entregar_com_pin", {
+      // Quem entrega é quem aceitou: o banco sabe, a tela não precisa dizer.
+      supabaseAdmin.rpc("visao_entregar_com_pin_de", {
         ...args,
         p_atribuicaoid: data.atribuicaoid,
         p_caminho: data.caminho,
@@ -445,15 +445,17 @@ export const abrirPedidoNoTablet = createServerFn({ method: "POST" })
 /** Só confere o PIN e devolve o nome: é o que abre a tela do pedido. */
 export const conferirPinNoTablet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: { pin: string; assunto?: string }) => ({
+  .validator((d: { pin: string; assunto?: string; funcionarioid: number }) => ({
     pin: typeof d?.pin === "string" ? d.pin : "",
+    funcionarioid: pessoaEscolhida(d?.funcionarioid),
     // Só os assuntos que existem: o navegador não inventa um.
     assunto: d?.assunto === "mural" ? "mural" : "pedido",
   }))
   .handler(async ({ data, context }) => {
     const { userId } = context as unknown as Contexto;
     const t = await tabletDoToken(userId);
-    const pessoa = await pessoaDoPin(t, data.pin);
+    if (!data.funcionarioid) throw new Error("Toque no seu nome antes do PIN.");
+    const pessoa = await pessoaDoPin(t, data.funcionarioid, data.pin);
     // O passe substitui o PIN enquanto a pessoa preenche: a tela não guarda o
     // número. Dois minutos cobrem os 90 segundos da tela com folga.
     return {

@@ -1,8 +1,9 @@
 // Etapa 1.12, parte B1b — o tablet do balcão.
 //
 // Ele fica logado como a LOJA, não como pessoa. Por isso toda ação com dono é
-// assinada com o PIN de 6 dígitos: o servidor descobre quem é e registra em
-// nome dela. O PIN nunca aparece na tela e não fica guardado em lugar nenhum.
+// assinada com o PIN de 6 dígitos da pessoa — que antes toca no próprio nome
+// (ou já é conhecida: o dono da tarefa, quem aceitou), porque a trava de
+// tentativas é de cada pessoa, não do tablet. O PIN nunca aparece na tela e não fica guardado em lugar nenhum.
 //
 // A fila atualiza a cada 15 segundos e NA HORA depois de qualquer toque: a
 // tarefa que alguém acabou de pegar precisa sumir rápido da lista dos outros.
@@ -40,6 +41,8 @@ import {
 } from "@/painel/somDaFila";
 import { PedidoNoTablet } from "@/painel/PedidoNoTablet";
 import { MuralNoTablet } from "@/painel/MuralNoTablet";
+import { QuemEsta } from "@/painel/QuemEsta";
+import { quemPodeTocar, type PessoaDaEquipe } from "@/servidor/mensagensDoPin";
 
 export const Route = createFileRoute("/tablet")({
   ssr: false,
@@ -73,6 +76,11 @@ function Tablet() {
   const navigate = useNavigate();
   const [acao, setAcao] = useState<Acao | null>(null);
   const [pedindoPin, setPedindoPin] = useState(false);
+  // DE QUEM é o PIN que vai ser digitado (29/09/2026): a trava é da pessoa.
+  // Na tarefa com dono é o dono; na entrega, quem aceitou; na missão, na
+  // compartilhada e no menu, o nome que a pessoa tocou.
+  const [quem, setQuem] = useState<PessoaDaEquipe | null>(null);
+  const [escolhendo, setEscolhendo] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
   // Som: o navegador só deixa tocar depois de alguém encostar na tela.
   const [somPreso, setSomPreso] = useState(true);
@@ -162,7 +170,9 @@ function Tablet() {
       if (acao.tipo === "pegar") {
         setEtapa("conferindo…");
         const t = performance.now();
-        const r = await pegarNoTablet({ data: { pin, atribuicaoid: acao.item.atribuicaoid } });
+        const r = await pegarNoTablet({
+          data: { pin, atribuicaoid: acao.item.atribuicaoid, funcionarioid: quem?.funcionarioid ?? null },
+        });
         cliente.chamada = performance.now() - t;
         return { ...r, cliente, inicio };
       }
@@ -221,6 +231,7 @@ function Tablet() {
       setRecado(`${r.nome} ${tipo === "aceite" ? "pegou" : "entregou"} "${acao?.item.titulo}".`);
       setAcao(null);
       setPedindoPin(false);
+      setQuem(null);
       setEtapa(null);
       setTimeout(() => setRecado(null), 6000);
 
@@ -264,12 +275,15 @@ function Tablet() {
   // O PIN do menu usa a MESMA modal e a MESMA trava do pegar tarefa.
   const abrirPedido = useMutation({
     mutationFn: (pin: string) =>
-      conferirPinNoTablet({ data: { pin, assunto: doMenu === "mural" ? "mural" : "pedido" } }),
+      conferirPinNoTablet({
+        data: { pin, assunto: doMenu === "mural" ? "mural" : "pedido", funcionarioid: quem?.funcionarioid ?? 0 },
+      }),
     onSuccess: (r) => {
       const sessao = { nome: r.nome, passe: r.passe, funcionarioid: r.funcionarioid };
       if (doMenu === "mural") setMural(sessao);
       else setPedido(sessao);
       setDoMenu(null);
+      setQuem(null);
     },
   });
 
@@ -339,6 +353,21 @@ function Tablet() {
   // A MESMA separação do Quadro (separarParaPegar): as duas telas contam igual.
   const { liberadas: paraPegar, aindaNao } = separarParaPegar(itens);
 
+  const equipe = fila.data?.equipe ?? [];
+
+  /** Aceitar: com dono, o PIN já é dele; sem dono, a pessoa toca no nome. */
+  function aceitar(i: ItemDaFila) {
+    setAcao({ tipo: "pegar", item: i });
+    if (i.donoid) {
+      const nome = equipe.find((p) => p.funcionarioid === i.donoid)?.nome ?? i.podem?.pessoas[0]?.nome ?? "";
+      setQuem({ funcionarioid: i.donoid, nome });
+      setPedindoPin(true);
+    } else {
+      setQuem(null);
+      setEscolhendo(true);
+    }
+  }
+
   async function sair() {
     await supabase.auth.signOut();
     navigate({ to: "/auth" });
@@ -376,6 +405,8 @@ function Tablet() {
                       setMenuAberto(false);
                       abrirPedido.reset();
                       setDoMenu("mural");
+                      setQuem(null);
+                      setEscolhendo(true);
                     }}
                     className="min-h-[48px] w-full px-4 text-left text-lg"
                   >
@@ -388,6 +419,8 @@ function Tablet() {
                       setMenuAberto(false);
                       abrirPedido.reset();
                       setDoMenu("pedido");
+                      setQuem(null);
+                      setEscolhendo(true);
                     }}
                     className="min-h-[48px] w-full px-4 text-left text-lg"
                   >
@@ -433,7 +466,7 @@ function Tablet() {
           {/* So "Aceitar": ninguem entrega sem aceitar antes (25/09/2026). O
               botao "Ja fiz: entregar" saiu, e o banco tambem recusa. */}
           {(i) => (
-            <BotaoGrande onClick={() => { setAcao({ tipo: "pegar", item: i }); setPedindoPin(true); }}>
+            <BotaoGrande onClick={() => aceitar(i)}>
               Aceitar
             </BotaoGrande>
           )}
@@ -447,7 +480,13 @@ function Tablet() {
           minutosParada={minutosParada}
         >
           {(i) => (
-            <BotaoGrande onClick={() => setAcao({ tipo: "entregar", item: i, arquivo: null, observacao: "" })}>
+            <BotaoGrande
+              onClick={() => {
+                // Quem entrega é quem aceitou: o nome já está no cartão.
+                setQuem(i.quempegou ? { funcionarioid: i.quempegou, nome: i.quempegounome ?? "" } : null);
+                setAcao({ tipo: "entregar", item: i, arquivo: null, observacao: "" });
+              }}
+            >
               Entregar
             </BotaoGrande>
           )}
@@ -468,7 +507,10 @@ function Tablet() {
         <Entregar
           acao={acao}
           mudar={setAcao}
-          cancelar={() => setAcao(null)}
+          cancelar={() => {
+            setAcao(null);
+            setQuem(null);
+          }}
           confirmar={() => setPedindoPin(true)}
         />
       )}
@@ -502,14 +544,35 @@ function Tablet() {
       )}
 
       {/* O PIN do menu: MESMA modal, MESMA trava, erro dentro dela. */}
-      {doMenu !== null && (
+      {/* "Toque no seu nome": só quem trabalha hoje nesta loja. */}
+      {escolhendo && (
+        <QuemEsta
+          titulo={
+            doMenu === "mural" ? "Quem está lendo?" : doMenu === "pedido" ? "Quem está pedindo?" : "Quem está pegando?"
+          }
+          pessoas={acao?.tipo === "pegar" ? quemPodeTocar(equipe, acao.item.podem) : equipe}
+          escolher={(p) => {
+            setQuem(p);
+            setEscolhendo(false);
+            if (acao?.tipo === "pegar") setPedindoPin(true);
+          }}
+          cancelar={() => {
+            setEscolhendo(false);
+            setDoMenu(null);
+            if (acao?.tipo === "pegar") setAcao(null);
+          }}
+        />
+      )}
+
+      {doMenu !== null && quem && !escolhendo && (
         <TecladoDoPin
-          titulo={doMenu === "mural" ? "Quem está lendo?" : "Quem está pedindo?"}
+          titulo={`PIN de ${quem.nome}`}
           ocupado={abrirPedido.isPending}
           erro={abrirPedido.isError ? (abrirPedido.error as Error).message : null}
           cancelar={() => {
             abrirPedido.reset();
             setDoMenu(null);
+            setQuem(null);
           }}
           enviar={(pin) => abrirPedido.mutate(pin)}
         />
@@ -517,14 +580,17 @@ function Tablet() {
 
       {pedindoPin && (
         <TecladoDoPin
-          titulo={acao?.tipo === "pegar" ? "Quem está pegando?" : "Quem está entregando?"}
+          titulo={quem?.nome ? `PIN de ${quem.nome}` : acao?.tipo === "pegar" ? "Quem está pegando?" : "Quem está entregando?"}
           ocupado={agir.isPending}
           etapa={etapa}
           erro={agir.isError ? (agir.error as Error).message : null}
           cancelar={() => {
             agir.reset();
             setPedindoPin(false);
-            if (acao?.tipo === "pegar") setAcao(null);
+            if (acao?.tipo === "pegar") {
+              setAcao(null);
+              setQuem(null);
+            }
           }}
           enviar={(pin) => agir.mutate(pin)}
         />
