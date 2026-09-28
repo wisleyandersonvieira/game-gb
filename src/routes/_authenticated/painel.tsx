@@ -1,3 +1,4 @@
+import { CHAVE_MENU } from "@/ui/pendencias";
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -178,6 +179,8 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
       qc.invalidateQueries({ queryKey: ["quadro", lojaid] });
       qc.invalidateQueries({ queryKey: ["equipe"] });
       qc.invalidateQueries({ queryKey: ["folga-hoje", lojaid] });
+      // A bolinha do Quadro no menu.
+      qc.invalidateQueries({ queryKey: CHAVE_MENU });
     },
   });
 
@@ -347,6 +350,8 @@ function Validacao({ lojaid }: { lojaid: number }) {
     qc.invalidateQueries({ queryKey: ["para-entregar", lojaid] });
     qc.invalidateQueries({ queryKey: ["equipe"] });
     qc.invalidateQueries({ queryKey: ["ranking"] });
+    // A bolinha do Quadro no menu: aprovou, recusou ou estornou, ela anda já.
+    qc.invalidateQueries({ queryKey: CHAVE_MENU });
   }
 
   const aprovar = useMutation({

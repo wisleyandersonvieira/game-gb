@@ -228,7 +228,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                   AND p.prosrc LIKE '%vale pelo tipo da tarefa ORIGINAL%')),
   (290, 'C1', 'versao', 'entrega do celular numa ida (igual ao tablet)', 'aplicar-entrega-do-celular.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'eu_entregar_e_listar'))
+                WHERE n.nspname = 'public' AND p.proname = 'eu_entregar_e_listar')),
+  (300, 'OPERACAO', 'versao', 'contadores do menu e catalogo de tarefas numa consulta', 'aplicar-menu-e-catalogo.sql',
+       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = 'catalogo_de_tarefas'))
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

@@ -1,3 +1,4 @@
+import { CHAVE_MENU } from "@/ui/pendencias";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -131,6 +132,8 @@ function atualizarTudo(qc: ReturnType<typeof useQueryClient>) {
   for (const k of ["premios", "resgates", "pessoas-saldo", "equipe", "extrato"]) {
     qc.invalidateQueries({ queryKey: [k] });
   }
+  // A bolinha de Prêmios no menu (antes só se corrigia quando o cache vencia).
+  qc.invalidateQueries({ queryKey: CHAVE_MENU });
 }
 
 /* ------------------------------------------------------------------ */

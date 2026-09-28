@@ -10029,4 +10029,78 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 80. Os contadores do menu numa consulta; o Catalogo de tarefas numa consulta
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '80. contadores do menu e catalogo'; END $$;
+-- Tarefas do catalogo desta secao, com datas espalhadas.
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos, datacriacao, ativa) OVERRIDING SYSTEM VALUE
+SELECT 98000 + i, 1, 'Catalogo 80 numero ' || i, 1, now() - (i || ' hours')::interval, i % 10 <> 0
+  FROM generate_series(1, 70) i;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid)
+SELECT 1, 98000 + i, CASE WHEN i % 2 = 0 THEN 10 ELSE 11 END FROM generate_series(1, 70) i;
+UPDATE public.tarefas SET titulo = 'Guardar a vitrine antiga' WHERE tarefaid = 98069;
+
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE m jsonb; c jsonb; c2 jsonb;
+BEGIN
+  m := public.contagem_do_menu();
+  PERFORM public.exigir((m->>'entregas')::integer = (SELECT count(*) FROM public.entregas e JOIN public.lojas l ON l.lojaid = e.lojaid AND l.ativa
+                                                       WHERE e.statusvalidacao = 'Pendente')
+                        AND (m->>'resgates')::integer = (SELECT count(*) FROM public.resgates WHERE status = 'Pendente')
+                        AND (SELECT coalesce(sum((x->>'quantos')::integer), 0) FROM jsonb_array_elements(m->'solicitacoes') x)
+                            = (SELECT coalesce(sum(quantos), 0) FROM public.contagem_solicitacoes()),
+                        'os tres contadores do menu saem de uma consulta e batem com a contagem direta');
+  PERFORM public.exigir((m->>'entregas')::integer > 0, 'ha entregas esperando na conta A (o numero nao e zero por acaso)');
+
+  c := public.catalogo_de_tarefas(10);
+  PERFORM public.exigir(jsonb_array_length(c->'tarefas') = 5 AND (c->>'temmais')::boolean,
+                        'catalogo sem filtro: as 5 mais recentes da loja, e avisa que ha mais');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(c->'tarefas') x WHERE NOT (x->>'ativa')::boolean)
+                        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(c->'tarefas') x WHERE NOT (x->'lojas') @> '[10]'),
+                        'so as ativas, e so as que valem na loja escolhida');
+  c2 := public.catalogo_de_tarefas(10, false, 'Catalogo 80', 50);
+  PERFORM public.exigir((c2->'tarefas'->0->>'tarefaid')::integer = 98002
+                        AND (SELECT bool_and((x.t->>'tarefaid')::integer < (y.t->>'tarefaid')::integer)
+                               FROM jsonb_array_elements(c2->'tarefas') WITH ORDINALITY x(t, n)
+                               JOIN jsonb_array_elements(c2->'tarefas') WITH ORDINALITY y(t, k) ON y.k = x.n + 1),
+                        'da mais nova para a mais antiga');
+  c := public.catalogo_de_tarefas(NULL, true, NULL, 50);
+  c2 := public.catalogo_de_tarefas(NULL, true, NULL, 50, 50);
+  PERFORM public.exigir(jsonb_array_length(c->'tarefas') = 50
+                        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(c->'tarefas') a, jsonb_array_elements(c2->'tarefas') b
+                                         WHERE a->'tarefaid' = b->'tarefaid'),
+                        'todas as lojas com inativas: 50 por vez, e o carregar mais nao repete');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.catalogo_de_tarefas(NULL, true, 'Catalogo 80', 50)->'tarefas') x
+                                 WHERE NOT (x->>'ativa')::boolean)
+                        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.catalogo_de_tarefas(NULL, false, 'Catalogo 80', 50)->'tarefas') x
+                                         WHERE NOT (x->>'ativa')::boolean),
+                        'com a caixinha, as inativas aparecem; sem ela, nao');
+  c := public.catalogo_de_tarefas(NULL, false, 'VITRINE ant', 50);
+  PERFORM public.exigir(jsonb_array_length(c->'tarefas') = 1 AND c->'tarefas'->0->>'titulo' = 'Guardar a vitrine antiga',
+                        'a busca acha a tarefa antiga pelo nome, sem diferenciar maiuscula');
+  c := public.catalogo_de_tarefas(NULL, false, '%', 50);
+  PERFORM public.exigir(jsonb_array_length(c->'tarefas') = 0, 'o % digitado na busca e texto, nao coringa');
+END $$;
+SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.catalogo_de_tarefas(NULL, true, 'Catalogo 80', 50)->'tarefas')),
+                        'a conta B nao ve o catalogo de A');
+  PERFORM public.exigir((public.contagem_do_menu()->>'entregas')::integer
+                        = (SELECT count(*) FROM public.entregas e JOIN public.lojas l ON l.lojaid = e.lojaid AND l.ativa
+                            WHERE e.statusvalidacao = 'Pendente' AND e.contaid = 2),
+                        'o menu da conta B conta so as entregas de B');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+DO $$
+BEGIN
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.contagem_do_menu()', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.catalogo_de_tarefas(integer, boolean, text, integer, integer)', 'EXECUTE'),
+                        'o visitante sem login nao conta nem lista nada');
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

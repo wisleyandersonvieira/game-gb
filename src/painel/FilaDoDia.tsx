@@ -77,7 +77,7 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
   return (
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div>
-        <h2 className="font-semibold">Fila de hoje</h2>
+        <h2 className="font-semibold">Fila</h2>
         <p className="text-xs text-muted-foreground">
           O que a loja tem para fazer hoje. A tarefa compartilhada fica em "para pegar" até alguém assumir; a partir
           daí ela pesa na nota de quem pegou, e de mais ninguém.

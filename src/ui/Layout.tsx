@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SeletorDeLoja } from "@/lojas/loja-ativa";
 import type { GrupoMenu, ItemMenu } from "./menu";
-import { useContagemSolicitacoes, useResgatesPendentes } from "./pendencias";
+import { useContagemSolicitacoes, useEntregasPendentes, useResgatesPendentes } from "./pendencias";
 import { carregarTemaDoUsuario, escolherTema, temaAtual, type Tema } from "./tema";
 import { useUsuario } from "./usuario";
 import { Logo, Simbolo } from "./Logo";
@@ -54,13 +54,20 @@ export function Bandeirinha({ quantos }: { quantos: number }) {
 function ItemLateral({ item, caminho, recolhido }: { item: ItemMenu; caminho: string; recolhido: boolean }) {
   const eh = ativo(caminho, item.to);
   const Icone = item.icone;
-  // Os dois menus que têm contador. Ambos contam TODAS as lojas que o gestor
+  // Os três menus que têm contador. Todos contam TODAS as lojas que o gestor
   // enxerga, e não só a do seletor do topo: o que espera numa loja fechada
-  // para ele hoje continua esperando.
+  // para ele hoje continua esperando. Os três saem de UMA consulta só.
+  const entregas = useEntregasPendentes();
   const pendentes = useResgatesPendentes();
   const solicitacoes = useContagemSolicitacoes();
   const quantos =
-    item.to === "/premios" ? pendentes : item.to === "/solicitacoes" ? solicitacoes.total : 0;
+    item.to === "/painel"
+      ? entregas
+      : item.to === "/premios"
+        ? pendentes
+        : item.to === "/solicitacoes"
+          ? solicitacoes.total
+          : 0;
   return (
     <Link
       to={item.to}

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pagina } from "@/ui/Pagina";
@@ -86,44 +86,81 @@ function Tarefas() {
 
 const TAREFA_VAZIA = { titulo: "", descricao: "", pontos: 10, setor: "" };
 
+type TarefaDoCatalogo = {
+  tarefaid: number;
+  titulo: string;
+  descricao: string | null;
+  pontos: number;
+  setor: string | null;
+  ativa: boolean;
+  sistema: string | null;
+  lojas: number[];
+};
+
+/** Sem filtro: só as 5 mais recentes. Com filtro e no "carregar mais": 50 por vez. */
+const PRIMEIRAS_TAREFAS = 5;
+const TAREFAS_POR_VEZ = 50;
+
 function Catalogo() {
   const qc = useQueryClient();
-  const { lojas } = useLojaAtiva();
+  const { lojas, lojaAtiva } = useLojaAtiva();
+  // O formulário começa fechado: abre em "Nova tarefa" ou em "Editar".
+  const [formAberto, setFormAberto] = useState(false);
   const [form, setForm] = useState(TAREFA_VAZIA);
   const [lojasEscolhidas, setLojasEscolhidas] = useState<number[]>([]);
   const [editando, setEditando] = useState<number | null>(null);
   // O código interno da tarefa em edição: diz se alguma rotina a usa.
   const [codigoEditando, setCodigoEditando] = useState<string | null>(null);
 
-  const catalogo = useQuery({
-    queryKey: ["catalogo-tarefas"],
-    queryFn: async () => {
-      // As duas não dependem uma da outra: vão juntas.
-      const [{ data: tarefas, error }, { data: vinculos, error: erroVinculos }] = await Promise.all([
-        supabase
-          .from("tarefas")
-          .select("tarefaid, titulo, descricao, pontos, setor, ativa, sistema")
-          .order("titulo"),
-        supabase.from("tarefaslojas").select("tarefaid, lojaid, ativo"),
-      ]);
+  // Filtros da lista. A loja começa na do topo e ACOMPANHA o topo quando ele
+  // muda; "todas" mostra todas as lojas.
+  const [lojaFiltro, setLojaFiltro] = useState<number | "todas">(lojaAtiva ?? "todas");
+  useEffect(() => {
+    if (lojaAtiva !== null) setLojaFiltro(lojaAtiva);
+  }, [lojaAtiva]);
+  const [inativas, setInativas] = useState(false);
+  const [buscaDigitada, setBuscaDigitada] = useState("");
+  const [busca, setBusca] = useState("");
+  // A busca pergunta ao banco quando a pessoa para de digitar, não a cada letra.
+  useEffect(() => {
+    const t = setTimeout(() => setBusca(buscaDigitada.trim()), 400);
+    return () => clearTimeout(t);
+  }, [buscaDigitada]);
+  const semFiltro = lojaFiltro === lojaAtiva && !inativas && busca === "";
+
+  // UMA consulta: a lista já filtrada, com as lojas de cada tarefa (antes eram
+  // duas — todas as tarefas e todos os vínculos — e o filtro era no aparelho).
+  const catalogo = useInfiniteQuery({
+    queryKey: ["catalogo-tarefas", lojaFiltro, inativas, busca],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const { data, error } = await supabase.rpc("catalogo_de_tarefas", {
+        ...(lojaFiltro !== "todas" ? { p_lojaid: lojaFiltro } : {}),
+        p_inativas: inativas,
+        ...(busca ? { p_busca: busca } : {}),
+        p_limite: pageParam === 0 && semFiltro ? PRIMEIRAS_TAREFAS : TAREFAS_POR_VEZ,
+        p_offset: pageParam,
+      });
       if (error) throw error;
-      if (erroVinculos) throw erroVinculos;
-
-      const porTarefa = new Map<number, number[]>();
-      for (const v of vinculos ?? []) {
-        if (!v.ativo) continue;
-        porTarefa.set(v.tarefaid, [...(porTarefa.get(v.tarefaid) ?? []), v.lojaid]);
-      }
-
-      return (tarefas ?? []).map((t) => ({ ...t, lojas: porTarefa.get(t.tarefaid) ?? [] }));
+      return data as unknown as { tarefas: TarefaDoCatalogo[]; temmais: boolean };
     },
+    getNextPageParam: (ultima, todas) =>
+      ultima.temmais ? todas.reduce((n, p) => n + p.tarefas.length, 0) : undefined,
   });
+
+  function limparFiltros() {
+    setLojaFiltro(lojaAtiva ?? "todas");
+    setInativas(false);
+    setBuscaDigitada("");
+    setBusca("");
+  }
 
   function limpar() {
     setForm(TAREFA_VAZIA);
     setLojasEscolhidas([]);
     setEditando(null);
     setCodigoEditando(null);
+    setFormAberto(false);
   }
 
   async function sincronizarLojas(tarefaid: number, escolhidas: number[]) {
@@ -206,7 +243,7 @@ function Catalogo() {
     },
   });
 
-  const lista = catalogo.data ?? [];
+  const lista = (catalogo.data?.pages ?? []).flatMap((p) => p.tarefas);
   const rotinaEmEdicao = rotinaDaTarefa(codigoEditando);
 
   // O teto de pontos por ciência da conta: só quando se edita a tarefa que
@@ -224,6 +261,19 @@ function Catalogo() {
 
   return (
     <div className="space-y-4">
+      {!formAberto && (
+        <button
+          onClick={() => {
+            limpar();
+            setFormAberto(true);
+          }}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+        >
+          Nova tarefa
+        </button>
+      )}
+
+      {formAberto && (
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -319,21 +369,59 @@ function Catalogo() {
           >
             {salvar.isPending ? "Salvando..." : editando === null ? "Adicionar" : "Salvar"}
           </button>
-          {editando !== null && (
-            <button
-              type="button"
-              onClick={limpar}
-              className="rounded-lg border border-border px-4 py-2 text-sm"
-            >
-              Cancelar
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={limpar}
+            className="rounded-lg border border-border px-4 py-2 text-sm"
+          >
+            Cancelar
+          </button>
         </div>
 
         {salvar.isError && (
           <p className="text-sm text-destructive">{(salvar.error as Error).message}</p>
         )}
       </form>
+      )}
+
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-3">
+        <label className="space-y-1 text-sm">
+          <span className="block text-muted-foreground">Buscar pelo nome</span>
+          <input
+            value={buscaDigitada}
+            onChange={(e) => setBuscaDigitada(e.target.value)}
+            placeholder="Ex.: vitrine"
+            className={campo}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="block text-muted-foreground">Loja</span>
+          <select
+            value={lojaFiltro}
+            onChange={(e) => setLojaFiltro(e.target.value === "todas" ? "todas" : Number(e.target.value))}
+            className={campo}
+          >
+            <option value="todas">Todas as lojas</option>
+            {lojas.map((l) => (
+              <option key={l.lojaid} value={l.lojaid}>
+                {l.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={inativas} onChange={(e) => setInativas(e.target.checked)} />
+          Mostrar também as inativas
+        </label>
+        <button type="button" onClick={limparFiltros} className="rounded-lg border border-border px-3 py-2 text-sm">
+          Limpar filtros
+        </button>
+        <p className="w-full text-xs text-muted-foreground">
+          {semFiltro
+            ? `As ${PRIMEIRAS_TAREFAS} tarefas ativas cadastradas por último nesta loja. Busque pelo nome para achar uma mais antiga.`
+            : `${TAREFAS_POR_VEZ} por vez, das mais recentes para as mais antigas.`}
+        </p>
+      </div>
 
       <div className="space-y-2">
         {catalogo.isLoading && <p className="text-muted-foreground">Carregando...</p>}
@@ -374,6 +462,7 @@ function Catalogo() {
                   });
                   setLojasEscolhidas(t.lojas);
                   setCodigoEditando(t.sistema);
+                  setFormAberto(true);
                 }}
                 className="rounded-md border border-border px-3 py-1 text-sm"
               >
@@ -389,8 +478,20 @@ function Catalogo() {
           </div>
         ))}
 
+        {catalogo.hasNextPage && (
+          <button
+            onClick={() => catalogo.fetchNextPage()}
+            disabled={catalogo.isFetchingNextPage}
+            className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {catalogo.isFetchingNextPage ? "Carregando..." : `Carregar mais ${TAREFAS_POR_VEZ}`}
+          </button>
+        )}
+
         {!catalogo.isLoading && lista.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nenhuma tarefa cadastrada ainda.</p>
+          <p className="text-sm text-muted-foreground">
+            {semFiltro ? "Nenhuma tarefa ativa nesta loja ainda." : "Nenhuma tarefa com esse filtro."}
+          </p>
         )}
       </div>
     </div>

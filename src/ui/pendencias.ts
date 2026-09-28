@@ -1,35 +1,54 @@
-// Quantos pedidos de resgate estão esperando o gestor.
+// As bandeirinhas vermelhas do menu: Quadro, Prêmios e Solicitações.
 //
-// Serve à bandeirinha vermelha do menu Prêmios: sem ela, o pedido que o
-// colaborador faz pelo celular pode passar dias sem ninguém ver.
-//
-// DESEMPENHO: esta consulta é do MENU, que envolve todas as telas — não pode
-// virar uma ida ao banco a cada troca de tela. Por isso ela usa a mesma chave
-// em todo lugar e o prazo OPERACIONAL (30 s) de src/ui/prazos.ts: dentro
-// desses 30 segundos, trocar de tela não pergunta nada ao banco.
-//
-// Conta os pendentes de TODAS as lojas que o gestor enxerga, e não só a do
-// seletor do topo: a lista de resgates já mostra lojas diferentes.
+// Sem elas, a entrega, o pedido de resgate ou a solicitação feitos pelo
+// celular podem passar dias sem ninguém ver. Contam TODAS as lojas que o
+// gestor enxerga, e não só a do seletor do topo.
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { OPERACIONAL } from "./prazos";
 
-export function useResgatesPendentes() {
+// ---------------------------------------------------------------------------
+// Os contadores do menu — UMA consulta só (29/09/2026).
+//
+// Quadro (entregas esperando aprovação), Prêmios (resgates esperando) e
+// Solicitações saem da mesma resposta do banco (contagem_do_menu: só números,
+// nunca linha), com UMA chave para o menu inteiro e o prazo OPERACIONAL: dentro
+// de 30 segundos, trocar de tela não pergunta nada. Quem muda uma entrega, um
+// resgate ou uma solicitação invalida esta chave, e os três se refazem juntos.
+// ---------------------------------------------------------------------------
+
+export const CHAVE_MENU = ["contadores-do-menu"] as const;
+
+type ContadoresDoMenu = {
+  entregas: number;
+  resgates: number;
+  solicitacoes: { loja: number; situacao: string; quantos: number }[];
+};
+
+const ZERADOS: ContadoresDoMenu = { entregas: 0, resgates: 0, solicitacoes: [] };
+
+function useContadoresDoMenu(): ContadoresDoMenu {
   const q = useQuery({
-    queryKey: ["resgates-pendentes"],
+    queryKey: CHAVE_MENU,
     staleTime: OPERACIONAL,
     refetchOnWindowFocus: true,
-    queryFn: async () => {
-      // head + count: o banco devolve só o número, sem trazer linha nenhuma.
-      const { count, error } = await supabase
-        .from("resgates")
-        .select("resgateid", { count: "exact", head: true })
-        .eq("status", "Pendente");
+    queryFn: async (): Promise<ContadoresDoMenu> => {
+      const { data, error } = await supabase.rpc("contagem_do_menu");
       if (error) throw error;
-      return count ?? 0;
+      return { ...ZERADOS, ...((data ?? {}) as Partial<ContadoresDoMenu>) };
     },
   });
-  return q.data ?? 0;
+  return q.data ?? ZERADOS;
+}
+
+/** Quantas entregas esperam aprovação, em todas as lojas que o gestor enxerga. */
+export function useEntregasPendentes() {
+  return useContadoresDoMenu().entregas;
+}
+
+export function useResgatesPendentes() {
+  return useContadoresDoMenu().resgates;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +67,7 @@ export function useResgatesPendentes() {
 
 /** A chave única. Quem mudar uma solicitação invalida esta, e os dois números
  *  se refazem juntos — o do menu e o da aba. */
-export const CHAVE_SOLICITACOES = ["solicitacoes-a-resolver"] as const;
+export const CHAVE_SOLICITACOES = CHAVE_MENU;
 
 export type ContagemSolicitacoes = {
   /** Uma entrada por loja que tem algo esperando. */
@@ -60,17 +79,9 @@ export type ContagemSolicitacoes = {
 const NENHUMA: ContagemSolicitacoes = { lojas: [], total: 0 };
 
 export function useContagemSolicitacoes(): ContagemSolicitacoes {
-  const q = useQuery({
-    queryKey: CHAVE_SOLICITACOES,
-    staleTime: OPERACIONAL,
-    refetchOnWindowFocus: true,
-    queryFn: async (): Promise<ContagemSolicitacoes> => {
-      const { data, error } = await supabase.rpc("contagem_solicitacoes");
-      if (error) throw error;
-      return montarContagem(data ?? []);
-    },
-  });
-  return q.data ?? NENHUMA;
+  const linhas = useContadoresDoMenu().solicitacoes;
+  // Refeito só quando a resposta muda (o mesmo objeto enquanto o cache vale).
+  return useMemo(() => (linhas.length ? montarContagem(linhas) : NENHUMA), [linhas]);
 }
 
 /** Junta as linhas do banco (uma por loja e situação) no formato da tela. */

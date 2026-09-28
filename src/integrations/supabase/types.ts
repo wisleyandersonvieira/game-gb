@@ -5195,6 +5195,10 @@ export type Database = {
       }
       bot_visto: { Args: { p_chatid: number }; Returns: undefined }
       canal_atual: { Args: never; Returns: string }
+      catalogo_de_tarefas: {
+        Args: { p_busca?: string; p_inativas?: boolean; p_limite?: number; p_lojaid?: number; p_offset?: number }
+        Returns: Json
+      }
       cancelar_agendamento: {
         Args: { p_agendamentoid: number; p_motivo: string }
         Returns: undefined
@@ -5212,6 +5216,7 @@ export type Database = {
         Args: { p_contaid: number; p_protocolo: string }
         Returns: Json
       }
+      contagem_do_menu: { Args: never; Returns: Json }
       contagem_solicitacoes: {
         Args: never
         Returns: {
