@@ -10766,4 +10766,44 @@ BEGIN
 END $$;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 85. O "Tarefas de hoje" do Inicio e a barra da TV: os mesmos numeros
+--     (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '85. Inicio e TV contam igual'; END $$;
+DO $$
+DECLARE c record; l record; v_ini jsonb; v_tv jsonb; v_soma jsonb; v_lojas integer := 0;
+BEGIN
+  FOR c IN SELECT cu.contaid, cu.userid FROM public.contasusuarios cu
+            WHERE cu.papel = 'master' AND cu.contaid IN (1, 2, 82) LOOP
+    PERFORM set_config('teste.uid', c.userid::text, true);
+    FOR l IN SELECT lojaid FROM public.lojas WHERE contaid = c.contaid AND ativa LOOP
+      v_ini := public.painel_inicio(l.lojaid)->'cartoes'->'tarefas';
+      v_tv  := public.montar_painel(c.contaid, l.lojaid, true)->'progresso';
+      IF (v_ini->>'total') IS DISTINCT FROM (v_tv->>'total')
+         OR (v_ini->>'aprovadas') IS DISTINCT FROM (v_tv->>'aprovadas')
+         OR (v_ini->>'emvalidacao') IS DISTINCT FROM (v_tv->>'emvalidacao')
+         OR (v_ini->>'feitas')::integer <> (v_tv->>'aprovadas')::integer + (v_tv->>'emvalidacao')::integer THEN
+        RAISE EXCEPTION 'FALHOU: loja % — Inicio % / TV %', l.lojaid, v_ini, v_tv;
+      END IF;
+      v_lojas := v_lojas + 1;
+    END LOOP;
+    -- "Todas as lojas" e a soma das lojas.
+    SELECT jsonb_build_object('total', sum((p->>'total')::integer), 'aprovadas', sum((p->>'aprovadas')::integer))
+      INTO v_soma
+      FROM (SELECT public.montar_painel(c.contaid, lojaid, true)->'progresso' AS p
+              FROM public.lojas WHERE contaid = c.contaid AND ativa) x;
+    v_ini := public.painel_inicio(NULL)->'cartoes'->'tarefas';
+    IF (v_ini->>'total')::integer <> (v_soma->>'total')::integer
+       OR (v_ini->>'aprovadas')::integer <> (v_soma->>'aprovadas')::integer THEN
+      RAISE EXCEPTION 'FALHOU: conta % todas as lojas — Inicio % / soma das TVs %', c.contaid, v_ini, v_soma;
+    END IF;
+  END LOOP;
+  PERFORM public.exigir(v_lojas >= 4, 'Inicio e TV com os mesmos numeros em ' || v_lojas || ' lojas, e "todas as lojas" e a soma delas');
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'painel_inicio') LIKE '%fila_da_loja(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_inicio') NOT LIKE '%tem_justificativa(%',
+                        'o Inicio pergunta a fila; nenhuma copia da regra');
+END $$;
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;
