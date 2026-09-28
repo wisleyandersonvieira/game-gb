@@ -11,6 +11,7 @@ const PainelDeGraficos = lazy(() => import("@/inicio/PainelDeGraficos"));
 import { Guia, guiaCompleto } from "@/inicio/Guia";
 import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, textoSemLancamento, type PainelInicio } from "@/inicio/tipos";
+import { textoDiasSemLancamento } from "@/painel/textoDaMeta";
 import { Pontos } from "@/ui/Pontos";
 import { AvisosDoSistema } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
@@ -180,7 +181,9 @@ function CartaoMeta({ titulo, meta }: { titulo: string; meta: PainelInicio["cart
     <CartaoNumero
       titulo={titulo}
       valor={pct(meta.percentual)}
-      detalhe={`${reais(meta.vendido)} de ${reais(meta.meta)}`}
+      detalhe={`${reais(meta.vendido)} de ${reais(meta.meta)}${
+        textoDiasSemLancamento(meta.diassemlancamento) ? ` · ${textoDiasSemLancamento(meta.diassemlancamento)}` : ""
+      }`}
       tom={bateu ? "sucesso" : "primario"}
       progresso={meta.percentual}
       etiqueta={bateu ? "batida" : undefined}

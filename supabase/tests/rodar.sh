@@ -73,6 +73,13 @@ if [ "$ok" != "1" ]; then
   exit 1
 fi
 
+echo "==> o conferidor (conferir-o-banco.sql) rodando de verdade"
+if ! bash "$RAIZ/supabase/tests/conferidor.sh" "$CONTAINER"; then
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (conferidor)"
+  exit 1
+fi
+
 echo "==> dois resgates ao mesmo tempo (duas conexoes em paralelo)"
 rodar "$RAIZ/supabase/tests/concorrencia_preparo.sql" >/dev/null
 docker cp "$RAIZ/supabase/tests/concorrencia_sessao.sql" "$CONTAINER:/sessao.sql" >/dev/null

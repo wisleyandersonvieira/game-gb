@@ -10990,4 +10990,131 @@ END $$;
 SET teste.uid = '';
 RESET ROLE;
 
+-- ===========================================================================
+-- 88. Desempate fixo nas listas; dias sem lancamento na meta do mes
+--     (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '88. desempate fixo; dias sem lancamento'; END $$;
+
+-- 1. Duas entregas no MESMO instante: a ordem e sempre a mesma (pelo numero
+--    da entrega), consulta apos consulta. Gravadas com o numero MAIOR primeiro,
+--    para a ordem "de chegada" no disco ser a contraria da certa.
+DO $$
+DECLARE v1 jsonb; v2 jsonb; t timestamptz := now() - interval '2 days';
+BEGIN
+  BEGIN
+    SET LOCAL session_replication_role = replica;
+    INSERT INTO public.entregas (entregaid, contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, dataenvio, statusvalidacao)
+      OVERRIDING SYSTEM VALUE VALUES
+      (99902, 82, 8201, 98408, 98308, 98202, t, 'Pendente'),
+      (99901, 82, 8201, 98401, 98301, 98201, t, 'Pendente');
+    INSERT INTO public.entregas (entregaid, contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, dataenvio, statusvalidacao, dataaprovacao, pontosganhos)
+      OVERRIDING SYSTEM VALUE VALUES
+      (99904, 82, 8201, 98408, 98308, 98202, now() - interval '1 minute', 'Aprovada', now() - interval '30 seconds', 8),
+      (99903, 82, 8201, 98401, 98301, 98201, now() - interval '1 minute', 'Aprovada', now() - interval '30 seconds', 1);
+    SET LOCAL session_replication_role = origin;
+    v1 := public.montar_painel(82, 8201, true);
+    v2 := public.montar_painel(82, 8201, true);
+    PERFORM public.exigir(v1->'emvalidacao' = v2->'emvalidacao' AND v1->'atividade' = v2->'atividade',
+                          'a mesma consulta, rodada duas vezes, devolve a mesma ordem');
+    PERFORM public.exigir(
+      (SELECT array_agg(i->>'titulo' ORDER BY n) FROM jsonb_array_elements(v1->'emvalidacao') WITH ORDINALITY x(i, n)
+        WHERE (i->>'enviadaem')::timestamptz = t) = ARRAY['Disp82 A', 'Disp82 H'],
+      '"Esperando o gestor": empate no horario, o numero da entrega desempata (menor primeiro)');
+    PERFORM public.exigir(
+      (SELECT array_agg(i->>'titulo' ORDER BY n) FROM jsonb_array_elements(v1->'atividade') WITH ORDINALITY x(i, n)
+        WHERE i->>'titulo' IN ('Disp82 A', 'Disp82 H')) = ARRAY['Disp82 H', 'Disp82 A'],
+      '"Atividade": empate no horario da aprovacao, a mais nova (numero maior) primeiro');
+    RAISE EXCEPTION 'desfazer_88';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_88' THEN RAISE; END IF;
+  END;
+END $$;
+
+-- 2. Dias sem lancamento: a regra (dias_sem_lancamento), num periodo fixo de
+--    7 dias do mes passado (o teste nao depende de que dia e hoje).
+DO $$
+DECLARE
+  d0 date := (date_trunc('month', public.hoje_da_conta(82)) - interval '1 month')::date + 9;
+  n  integer;
+  f  text := public.fuso_da_conta(82);
+BEGIN
+  BEGIN
+    UPDATE public.lojas SET criadoem = d0 - 30 WHERE lojaid = 8201;
+    DELETE FROM public.metasdiariasmodelos WHERE lojaid = 8201;
+    INSERT INTO public.metasdiariasmodelos (contaid, lojaid, diasemanaid, nomedia, valormeta, pontospremio)
+    SELECT 82, 8201, ds, 'dia ' || ds, 5000, 0 FROM generate_series(1, 7) ds;
+    SET LOCAL session_replication_role = replica;
+    DELETE FROM public.metasdiariasapuracoes WHERE lojaid = 8201 AND dataapuracao BETWEEN d0 AND d0 + 6;
+    INSERT INTO public.metasdiariasapuracoes (contaid, lojaid, dataapuracao, valordia)
+    SELECT 82, 8201, d0 + i, 4000 FROM generate_series(0, 6) i;
+    SET LOCAL session_replication_role = origin;
+
+    SELECT count(*) INTO n FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f);
+    PERFORM public.exigir(n = 0, 'mes completo: nenhum dia sem lancamento (a faixa nao escreve nada)');
+
+    SET LOCAL session_replication_role = replica;
+    DELETE FROM public.metasdiariasapuracoes WHERE lojaid = 8201 AND dataapuracao = d0 + 2;
+    SET LOCAL session_replication_role = origin;
+    SELECT count(*) INTO n FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f);
+    PERFORM public.exigir(n = 1, '1 dia sem lancamento');
+
+    SET LOCAL session_replication_role = replica;
+    DELETE FROM public.metasdiariasapuracoes WHERE lojaid = 8201 AND dataapuracao IN (d0 + 4, d0 + 5);
+    SET LOCAL session_replication_role = origin;
+    SELECT count(*) INTO n FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f);
+    PERFORM public.exigir(n = 3, '3 dias sem lancamento');
+
+    -- Feriado no meio (meta especial com valor 0): nao conta.
+    INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio)
+    VALUES (82, 8201, d0 + 4, 'Feriado', 0, 0);
+    SELECT count(*) INTO n FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f);
+    PERFORM public.exigir(n = 2, 'feriado no meio (dia sem meta): nao conta como falta');
+
+    -- Dia em que a loja fecha (meta 0 no modelo daquele dia da semana): nao conta.
+    UPDATE public.metasdiariasmodelos SET valormeta = 0
+     WHERE lojaid = 8201 AND diasemanaid = extract(dow FROM d0 + 5)::integer + 1;
+    SELECT count(*) INTO n FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f);
+    PERFORM public.exigir(n = 1, 'dia em que a loja fecha (meta 0): nao conta');
+
+    -- Dia anterior a criacao da loja: nao conta.
+    UPDATE public.lojas SET criadoem = (d0 + 3)::timestamp AT TIME ZONE f WHERE lojaid = 8201;
+    SELECT count(*) INTO n FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f);
+    PERFORM public.exigir(n = 0, 'dia anterior a criacao da loja: nao conta');
+
+    -- A faixa do mes usa a MESMA regra, do dia 1 ate ONTEM (hoje nunca e falta).
+    UPDATE public.lojas SET criadoem = now() - interval '90 days' WHERE lojaid = 8201;
+    PERFORM public.exigir(
+      (public.meta_para_painel(82, 8201, true)->'mes'->>'diassemlancamento')::integer
+        = (SELECT count(*) FROM public.dias_sem_lancamento(8201, date_trunc('month', public.hoje_da_conta(82))::date,
+                                                           public.hoje_da_conta(82) - 1, f)),
+      'a faixa do mes conta pela mesma regra, ate ontem');
+    SET LOCAL session_replication_role = replica;
+    DELETE FROM public.metasdiariasapuracoes WHERE lojaid = 8201 AND dataapuracao = public.hoje_da_conta(82);
+    SET LOCAL session_replication_role = origin;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.dias_sem_lancamento(8201, date_trunc('month', public.hoje_da_conta(82))::date,
+                                                                                public.hoje_da_conta(82) - 1, f) d
+                                        WHERE d = public.hoje_da_conta(82)),
+                          'hoje sem lancamento nao e falta (ainda vai ser lancado no fechamento)');
+    -- O Inicio (cartao "Meta do mes") le a mesma regra.
+    n := (public.meta_para_painel(82, 8201, true)->'mes'->>'diassemlancamento')::integer;
+    PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((public.painel_inicio(8201)->'cartoes'->'metames'->>'diassemlancamento')::integer = n,
+                          'o cartao do Inicio mostra o mesmo numero que a TV (' || n || ')');
+    RESET ROLE;
+    -- Outra conta nao ve os dias da loja 82.
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.dias_sem_lancamento(8201, d0, d0 + 6, f)),
+                          'outra conta nao le os dias sem lancamento de uma loja que nao e dela');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_88';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_88' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

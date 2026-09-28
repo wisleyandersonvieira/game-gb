@@ -5752,6 +5752,10 @@ export type Database = {
         Args: { p_contaid: number; p_lojaid: number }
         Returns: { aceitoem: string; funcionarioid: number }[]
       }
+      dias_sem_lancamento: {
+        Args: { p_ate: string; p_de: string; p_fuso: string; p_lojaid: number }
+        Returns: string[]
+      }
       fila_de_hoje: {
         Args: { p_contaid: number; p_lojaid: number }
         Returns: {

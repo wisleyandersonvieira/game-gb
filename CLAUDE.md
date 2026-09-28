@@ -95,6 +95,8 @@ A mensagem final de **toda** entrega diz, sempre, nesta ordem:
 
 Ele confere em `/saude` se a **versão no ar** é esse commit antes de testar qualquer coisa. A `/saude` mostra o commit e a hora do build, sem precisar de login.
 
+**O conferidor (`supabase/conferir-o-banco.sql`) nunca manda rodar arquivo mais velho que o já aplicado** (29/09/2026: a linha 340 quase mandou reaplicar a barra antiga por cima da entrega seguinte). Toda entrega com migração entra nele com uma linha e com a data do arquivo na tabela `arquivos` (`src/ui/conferidor.test.ts` confere). Onde der, a conferência RODA a função (sem gravar) em vez de procurar texto no código. `supabase/tests/conferidor.sh` roda o conferidor de verdade no `rodar.sh`: num banco completo, toda linha tem de dar "ok".
+
 E **nunca junte numa entrega o que não foi testado junto**: um `git add -A` já levou para o ar, sem querer, um conserto pela metade que um agente de revisão tinha começado. Antes de commitar, olhe o `git status` e confirme que cada arquivo mexido é seu.
 
 ## Como se comunicar com o Wisley

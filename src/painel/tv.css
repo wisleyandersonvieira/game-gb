@@ -164,6 +164,9 @@ html.tv, html.tv body {
 .tv-barra-ouro  { height: 8px; background-color: #f0b429; border-radius: 4px; }
 
 /* Nome longo da meta do mês: corta com reticências, sem empurrar o número. */
+/* "2 dias sem lancamento": a falta escrita ao lado da meta do mes. */
+.tv-faixa-falta { color: #f0b429; font-weight: 700; }
+
 .tv-faixa-corta {
   overflow: hidden;
   white-space: nowrap;

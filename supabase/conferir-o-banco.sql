@@ -5,10 +5,77 @@
 -- Só LÊ. Não altera nada.
 --
 -- Diz, item por item, o que já está no banco e o que falta. Se aparecer
--- qualquer "FALTA", rode o arquivo indicado na última coluna.
+-- qualquer "FALTA", a última coluna diz o que fazer.
+--
+-- REGRA (29/09/2026): o conferidor NUNCA manda rodar um arquivo mais velho
+-- que o mais novo já aplicado — rodar um arquivo velho por cima desfaz a
+-- entrega mais recente (quase aconteceu com a linha 340). Nesse caso ele
+-- diz "NÃO rode" e pede para chamar o Claude. "Mais velho" é pela data da
+-- migração de cada arquivo (tabela "arquivos", conferida por teste), e não
+-- pelo número da linha.
+--
+-- Onde dá, a conferência RODA a função e olha o que volta (sem gravar
+-- nada); onde não dá (a função precisa de alguém logado, de um dado real ou
+-- gravaria algo), ela procura um trecho do código. Ver o comentário de cada
+-- linha.
 -- =========================================================================
 
-WITH esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
+-- Roda uma consulta de LEITURA e diz se ela devolveu verdadeiro. Função que
+-- ainda não existe (banco atrasado) vira "falso", não erro. Temporária: some
+-- quando a janela fecha; não altera nada no banco.
+CREATE OR REPLACE FUNCTION pg_temp.tenta(p_consulta text)
+RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+DECLARE r boolean;
+BEGIN
+  EXECUTE p_consulta INTO r;
+  RETURN coalesce(r, false);
+EXCEPTION WHEN OTHERS THEN
+  RETURN false;
+END;
+$$;
+
+WITH arquivos(arquivo, versao) AS (VALUES
+  ('aplicar-aceite-e-som.sql', '20260929100700'),
+  ('aplicar-admin-clientes-e-redes.sql', '20260929160000'),
+  ('aplicar-barra-da-fila.sql', '20260929240000'),
+  ('aplicar-colaborador-pede-resgate.sql', '20260929101000'),
+  ('aplicar-concluidas-e-venda-de-ontem.sql', '20260929244000'),
+  ('aplicar-consertos-da-revisao-c1.sql', '20260929100400'),
+  ('aplicar-desempate-e-dias-sem-lancamento.sql', '20260929245000'),
+  ('aplicar-disponivel-uma-fonte.sql', '20260929238000'),
+  ('aplicar-entrega-da-copia.sql', '20260929234000'),
+  ('aplicar-entrega-do-celular.sql', '20260929235000'),
+  ('aplicar-etapa-1.12-parte-A.sql', '20260927100900'),
+  ('aplicar-etapa-1.12-parte-B1.sql', '20260928100800'),
+  ('aplicar-etapa-1.12-parte-C.sql', '20260929100000'),
+  ('aplicar-faixa-meta-do-mes.sql', '20260929241000'),
+  ('aplicar-folha-de-acesso.sql', '20260929150000'),
+  ('aplicar-foto-da-fila.sql', '20260929237000'),
+  ('aplicar-hoje-da-conta.sql', '20260929140000'),
+  ('aplicar-hora-de-liberacao.sql', '20260929100600'),
+  ('aplicar-inicio-da-fila.sql', '20260929242000'),
+  ('aplicar-jornadas.sql', '20260929190000'),
+  ('aplicar-mapa-da-jornada.sql', '20260929210000'),
+  ('aplicar-mapa-intervalo-por-dia.sql', '20260929233000'),
+  ('aplicar-menu-e-catalogo.sql', '20260929236000'),
+  ('aplicar-mural-no-tablet.sql', '20260929101200'),
+  ('aplicar-pedido-no-tablet.sql', '20260929100900'),
+  ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
+  ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
+  ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
+  ('aplicar-quem-fez-no-tablet.sql', '20260929100200'),
+  ('aplicar-quem-pode-aceitar.sql', '20260929239000'),
+  ('aplicar-remover-anexo.sql', '20260929170000'),
+  ('aplicar-som-por-loja.sql', '20260929120000'),
+  ('aplicar-tarefas-comuns-e-atribuicoes.sql', '20260929220000'),
+  ('aplicar-tela-meta-especial.sql', '20260929243000'),
+  ('aplicar-teto-fotos-e-agenda.sql', '20260929232000'),
+  ('aplicar-tv-configuravel.sql', '20260929101100'),
+  ('aplicar-tv-por-codigo.sql', '20260929100500')
+),
+esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
   -- Parte A
   ( 1, 'A',    'funcao', 'tentativa_abrir',              'aplicar-etapa-1.12-parte-A.sql'),
   ( 2, 'A',    'funcao', 'acesso_por_email',             'aplicar-etapa-1.12-parte-A.sql'),
@@ -77,10 +144,9 @@ situacao AS (
 -- Se só olhássemos o nome, uma função velha passaria por boa. Aqui olhamos
 -- também um pedaço do conteúdo que só a versão nova tem.
 versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
+  -- Comportamento: sem ninguém logado (esta janela), meu_acesso diz "semlogin".
   (60, 'B1', 'versao', 'meu_acesso responde "semlogin"', 'aplicar-etapa-1.12-parte-B1.sql',
-       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'meu_acesso'
-                  AND p.prosrc LIKE '%semlogin%')),
+       pg_temp.tenta($q$SELECT public.meu_acesso()->>'tipo' = 'semlogin'$q$)),
   (61, 'B1', 'versao', 'acesso_por_email diz se a senha e digitada', 'aplicar-etapa-1.12-parte-B1.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'public' AND p.proname = 'acesso_por_email'
@@ -121,10 +187,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (81, 'C1+', 'versao', 'o tablet diz quem fez em "Feitas hoje"', 'aplicar-quem-fez-no-tablet.sql',
        EXISTS (SELECT 1 FROM information_schema.parameters
                 WHERE specific_schema = 'public' AND parameter_name = 'feitapor')),
+  -- Comportamento: o diagnóstico devolve a lista de assinaturas diferentes.
   (82, 'C1+', 'versao', 'a /saude confere a assinatura das funcoes', 'aplicar-consertos-da-revisao-c1.sql',
-       EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'diagnostico_do_sistema'
-                  AND p.prosrc LIKE '%assinaturasdiferentes%')),
+       pg_temp.tenta($q$SELECT public.diagnostico_do_sistema() ? 'assinaturasdiferentes'$q$)),
   (83, 'C1+', 'versao', 'a prova da foto e feita pelo servidor', 'aplicar-consertos-da-revisao-c1.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'public' AND p.proname = 'eu_confere_pessoa')),
@@ -191,9 +256,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        EXISTS (SELECT 1 FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = 'lojas'
                   AND column_name = 'tvblocos')),
+  -- Comportamento: o painel de uma loja ativa traz "podiomes" e "emandamento".
+  -- Banco sem loja nenhuma: não há o que rodar, então procura no código.
   (141, 'TV2', 'versao', 'o painel traz "em andamento" e o podio do mes', 'aplicar-tv-configuravel.sql',
-       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%podiomes%'),
+       pg_temp.tenta($q$SELECT coalesce(
+         (SELECT (x.p ? 'podiomes') AND (x.p ? 'emandamento')
+            FROM (SELECT public.montar_painel(l.contaid, l.lojaid, true) AS p
+                    FROM public.lojas l WHERE l.ativa ORDER BY l.lojaid LIMIT 1) x),
+         (SELECT prosrc LIKE '%podiomes%' FROM pg_proc WHERE proname = 'montar_painel'))$q$)),
   (150, 'B2', 'versao', 'o mural esta no tablet', 'aplicar-mural-no-tablet.sql',
        EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'public' AND p.proname = 'visao_mural')),
@@ -246,17 +316,32 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (310, 'OPERACAO', 'versao', 'foto da fila no fim do dia e filtro por dia do Quadro', 'aplicar-foto-da-fila.sql',
        EXISTS (SELECT 1 FROM information_schema.tables
                 WHERE table_schema = 'public' AND table_name = 'fotosdafila')),
+  -- Comportamento: o "Para fazer" da TV tem o mesmo tamanho que a lista de
+  -- disponíveis da fila, numa loja ativa. Sem loja: procura no código.
   (320, 'OPERACAO', 'versao', 'TV, tablet e Quadro com a mesma lista de disponiveis', 'aplicar-disponivel-uma-fonte.sql',
-       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%fila_de_hoje(%'),
+       pg_temp.tenta($q$SELECT coalesce(
+         (SELECT jsonb_array_length(public.montar_painel(l.contaid, l.lojaid, true)->'parafazer')
+                 = (SELECT count(*) FROM public.fila_de_hoje(l.contaid, l.lojaid) f WHERE f.disponivel)
+            FROM public.lojas l WHERE l.ativa ORDER BY l.lojaid LIMIT 1),
+         (SELECT prosrc LIKE '%fila_de_hoje(%' FROM pg_proc WHERE proname = 'montar_painel'))$q$)),
   (330, 'OPERACAO', 'versao', 'tablet mostra quem pode aceitar (a mesma regra do aceite)', 'aplicar-quem-pode-aceitar.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'pegar_tarefa') LIKE '%quem_pode_pegar(%'
        AND (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'visao_fila') LIKE '%quem_pode_aceitar(%'),
+  -- Comportamento: a barra fecha (total = aprovadas + em validação + em
+  -- andamento + para fazer + ainda não liberadas), numa loja ativa. Antes
+  -- procurava uma palavra no código, e mandaria reaplicar este arquivo por
+  -- cima da entrega seguinte (29/09/2026). Sem loja: procura no código.
   (340, 'OPERACAO', 'versao', 'a barra da TV conta o que a fila conta', 'aplicar-barra-da-fila.sql',
-       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') SIMILAR TO '%(aindanaoliberadas|progresso_da_fila\()%'),
+       pg_temp.tenta($q$SELECT coalesce(
+         (SELECT (x.p->'progresso'->>'total')::integer
+                 = (x.p->'progresso'->>'aprovadas')::integer + (x.p->'progresso'->>'emvalidacao')::integer
+                   + (x.p->'progresso'->>'emandamento')::integer + jsonb_array_length(x.p->'parafazer')
+                   + (x.p->'progresso'->>'aindanaoliberadas')::integer
+            FROM (SELECT public.montar_painel(l.contaid, l.lojaid, true) AS p
+                    FROM public.lojas l WHERE l.ativa ORDER BY l.lojaid LIMIT 1) x),
+         (SELECT prosrc SIMILAR TO '%(aindanaoliberadas|progresso_da_fila\()%' FROM pg_proc WHERE proname = 'montar_painel'))$q$)),
   (350, 'OPERACAO', 'versao', 'TV com a faixa "Meta do mes"', 'aplicar-faixa-meta-do-mes.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'salvar_tv_da_loja') LIKE '%metames%'),
@@ -268,12 +353,38 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
          WHERE n.nspname = 'public' AND p.proname = 'meta_para_painel') LIKE '%especial%lancado%'),
   (380, 'OPERACAO', 'versao', 'concluidas com uma conta (TV = Inicio) e aviso da venda de ontem', 'aplicar-concluidas-e-venda-de-ontem.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'painel_inicio') LIKE '%vendaontem%')
+         WHERE n.nspname = 'public' AND p.proname = 'painel_inicio') LIKE '%vendaontem%'),
+  -- Comportamento: a regra dos dias sem lançamento responde, e a meta do mês
+  -- de uma loja que tem meta traz "diassemlancamento". Sem loja com meta do
+  -- mês: procura no código.
+  (390, 'OPERACAO', 'versao', 'desempate fixo nas listas e dias sem lancamento na meta do mes', 'aplicar-desempate-e-dias-sem-lancamento.sql',
+       pg_temp.tenta($q$SELECT (SELECT count(*) >= 0 FROM public.dias_sem_lancamento(0, '2000-01-01', '2000-01-01', 'America/Sao_Paulo'))
+         AND coalesce(
+           (SELECT (public.meta_para_painel(mp.contaid, mp.lojaid, true)->'mes') ? 'diassemlancamento'
+              FROM public.metasprincipais mp
+             WHERE now() BETWEEN mp.datainicio AND mp.datafim + 1 ORDER BY mp.lojaid LIMIT 1),
+           (SELECT prosrc LIKE '%diassemlancamento%' FROM pg_proc WHERE proname = 'meta_para_painel'))$q$))
+),
+tudo AS (
+  SELECT x.*, a.versao
+    FROM (SELECT ordem, parte, tipo, nome, arquivo, tem FROM situacao
+          UNION ALL
+          SELECT ordem, parte, tipo, nome, arquivo, tem FROM versao) x
+    LEFT JOIN arquivos a ON a.arquivo = x.arquivo
+),
+-- O arquivo mais novo que JÁ está aplicado (alguma conferência dele passou).
+aplicado AS (
+  SELECT t.arquivo, t.versao FROM tudo t WHERE t.tem AND t.versao IS NOT NULL
+   ORDER BY t.versao DESC LIMIT 1
 )
-SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
-       parte AS "parte", tipo AS "tipo", nome AS "nome",
-       CASE WHEN tem THEN '' ELSE arquivo END AS "rode este arquivo"
-  FROM (SELECT ordem, parte, tipo, nome, arquivo, tem FROM situacao
-        UNION ALL
-        SELECT ordem, parte, tipo, nome, arquivo, tem FROM versao) x
- ORDER BY tem, ordem;
+SELECT CASE WHEN t.tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
+       t.parte AS "parte", t.tipo AS "tipo", t.nome AS "nome",
+       CASE WHEN t.tem THEN ''
+            -- Arquivo sem data conhecida, ou MAIS VELHO que o mais novo já
+            -- aplicado: rodar desfaria a entrega mais recente.
+            WHEN t.versao IS NULL OR t.versao < (SELECT versao FROM aplicado)
+            THEN 'NÃO rode ' || t.arquivo || ': já está aplicado um arquivo mais novo ('
+                 || (SELECT arquivo FROM aplicado) || '). Rodar este desfaria a entrega mais recente. Chame o Claude.'
+            ELSE 'rode ' || t.arquivo END AS "o que fazer"
+  FROM tudo t
+ ORDER BY t.tem, t.ordem;

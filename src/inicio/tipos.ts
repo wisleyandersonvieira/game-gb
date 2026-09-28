@@ -1,5 +1,13 @@
 // Formato do JSON devolvido por painel_inicio (banco).
-export type Meta = { meta: number; vendido: number; percentual: number; lojas: number; lancadas?: number } | null;
+export type Meta = {
+  meta: number;
+  vendido: number;
+  percentual: number;
+  lojas: number;
+  lancadas?: number;
+  /** Só na meta do mês: dias com meta e sem venda lançada, até ontem. */
+  diassemlancamento?: number;
+} | null;
 
 export type PainelInicio = {
   hoje: string;

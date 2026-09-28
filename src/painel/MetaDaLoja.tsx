@@ -19,6 +19,8 @@ export type MetaPainel = {
     vendido?: number;
     meta?: number;
     projecao?: number | null;
+    /** Dias do mês com meta e sem venda lançada, até ontem (somem da soma). */
+    diassemlancamento?: number;
   } | null;
   valores: boolean;
   /**

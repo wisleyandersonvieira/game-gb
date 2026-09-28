@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import tvCss from "./tv.css?raw";
 import type { DadosPainel } from "./PainelDaLoja";
 import type { MetaPainel } from "./MetaDaLoja";
+import { textoDiasSemLancamento } from "./textoDaMeta";
 
 type MetaEspecial = NonNullable<NonNullable<MetaPainel>["especial"]>;
 
@@ -502,6 +503,10 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
                 <div className="tv-faixa-alto">
                   <span className="tv-faixa-texto tv-faixa-corta">
                     <span className="tv-faixa-forte">{mes!.nome}</span>
+                    {/* A falta vem antes do R$: se a linha cortar, corta o R$. */}
+                    {textoDiasSemLancamento(mes!.diassemlancamento) && (
+                      <span className="tv-faixa-falta"> · {textoDiasSemLancamento(mes!.diassemlancamento)}</span>
+                    )}
                     {mes!.vendido !== undefined && mes!.meta !== undefined && (
                       <>
                         {" "}
