@@ -14,6 +14,9 @@
 
 export type CaminhoMedido = "novo" | "antigo";
 
+/** O mesmo quadro mede o tablet e o celular (29/09/2026): muda só a palavra. */
+export type Aparelho = "tablet" | "celular";
+
 export type Medida = {
   quando: number;
   acao: "aceite" | "entrega";
@@ -43,10 +46,14 @@ export type TemposDoTablet = {
   desenho: number;
 };
 
-const CHAVE = "stgame.medir-tablet";
+const CHAVES: Record<Aparelho, string> = { tablet: "stgame.medir-tablet", celular: "stgame.medir-celular" };
 
 /** Lê `?medir=` e guarda na aba. Devolve o caminho medido, ou null (desligada). */
-export function modoDeMedicao(busca: string = typeof location === "undefined" ? "" : location.search): CaminhoMedido | null {
+export function modoDeMedicao(
+  busca: string = typeof location === "undefined" ? "" : location.search,
+  aparelho: Aparelho = "tablet",
+): CaminhoMedido | null {
+  const CHAVE = CHAVES[aparelho];
   const pedido = new URLSearchParams(busca).get("medir");
   try {
     if (pedido === "0") sessionStorage.removeItem(CHAVE);
@@ -74,6 +81,10 @@ const ROTULOS: Record<string, string> = {
   entrega: "Servidor → banco: gravar a entrega (1 ida)",
   foto_baixar_e_conferir: "Foto: servidor baixa e confere hash + EXIF",
   foto_hora: "Foto: tolerância da hora (1 ida)",
+  // O celular (29/09/2026).
+  pessoa: "Servidor → banco: quem é a pessoa (1 ida)",
+  pessoa_meuacesso: "Servidor → banco: meu_acesso (1 ida)",
+  pessoa_vinculo: "Servidor → banco: vínculo da pessoa (1 ida)",
 };
 
 const arred = (n: number) => Math.max(0, Math.round(n));
@@ -91,18 +102,19 @@ export function montarEtapas(
   acao: Medida["acao"],
   t: TemposDoTablet,
   servidor: Record<string, number>,
+  aparelho: Aparelho = "tablet",
 ): [string, number][] {
   const etapas: [string, number][] = [];
   const add = (rotulo: string, ms: number | undefined) => {
     if (ms !== undefined && Number.isFinite(ms)) etapas.push([rotulo, arred(ms)]);
   };
 
-  add("Foto: esperar a redução no tablet", t.fotoReducao);
+  add(`Foto: esperar a redução no ${aparelho}`, t.fotoReducao);
   add("Foto: esperar a autorização de envio", t.fotoAutorizacao);
-  add("Foto: envio do arquivo (tablet → Storage)", t.fotoEnvio);
+  add(`Foto: envio do arquivo (${aparelho} → Storage)`, t.fotoEnvio);
 
   const trabalhoServidor = servidor.servidor ?? 0;
-  add("Rede: tablet ↔ servidor", t.chamada - trabalhoServidor);
+  add(`Rede: ${aparelho} ↔ servidor`, t.chamada - trabalhoServidor);
 
   for (const [k, v] of Object.entries(servidor)) {
     if (k === "servidor" || k === "banco" || k.startsWith("banco_")) continue;
@@ -115,13 +127,14 @@ export function montarEtapas(
     const feito = servidor.banco_acao ?? 0;
     const fila = servidor.banco_fila ?? 0;
     add("Rede: servidor ↔ banco (a ida única)", servidor.banco - pin - feito - fila);
-    add("No banco: trava + conferir o PIN", pin);
+    // O celular não tem PIN nesta ida: a pessoa vem do login.
+    if (servidor.banco_pin !== undefined || aparelho === "tablet") add("No banco: trava + conferir o PIN", pin);
     add(acao === "aceite" ? "No banco: rodízio + gravar o aceite" : "No banco: gravar a entrega", feito);
-    add("No banco: montar a fila já atualizada", fila);
+    add(aparelho === "celular" ? "No banco: montar a lista já atualizada" : "No banco: montar a fila já atualizada", fila);
   }
 
   if (t.recarga !== undefined) {
-    add("Recarga da fila (outra chamada inteira)", t.recarga);
+    add(aparelho === "celular" ? "Recarga da lista (outra chamada inteira)" : "Recarga da fila (outra chamada inteira)", t.recarga);
   }
   add("Desenho da tela", t.desenho);
   return etapas;
@@ -136,6 +149,7 @@ export function montarEtapas(
 export function montarDetalhes(
   t: Pick<TemposDoTablet, "fotoOriginalKb" | "fotoEnviadaKb" | "fotoEnvio">,
   onde?: { colo: string; frio: boolean; fotokb?: number },
+  aparelho: Aparelho = "tablet",
 ): string[] {
   const d: string[] = [];
   if (t.fotoOriginalKb !== undefined && t.fotoEnviadaKb !== undefined) {
@@ -145,7 +159,7 @@ export function montarDetalhes(
         : `Foto: ${t.fotoOriginalKb} KB, enviada sem redução`,
     );
     if (t.fotoEnvio && t.fotoEnvio > 0) {
-      d.push(`Envio do tablet: ${Math.round(t.fotoEnviadaKb / (t.fotoEnvio / 1000))} KB/s`);
+      d.push(`Envio do ${aparelho}: ${Math.round(t.fotoEnviadaKb / (t.fotoEnvio / 1000))} KB/s`);
     }
   }
   if (onde?.fotokb !== undefined) d.push(`O servidor recebeu ${onde.fotokb} KB para conferir`);

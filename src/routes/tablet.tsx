@@ -23,6 +23,7 @@ import {
 import { entregarNoTabletAntigo, filaDoTabletAntiga } from "@/servidor/tabletAntigo";
 import { modoDeMedicao, montarDetalhes, montarEtapas, type Medida, type TemposDoTablet } from "@/painel/medicaoDoTablet";
 import { reduzirFoto, type FotoPreparada } from "@/painel/reduzirFoto";
+import { QuadroDaMedicao } from "@/painel/QuadroDaMedicao";
 import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import { quandoFoi } from "@/ui/hoje";
 import { AindaNaoLiberadas } from "@/painel/AindaNaoLiberadas";
@@ -528,48 +529,10 @@ function Tablet() {
         />
       )}
 
-      {medicao && <QuadroDaMedicao caminho={medicao} medidas={medidas} />}
+      {medicao && (
+        <QuadroDaMedicao caminho={medicao} medidas={medidas} rotuloTotal="do 6º dígito até o cartão mudar" limite={1000} />
+      )}
     </main>
-  );
-}
-
-/**
- * A medição na própria tela do tablet: a /medir é do gestor e não enxerga o
- * caminho tablet → servidor → banco. Só aparece com `?medir=` no endereço.
- */
-function QuadroDaMedicao({ caminho, medidas }: { caminho: "novo" | "antigo"; medidas: Medida[] }) {
-  return (
-    <section className="mt-6 space-y-3 rounded-xl border-2 border-dashed border-border bg-card p-4 text-sm">
-      <p className="font-semibold">
-        Medição ligada — caminho {caminho === "antigo" ? "ANTIGO (para comparar)" : "NOVO"}.{" "}
-        <span className="font-normal text-muted-foreground">
-          Troque com ?medir=1 / ?medir=antigo, desligue com ?medir=0.
-        </span>
-      </p>
-      {medidas.length === 0 && <p className="text-muted-foreground">Aceite ou entregue uma tarefa para medir.</p>}
-      {medidas.map((m) => (
-        <div key={m.quando} className="rounded-lg border border-border p-3">
-          <p className="mb-1 font-semibold">
-            {m.acao === "aceite" ? "Aceite" : "Entrega"} ({m.caminho}) às {hora(new Date(m.quando).toISOString())}:{" "}
-            <span className={`font-mono ${m.total < 1000 ? "text-sucesso" : "text-destructive"}`}>{m.total} ms</span>{" "}
-            <span className="font-normal text-muted-foreground">do 6º dígito até o cartão mudar</span>
-          </p>
-          {m.detalhes.length > 0 && (
-            <p className="mb-1 text-xs text-muted-foreground">{m.detalhes.join(" · ")}</p>
-          )}
-          <table className="w-full">
-            <tbody>
-              {m.etapas.map(([rotulo, ms]) => (
-                <tr key={rotulo}>
-                  <td className="pr-3">{rotulo}</td>
-                  <td className="text-right font-mono">{ms} ms</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </section>
   );
 }
 

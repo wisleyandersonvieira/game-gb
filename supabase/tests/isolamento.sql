@@ -5498,7 +5498,9 @@ BEGIN
     -- Etapa 1.12 C1: a visao do celular do colaborador.
     'eu_inicio', 'eu_tarefas', 'eu_entregar', 'eu_extrato',
     -- O PIN do tablet numa ida so (26/09/2026).
-    'visao_tablet_do_usuario', 'visao_conferir_pin', 'visao_pegar_com_pin', 'visao_entregar_com_pin'
+    'visao_tablet_do_usuario', 'visao_conferir_pin', 'visao_pegar_com_pin', 'visao_entregar_com_pin',
+    -- A entrega do celular numa ida (29/09/2026).
+    'eu_pessoa_do_usuario', 'eu_entregar_e_listar'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname = f) THEN
@@ -9905,5 +9907,126 @@ END $$;
 RESET ROLE;
 SET teste.uid = '';
 SET TIME ZONE 'UTC';
+
+-- ===========================================================================
+-- 79. A entrega do celular numa ida, igual ao tablet (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '79. entrega do celular numa ida'; END $$;
+
+-- A TRAVA: quem e a pessoa numa ida da exatamente as mesmas recusas que
+-- meu_acesso dava ao servidor — login por login. Se alguem mudar uma e nao a
+-- outra, reprova aqui.
+DO $$
+DECLARE u record; m jsonb; e jsonb; esperado text; obtido text; diferentes text := '';
+BEGIN
+  FOR u IN SELECT userid, contaid, funcionarioid FROM public.contasusuarios LOOP
+    PERFORM set_config('teste.uid', u.userid::text, true);
+    m := public.meu_acesso();
+    esperado := CASE
+      WHEN m->>'tipo' = 'desligado' THEN 'desligado'
+      WHEN m->>'tipo' <> 'colaborador' THEN 'naocolaborador'
+      WHEN (m->>'semsenha')::boolean OR (m->>'sempin')::boolean OR (m->>'politicapendente')::boolean THEN 'primeiroacesso'
+      ELSE 'ok:' || u.contaid || ':' || u.funcionarioid END;
+    e := public.eu_pessoa_do_usuario(u.userid);
+    obtido := coalesce(e->>'erro', 'ok:' || (e->>'contaid') || ':' || (e->>'funcionarioid'));
+    IF esperado IS DISTINCT FROM obtido THEN
+      diferentes := diferentes || u.userid || ' (meu_acesso: ' || esperado || ', nova: ' || obtido || ') ';
+    END IF;
+  END LOOP;
+  PERFORM set_config('teste.uid', '', true);
+  PERFORM public.exigir(diferentes = '', 'quem e a pessoa numa ida da as mesmas recusas que meu_acesso, login por login'
+                                         || CASE WHEN diferentes <> '' THEN ': ' || diferentes ELSE '' END);
+  PERFORM public.exigir((SELECT count(*) FROM public.contasusuarios) > 5, 'a comparacao passou por varios logins');
+END $$;
+
+-- E cada SITUACAO montada de proposito sobre um colaborador de verdade (o
+-- 8100), uma de cada vez e desfeita em seguida — senao a comparacao so vale
+-- para o que os dados de teste tiverem naquela hora (foi assim que uma
+-- sabotagem da recusa de "desligado" passou despercebida, 29/09/2026).
+DO $$
+DECLARE
+  v_uid uuid := '10100000-0000-0000-0000-000000000002';
+  sit text; m jsonb; e jsonb; esperado text; obtido text; diferentes text := ''; vistos text[] := '{}';
+BEGIN
+  FOREACH sit IN ARRAY ARRAY['como_esta', 'pronto', 'desligado', 'conta_cancelada', 'sem_senha', 'sem_pin', 'nao_colaborador'] LOOP
+    BEGIN
+      IF sit IN ('pronto', 'sem_senha', 'sem_pin') THEN
+        UPDATE public.funcionarios SET senhahashapp = coalesce(senhahashapp, 'x'), pinhash = coalesce(pinhash, repeat('7', 64))
+         WHERE funcionarioid = 8100;
+      END IF;
+      IF sit = 'desligado' THEN UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 8100; END IF;
+      IF sit = 'conta_cancelada' THEN UPDATE public.contas SET status = 'cancelada' WHERE contaid = 1; END IF;
+      IF sit = 'sem_senha' THEN UPDATE public.funcionarios SET senhahashapp = NULL WHERE funcionarioid = 8100; END IF;
+      IF sit = 'sem_pin' THEN UPDATE public.funcionarios SET pinhash = NULL WHERE funcionarioid = 8100; END IF;
+      IF sit = 'nao_colaborador' THEN UPDATE public.contasusuarios SET papel = 'gerente', funcionarioid = NULL WHERE userid = v_uid; END IF;
+
+      PERFORM set_config('teste.uid', v_uid::text, true);
+      m := public.meu_acesso();
+      PERFORM set_config('teste.uid', '', true);
+      esperado := CASE
+        WHEN m->>'tipo' = 'desligado' THEN 'desligado'
+        WHEN m->>'tipo' <> 'colaborador' THEN 'naocolaborador'
+        WHEN (m->>'semsenha')::boolean OR (m->>'sempin')::boolean OR (m->>'politicapendente')::boolean THEN 'primeiroacesso'
+        ELSE 'ok' END;
+      e := public.eu_pessoa_do_usuario(v_uid);
+      obtido := coalesce(e->>'erro', 'ok');
+      RAISE EXCEPTION 'desfaz' USING ERRCODE = 'P0001';
+    EXCEPTION WHEN raise_exception THEN NULL;
+    END;
+    vistos := vistos || esperado;
+    IF esperado IS DISTINCT FROM obtido THEN
+      diferentes := diferentes || sit || ' (meu_acesso: ' || esperado || ', nova: ' || obtido || ') ';
+    END IF;
+  END LOOP;
+  PERFORM public.exigir(diferentes = '', 'em cada situacao montada, as duas dao a mesma resposta'
+                                         || CASE WHEN diferentes <> '' THEN ': ' || diferentes ELSE '' END);
+  PERFORM public.exigir(vistos @> ARRAY['desligado', 'primeiroacesso', 'naocolaborador'],
+                        'as situacoes de recusa apareceram de verdade (vistas: ' || array_to_string(vistos, ', ') || ')');
+END $$;
+
+-- Entregar e listar numa ida: a Olga pega no tablet, entrega pelo celular.
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (9890, 1, 'Missao 79', 2);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9890, 10);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo)
+  OVERRIDING SYSTEM VALUE VALUES (9890, 1, 9890, NULL, 10, 'Diaria', '00:00');
+DO $$
+DECLARE v jsonb; v_copia integer; v_ent integer; t jsonb;
+BEGIN
+  v := public.visao_pegar_com_pin(1, 10, repeat('1', 64), repeat('e', 64), 'sem-ip', 9890);
+  PERFORM public.exigir(v ? 'nome', 'Olga pega no tablet' || coalesce(' (' || (v->>'erro') || ')', ''));
+  SELECT novaatribuicaoid INTO v_copia FROM public.missoesaceites
+   WHERE atribuicaoid = 9890 AND dia = public.hoje_da_conta(1) AND revogadoem IS NULL;
+  PERFORM public.exigir((public.eu_pessoa_do_usuario(
+                           (SELECT userid FROM public.contasusuarios WHERE funcionarioid = 9767 LIMIT 1), v_copia)->>'lojadatarefa')::integer = 10
+                        OR NOT EXISTS (SELECT 1 FROM public.contasusuarios WHERE funcionarioid = 9767),
+                        'a autorizacao da foto acha a loja da tarefa na mesma ida');
+
+  -- Recusada (tarefa de outra pessoa): nada fica gravado.
+  SELECT count(*) INTO v_ent FROM public.entregas WHERE contaid = 1;
+  v := public.eu_entregar_e_listar(1, 110, v_copia, NULL, NULL, NULL, true);
+  PERFORM public.exigir(v ? 'erro' AND (SELECT count(*) FROM public.entregas WHERE contaid = 1) = v_ent,
+                        'entrega recusada no celular: vem o erro e nada fica gravado');
+
+  -- Certa: grava e ja devolve a lista, com a tarefa esperando o gestor.
+  v := public.eu_entregar_e_listar(1, 9767, v_copia, NULL, 'pelo celular', NULL, true);
+  PERFORM public.exigir(v ? 'entregaid', 'entrega pelo celular numa ida' || coalesce(' (' || (v->>'erro') || ')', ''));
+  SELECT x INTO t FROM jsonb_array_elements(v->'tarefas') x WHERE (x->>'atribuicaoid')::integer = v_copia;
+  PERFORM public.exigir(t->>'situacao' = 'esperando', 'a lista ja volta atualizada: a tarefa esta esperando o gestor');
+  PERFORM public.exigir((v->'tempos') ? 'acao' AND (v->'tempos') ? 'fila', 'e volta quanto o banco levou, para a medicao');
+END $$;
+SET ROLE authenticated;
+SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  BEGIN PERFORM public.eu_entregar_e_listar(1, 9767, 1, NULL, NULL, NULL, true); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'o navegador nao chama a entrega do celular direto');
+  BEGIN PERFORM public.eu_pessoa_do_usuario('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'); deu_erro := false;
+  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+  PERFORM public.exigir(deu_erro, 'nem pergunta quem e a pessoa');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

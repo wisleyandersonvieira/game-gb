@@ -5870,8 +5870,21 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number }
         Returns: Json
       }
+      eu_pessoa_do_usuario: { Args: { p_atribuicaoid?: number; p_userid: string }; Returns: Json }
       eu_extrato: {
         Args: { p_ate: string; p_contaid: number; p_de: string; p_funcionarioid: number }
+        Returns: Json
+      }
+      eu_entregar_e_listar: {
+        Args: {
+          p_atribuicaoid: number
+          p_caminho: string | null
+          p_contaid: number
+          p_fotoidunico: string | null
+          p_funcionarioid: number
+          p_observacao: string | null
+          p_semhorafoto: boolean
+        }
         Returns: Json
       }
       eu_entregar: {

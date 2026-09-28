@@ -59,3 +59,24 @@ describe("medição do tablet", () => {
     expect(valor(e, "esperar a autorização")).toBe(3);
   });
 });
+
+describe("medição do celular (29/09/2026)", () => {
+  it("usa as palavras do celular e não inventa a linha do PIN", () => {
+    const e = montarEtapas(
+      "entrega",
+      { chamada: 500, fotoReducao: 0, fotoAutorizacao: 0, fotoEnvio: 300, desenho: 10 },
+      { servidor: 300, pessoa: 40, banco: 120, banco_acao: 30, banco_fila: 10 },
+      "celular",
+    );
+    const rotulos = e.map(([r]) => r);
+    expect(rotulos).toContain("Foto: envio do arquivo (celular → Storage)");
+    expect(rotulos).toContain("Rede: celular ↔ servidor");
+    expect(rotulos).toContain("Servidor → banco: quem é a pessoa (1 ida)");
+    expect(rotulos).toContain("No banco: montar a lista já atualizada");
+    expect(rotulos).not.toContain("No banco: trava + conferir o PIN");
+    const d = montarDetalhes({ fotoOriginalKb: 4468, fotoEnviadaKb: 154, fotoEnvio: 250 }, { colo: "GRU", frio: true }, "celular");
+    expect(d[0]).toBe("Foto: 4468 KB da câmera, 154 KB enviados");
+    expect(d[1]).toBe("Envio do celular: 616 KB/s");
+    expect(d.at(-1)).toContain("PARTIDA A FRIO");
+  });
+});

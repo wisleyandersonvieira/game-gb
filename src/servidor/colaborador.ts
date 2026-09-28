@@ -12,7 +12,9 @@
 import { descartarFotoDaTentativa } from "@/servidor/fotoSemEntrega";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { conferirBilhete, conferirHoraDaFoto, emitirBilhete, provaDaFoto } from "@/servidor/fotodaentrega";
+import { conferirBilhete, emitirBilhete, julgarHoraDaFoto, provaDaFoto, toleranciaDaFoto } from "@/servidor/fotodaentrega";
+import { ondeRodou } from "@/servidor/segredos";
+import { cronometro } from "@/servidor/tablet";
 
 type ClienteDoUsuario = {
   rpc: (nome: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
@@ -48,6 +50,26 @@ async function pessoaDoToken(supabase: ClienteDoUsuario, userId: string): Promis
     .single();
   if (erro || !vinculo?.funcionarioid) throw new Error("Cadastro não encontrado.");
   return { contaid: vinculo.contaid, funcionarioid: vinculo.funcionarioid };
+}
+
+/**
+ * Quem está pedindo, numa ida só ao banco (29/09/2026) — o mesmo que o tablet
+ * faz com visao_tablet_do_usuario. As recusas são as de pessoaDoToken, e a
+ * seção 79 do teste de isolamento confere que as duas respondem igual, login
+ * por login. Com a tarefa, devolve também a loja dela.
+ */
+async function pessoaDoUsuario(userId: string, atribuicaoid?: number) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("eu_pessoa_do_usuario", {
+    p_userid: userId,
+    ...(atribuicaoid ? { p_atribuicaoid: atribuicaoid } : {}),
+  });
+  if (error || !data) throw new Error("Não foi possível confirmar o seu acesso.");
+  const r = data as { erro?: string; contaid?: number; funcionarioid?: number; lojadatarefa?: number | null };
+  if (r.erro === "desligado") throw new Error("Seu acesso foi encerrado. Fale com o seu gestor.");
+  if (r.erro === "primeiroacesso") throw new Error("Termine o primeiro acesso antes de usar o aplicativo.");
+  if (r.erro) throw new Error("Esta tela é do aplicativo do colaborador.");
+  return { contaid: r.contaid as number, funcionarioid: r.funcionarioid as number, lojadatarefa: r.lojadatarefa ?? null };
 }
 
 export type MeuInicio = {
@@ -122,22 +144,14 @@ export const autorizacaoDeFotoDoCelular = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: { atribuicaoid: number }) => ({ atribuicaoid: numeroDeTarefa(d?.atribuicaoid) }))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const p = await pessoaDoToken(supabase, userId);
+    const { userId } = context as unknown as { userId: string };
+    // Quem é e a loja da tarefa, numa ida. A tarefa tem de ser dela: o
+    // navegador não escolhe a pasta.
+    const p = await pessoaDoUsuario(userId, data.atribuicaoid);
+    if (!p.lojadatarefa) throw new Error("Esta tarefa não é sua.");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // A loja sai da TAREFA, e a tarefa tem de ser dela: o navegador não
-    // escolhe a pasta.
-    const { data: tarefa } = await supabaseAdmin
-      .from("tarefasatribuidas")
-      .select("lojaid")
-      .eq("contaid", p.contaid)
-      .eq("atribuicaoid", data.atribuicaoid)
-      .eq("funcionarioid", p.funcionarioid)
-      .maybeSingle();
-    if (!tarefa?.lojaid) throw new Error("Esta tarefa não é sua.");
-
-    const caminho = `${p.contaid}/${tarefa.lojaid}/${crypto.randomUUID()}.jpg`;
+    const caminho = `${p.contaid}/${p.lojadatarefa}/${crypto.randomUUID()}.jpg`;
     const { data: envio, error } = await supabaseAdmin.storage.from("entregas").createSignedUploadUrl(caminho);
     if (error || !envio) throw new Error("Não foi possível preparar o envio da foto.");
 
@@ -147,6 +161,22 @@ export const autorizacaoDeFotoDoCelular = createServerFn({ method: "POST" })
     return { caminho, token: envio.token, bilhete };
   });
 
+/** O que a tela recebe quando a entrega pelo celular dá certo. */
+export type ResultadoNoCelular = {
+  entregaid: number;
+  /** A lista JÁ atualizada: a tela troca sem perguntar de novo. */
+  tarefas: MinhaTarefa[];
+  tempos: Record<string, number>;
+  onde: { colo: string; frio: boolean; fotokb?: number };
+};
+
+/**
+ * A entrega pelo celular — o MESMO caminho do tablet (29/09/2026): uma ida
+ * para saber quem é, a foto baixada e conferida junto com a tolerância, e uma
+ * ida que grava a entrega e já devolve a lista. A conferência da foto é a de
+ * sempre (bilhete e impressão digital), e a foto de tentativa recusada sai do
+ * armazenamento.
+ */
 export const entregarPeloCelular = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: { atribuicaoid: number; caminho?: string | null; bilhete?: string | null; observacao?: string | null }) => ({
@@ -155,15 +185,16 @@ export const entregarPeloCelular = createServerFn({ method: "POST" })
     bilhete: textoCurto(d?.bilhete, 200),
     observacao: textoCurto(d?.observacao, 1000),
   }))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    const p = await pessoaDoToken(supabase, userId);
+  .handler(async ({ data, context }): Promise<ResultadoNoCelular> => {
+    const { userId, recebidoem } = context as unknown as { userId: string; recebidoem?: number };
+    const c = cronometro(recebidoem);
+    const onde: ResultadoNoCelular["onde"] = ondeRodou();
+    const p = await pessoaDoUsuario(userId);
+    c.marcar("pessoa");
 
     // A foto: NADA do que o navegador diz sobre ela é aceito. O caminho tem de
     // vir com o bilhete que este servidor emitiu, e as duas provas — a
     // impressão digital e a hora em que foi tirada — saem do arquivo, aqui.
-    let fotoidunico: string | null = null;
-    let semhorafoto = false;
     if (data.caminho) {
       if (!data.bilhete) throw new Error("Envio de foto inválido.");
       await conferirBilhete(data.bilhete, data.caminho, data.atribuicaoid, p.funcionarioid);
@@ -171,14 +202,20 @@ export const entregarPeloCelular = createServerFn({ method: "POST" })
     // Daqui em diante a foto é desta tentativa: se a entrega não acontecer,
     // ela sai do armazenamento (tentativa que falha não deixa nada para trás).
     try {
+      let fotoidunico: string | null = null;
+      let semhorafoto = false;
       if (data.caminho) {
-        const prova = await provaDaFoto(data.caminho);
+        // Baixar a foto e ler a tolerância da conta vão juntos, como no tablet.
+        const [prova, tolerancia] = await Promise.all([provaDaFoto(data.caminho), toleranciaDaFoto(p.contaid)]);
+        c.marcar("foto_baixar_e_conferir");
+        onde.fotokb = Math.round(prova.tamanho / 1024);
         fotoidunico = prova.fotoidunico;
-        ({ semhorafoto } = await conferirHoraDaFoto(p.contaid, prova.horafoto));
+        semhorafoto = !prova.horafoto;
+        if (prova.horafoto) julgarHoraDaFoto(prova.horafoto, tolerancia);
       }
 
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: id, error } = await supabaseAdmin.rpc("eu_entregar", {
+      const { data: r, error } = await supabaseAdmin.rpc("eu_entregar_e_listar", {
         p_contaid: p.contaid,
         p_funcionarioid: p.funcionarioid,
         p_atribuicaoid: data.atribuicaoid,
@@ -187,8 +224,14 @@ export const entregarPeloCelular = createServerFn({ method: "POST" })
         p_fotoidunico: fotoidunico,
         p_semhorafoto: semhorafoto,
       });
-      if (error) throw new Error(error.message);
-      return { entregaid: id as number, semhorafoto };
+      c.marcar("banco");
+      if (error || !r) throw new Error("Não foi possível falar com o banco agora. Tente de novo.");
+      const res = r as { erro?: string; entregaid?: number; tarefas?: MinhaTarefa[]; tempos?: Record<string, number> };
+      if (res.erro) throw new Error(res.erro);
+
+      const tempos = c.fechar();
+      for (const [k, v] of Object.entries(res.tempos ?? {})) tempos[`banco_${k}`] = Number(v);
+      return { entregaid: res.entregaid as number, tarefas: res.tarefas ?? [], tempos, onde };
     } catch (e) {
       if (data.caminho) await descartarFotoDaTentativa(data.caminho);
       throw e;

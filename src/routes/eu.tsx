@@ -8,6 +8,10 @@
 import { createFileRoute, redirect, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { meuAcesso } from "@/integrations/supabase/destino";
+import { useState } from "react";
+import { modoDeMedicao } from "@/painel/medicaoDoTablet";
+import { useMedidasDoCelular } from "@/painel/medidasDoCelular";
+import { QuadroDaMedicao } from "@/painel/QuadroDaMedicao";
 
 export const Route = createFileRoute("/eu")({
   ssr: false,
@@ -35,12 +39,25 @@ const DESTINOS = [
 
 function Celular() {
   const caminho = useRouterState({ select: (s) => s.location.pathname });
+  // Medição da entrega (`/eu?medir=1`, ou `?medir=antigo` para comparar com o
+  // caminho de antes; `?medir=0` desliga). Vale na aba; o quadro fica embaixo
+  // do conteúdo, em todas as telas do celular.
+  const [medicao] = useState(() => modoDeMedicao(undefined, "celular"));
+  const medidas = useMedidasDoCelular();
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col bg-background">
       {/* pb-24: a barra de baixo é fixa e não pode tapar o fim da lista. */}
       <main className="flex-1 px-4 pb-24 pt-5">
         <Outlet />
+        {medicao && (
+          <QuadroDaMedicao
+            caminho={medicao}
+            medidas={medidas}
+            rotuloTotal="do toque em “Enviar entrega” até a tela mudar"
+            limite={2500}
+          />
+        )}
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 mx-auto flex w-full max-w-md border-t border-border bg-background pb-[env(safe-area-inset-bottom)]">
