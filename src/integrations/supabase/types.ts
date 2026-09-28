@@ -5258,6 +5258,7 @@ export type Database = {
         Args: { p_entregaid: number }
         Returns: undefined
       }
+      apagar_meta_especial: { Args: { p_metaespecialid: number }; Returns: undefined }
       aprovar_entrega: { Args: { p_entregaid: number }; Returns: number }
       arquivar_comunicado: {
         Args: { p_documentoid: number }
@@ -5606,6 +5607,10 @@ export type Database = {
       conta_do_bot: { Args: never; Returns: number }
       conta_do_codigo: { Args: { p_codigo: string }; Returns: number }
       cpf_valido: { Args: { p_cpf: string }; Returns: boolean }
+      criar_meta_especial: {
+        Args: { p_data: string; p_descricao: string; p_lojaid: number; p_pontospremio: number; p_valormeta: number }
+        Returns: number
+      }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
@@ -6480,6 +6485,7 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
         Returns: undefined
       }
+      salvar_metas_da_semana: { Args: { p_linhas: Json; p_lojaid: number }; Returns: undefined }
       salvar_premio: {
         Args: {
           p_custoempontos: number

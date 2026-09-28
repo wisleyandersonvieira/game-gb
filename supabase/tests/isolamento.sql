@@ -2269,10 +2269,11 @@ UPDATE public.funcionarios SET diadefolga = 0, domingofolgamensal = 0, datainici
 
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-INSERT INTO public.metasdiariasmodelos (lojaid, diasemanaid, nomedia, valormeta, pontospremio)
-SELECT 11, d, 'Dia ' || d, 1000, 10 FROM generate_series(1, 7) d;
-INSERT INTO public.metasespeciais (lojaid, data, descricao, valormeta, pontospremio)
-VALUES (11, public.dia_em_sao_paulo(now()) - 2, 'Dia especial', 5000, 50);
+-- Pelas funcoes (as tabelas fecharam para escrita direta em 29/09/2026).
+SELECT public.salvar_metas_da_semana(11, (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'Dia ' || d,
+                                                                              'valormeta', 1000, 'pontospremio', 10))
+                                            FROM generate_series(1, 7) d));
+SELECT public.criar_meta_especial(11, public.dia_em_sao_paulo(now()) - 2, 'Dia especial', 5000, 50);
 
 DO $$
 DECLARE
@@ -2346,7 +2347,9 @@ BEGIN
     FROM public.movimentospontos mv JOIN public.metaspremiacoes p USING (premiacaoid)
    WHERE p.apuracaoid = a2 AND p.estornadoem IS NULL AND mv.tipo = 'bonus' AND mv.pontos = 50;
   PERFORM public.exigir(quem = '120,121,122', 'a meta especial paga os pontos dela (50) a quem trabalhou naquele dia (' || coalesce(quem, '-') || ')');
+  RESET ROLE;   -- preparo do dado (a tabela nao aceita escrita direta de quem esta logado)
   UPDATE public.metasespeciais SET valormeta = 9000 WHERE lojaid = 11 AND data = anteontem;
+  SET LOCAL ROLE authenticated;
   PERFORM public.lancar_venda_do_dia(11, anteontem, 5300, 'Mais uma venda');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE apuracaoid = a2 AND estornadoem IS NULL),
                         'mudar a meta especial depois nao muda o dia ja lancado');
@@ -5112,7 +5115,10 @@ BEGIN
       'estornos_da_conta',
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
-      'salvar_premio', 'ativar_premio'
+      'salvar_premio', 'ativar_premio',
+      -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
+      -- pode() na loja (secao 97).
+      'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -11903,19 +11909,19 @@ SELECT unnest(ARRAY[
   'abrir_solicitacao', 'alterar_hora_da_atribuicao', 'alterar_pagamento_agendamento',
   'arquivar_comunicado', 'atribuir_tarefa', 'cancelar_agendamento',
   'criar_agendamento', 'criar_conquista', 'criar_link_tv',
-  'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'lancar_venda_do_dia', 'liberar_pin',
+  'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
   'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'mudar_situacao_solicitacao', 'parear_tv',
   'publicar_comunicado', 'reabrir_agendamento',
   'recriar_tarefa_do_agendamento', 'registrar_anexo_agendamento', 'registrar_ciencia',
-  'registrar_justificativa', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_meta_do_mes', 'salvar_som_da_loja', 'salvar_tv_da_loja',
+  'registrar_justificativa', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'trocar_responsavel_agendamento', 'vincular_jornada']), 'pendente_parte2';
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
 INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
-SELECT unnest(ARRAY['conquistas', 'funcionarios', 'funcionarioslojas', 'jornadas', 'lojas', 'metasdiariasmodelos',
-                    'metasespeciais', 'onboardingetapas', 'tarefas', 'tarefasatribuidas',
+SELECT unnest(ARRAY['conquistas', 'funcionarios', 'funcionarioslojas', 'jornadas', 'lojas',
+                    'onboardingetapas', 'tarefas', 'tarefasatribuidas',
                     'tarefaslojas', 'tiposevento']), 'pendente_parte2';
 
 DO $$
@@ -12939,6 +12945,80 @@ BEGIN
     RAISE EXCEPTION 'desfazer_96';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_96' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 97. Usuarios gerenciais, parte 2, fatia 4: Metas (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: permissao e loja no banco'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '97979797-9797-9797-9797-979797979701';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; e11 integer;
+  semana jsonb := (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d, 'valormeta', 777, 'pontospremio', 7))
+                     FROM generate_series(1, 7) d);
+BEGIN
+  BEGIN
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'gui.97@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Metas 97') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    e11 := public.criar_meta_especial(11, v_hoje + 20, 'Especial da 11', 900, 9);
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.lancar_venda_do_dia(10, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(10, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao lanca venda, nao mexe em meta do mes, da semana nem especial');
+    RESET ROLE;
+
+    -- 2. Com as permissoes: na loja 10 sim, na 11 nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
+      (1, v_cargo, 'metas.lancar_venda'), (1, v_cargo, 'metas.criar_meta'), (1, v_cargo, 'metas.meta_especial');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.lancar_venda_do_dia(10, v_hoje, 1234);
+    PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5);
+    PERFORM public.salvar_metas_da_semana(10, semana);
+    n := public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.lancar_venda_do_dia(11, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(11, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(11, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: NADA na loja 11 (venda, meta do mes, da semana, especial, apagar)');
+    PERFORM public.apagar_meta_especial(n);
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje AND valordia = 1234 AND lancadopor = G)
+                          AND EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND nomemeta = 'Meta 97')
+                          AND (SELECT count(*) FROM public.metasdiariasmodelos WHERE lojaid = 10 AND valormeta = 777) = 7
+                          AND NOT EXISTS (SELECT 1 FROM public.metasespeciais WHERE metaespecialid = n),
+                          'e na loja 10 faz de verdade: lanca, salva a meta do mes e da semana, cria e apaga a especial');
+
+    -- 3. Nem o master grava direto nas tabelas (so pela funcao).
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN INSERT INTO public.metasespeciais (lojaid, data, descricao, valormeta) VALUES (10, v_hoje + 30, 'direto', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.metasdiariasmodelos SET valormeta = 1 WHERE lojaid = 10; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava meta especial ou da semana direto na tabela');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_97';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_97' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';
