@@ -41,6 +41,7 @@
   - `legado/api_server.py` + `legado/templates/painel.html` + `legado/static/js/painel.js` são o painel web antigo.
   - `legado/telegram_bot.py`, `legado/agendador*.py` são o bot e as rotinas: a especificação da Etapa 1.13.
   - `legado/config.py` tem parâmetros. **Contém segredos: nunca copie valores dele.**
+- `docs/SEGREDOS.md` lista todo segredo e endereço obrigatório (só nomes, nunca valores). Segredo novo entra lá na mesma entrega.
 - `docs/DICIONARIO_BANCO.md` tem as tabelas, as colunas, os relacionamentos e o nível conta/loja de cada tabela.
 
 ## Regras do banco
