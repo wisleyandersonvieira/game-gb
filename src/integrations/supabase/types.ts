@@ -4917,6 +4917,41 @@ export type Database = {
           },
         ]
       }
+      autores: {
+        Row: {
+          autorid: number
+          contaid: number
+          desde: string
+          email: string | null
+          nome: string
+          userid: string
+        }
+        Insert: {
+          autorid?: number
+          contaid: number
+          desde?: string
+          email?: string | null
+          nome: string
+          userid: string
+        }
+        Update: {
+          autorid?: number
+          contaid?: number
+          desde?: string
+          email?: string | null
+          nome?: string
+          userid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "autores_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       cargos: {
         Row: {
           cargoid: number
@@ -4984,6 +5019,7 @@ export type Database = {
           em: string
           historicoid: number
           quem: string | null
+          quemnome: string | null
           tabela: string
         }
         Insert: {
@@ -4994,6 +5030,7 @@ export type Database = {
           em?: string
           historicoid?: number
           quem?: string | null
+          quemnome?: string | null
           tabela: string
         }
         Update: {
@@ -5004,6 +5041,7 @@ export type Database = {
           em?: string
           historicoid?: number
           quem?: string | null
+          quemnome?: string | null
           tabela?: string
         }
         Relationships: [
@@ -5776,6 +5814,20 @@ export type Database = {
       expurgo_resultado: {
         Args: { p_erro?: string; p_ids: number[] }
         Returns: undefined
+      }
+      estornos_da_conta: {
+        Args: { p_lojaid?: number }
+        Returns: {
+          descricao: string
+          loja: string
+          lojaid: number
+          motivo: string
+          pessoa: string
+          pontos: number
+          quando: string
+          quem: string
+          tipo: string
+        }[]
       }
       extrato_pontos: {
         Args: { p_ate: string; p_de: string; p_funcionarioid: number }

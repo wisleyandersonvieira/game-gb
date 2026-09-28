@@ -24,7 +24,7 @@ import {
   UserPlus,
   Users,
   Wrench,
-  type LucideIcon, Network, Clock } from "lucide-react";
+  type LucideIcon, Network, Clock, Undo2 } from "lucide-react";
 
 export type ItemMenu = { to: string; label: string; icone: LucideIcon };
 export type GrupoMenu = { titulo: string; itens: ItemMenu[] };
@@ -39,6 +39,7 @@ export const MENU_MASTER: GrupoMenu[] = [
       { to: "/tarefas", label: "Tarefas", icone: ListChecks },
       { to: "/solicitacoes", label: "Solicitações", icone: Wrench },
       { to: "/relatorios", label: "Relatórios", icone: ChartColumn },
+      { to: "/estornos", label: "Estornos", icone: Undo2 },
     ],
   },
   {

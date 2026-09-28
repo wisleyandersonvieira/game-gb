@@ -61,6 +61,7 @@ export const CONTRATO: Record<string, string[]> = {
   erros_de_login: ["p_chaves"],
   estornar_entrega: ["p_entregaid", "p_motivo"],
   estornar_troca: ["p_motivo", "p_resgateid"],
+  estornos_da_conta: ["p_lojaid"],
   eu_cancelar_resgate: ["p_contaid", "p_funcionarioid", "p_resgateid"],
   eu_entregar: ["p_atribuicaoid", "p_caminho", "p_contaid", "p_fotoidunico", "p_funcionarioid", "p_observacao", "p_semhorafoto"],
   eu_entregar_e_listar: ["p_atribuicaoid", "p_caminho", "p_contaid", "p_fotoidunico", "p_funcionarioid", "p_observacao", "p_semhorafoto"],

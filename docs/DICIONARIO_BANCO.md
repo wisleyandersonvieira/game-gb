@@ -78,6 +78,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `usuariosgerenciais` | conta | (contaid, userid) | contasusuarios, cargos, funcionarios |
 | `usuarioslojas` | conta (a loja é o dado) | (userid, lojaid) | usuariosgerenciais, lojas |
 | `permissoeshistorico` | conta | historicoid | — |
+| `autores` | conta | autorid | — |
 | `travaspin` | conta | (contaid, funcionarioid) | funcionarios |
 | `pinliberacoes` | conta | liberacaoid | funcionarios |
 | `codigosacesso` | conta | codigoid | funcionarios |
@@ -608,6 +609,20 @@ O mapa e as decisões estão em `docs/MAPA_PERMISSOES.md`. O **catálogo** do qu
 **O último master ATIVO:** o gatilho `contasusuarios_ultimo_master` recusa apagar ou rebaixar o último master de uma conta, e os gatilhos `stgame_ultimo_master_apagar`/`stgame_ultimo_master_bloquear` em `auth.users` recusam apagar ou bloquear o login dele. Master com login bloqueado não conta como "outro master" (`outro_master_ativo`). As cinco tabelas acima só o master lê.
 
 **Escrita direta fechada (29/09/2026):** as 20 tabelas da Fase 2 sem tela (`configuracoesescala`, `configuracoessetores`, `escaladiaria`, `posicoesloja`, `picodiario`, `freelancers`, `grupos`, `funcionariosgrupos`, `contagensestoque`, `itenscontagemestoque`, `produtosestoque`, `fornecedores`, `produtosfornecedor`, `categoriasproduto`, `notasfiscais`, `notasfiscaisentrada`, `itensnotafiscalentrada`, `lucromensalhistorico`, `metasdiariasinstancias`, `feedbacksolicitacoes`) e as colunas `funcionarios.isgestor` e `funcionarios.chatidtelegram` não aceitam gravação de quem está logado, master inclusive. Quando a tela existir, nasce com função e permissão.
+
+## autores (29/09/2026, parte 2)
+O nome de cada login em cada momento, para "quem fez" nunca depender do login continuar existindo. Nível conta. Só recebe linha nova (quando o login nasce ou quando o e-mail, o nome da pessoa ou o nome da loja muda). `autor_em(login, instante)` devolve o nome daquela hora. Só o master lê.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| autorid | bigint | ID automático |
+| contaid | integer | → contas |
+| userid | uuid | o login |
+| nome | text | gestor: o e-mail (nunca o nome de exibição, que o usuário edita); colaborador: o nome do cadastro; tablet: "Tablet da <loja>" |
+| email | text | |
+| desde | timestamptz | a partir de quando vale (relógio de verdade) |
+
+**Login que já fez alguma coisa não se apaga** (gatilho `stgame_login_com_atos` em `auth.users`): se ele aparece em qualquer coluna "quem fez" ou no histórico de permissões, o apagamento é recusado — bloqueie o login em vez de apagar. `permissoeshistorico.quemnome` guarda o nome na hora (as linhas anteriores ficam vazias e se leem com `autor_em`).
 
 ## travaspin (29/09/2026)
 A trava do PIN do tablet, **por pessoa**. Nível conta. Uma linha por pessoa que já errou.

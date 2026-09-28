@@ -5091,7 +5091,10 @@ BEGIN
       'pode', 'lojas_onde_posso',
       -- Ajudante do PROPRIO teste (nao existe no banco de verdade): a foto do
       -- banco inteiro para as negacoes conferirem o resultado.
-      'foto_do_banco'
+      'foto_do_banco',
+      -- 29/09/2026: a lista de estornos. Le a conta de quem chamou e exige o
+      -- master (secao 94).
+      'estornos_da_conta'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -11867,7 +11870,8 @@ SELECT unnest(ARRAY[
   'definir_rotina_mensagem', 'desfazer_ciencia', 'desligar_telegram', 'excluir_documento_por_engano',
   'liberar_documento_pessoal', 'preparar_envio_documento', 'publicar_politica_de_uso', 'refazer_fechamento',
   'registrar_ciencia_documento', 'registrar_documento_pessoal', 'rodar_geracao_hoje', 'salvar_intervalo_do_mapa',
-  'salvar_jornada', 'tratar_relato']), 'so_master'
+  'salvar_jornada', 'tratar_relato',
+  'pegar_tarefa']), 'so_master'   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -11876,16 +11880,15 @@ SELECT unnest(ARRAY[
 UNION ALL
 SELECT unnest(ARRAY[
   'abrir_solicitacao', 'alterar_configuracao', 'alterar_hora_da_atribuicao', 'alterar_pagamento_agendamento',
-  'anular_feedback', 'aprovar_entrega', 'arquivar_comunicado', 'atribuir_tarefa', 'cancelar_agendamento',
+  'anular_feedback', 'arquivar_comunicado', 'atribuir_tarefa', 'cancelar_agendamento',
   'cancelar_troca', 'concluir_troca', 'criar_agendamento', 'criar_conquista', 'criar_link_tv',
-  'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'estornar_entrega', 'estornar_troca',
+  'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'estornar_troca',
   'incluir_destinatarios', 'iniciar_onboarding', 'lancar_venda_do_dia', 'liberar_pin',
   'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'mudar_situacao_solicitacao', 'parear_tv',
-  'passar_tarefa_de_folga', 'pegar_tarefa', 'publicar_comunicado', 'reabrir_agendamento',
-  'recriar_tarefa_do_agendamento', 'recusar_entrega', 'registrar_anexo_agendamento', 'registrar_ciencia',
-  'registrar_entrega', 'registrar_feedback', 'registrar_justificativa', 'registrar_troca',
-  'registrar_troca_por_valor', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_aceite',
-  'revogar_link_tv', 'salvar_meta_do_mes', 'salvar_som_da_loja', 'salvar_tv_da_loja',
+  'publicar_comunicado', 'reabrir_agendamento',
+  'recriar_tarefa_do_agendamento', 'registrar_anexo_agendamento', 'registrar_ciencia',
+  'registrar_feedback', 'registrar_justificativa', 'registrar_troca',
+  'registrar_troca_por_valor', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_meta_do_mes', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'trocar_responsavel_agendamento', 'vincular_jornada']), 'pendente_parte2';
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
@@ -11920,6 +11923,14 @@ BEGIN
                         AND p.prosrc ~ 'sou_master\(\)|exige_master_editavel\(\)');
   PERFORM public.exigir(sobra IS NULL, 'toda funcao da lista "so master" confere o master'
                         || coalesce(' -- nao confere: ' || sobra, ''));
+
+  -- Quem ja chama pode() sai da lista de pendentes (senao o medidor mente).
+  SELECT string_agg(c.nome, ', ') INTO sobra FROM classificacao_escrita c
+   WHERE c.grupo = 'pendente_parte2'
+     AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public' AND p.proname = c.nome AND p.prosrc ~ 'public\.pode\(');
+  PERFORM public.exigir(sobra IS NULL, 'nenhuma funcao que ja chama pode() ficou na lista de pendentes'
+                        || coalesce(' -- tire da lista: ' || sobra, ''));
 
   -- As listas nao guardam nome velho.
   SELECT string_agg(c.nome, ', ') INTO sobra FROM classificacao_escrita c
@@ -12443,6 +12454,231 @@ BEGIN
     RAISE EXCEPTION 'desfazer_93';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_93' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 94. Usuarios gerenciais, parte 2, fatia 1: o Quadro (29/09/2026)
+-- ===========================================================================
+-- Um gerente DE VERDADE (cargo + loja 10 + ligado a uma pessoa da equipe).
+-- Negacao confere o RESULTADO (foto do banco); o "pode" confere que a
+-- operacao aconteceu de fato.
+DO $$ BEGIN RAISE NOTICE '94. parte 2, Quadro: permissao e loja no banco'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '94949494-9494-9494-9494-949494949401';
+  v_cargo integer; v_hoje date := public.hoje_da_conta(1);
+  a1 integer; a2 integer; a3 integer; a4 integer; a5 integer; a6 integer; a7 integer; a8 integer; a9 integer; a10 integer;
+  e1 integer; e2 integer; e3 integer; n integer; v text; v_nova integer;
+BEGIN
+  BEGIN
+    -- A equipe: 9401 e o proprio gerente; 9402 trabalha na loja 10; 9403 na
+    -- loja 11; 9404 (loja 10) e 9405 (loja 11) estao de folga hoje.
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (9401, 1, 'Gil Gerente', 0), (9402, 1, 'Pia Pessoa', 0), (9403, 1, 'Rui Outra Loja', 0),
+      (9404, 1, 'Fausto Folga', extract(dow FROM v_hoje)::integer + 1),
+      (9405, 1, 'Flora Folga Onze', extract(dow FROM v_hoje)::integer + 1);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+      (1, 9401, 10), (1, 9402, 10), (1, 9403, 11), (1, 9404, 10), (1, 9405, 11), (1, 9402, 11);
+    INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (9400, 1, 'Tarefa 94', 5);
+    INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9400, 10), (1, 9400, 11);
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9402, 10, 'Diaria') RETURNING atribuicaoid INTO a1;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9403, 11, 'Diaria') RETURNING atribuicaoid INTO a2;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9401, 10, 'Diaria') RETURNING atribuicaoid INTO a3;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9402, 10, 'Diaria') RETURNING atribuicaoid INTO a4;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9401, 10, 'Diaria') RETURNING atribuicaoid INTO a9;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo) VALUES (1, 9400, NULL, 10, 'Diaria', '00:00') RETURNING atribuicaoid INTO a5;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo) VALUES (1, 9400, NULL, 11, 'Diaria', '00:00') RETURNING atribuicaoid INTO a6;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9404, 10, 'Diaria') RETURNING atribuicaoid INTO a7;
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) VALUES (1, 9400, 9405, 11, 'Diaria') RETURNING atribuicaoid INTO a8;
+    INSERT INTO public.missoesaceites (contaid, atribuicaoid, dia, funcionarioid) VALUES (1, a5, v_hoje, 9402), (1, a6, v_hoje, 9403);
+    -- Uma missao ABERTA (ninguem aceitou): o alvo do "pegar em nome de alguem".
+    INSERT INTO public.tarefasatribuidas (contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, horariodisparo)
+    VALUES (1, 9400, NULL, 10, 'Diaria', '00:00') RETURNING atribuicaoid INTO a10;
+
+    -- O gerente: login, cargo SEM permissao, loja 10, ligado a 9401.
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'gil.antigo@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Quadro 94') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid) VALUES (1, G, v_cargo, 9401);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+
+    -- As entregas, registradas pelo master: e1 (loja 10), e2 (loja 11), e3 (a do proprio gerente).
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    e1 := public.registrar_entrega(a1); e2 := public.registrar_entrega(a2); e3 := public.registrar_entrega(a3);
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+
+    -- 1. SEM permissao nenhuma: nada acontece.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.aprovar_entrega(e1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.recusar_entrega(e1, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.registrar_entrega(a4); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.revogar_aceite(a5, v_hoje, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.passar_tarefa_de_folga(a7, 9402); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: aprovar, recusar, registrar, revogar e passar de folga nao mudam nada');
+    RESET ROLE;
+
+    -- 2. Com "aprovar": aprova na loja dele (de verdade), e so la.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.aprovar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.aprovar_entrega(e1);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT statusvalidacao = 'Aprovada' AND aprovadopor = G FROM public.entregas WHERE entregaid = e1)
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE entregaid = e1 AND tipo = 'aprovacao' AND pontos = 5),
+                          'com "aprovar": o gerente aprova na loja dele, e os pontos entram no livro');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.aprovar_entrega(e2); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'mas NAO aprova na loja 11 (fora da lista dele)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.aprovar_entrega(e3); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem a PROPRIA entrega, com a permissao marcada e na loja dele');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.estornar_entrega(e1, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), '"aprovar" nao inclui estornar');
+    RESET ROLE;
+
+    -- 3. Estornar: so com a permissao, e nunca a propria.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.estornar');
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    PERFORM public.aprovar_entrega(e3);                         -- o master aprova a do gerente
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.estornar_entrega(e1, 'foto errada');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT statusvalidacao = 'Estornada' AND estornadopor = G FROM public.entregas WHERE entregaid = e1),
+                          'com "estornar": o gerente estorna na loja dele');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.estornar_entrega(e3, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'mas NAO estorna a propria entrega');
+    RESET ROLE;
+
+    -- 4. Recusar: loja 11 nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.recusar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.recusar_entrega(e2, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "recusar": nao recusa na loja 11');
+    RESET ROLE;
+
+    -- 5. Registrar: na loja dele sim; a propria e a loja 11 nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.registrar_entrega');
+    SET LOCAL ROLE authenticated;
+    n := public.registrar_entrega(a4);
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.entregas WHERE entregaid = n AND atribuicaoid = a4),
+                          'com "registrar": o gerente registra a entrega de alguem da loja dele');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_entrega(a9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'mas NAO registra a propria entrega');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_entrega(a8); EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem registra na loja 11');
+    RESET ROLE;
+
+    -- 6. Revogar aceite: na loja dele sim; loja 11 nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.revogar_aceite');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.revogar_aceite(a5, v_hoje, 'pegou por engano');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.revogar_aceite(a6, v_hoje, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "revogar aceite": nao revoga na loja 11');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT revogadoem IS NOT NULL AND revogadopor = G FROM public.missoesaceites WHERE contaid = 1 AND atribuicaoid = a5),
+                          'e revoga de verdade na loja dele');
+
+    -- 7. Passar tarefa de folga: na loja dele sim; loja 11 nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.passar_folga');
+    SET LOCAL ROLE authenticated;
+    v_nova := public.passar_tarefa_de_folga(a7, 9402);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.passar_tarefa_de_folga(a8, 9402); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "passar de folga": nao passa na loja 11');
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE atribuicaoid = v_nova AND funcionarioid = 9402 AND origematribuicaoid = a7),
+                          'e passa de verdade na loja dele');
+
+    -- 8. Pegar em nome de alguem (sem tela): nem com o Quadro inteiro marcado.
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    -- Alvo que o master CONSEGUIRIA pegar (missao aberta, pessoa da loja que
+    -- trabalha hoje): se a regra do master sumir, a mudanca acontece de verdade.
+    BEGIN PERFORM public.pegar_tarefa(a10, 9402); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'pegar em nome de alguem (sem tela): so o master, nem o gerente com o Quadro inteiro');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    PERFORM public.guardar_foto();
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.pegar_tarefa(a10, 9402) IS NOT NULL AND NOT public.nada_mudou(),
+                          'e o alvo era pegavel: o master pega a mesma missao para a mesma pessoa');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+
+    -- 9. A lista de estornos: so o master.
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.estornos_da_conta() r));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'o gerente nao ve a lista de estornos');
+    RESET ROLE;
+
+    -- 10. O NOME DE QUEM FEZ, NO MOMENTO: depois do estorno o e-mail do
+    --     gerente muda; a lista continua dizendo quem era naquela hora.
+    UPDATE auth.users SET email = 'gil.novo@exemplo.com' WHERE id = G;
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    SET LOCAL ROLE authenticated;
+    SELECT quem INTO v FROM public.estornos_da_conta(10) WHERE descricao = 'Tarefa 94' AND motivo = 'foto errada';
+    RESET ROLE;
+    PERFORM public.exigir(v = 'gil.antigo@exemplo.com',
+                          'a lista de estornos mostra QUEM estornou com o nome daquela hora (' || coalesce(v, 'nada') || ')');
+    PERFORM public.exigir((SELECT count(*) FROM public.autores WHERE userid = G) = 2
+                          AND public.autor_em(G, clock_timestamp()) = 'gil.novo@exemplo.com',
+                          'e o nome novo vale dali em diante');
+    PERFORM set_config('teste.uid', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.estornos_da_conta() WHERE descricao = 'Tarefa 94'),
+                          'a conta B nao ve os estornos da conta A');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.autores WHERE contaid = 1), 'nem os autores da conta A');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT quemnome FROM public.permissoeshistorico
+                            WHERE tabela = 'cargospermissoes' AND depois->>'codigo' = 'quadro.estornar'
+                              AND (depois->>'cargoid')::integer = v_cargo) IS NOT NULL,
+                          'o historico de permissoes guarda o NOME de quem mudou, na hora');
+
+    -- 11. O login que ja fez alguma coisa nao se apaga.
+    BEGIN DELETE FROM auth.users WHERE id = G; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM auth.users WHERE id = G),
+                          'o login de quem aprovou e estornou nao se apaga (continua la)');
+    -- Um gerente que so RECUSOU (recusar nao passa pelo livro de pontos, que
+    -- sozinho ja barraria o apagamento de quem aprovou: seria o motivo errado).
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES ('94949494-9494-9494-9494-949494949403', 'so.recusa.94@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, '94949494-9494-9494-9494-949494949403', 'gerente');
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, '94949494-9494-9494-9494-949494949403', v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '94949494-9494-9494-9494-949494949403', 11);
+    PERFORM set_config('teste.uid', '94949494-9494-9494-9494-949494949403', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.recusar_entrega(e2, 'foto escura');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT recusadopor = '94949494-9494-9494-9494-949494949403' FROM public.entregas WHERE entregaid = e2),
+                          'o segundo gerente (loja 11) recusou a entrega da loja dele');
+    BEGIN DELETE FROM auth.users WHERE id = '94949494-9494-9494-9494-949494949403'; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM auth.users WHERE id = '94949494-9494-9494-9494-949494949403')
+                          AND (SELECT recusadopor FROM public.entregas WHERE entregaid = e2) = '94949494-9494-9494-9494-949494949403',
+                          'nem o de quem so recusou: o login continua e a entrega continua dizendo quem recusou');
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES ('94949494-9494-9494-9494-949494949402', 'novo.94@exemplo.com', now());
+    DELETE FROM auth.users WHERE id = '94949494-9494-9494-9494-949494949402';
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM auth.users WHERE id = '94949494-9494-9494-9494-949494949402'),
+                          'um login recem-criado, sem nada feito, ainda se apaga (a criacao que falha no meio)');
+    RAISE EXCEPTION 'desfazer_94';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_94' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

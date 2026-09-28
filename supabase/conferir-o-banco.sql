@@ -65,6 +65,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
+  ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
   ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
@@ -394,7 +395,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        (SELECT count(*) = 2 FROM pg_trigger WHERE tgrelid = 'auth.users'::regclass
                                              AND tgname IN ('stgame_ultimo_master_apagar', 'stgame_ultimo_master_bloquear'))
        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'permissoeshistorico'
-                                               AND qual LIKE '%sou_master()%'))
+                                               AND qual LIKE '%sou_master()%')),
+  -- A tabela de autores, a trava do login com atos, aprovar conferindo a
+  -- permissão e a lista de estornos. (Rodar aprovar daqui gravaria.)
+  (440, 'OPERACAO', 'versao', 'Quadro com permissao e loja no banco; estornos; login que ja fez algo nao se apaga', 'aplicar-permissoes-parte-2-quadro.sql',
+       to_regclass('public.autores') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'auth.users'::regclass AND tgname = 'stgame_login_com_atos')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'aprovar_entrega') LIKE '%pode(''quadro.aprovar''%'
+       AND to_regprocedure('public.estornos_da_conta(integer)') IS NOT NULL)
 ),
 tudo AS (
   SELECT x.*, a.versao

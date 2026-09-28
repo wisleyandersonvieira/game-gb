@@ -26,6 +26,7 @@ import { Route as AuthenticatedComunicadosRouteImport } from './routes/_authenti
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
 import { Route as AuthenticatedConquistasRouteImport } from './routes/_authenticated/conquistas'
 import { Route as AuthenticatedDocumentosPessoaisRouteImport } from './routes/_authenticated/documentos-pessoais'
+import { Route as AuthenticatedEstornosRouteImport } from './routes/_authenticated/estornos'
 import { Route as AuthenticatedExtratoRouteImport } from './routes/_authenticated/extrato'
 import { Route as AuthenticatedFeedbacksRouteImport } from './routes/_authenticated/feedbacks'
 import { Route as AuthenticatedFuncionariosRouteImport } from './routes/_authenticated/funcionarios'
@@ -143,6 +144,11 @@ const AuthenticatedDocumentosPessoaisRoute =
     path: '/documentos-pessoais',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedEstornosRoute = AuthenticatedEstornosRouteImport.update({
+  id: '/estornos',
+  path: '/estornos',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedExtratoRoute = AuthenticatedExtratoRouteImport.update({
   id: '/extrato',
   path: '/extrato',
@@ -305,6 +311,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/conquistas': typeof AuthenticatedConquistasRoute
   '/documentos-pessoais': typeof AuthenticatedDocumentosPessoaisRoute
+  '/estornos': typeof AuthenticatedEstornosRoute
   '/extrato': typeof AuthenticatedExtratoRoute
   '/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
@@ -349,6 +356,7 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/conquistas': typeof AuthenticatedConquistasRoute
   '/documentos-pessoais': typeof AuthenticatedDocumentosPessoaisRoute
+  '/estornos': typeof AuthenticatedEstornosRoute
   '/extrato': typeof AuthenticatedExtratoRoute
   '/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/funcionarios': typeof AuthenticatedFuncionariosRoute
@@ -397,6 +405,7 @@ export interface FileRoutesById {
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/conquistas': typeof AuthenticatedConquistasRoute
   '/_authenticated/documentos-pessoais': typeof AuthenticatedDocumentosPessoaisRoute
+  '/_authenticated/estornos': typeof AuthenticatedEstornosRoute
   '/_authenticated/extrato': typeof AuthenticatedExtratoRoute
   '/_authenticated/feedbacks': typeof AuthenticatedFeedbacksRoute
   '/_authenticated/funcionarios': typeof AuthenticatedFuncionariosRoute
@@ -445,6 +454,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conquistas'
     | '/documentos-pessoais'
+    | '/estornos'
     | '/extrato'
     | '/feedbacks'
     | '/funcionarios'
@@ -489,6 +499,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conquistas'
     | '/documentos-pessoais'
+    | '/estornos'
     | '/extrato'
     | '/feedbacks'
     | '/funcionarios'
@@ -536,6 +547,7 @@ export interface FileRouteTypes {
     | '/_authenticated/configuracoes'
     | '/_authenticated/conquistas'
     | '/_authenticated/documentos-pessoais'
+    | '/_authenticated/estornos'
     | '/_authenticated/extrato'
     | '/_authenticated/feedbacks'
     | '/_authenticated/funcionarios'
@@ -702,6 +714,13 @@ declare module '@tanstack/react-router' {
       path: '/documentos-pessoais'
       fullPath: '/documentos-pessoais'
       preLoaderRoute: typeof AuthenticatedDocumentosPessoaisRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/estornos': {
+      id: '/_authenticated/estornos'
+      path: '/estornos'
+      fullPath: '/estornos'
+      preLoaderRoute: typeof AuthenticatedEstornosRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/extrato': {
@@ -910,6 +929,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
   AuthenticatedConquistasRoute: typeof AuthenticatedConquistasRoute
   AuthenticatedDocumentosPessoaisRoute: typeof AuthenticatedDocumentosPessoaisRoute
+  AuthenticatedEstornosRoute: typeof AuthenticatedEstornosRoute
   AuthenticatedExtratoRoute: typeof AuthenticatedExtratoRoute
   AuthenticatedFeedbacksRoute: typeof AuthenticatedFeedbacksRoute
   AuthenticatedFuncionariosRoute: typeof AuthenticatedFuncionariosRoute
@@ -936,6 +956,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
   AuthenticatedConquistasRoute: AuthenticatedConquistasRoute,
   AuthenticatedDocumentosPessoaisRoute: AuthenticatedDocumentosPessoaisRoute,
+  AuthenticatedEstornosRoute: AuthenticatedEstornosRoute,
   AuthenticatedExtratoRoute: AuthenticatedExtratoRoute,
   AuthenticatedFeedbacksRoute: AuthenticatedFeedbacksRoute,
   AuthenticatedFuncionariosRoute: AuthenticatedFuncionariosRoute,

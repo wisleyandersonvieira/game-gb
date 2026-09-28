@@ -472,3 +472,20 @@ Condições decididas, para construir no começo da parte 2:
   2. os ATOS continuam (o que foi feito, quando, quantos pontos), presos a um
      identificador sem dado pessoal — a trava impede apagar o ato, nunca
      impede atender o pedido.
+
+---
+
+## Parte 2, fatia 1 — Quadro (29/09/2026)
+
+Feito conforme o plano. Medidor: **faltam 42 funções e 13 tabelas** (eram 49
+e 13; as 6 do Quadro chamam `pode()`, e `pegar_tarefa`, sem tela, foi para "só
+master"). A coluna CPF segue junto com `funcionarios`, na fatia da Equipe.
+
+**Os 8 testes PULADOS: 0 voltaram nesta fatia** (nenhum é do Quadro). E há um
+motivo além da tela: as funções "só master" pegam a conta por
+`minha_conta_editavel()`, que não reconhece o gerente — ele é barrado ANTES de
+chegar à regra do master. A sabotagem do `pegar_tarefa` mostrou isso: tirar a
+regra do master não abriu porta até o gerente ser reconhecido. Para cada um
+dos 8 voltar pelo motivo certo, a função dele passa a reconhecer o gerente
+(`conta_do_gestor_editavel`) na fatia da tela, e aí só a regra do master o
+barra — provado por sabotagem, como no `pegar_tarefa`.
