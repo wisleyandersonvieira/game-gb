@@ -19,8 +19,15 @@ export const textoLibera = (i: ItemComHora) => `libera ${quandoFoi(i.liberaas, i
 export const textoDisponivel = (i: ItemComHora, agora: string | null) =>
   `disponível ${faz(minutosDesde(i.disponiveldesde, agora))}`;
 
-/** Separa como o tablet: "Para pegar" só com o que já liberou. */
-export function separarParaPegar<T extends { situacao: string; liberada: boolean }>(itens: T[]) {
-  const paraPegar = itens.filter((i) => i.situacao === "para_pegar");
-  return { liberadas: paraPegar.filter((i) => i.liberada), aindaNao: paraPegar.filter((i) => !i.liberada) };
+/**
+ * "Para pegar" = o que o BANCO disse que está disponível agora (coluna
+ * `disponivel`, de fila_de_hoje). É a mesma resposta que a TV recebe no
+ * "Para fazer" (29/09/2026): nenhuma tela decide sozinha. O resto do que
+ * ninguém pegou ainda é "ainda não liberadas".
+ */
+export function separarParaPegar<T extends { situacao: string; disponivel: boolean }>(itens: T[]) {
+  return {
+    liberadas: itens.filter((i) => i.disponivel),
+    aindaNao: itens.filter((i) => i.situacao === "para_pegar" && !i.disponivel),
+  };
 }

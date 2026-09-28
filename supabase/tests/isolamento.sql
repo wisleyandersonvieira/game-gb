@@ -890,11 +890,15 @@ BEGIN
 
   p := public.painel_da_loja(10);
   PERFORM public.exigir(p->>'loja' = 'Loja A1', 'A ve o painel da propria loja');
+  -- Até 29/09/2026 esta trava exigia total = aprovadas + em validacao + para
+  -- fazer: o "Para fazer" era o resto da barra. Deixou de ser, por decisão do
+  -- Wisley: "Para fazer" é o que está DISPONÍVEL agora (a mesma lista do
+  -- tablet e do Quadro, seção 82), e a barra conta o dia inteiro, inclusive
+  -- o que libera mais tarde. "Para fazer 3" com a barra em 5 é o certo.
   PERFORM public.exigir(
-    (p->'progresso'->>'total')::integer =
-      (p->'progresso'->>'aprovadas')::integer + (p->'progresso'->>'emvalidacao')::integer
-      + jsonb_array_length(p->'parafazer'),
-    'a barra fecha: total = aprovadas + em validacao + para fazer');
+    (p->'progresso'->>'aprovadas')::integer + (p->'progresso'->>'emvalidacao')::integer
+      <= (p->'progresso'->>'total')::integer,
+    'a barra fecha com ela mesma: aprovadas + em validacao <= total do dia');
   PERFORM public.exigir(p::text NOT LIKE '%id"%', 'o painel nao expoe nenhum id');
 
   BEGIN PERFORM public.painel_da_loja(20); deu_erro := false;
@@ -10233,14 +10237,16 @@ BEGIN
 
     -- 5. Hoje, a fila de sempre e a funcao unica sao a mesma coisa.
     SELECT count(*) INTO v_dif FROM (
-      (SELECT to_jsonb(f) - 'agora' FROM public.fila_da_loja(8101) f
+      (SELECT to_jsonb(f) - 'agora' - 'disponivel' FROM public.fila_da_loja(8101) f
        EXCEPT ALL
        SELECT to_jsonb(g) - 'agora' FROM public.fila_no_dia(81, 8101, v_hoje, 'infinity') g)
       UNION ALL
       (SELECT to_jsonb(g) - 'agora' FROM public.fila_no_dia(81, 8101, v_hoje, 'infinity') g
        EXCEPT ALL
-       SELECT to_jsonb(f) - 'agora' FROM public.fila_da_loja(8101) f)) x;
-    PERFORM public.exigir(v_dif = 0 AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_da_loja') LIKE '%fila_no_dia(%',
+       SELECT to_jsonb(f) - 'agora' - 'disponivel' FROM public.fila_da_loja(8101) f)) x;
+    -- Desde 29/09/2026 o caminho e fila_da_loja -> fila_de_hoje -> fila_no_dia.
+    PERFORM public.exigir(v_dif = 0 AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_da_loja') LIKE '%fila_de_hoje(%'
+                          AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_de_hoje') LIKE '%fila_no_dia(%',
                           'a fila de hoje sai da mesma funcao que tira a foto');
 
     RAISE EXCEPTION 'desfazer_81';
@@ -10432,5 +10438,152 @@ BEGIN
     IF SQLERRM <> 'desfazer_81' THEN RAISE; END IF;
   END;
 END $$;
+
+-- ===========================================================================
+-- 82. "Disponivel agora": a TV, o tablet e o Quadro com a mesma lista
+--     (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '82. disponivel agora: TV, tablet e Quadro'; END $$;
+-- Uma conta desta secao, com um caso de cada.
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+  ('82828282-8282-8282-8282-828282828282', 'master.82@exemplo.com', now());
+INSERT INTO public.contas (contaid, nome, email, limitelojas, status) OVERRIDING SYSTEM VALUE
+VALUES (82, 'Empresa 82', 'e82@exemplo.com', 1, 'ativa');
+INSERT INTO public.contasusuarios (contaid, userid) VALUES (82, '82828282-8282-8282-8282-828282828282');
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES (8201, 82, 'Loja 82');
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+  (98201, 82, 'Ana Oitenta', 0), (98202, 82, 'Bia Oitenta', 0), (98203, 82, 'Caio Oitenta', 0),
+  -- De folga HOJE (o dia da semana de hoje, 1 = domingo).
+  (98204, 82, 'Davi Oitenta', extract(dow FROM public.hoje_da_conta(82))::integer + 1);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid)
+SELECT 82, f, 8201 FROM unnest(ARRAY[98201, 98202, 98203, 98204]) f;
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+SELECT 98300 + i, 82, 'Disp82 ' || chr(64 + i), i FROM generate_series(1, 9) i;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) SELECT 82, 98300 + i, 8201 FROM generate_series(1, 9) i;
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                      horariodisparo, disponivelapartir, dataagendamento, compartilhada)
+  OVERRIDING SYSTEM VALUE VALUES
+  -- A: com dono, o dia todo                      -> disponivel
+  (98401, 82, 98301, 98201, 8201, 'Diaria', NULL, NULL, NULL, false),
+  -- B: com dono, so libera 23:59:59              -> NAO disponivel, mas e trabalho de hoje (conta na barra)
+  (98402, 82, 98302, 98202, 8201, 'Diaria', NULL, '23:59:59', NULL, false),
+  -- C: missao da equipe                          -> disponivel (a TV antiga nao mostrava)
+  (98403, 82, 98303, NULL,  8201, 'Diaria', '00:00', NULL, NULL, false),
+  -- D: com dono, ja pegou (em andamento)         -> NAO disponivel (a TV antiga repetia em "Para fazer")
+  (98404, 82, 98304, 98203, 8201, 'Diaria', NULL, NULL, NULL, false),
+  -- E: com dono, ja entregue                     -> feita
+  (98405, 82, 98305, 98201, 8201, 'Diaria', NULL, NULL, NULL, false),
+  -- F: dono de folga hoje                        -> fora da fila (a TV antiga mostrava)
+  (98406, 82, 98306, 98204, 8201, 'Diaria', NULL, NULL, NULL, false),
+  -- G: compartilhada                             -> disponivel
+  (98407, 82, 98307, NULL,  8201, 'Diaria', NULL, NULL, NULL, true),
+  -- H: com dono, libera 00:00:01                 -> disponivel (ja passou da hora)
+  (98408, 82, 98308, 98202, 8201, 'Diaria', NULL, '00:00:01', NULL, false),
+  -- I: Unica marcada para ontem                  -> disponivel e atrasada
+  (98409, 82, 98309, 98203, 8201, 'Unica', NULL, NULL, public.instante_na_conta(82, public.hoje_da_conta(82) - 1, '10:00'), false);
+INSERT INTO public.tarefascandidatos (contaid, atribuicaoid, funcionarioid) VALUES (82, 98407, 98201), (82, 98407, 98202);
+INSERT INTO public.missoesaceites (contaid, atribuicaoid, dia, funcionarioid)
+VALUES (82, 98404, public.hoje_da_conta(82), 98203);
+SET session_replication_role = replica;
+INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao)
+VALUES (82, 8201, 98405, 98305, 98201, 'Pendente');
+SET session_replication_role = origin;
+INSERT INTO public.linkstv (contaid, lojaid, nome, tokenhash)
+VALUES (82, 8201, 'TV 82', encode(sha256(convert_to(repeat('8', 64), 'UTF8')), 'hex'));
+
+-- Tudo NUM instante so (uma transacao): a TV (pelo link, como o visitante),
+-- o tablet (pelo servidor) e o Quadro (pelo gestor logado).
+DO $$
+DECLARE
+  v_tv jsonb; v_tablet jsonb; v_quadro jsonb; v_barra jsonb;
+  v_hora time := (now() AT TIME ZONE public.fuso_da_conta(82))::time;
+BEGIN
+  v_tv := public.painel_da_tv(repeat('8', 64));
+  v_barra := v_tv->'progresso';
+  v_tv := v_tv->'parafazer';
+  SELECT coalesce(jsonb_agg(jsonb_build_object('titulo', i->>'titulo', 'pontos', (i->>'pontos')::integer,
+                                               'atrasada', (i->>'atrasada')::boolean,
+                                               'pessoa', CASE WHEN (i->>'aberta')::boolean THEN 'a primeira que pegar leva'
+                                                              ELSE public.nome_curto(d.nomecompleto) END) ORDER BY n), '[]')
+    INTO v_tablet
+    FROM jsonb_array_elements(public.visao_fila(82, 8201)) WITH ORDINALITY x(i, n)
+    LEFT JOIN public.funcionarios d ON d.funcionarioid = (i->>'donoid')::integer
+   WHERE (i->>'disponivel')::boolean;
+  PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+  SELECT coalesce(jsonb_agg(jsonb_build_object('titulo', q.titulo, 'pontos', q.pontos, 'atrasada', q.atrasada,
+                                               'pessoa', CASE WHEN q.aberta THEN 'a primeira que pegar leva'
+                                                              ELSE public.nome_curto(d.nomecompleto) END) ORDER BY q.n), '[]')
+    INTO v_quadro
+    FROM (SELECT f.*, row_number() OVER () AS n FROM public.fila_da_loja(8201) f) q
+    LEFT JOIN public.funcionarios d ON d.funcionarioid = q.donoid
+   WHERE q.disponivel;
+
+  PERFORM public.exigir(v_tv = v_tablet AND v_tv = v_quadro,
+                        'TV, tablet e Quadro: a MESMA lista de disponiveis, item por item e na mesma ordem ('
+                        || jsonb_array_length(v_tv) || ' itens)');
+  PERFORM public.exigir((SELECT array_agg(i->>'titulo' ORDER BY i->>'titulo') FROM jsonb_array_elements(v_tv) i)
+                        = ARRAY['Disp82 A', 'Disp82 C', 'Disp82 G', 'Disp82 H', 'Disp82 I'],
+                        'disponivel: com dono, missao, compartilhada, liberada ha pouco e Unica atrasada; '
+                        || 'fora: a que libera mais tarde, a em andamento, a feita e a de quem esta de folga');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v_tv) i
+                                 WHERE i->>'titulo' = 'Disp82 C' AND i->>'pessoa' = 'a primeira que pegar leva')
+                        AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_tv) i
+                                     WHERE i->>'titulo' = 'Disp82 I' AND (i->>'atrasada')::boolean),
+                        'a TV diz de quem e cada tarefa e marca a atrasada');
+  -- A que libera mais tarde e trabalho de hoje: fica fora do "Para fazer",
+  -- mas a barra continua contando com ela (a barra nao mudou).
+  IF v_hora < '23:59:59' THEN
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_tv) i WHERE i->>'titulo' = 'Disp82 B'),
+                          'a tarefa que ainda nao liberou nao aparece como disponivel');
+  END IF;
+  PERFORM public.exigir((v_barra->>'total')::integer = 7,
+                        'a barra continua como era: 7 (conta a que libera mais tarde, como deve; conta tambem '
+                        || 'a de quem esta de folga e deixa de fora missao e compartilhada: levado ao Wisley em 29/09/2026)');
+END $$;
+
+-- Nas contas A e B, com os dados de todas as secoes: as tres telas batem em
+-- toda loja.
+DO $$
+DECLARE r record; v_tv jsonb; v_tablet jsonb; v_quadro jsonb; v_lojas integer := 0; v_itens integer := 0;
+BEGIN
+  FOR r IN SELECT l.contaid, l.lojaid, cu.userid FROM public.lojas l
+             JOIN public.contasusuarios cu ON cu.contaid = l.contaid AND cu.papel = 'master'
+            WHERE l.contaid IN (1, 2) AND l.ativa LOOP
+    PERFORM set_config('teste.uid', r.userid::text, true);
+    v_tv := coalesce(public.montar_painel(r.contaid, r.lojaid, true)->'parafazer', '[]');
+    SELECT coalesce(jsonb_agg(jsonb_build_object('titulo', q.titulo, 'pontos', q.pontos, 'atrasada', q.atrasada,
+                                                 'pessoa', CASE WHEN q.aberta THEN 'a primeira que pegar leva'
+                                                                ELSE public.nome_curto(d.nomecompleto) END) ORDER BY q.n), '[]')
+      INTO v_quadro
+      FROM (SELECT f.*, row_number() OVER () AS n FROM public.fila_da_loja(r.lojaid) f) q
+      LEFT JOIN public.funcionarios d ON d.funcionarioid = q.donoid
+     WHERE q.disponivel;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('titulo', i->>'titulo', 'pontos', (i->>'pontos')::integer,
+                                                 'atrasada', (i->>'atrasada')::boolean,
+                                                 'pessoa', CASE WHEN (i->>'aberta')::boolean THEN 'a primeira que pegar leva'
+                                                                ELSE public.nome_curto(d.nomecompleto) END) ORDER BY n), '[]')
+      INTO v_tablet
+      FROM jsonb_array_elements(public.visao_fila(r.contaid, r.lojaid)) WITH ORDINALITY x(i, n)
+      LEFT JOIN public.funcionarios d ON d.funcionarioid = (i->>'donoid')::integer
+     WHERE (i->>'disponivel')::boolean;
+    IF NOT (v_tv = v_quadro AND v_tv = v_tablet) THEN
+      RAISE EXCEPTION 'FALHOU: loja % — TV % / tablet % / Quadro %', r.lojaid, v_tv, v_tablet, v_quadro;
+    END IF;
+    v_lojas := v_lojas + 1; v_itens := v_itens + jsonb_array_length(v_tv);
+  END LOOP;
+  PERFORM public.exigir(v_lojas >= 3 AND v_itens > 0,
+                        'contas A e B: TV, tablet e Quadro iguais em ' || v_lojas || ' lojas (' || v_itens || ' itens)');
+
+  -- A fonte e uma so: as tres telas perguntam para fila_de_hoje.
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') LIKE '%fila_de_hoje(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_da_loja') LIKE '%fila_de_hoje(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'visao_fila') LIKE '%fila_da_loja(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') NOT LIKE '%liberada%',
+                        'TV, Quadro e tablet perguntam "disponivel" a fila_de_hoje; a TV nao decide sozinha');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.fila_de_hoje(integer, integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.fila_de_hoje(integer, integer)', 'EXECUTE'),
+                        'fila_de_hoje recebe a conta: e interna');
+END $$;
+SET teste.uid = '';
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

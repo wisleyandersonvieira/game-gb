@@ -279,7 +279,7 @@ function Tablet() {
   const som = fila.data?.som;
   useEffect(() => {
     if (!fila_itens) return;
-    const agora = fila_itens.filter((i) => i.situacao === "para_pegar" && i.liberada).map((i) => i.atribuicaoid);
+    const agora = fila_itens.filter((i) => i.disponivel).map((i) => i.atribuicaoid);
     const chegaram = tarefasNovas(jaVistas.current, agora);
     jaVistas.current = agora;
     if (chegaram.length === 0) return;
@@ -306,7 +306,7 @@ function Tablet() {
     const agora = fila_itens[0]?.agora;
     if (!agora) return;
     const paradas = fila_itens
-      .filter((i) => i.situacao === "para_pegar" && i.liberada)
+      .filter((i) => i.disponivel)
       .map((i) => ({ atribuicaoid: i.atribuicaoid, disponiveldesde: i.disponiveldesde }));
 
     const marcarSemTocar = primeiraFila.current || !som?.ligado || !somLiberado();

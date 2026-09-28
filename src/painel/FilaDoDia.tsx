@@ -35,6 +35,8 @@ type Item = {
   /** false enquanto não chegou a hora de liberação. */
   liberada: boolean;
   liberaas: string | null;
+  /** Disponível agora (para pegar e já liberada): o banco decide. */
+  disponivel: boolean;
 };
 
 export function FilaDoDia({

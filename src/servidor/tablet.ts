@@ -71,6 +71,8 @@ export type ItemDaFila = {
   feitasituacao: "Pendente" | "Aprovada" | null;
   /** false enquanto não chegou a hora de liberação. */
   liberada: boolean;
+  /** DISPONÍVEL AGORA (para pegar e já liberada), decidido pelo banco. */
+  disponivel: boolean;
   /** Quando ela libera hoje. Vazio = o dia todo. */
   liberaas: string | null;
   /** O dia de hoje DA CONTA e o fuso dela, ditos pelo servidor. */

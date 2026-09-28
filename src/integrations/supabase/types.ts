@@ -5737,6 +5737,35 @@ export type Database = {
           liberaas: string | null
           hoje: string
           fuso: string
+          disponivel: boolean
+        }[]
+      }
+      fila_de_hoje: {
+        Args: { p_contaid: number; p_lojaid: number }
+        Returns: {
+          aberta: boolean
+          agora: string
+          atrasada: boolean
+          atribuicaoid: number
+          disponiveldesde: string | null
+          donoid: number | null
+          entregarid: number | null
+          pegaem: string | null
+          pontos: number
+          quempegou: number | null
+          quempegounome: string | null
+          rodizio: boolean
+          situacao: string
+          tipofrequencia: string
+          titulo: string
+          feitapor: string | null
+          feitaem: string | null
+          feitasituacao: string | null
+          liberada: boolean
+          liberaas: string | null
+          hoje: string
+          fuso: string
+          disponivel: boolean
         }[]
       }
       fila_no_dia: {

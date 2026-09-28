@@ -14,11 +14,11 @@ describe("as palavras da fila (tablet e Quadro)", () => {
       "disponível há 12 min",
     );
   });
-  it("a contagem de 'Para pegar' é a mesma do tablet: só as liberadas", () => {
+  it("a contagem de 'Para pegar' é a do banco: só o que ele disse que está disponível", () => {
     const itens = [
-      { situacao: "para_pegar", liberada: true },
-      ...Array.from({ length: 5 }, () => ({ situacao: "para_pegar", liberada: false })),
-      { situacao: "em_andamento", liberada: true },
+      { situacao: "para_pegar", disponivel: true },
+      ...Array.from({ length: 5 }, () => ({ situacao: "para_pegar", disponivel: false })),
+      { situacao: "em_andamento", disponivel: false },
     ];
     const r = separarParaPegar(itens);
     expect(r.liberadas.length).toBe(1);
