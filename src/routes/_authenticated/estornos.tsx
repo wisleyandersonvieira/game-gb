@@ -2,7 +2,7 @@
 // o próprio erro da tela; o livro de pontos guarda, mas ninguém olha o livro.
 // Aqui o master vê cada estorno, com QUEM fez (o nome daquela hora, que não
 // muda se o e-mail mudar depois) e quando. Só o master: o banco recusa os outros.
-// Entregas e resgates (cancelados e estornados); os feedbacks anulados entram na fatia deles.
+// Entregas, resgates (cancelados e estornados) e feedbacks anulados.
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +30,7 @@ const ROTULO: Record<string, string> = {
   entrega: "Entrega",
   "resgate cancelado": "Resgate cancelado",
   "resgate estornado": "Resgate estornado",
+  "feedback anulado": "Feedback anulado",
 };
 /** Entrega estornada tira pontos; resgate desfeito devolve. */
 const sinal = (p: number) => (p > 0 ? `+${p}` : `${p}`);
@@ -78,7 +79,7 @@ function Estornos() {
               <span className={`text-sm font-semibold ${e.pontos < 0 ? "text-perigo" : "text-sucesso"}`}>{sinal(e.pontos)} pontos</span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {e.tipo === "resgate cancelado" ? "Cancelado" : "Estornado"} por <strong className="text-foreground">{e.quem}</strong>{" "}
+              {e.tipo === "resgate cancelado" ? "Cancelado" : e.tipo === "feedback anulado" ? "Anulado" : "Estornado"} por <strong className="text-foreground">{e.quem}</strong>{" "}
               {quandoFoi(e.quando, relogio.data?.hoje, relogio.data?.fuso)}
               {e.motivo ? ` · motivo: ${e.motivo}` : ""}
             </p>

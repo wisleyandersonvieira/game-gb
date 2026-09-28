@@ -65,6 +65,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
+  ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
   ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
@@ -408,7 +409,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (450, 'OPERACAO', 'versao', 'Premios com permissao e loja no banco; catalogo de premios so do master, por funcao', 'aplicar-permissoes-parte-2-premios.sql',
        to_regprocedure('public.salvar_premio(text, integer, integer, text, integer)') IS NOT NULL
        AND NOT has_table_privilege('authenticated', 'public.produtosloja', 'INSERT')
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_troca') LIKE '%pode(''premios.registrar''%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_troca') LIKE '%pode(''premios.registrar''%'),
+  -- Feedbacks conferem a pessoa inteira dentro das lojas (pode_na_pessoa).
+  (460, 'OPERACAO', 'versao', 'Feedbacks com permissao sobre a pessoa; anulados na lista de estornos', 'aplicar-permissoes-parte-2-feedbacks.sql',
+       to_regprocedure('public.pode_na_pessoa(text, integer, integer)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'anular_feedback') LIKE '%pode_na_pessoa(''feedbacks.anular''%')
 ),
 tudo AS (
   SELECT x.*, a.versao

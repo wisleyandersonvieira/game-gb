@@ -11901,13 +11901,13 @@ SELECT unnest(ARRAY[
 UNION ALL
 SELECT unnest(ARRAY[
   'abrir_solicitacao', 'alterar_hora_da_atribuicao', 'alterar_pagamento_agendamento',
-  'anular_feedback', 'arquivar_comunicado', 'atribuir_tarefa', 'cancelar_agendamento',
+  'arquivar_comunicado', 'atribuir_tarefa', 'cancelar_agendamento',
   'criar_agendamento', 'criar_conquista', 'criar_link_tv',
   'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'lancar_venda_do_dia', 'liberar_pin',
   'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'mudar_situacao_solicitacao', 'parear_tv',
   'publicar_comunicado', 'reabrir_agendamento',
   'recriar_tarefa_do_agendamento', 'registrar_anexo_agendamento', 'registrar_ciencia',
-  'registrar_feedback', 'registrar_justificativa', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_meta_do_mes', 'salvar_som_da_loja', 'salvar_tv_da_loja',
+  'registrar_justificativa', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_meta_do_mes', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'trocar_responsavel_agendamento', 'vincular_jornada']), 'pendente_parte2';
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
@@ -11927,7 +11927,7 @@ BEGIN
    WHERE n.nspname = 'public' AND p.provolatile = 'v'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
      AND p.proname NOT IN ('exigir', 'pular', 'guardar_foto', 'nada_mudou', 'guardar_resultado', 'limpar_resultado', 'nada_voltou', 'foto_do_banco')  -- ajudantes deste teste
-     AND p.prosrc !~ 'public\.pode\('
+     AND p.prosrc !~ 'public\.pode(_na_pessoa)?\('   -- pode(loja) ou pode_na_pessoa(pessoa)
      AND p.proname NOT IN (SELECT nome FROM classificacao_escrita);
   PERFORM public.exigir(sobra IS NULL,
     'toda funcao que grava e e liberada para quem esta logado tem dono (pode(), so master ou lista fechada)'
@@ -11947,7 +11947,7 @@ BEGIN
   SELECT string_agg(c.nome, ', ') INTO sobra FROM classificacao_escrita c
    WHERE c.grupo = 'pendente_parte2'
      AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                  WHERE n.nspname = 'public' AND p.proname = c.nome AND p.prosrc ~ 'public\.pode\(');
+                  WHERE n.nspname = 'public' AND p.proname = c.nome AND p.prosrc ~ 'public\.pode(_na_pessoa)?\(');
   PERFORM public.exigir(sobra IS NULL, 'nenhuma funcao que ja chama pode() ficou na lista de pendentes'
                         || coalesce(' -- tire da lista: ' || sobra, ''));
 
@@ -11960,7 +11960,7 @@ BEGIN
   -- Todo pode('x') no banco usa codigo do catalogo.
   SELECT string_agg(DISTINCT m[1], ', ') INTO sobra
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace,
-         regexp_matches(p.prosrc, $r$public\.pode\('([^']+)'$r$, 'g') m
+         regexp_matches(p.prosrc, $r$public\.pode(?:_na_pessoa)?\('([^']+)'$r$, 'g') m
    WHERE n.nspname = 'public'
      AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes() k WHERE k.codigo = m[1]);
   PERFORM public.exigir(sobra IS NULL, 'todo pode() chama um codigo que existe no catalogo'
@@ -12851,6 +12851,94 @@ BEGIN
     RAISE EXCEPTION 'desfazer_95';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_95' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 96. Usuarios gerenciais, parte 2, fatia 3: Feedbacks (29/09/2026)
+-- ===========================================================================
+-- Feedback e sobre a PESSOA: o gerente so age sobre quem esta INTEIRAMENTE
+-- dentro das lojas em que ele tem a permissao, e nunca sobre si mesmo.
+DO $$ BEGIN RAISE NOTICE '96. parte 2, Feedbacks: a pessoa inteira dentro das lojas dele'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '96969696-9696-9696-9696-969696969601';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; v text;
+  fb_dentro integer; fb_meio integer; fb_proprio integer;
+BEGIN
+  BEGIN
+    -- 9611 e o proprio gerente; 9612 so na loja 10; 9613 nas lojas 10 e 11; 9614 so na 11.
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (9611, 1, 'Gabi Gerente', 0), (9612, 1, 'Dora Dentro', 0), (9613, 1, 'Meire Meio', 0), (9614, 1, 'Onofre Onze', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+      (1, 9611, 10), (1, 9612, 10), (1, 9613, 10), (1, 9613, 11), (1, 9614, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'gabi.96@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Feedbacks 96') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid) VALUES (1, G, v_cargo, 9611);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+
+    -- O master registra feedbacks de ontem (para o gerente tentar anular).
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    fb_dentro  := public.registrar_feedback(9612, v_hoje - 1, 8, 'bom');
+    fb_meio    := public.registrar_feedback(9613, v_hoje - 1, 8, 'bom');
+    fb_proprio := public.registrar_feedback(9611, v_hoje - 1, 8, 'bom');
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_feedback(9612, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.anular_feedback(fb_dentro, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao da nem anula feedback');
+    RESET ROLE;
+
+    -- 2. Com "registrar": so quem esta inteiro dentro da loja dele.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'feedbacks.registrar');
+    SET LOCAL ROLE authenticated;
+    n := public.registrar_feedback(9612, v_hoje, 9, 'otimo');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_feedback(9613, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "registrar": NAO da feedback a quem tambem trabalha na loja 11 (Meire)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_feedback(9614, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem a quem so trabalha na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_feedback(9611, v_hoje, 10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem a si mesmo (o bonus seria dele)');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT registradopor = G FROM public.feedbacks WHERE feedbackid = n)
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = n AND tipo = 'bonus'),
+                          'e da de verdade a quem esta so na loja dele, com o bonus no livro');
+
+    -- 3. Anular: as mesmas bordas.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'feedbacks.anular');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.anular_feedback(fb_dentro, 'nota lancada errada');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.anular_feedback(fb_meio, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.anular_feedback(fb_proprio, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "anular": nao anula o de quem tambem e da loja 11, nem o proprio');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT anuladopor = G FROM public.feedbacks WHERE feedbackid = fb_dentro)
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = fb_dentro AND tipo = 'estorno_bonus'),
+                          'e anula de verdade o de quem esta so na loja dele, com o estorno do bonus no livro');
+
+    -- 4. A lista de estornos do master mostra o feedback anulado, com quem anulou.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    SELECT quem INTO v FROM public.estornos_da_conta(10) WHERE tipo = 'feedback anulado' AND motivo = 'nota lancada errada';
+    RESET ROLE;
+    PERFORM public.exigir(v = 'gabi.96@exemplo.com', 'a lista de estornos mostra o feedback anulado e quem anulou (' || coalesce(v, 'nada') || ')');
+    RAISE EXCEPTION 'desfazer_96';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_96' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';
