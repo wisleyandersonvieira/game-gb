@@ -5740,6 +5740,18 @@ export type Database = {
           disponivel: boolean
         }[]
       }
+      quem_pode_pegar: {
+        Args: { p_atribuicaoid: number; p_contaid: number; p_dia: string }
+        Returns: { funcionarioid: number; nome: string; pode: boolean }[]
+      }
+      quem_pode_aceitar: {
+        Args: { p_atribuicaoid: number; p_contaid: number }
+        Returns: Json
+      }
+      rodizio_ultimo: {
+        Args: { p_contaid: number; p_lojaid: number }
+        Returns: { aceitoem: string; funcionarioid: number }[]
+      }
       fila_de_hoje: {
         Args: { p_contaid: number; p_lojaid: number }
         Returns: {

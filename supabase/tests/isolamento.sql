@@ -8474,7 +8474,8 @@ BEGIN
      AND p.proname NOT IN ('dia_em_sao_paulo', 'instante_local', 'tarefa_cai_no_dia', 'teste_agora')
      AND (p.prosrc LIKE '%dia_em_sao_paulo(%' OR p.prosrc LIKE '%AT TIME ZONE ''America/Sao_Paulo''%'
           OR p.prosrc LIKE '%instante_local(%' OR p.prosrc LIKE '%rotina_hora_local(p_agora)%');
-  PERFORM public.exigir(v_n <= 50, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 50, so pode descer)');
+  -- 29/09/2026: 49. elegiveis_da_tarefa passou a perguntar o dia a hoje_da_conta.
+  PERFORM public.exigir(v_n <= 49, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 49, so pode descer)');
 END $$;
 
 -- As telas perguntam meu_hoje(); o resto e so do servidor.
@@ -10583,6 +10584,123 @@ BEGIN
   PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.fila_de_hoje(integer, integer)', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.fila_de_hoje(integer, integer)', 'EXECUTE'),
                         'fila_de_hoje recebe a conta: e interna');
+END $$;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 83. Quem pode aceitar: a janela do tablet e o aceite com a mesma regra
+--     (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '83. quem pode aceitar (janela do tablet)'; END $$;
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+  ('83838383-8383-8383-8383-838383838383', 'master.83@exemplo.com', now());
+INSERT INTO public.contas (contaid, nome, email, limitelojas, status) OVERRIDING SYSTEM VALUE
+VALUES (83, 'Empresa 83', 'e83@exemplo.com', 1, 'ativa');
+INSERT INTO public.contasusuarios (contaid, userid) VALUES (83, '83838383-8383-8383-8383-838383838383');
+UPDATE public.configuracoes SET valor = '10' WHERE contaid = 83 AND chave = 'MINUTOS_RODIZIO_ACEITE';
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES (8301, 83, 'Loja 83');
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, ativo, cpf) OVERRIDING SYSTEM VALUE VALUES
+  (98301, 83, 'Ana Costa',     0, true,  '52998224725'),
+  (98302, 83, 'Bruno Lima',    0, true,  NULL),
+  (98303, 83, 'Carla Folga',   extract(dow FROM public.hoje_da_conta(83))::integer + 1, true, NULL),  -- de folga hoje
+  (98304, 83, 'Dora Inativa',  0, false, NULL),                                                       -- desligada
+  (98305, 83, 'Edu Saiu',      0, true,  NULL),                                                       -- fora da loja
+  (98306, 83, 'Fabi Souza',    0, true,  NULL);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid, ativo) VALUES
+  (83, 98301, 8301, true), (83, 98302, 8301, true), (83, 98303, 8301, true),
+  (83, 98304, 8301, true), (83, 98305, 8301, false), (83, 98306, 8301, true);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+SELECT 98400 + i, 83, 'Quem83 ' || i, 3 FROM generate_series(1, 4) i;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) SELECT 83, 98400 + i, 8301 FROM generate_series(1, 4) i;
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                      horariodisparo, compartilhada) OVERRIDING SYSTEM VALUE VALUES
+  (98501, 83, 98401, 98301, 8301, 'Diaria', NULL,    false),   -- com dono: Ana
+  (98502, 83, 98402, NULL,  8301, 'Diaria', NULL,    true),    -- compartilhada
+  (98503, 83, 98403, NULL,  8301, 'Diaria', '00:00', false),   -- missao da equipe
+  (98504, 83, 98404, NULL,  8301, 'Diaria', '00:00', false);   -- missao que o Bruno ja pegou
+-- A compartilhada vale para Ana, Bruno, Carla (de folga), Dora (desligada) e Edu (fora da loja).
+INSERT INTO public.tarefascandidatos (contaid, atribuicaoid, funcionarioid)
+SELECT 83, 98502, f FROM unnest(ARRAY[98301, 98302, 98303, 98304, 98305]) f;
+-- Bruno pegou a ultima tarefa disputada ha 2 minutos: o rodizio o segura ~8 min.
+INSERT INTO public.missoesaceites (contaid, atribuicaoid, dia, funcionarioid, aceitoem)
+VALUES (83, 98504, public.hoje_da_conta(83), 98302, now() - interval '2 minutes');
+
+DO $$
+DECLARE
+  v_fila jsonb; v_it jsonb; p record; v_res text; v_min integer; v_casos integer := 0;
+  v_pessoas jsonb; v_esp jsonb;
+BEGIN
+  v_fila := public.visao_fila(83, 8301);
+  -- 1. O que a janela mostra.
+  SELECT i->'podem' INTO v_it FROM jsonb_array_elements(v_fila) i WHERE i->>'titulo' = 'Quem83 1';
+  PERFORM public.exigir(v_it = '{"todos": false, "pessoas": [{"nome": "Ana C.", "esperamin": 0}], "esperando": []}'::jsonb,
+                        'tarefa com dono: so o dono');
+  SELECT i->'podem' INTO v_it FROM jsonb_array_elements(v_fila) i WHERE i->>'titulo' = 'Quem83 2';
+  PERFORM public.exigir(v_it->'pessoas' = '[{"nome": "Ana C.", "esperamin": 0}, {"nome": "Bruno L.", "esperamin": 8}]'::jsonb
+                        AND v_it->'esperando' = '[{"nome": "Bruno L.", "esperamin": 8}]'::jsonb,
+                        'compartilhada: em ordem alfabetica, sem quem esta de folga, desligado ou fora da loja; '
+                        || 'e quem espera o rodizio com os minutos que faltam');
+  SELECT i->'podem' INTO v_it FROM jsonb_array_elements(v_fila) i WHERE i->>'titulo' = 'Quem83 3';
+  PERFORM public.exigir((v_it->>'todos')::boolean AND v_it->'pessoas' = '[]'::jsonb
+                        AND v_it->'esperando' = '[{"nome": "Bruno L.", "esperamin": 8}]'::jsonb,
+                        'missao da equipe: "qualquer pessoa da loja", sem lista, e quem espera o rodizio');
+  PERFORM public.exigir(v_fila::text NOT LIKE '%"id"%' AND v_fila::text NOT LIKE '%52998224725%'
+                        AND v_fila::text NOT LIKE '%Costa%' AND v_fila::text NOT LIKE '%Lima%',
+                        'o tablet recebe so o primeiro nome e a inicial: nem numero da pessoa, nem CPF, nem sobrenome');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_fila) i
+                                     WHERE i->>'situacao' = 'para_pegar' AND NOT (i ? 'podem')),
+                        'toda tarefa para pegar ja vem com a lista, na mesma resposta da fila');
+
+  -- 2. A janela diz a verdade: para cada tarefa e cada pessoa da conta, o
+  --    aceite de verdade (pegar_tarefa) concorda com o que a janela mostra.
+  PERFORM set_config('teste.uid', '83838383-8383-8383-8383-838383838383', true);
+  FOR v_it IN SELECT i FROM jsonb_array_elements(v_fila) i WHERE i->>'situacao' = 'para_pegar' LOOP
+    FOR p IN SELECT f.funcionarioid, public.nome_curto(f.nomecompleto) AS nome FROM public.funcionarios f WHERE f.contaid = 83 LOOP
+      BEGIN
+        PERFORM public.pegar_tarefa((v_it->>'atribuicaoid')::integer, p.funcionarioid);
+        v_res := 'ok';
+        RAISE EXCEPTION 'desfazer';
+      EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM <> 'desfazer' THEN v_res := SQLERRM; END IF;
+      END;
+      v_pessoas := v_it->'podem'->'pessoas';
+      v_esp := v_it->'podem'->'esperando';
+      SELECT (e->>'esperamin')::integer INTO v_min FROM jsonb_array_elements(v_esp) e WHERE e->>'nome' = p.nome;
+      IF v_min IS NOT NULL THEN
+        -- Na janela como "esperando": o aceite recusa pelo rodizio, com os mesmos minutos.
+        IF v_res <> format('Você pegou a última tarefa. Esta libera para você em %s min.', v_min) THEN
+          RAISE EXCEPTION 'FALHOU: % espera % min na janela, mas o aceite disse: %', p.nome, v_min, v_res;
+        END IF;
+      ELSIF (v_it->'podem'->>'todos')::boolean THEN
+        -- Missao da equipe: pode quem trabalha hoje na loja.
+        IF (v_res = 'ok') <> (p.funcionarioid IN (98301, 98302, 98306)) THEN
+          RAISE EXCEPTION 'FALHOU: missao, % : aceite disse %', p.nome, v_res;
+        END IF;
+      ELSE
+        IF (v_res = 'ok') <> EXISTS (SELECT 1 FROM jsonb_array_elements(v_pessoas) e WHERE e->>'nome' = p.nome) THEN
+          RAISE EXCEPTION 'FALHOU: % na janela = %, mas o aceite disse: %',
+            p.nome, EXISTS (SELECT 1 FROM jsonb_array_elements(v_pessoas) e WHERE e->>'nome' = p.nome), v_res;
+        END IF;
+      END IF;
+      v_min := NULL;
+      v_casos := v_casos + 1;
+    END LOOP;
+  END LOOP;
+  PERFORM public.exigir(v_casos >= 18, 'a janela e o aceite concordam em ' || v_casos || ' casos (cada tarefa x cada pessoa)');
+
+  -- 3. A regra mora num lugar so.
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'pegar_tarefa') LIKE '%quem_pode_pegar(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'pegar_tarefa') NOT LIKE '%tarefascandidatos%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'pegar_tarefa') NOT LIKE '%dia_de_trabalho%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'quem_pode_aceitar') LIKE '%quem_pode_pegar(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'quem_pode_aceitar') LIKE '%rodizio_espera(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'elegiveis_da_tarefa') LIKE '%quem_pode_pegar(%',
+                        'o aceite, a contagem do rodizio e a janela perguntam a quem_pode_pegar; nenhuma copia da regra');
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.quem_pode_pegar(integer, integer, date)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.quem_pode_aceitar(integer, integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.quem_pode_aceitar(integer, integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.rodizio_ultimo(integer, integer)', 'EXECUTE'),
+                        'as funcoes que recebem a conta sao internas');
 END $$;
 SET teste.uid = '';
 

@@ -8,6 +8,7 @@
 // Toda acao com dono (pegar, entregar) e assinada com o PIN de 6 digitos:
 // o servidor descobre quem e e registra em nome dela. O PIN nunca fica
 // guardado em lugar nenhum — vem no pedido, e some quando ele acaba.
+import type { QuemPode } from "@/painel/QuemPodeAceitar";
 import { descartarFotoDaTentativa } from "@/servidor/fotoSemEntrega";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -73,6 +74,8 @@ export type ItemDaFila = {
   liberada: boolean;
   /** DISPONÍVEL AGORA (para pegar e já liberada), decidido pelo banco. */
   disponivel: boolean;
+  /** Quem pode aceitar (só nas tarefas para pegar), pela regra do aceite. */
+  podem?: QuemPode;
   /** Quando ela libera hoje. Vazio = o dia todo. */
   liberaas: string | null;
   /** O dia de hoje DA CONTA e o fuso dela, ditos pelo servidor. */

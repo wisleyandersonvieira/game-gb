@@ -28,6 +28,7 @@ import { faz, minutosDesde, useRelogio } from "@/ui/relogio";
 import { quandoFoi } from "@/ui/hoje";
 import { AindaNaoLiberadas } from "@/painel/AindaNaoLiberadas";
 import { separarParaPegar, textoDisponivel } from "@/painel/textoDaFila";
+import { BotaoQuemPode } from "@/painel/QuemPodeAceitar";
 import {
   decidirRepeticao,
   liberarSom,
@@ -568,12 +569,16 @@ function Coluna({
               key={i.atribuicaoid}
               className={
                 novas.indexOf(i.atribuicaoid) >= 0
-                  ? "space-y-1 rounded-xl bg-background p-2 ring-4 ring-primary"
-                  : "space-y-1 rounded-xl bg-background p-2"
+                  ? "relative space-y-1 rounded-xl bg-background p-2 ring-4 ring-primary"
+                  : "relative space-y-1 rounded-xl bg-background p-2"
               }
             >
+              {/* Quem pode aceitar: vem pronto na fila (a regra do aceite). */}
+              {i.podem && <BotaoQuemPode titulo={i.titulo} podem={i.podem} />}
               {/* O título continua legível de pé; o resto encolheu. */}
-              <p className="text-base font-medium leading-snug">{i.titulo}</p>
+              <p className={i.podem ? "pr-9 text-base font-medium leading-snug" : "text-base font-medium leading-snug"}>
+                {i.titulo}
+              </p>
               <Cronometro item={i} agora={agora} minutosParada={minutosParada} />
               <QuemFez item={i} />
               <p className="text-xs text-muted-foreground">

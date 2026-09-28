@@ -248,7 +248,12 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                 WHERE table_schema = 'public' AND table_name = 'fotosdafila')),
   (320, 'OPERACAO', 'versao', 'TV, tablet e Quadro com a mesma lista de disponiveis', 'aplicar-disponivel-uma-fonte.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%fila_de_hoje(%')
+         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%fila_de_hoje(%'),
+  (330, 'OPERACAO', 'versao', 'tablet mostra quem pode aceitar (a mesma regra do aceite)', 'aplicar-quem-pode-aceitar.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'pegar_tarefa') LIKE '%quem_pode_pegar(%'
+       AND (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'visao_fila') LIKE '%quem_pode_aceitar(%')
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",
