@@ -122,6 +122,15 @@ export function ConfigurarTv({
         </fieldset>
 
         <fieldset className="mt-5">
+          <legend className="text-sm font-semibold">Tela inteira</legend>
+          <p className="text-xs text-muted-foreground">Entra no rodízio só nos dias em que existir; nos outros, não ocupa nada.</p>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!marcados.metaespecial} onChange={() => alternar("metaespecial")} />
+            Meta especial (nome, pontos para cada um e progresso; comemora quando bate)
+          </label>
+        </fieldset>
+
+        <fieldset className="mt-5">
           <legend className="text-sm font-semibold">Colunas</legend>
           <p className="text-xs text-muted-foreground">No máximo 3 por tela.</p>
           {COLUNAS.map((c) => (

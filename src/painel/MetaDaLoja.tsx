@@ -21,6 +21,21 @@ export type MetaPainel = {
     projecao?: number | null;
   } | null;
   valores: boolean;
+  /**
+   * Meta especial de hoje, com valor (29/09/2026): a tela inteira da TV.
+   * Sem 'lancado', não há percentual: a venda de hoje ainda não foi lançada.
+   * Os pontos são para CADA um da equipe. R$ só com "mostrar valores".
+   */
+  especial?: {
+    nome: string;
+    pontos: number;
+    lancado: boolean;
+    percentual?: number;
+    bateu?: boolean;
+    vendido?: number;
+    meta?: number;
+    falta?: number;
+  };
 } | null;
 
 const reais = (v: number) =>

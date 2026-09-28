@@ -8477,7 +8477,8 @@ BEGIN
      AND (p.prosrc LIKE '%dia_em_sao_paulo(%' OR p.prosrc LIKE '%AT TIME ZONE ''America/Sao_Paulo''%'
           OR p.prosrc LIKE '%instante_local(%' OR p.prosrc LIKE '%rotina_hora_local(p_agora)%');
   -- 29/09/2026: 49. elegiveis_da_tarefa passou a perguntar o dia a hoje_da_conta.
-  PERFORM public.exigir(v_n <= 49, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 49, so pode descer)');
+  -- 29/09/2026: 48. meta_para_painel tambem (a tela "Meta especial").
+  PERFORM public.exigir(v_n <= 48, 'funcoes que ainda decidem o dia sozinhas: ' || v_n || ' (maximo 48, so pode descer)');
 END $$;
 
 -- As telas perguntam meu_hoje(); o resto e so do servidor.
@@ -10803,6 +10804,76 @@ BEGIN
   PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'painel_inicio') LIKE '%fila_da_loja(%'
                         AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_inicio') NOT LIKE '%tem_justificativa(%',
                         'o Inicio pergunta a fila; nenhuma copia da regra');
+END $$;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 86. A tela "Meta especial" da TV: tres estados, pontos para cada um, R$
+--     so com a caixinha (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '86. tela meta especial na TV'; END $$;
+DO $$
+DECLARE v jsonb; e jsonb;
+BEGIN
+  PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+  PERFORM public.salvar_tv_da_loja(8201, '{"metaespecial": true, "parafazer": true}'::jsonb, 60, false);
+  v := public.painel_da_tv(repeat('8', 64));
+  PERFORM public.exigir((v->'config'->'blocos'->>'metaespecial')::boolean AND NOT (v->'meta' ? 'especial'),
+                        'o bloco "Meta especial" se marca; sem meta especial hoje, ela nao existe');
+  BEGIN
+    -- A venda gravada direto pela secao 84 sai: aqui o lancamento e o de
+    -- verdade (lancar_venda_do_dia), que guarda a meta do dia e paga o premio.
+    SET LOCAL session_replication_role = replica;
+    DELETE FROM public.metasdiariasapuracoes WHERE lojaid = 8201 AND dataapuracao = public.hoje_da_conta(82);
+    SET LOCAL session_replication_role = origin;
+    INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio)
+    VALUES (82, 8201, public.hoje_da_conta(82), 'Dia do Cliente', 10000, 50);
+
+    -- Meta especial SEM valor (qualitativa) nao entra: nao existe esse conceito.
+    UPDATE public.metasespeciais SET valormeta = 0 WHERE lojaid = 8201 AND data = public.hoje_da_conta(82);
+    PERFORM public.exigir(NOT (coalesce(public.painel_da_tv(repeat('8', 64))->'meta', '{}'::jsonb) ? 'especial'),
+                          'meta especial sem valor nao vira tela (qualitativa fica para outro pedido)');
+    UPDATE public.metasespeciais SET valormeta = 10000 WHERE lojaid = 8201 AND data = public.hoje_da_conta(82);
+
+    -- Ninguem lancou a venda de hoje: sem percentual, sem "bateu", sem 0% inventado.
+    v := public.painel_da_tv(repeat('8', 64));
+    e := v->'meta'->'especial';
+    PERFORM public.exigir(e->>'nome' = 'Dia do Cliente' AND (e->>'pontos')::integer = 50
+                          AND NOT (e->>'lancado')::boolean AND NOT (e ? 'percentual') AND NOT (e ? 'bateu')
+                          AND NOT (e ? 'vendido') AND NOT (v->'meta'->'dia'->>'lancado')::boolean,
+                          'sem lancamento: nome e pontos para cada um, e "ainda nao lancada", sem percentual nem barra');
+
+    -- Lancada (2.500 de 10.000), R$ desligado.
+    PERFORM public.lancar_venda_do_dia(8201, public.hoje_da_conta(82), 2500);
+    e := public.painel_da_tv(repeat('8', 64))->'meta'->'especial';
+    PERFORM public.exigir((e->>'lancado')::boolean AND (e->>'percentual')::numeric = 25 AND NOT (e->>'bateu')::boolean
+                          AND (e->>'pontos')::integer = 50,
+                          'lancada: percentual e se bateu');
+    PERFORM public.exigir(NOT (e ? 'vendido') AND NOT (e ? 'meta') AND NOT (e ? 'falta'),
+                          'com "mostrar R$" desligado, a tela especial nao recebe reais');
+
+    -- R$ ligado.
+    PERFORM public.salvar_tv_da_loja(8201, '{"metaespecial": true, "parafazer": true}'::jsonb, 60, true);
+    e := public.painel_da_tv(repeat('8', 64))->'meta'->'especial';
+    PERFORM public.exigir((e->>'vendido')::numeric = 2500 AND (e->>'meta')::numeric = 10000 AND (e->>'falta')::numeric = 7500,
+                          'com "mostrar R$" ligado: quanto foi e quanto falta, em reais');
+
+    -- Batida: a correcao do lancamento bate a meta, e o premio sai sozinho.
+    PERFORM public.lancar_venda_do_dia(8201, public.hoje_da_conta(82), 12000, 'fechamento do caixa');
+    e := public.painel_da_tv(repeat('8', 64))->'meta'->'especial';
+    PERFORM public.exigir((e->>'bateu')::boolean AND (e->>'falta')::numeric = 0
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos m
+                                       JOIN public.metaspremiacoes pr ON pr.premiacaoid = m.premiacaoid
+                                      WHERE pr.lojaid = 8201 AND pr.estornadoem IS NULL AND m.pontos = 50),
+                          'batida: a tela recebe "bateu", e cada um da equipe ganhou os 50 pontos');
+
+    RAISE EXCEPTION 'desfazer_86';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_86' THEN RAISE; END IF;
+  END;
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'meta_para_painel') LIKE '%hoje_da_conta(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'meta_para_painel') NOT LIKE '%dia_em_sao_paulo(%',
+                        'a meta da TV pergunta o dia ao lugar unico');
 END $$;
 SET teste.uid = '';
 

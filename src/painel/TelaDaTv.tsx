@@ -12,6 +12,63 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import tvCss from "./tv.css?raw";
 import type { DadosPainel } from "./PainelDaLoja";
+import type { MetaPainel } from "./MetaDaLoja";
+
+type MetaEspecial = NonNullable<NonNullable<MetaPainel>["especial"]>;
+
+export const AINDA_NAO_LANCADA = "a venda de hoje ainda não foi lançada";
+
+/**
+ * Os textos da tela "Meta especial", em três estados. Os pontos são para
+ * CADA UM da equipe, e o "cada um" vai escrito: é ele que dá o tamanho do
+ * prêmio. Em R$ só quando o banco mandou (a loja marcou "mostrar valores").
+ */
+export function textosDaMetaEspecial(e: MetaEspecial) {
+  const pts = e.pontos > 0 ? e.pontos : null;
+  if (e.lancado && e.bateu) {
+    return {
+      estado: "batida" as const,
+      pontos: pts ? `a equipe bateu! ${pts} pontos para cada um` : "a equipe bateu!",
+      progresso: null,
+    };
+  }
+  if (!e.lancado) {
+    return {
+      estado: "naolancada" as const,
+      pontos: pts ? `${pts} pontos para cada um da equipe` : null,
+      progresso: AINDA_NAO_LANCADA,
+    };
+  }
+  const pct = Math.round(e.percentual ?? 0);
+  const progresso =
+    e.vendido !== undefined && e.meta !== undefined && e.falta !== undefined
+      ? `${reaisTv(e.vendido)} de ${reaisTv(e.meta)} · faltam ${reaisTv(e.falta)}`
+      : `${pct}% · faltam ${Math.max(0, 100 - pct)}%`;
+  return {
+    estado: "andamento" as const,
+    pontos: pts ? `${pts} pontos para cada um da equipe` : null,
+    progresso,
+  };
+}
+
+/** A tela inteira da meta especial, para ser lida a três metros. */
+function TelaMetaEspecial({ e }: { e: MetaEspecial }) {
+  const t = textosDaMetaEspecial(e);
+  const nomeLongo = e.nome.length > 32;
+  return (
+    <div className={t.estado === "batida" ? "tv-especial tv-especial-comemora" : "tv-especial"}>
+      {t.estado === "batida" && <p className="tv-especial-batida">META BATIDA</p>}
+      <p className={nomeLongo ? "tv-especial-nome tv-especial-nome-longo" : "tv-especial-nome"}>{e.nome}</p>
+      {t.pontos && <p className="tv-especial-pontos">{t.pontos}</p>}
+      {t.estado === "andamento" && (
+        <div className="tv-especial-barra">
+          <div className="tv-especial-barra-cheia" style={{ width: Math.min(100, Math.round(e.percentual ?? 0)) + "%" }} />
+        </div>
+      )}
+      {t.progresso && <p className="tv-especial-status">{t.progresso}</p>}
+    </div>
+  );
+}
 
 /** R$ sem centavos: lido de longe, "R$ 12.300" basta. */
 const reaisTv = (v: number) =>
@@ -212,7 +269,10 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
     blocos.podiomes && "podiomes",
   ].filter(Boolean) as string[];
 
-  const telas = repartir(colunas);
+  // Nos dias com meta especial (e o bloco marcado), ela é MAIS UMA tela do
+  // rodízio, inteira. Nos outros dias não existe.
+  const especial = blocos.metaespecial ? (dados?.meta?.especial ?? null) : null;
+  const telas = especial ? [...repartir(colunas), ["metaespecial"]] : repartir(colunas);
   const quantas = telas.length;
 
   // Troca sozinha, com esmaecer. Com uma tela so, nao existe troca.
@@ -419,12 +479,17 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
                 <div key={f} className={classe}>
                   <div className="tv-faixa-alto">
                     <span className="tv-faixa-texto">Meta do dia</span>
-                    <span className="tv-faixa-numero tv-azul">{Math.round(meta?.percentual ?? 0)}%</span>
+                    {/* Sem lançamento, 0% mentiria ("não vendemos nada"). */}
+                    {meta && !meta.lancado ? (
+                      <span className="tv-faixa-texto">{AINDA_NAO_LANCADA}</span>
+                    ) : (
+                      <span className="tv-faixa-numero tv-azul">{Math.round(meta?.percentual ?? 0)}%</span>
+                    )}
                   </div>
                   <div className="tv-barra">
                     <div
                       className="tv-barra-azul"
-                      style={{ width: Math.min(100, Math.round(meta?.percentual ?? 0)) + "%" }}
+                      style={{ width: (meta && !meta.lancado ? 0 : Math.min(100, Math.round(meta?.percentual ?? 0))) + "%" }}
                     />
                   </div>
                 </div>
@@ -455,7 +520,11 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
       )}
 
       <div className={saindo ? "tv-colunas tv-troca tv-troca-saindo" : "tv-colunas tv-troca"}>
-        {daVez.map((c, i) => coluna(c, i === daVez.length - 1))}
+        {daVez[0] === "metaespecial" && especial ? (
+          <TelaMetaEspecial e={especial} />
+        ) : (
+          daVez.map((c, i) => coluna(c, i === daVez.length - 1))
+        )}
       </div>
 
       {/* Com uma tela so, nao existe indicador. */}
