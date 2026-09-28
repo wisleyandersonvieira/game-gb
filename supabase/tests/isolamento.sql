@@ -890,15 +890,17 @@ BEGIN
 
   p := public.painel_da_loja(10);
   PERFORM public.exigir(p->>'loja' = 'Loja A1', 'A ve o painel da propria loja');
-  -- Até 29/09/2026 esta trava exigia total = aprovadas + em validacao + para
-  -- fazer: o "Para fazer" era o resto da barra. Deixou de ser, por decisão do
-  -- Wisley: "Para fazer" é o que está DISPONÍVEL agora (a mesma lista do
-  -- tablet e do Quadro, seção 82), e a barra conta o dia inteiro, inclusive
-  -- o que libera mais tarde. "Para fazer 3" com a barra em 5 é o certo.
+  -- A barra fecha, com IGUALDADE (29/09/2026): barra, "Para fazer" e "Em
+  -- andamento" saem da mesma fila, e cada tarefa está em um estado só.
+  -- (Entre 29/09 manhã e tarde esta trava ficou afrouxada, enquanto a barra
+  -- ainda tinha regra própria.)
   PERFORM public.exigir(
-    (p->'progresso'->>'aprovadas')::integer + (p->'progresso'->>'emvalidacao')::integer
-      <= (p->'progresso'->>'total')::integer,
-    'a barra fecha com ela mesma: aprovadas + em validacao <= total do dia');
+    (p->'progresso'->>'total')::integer =
+      (p->'progresso'->>'aprovadas')::integer + (p->'progresso'->>'emvalidacao')::integer
+      + (p->'progresso'->>'emandamento')::integer + jsonb_array_length(p->'parafazer')
+      + (p->'progresso'->>'aindanaoliberadas')::integer
+    AND (p->'progresso'->>'emandamento')::integer = jsonb_array_length(p->'emandamento'),
+    'a barra fecha: total = aprovadas + em validacao + em andamento + para fazer + ainda nao liberadas');
   PERFORM public.exigir(p::text NOT LIKE '%id"%', 'o painel nao expoe nenhum id');
 
   BEGIN PERFORM public.painel_da_loja(20); deu_erro := false;
@@ -10459,8 +10461,8 @@ INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolg
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid)
 SELECT 82, f, 8201 FROM unnest(ARRAY[98201, 98202, 98203, 98204]) f;
 INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
-SELECT 98300 + i, 82, 'Disp82 ' || chr(64 + i), i FROM generate_series(1, 9) i;
-INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) SELECT 82, 98300 + i, 8201 FROM generate_series(1, 9) i;
+SELECT 98300 + i, 82, 'Disp82 ' || chr(64 + i), i FROM generate_series(1, 10) i;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) SELECT 82, 98300 + i, 8201 FROM generate_series(1, 10) i;
 INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
                                       horariodisparo, disponivelapartir, dataagendamento, compartilhada)
   OVERRIDING SYSTEM VALUE VALUES
@@ -10481,13 +10483,15 @@ INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionar
   -- H: com dono, libera 00:00:01                 -> disponivel (ja passou da hora)
   (98408, 82, 98308, 98202, 8201, 'Diaria', NULL, '00:00:01', NULL, false),
   -- I: Unica marcada para ontem                  -> disponivel e atrasada
-  (98409, 82, 98309, 98203, 8201, 'Unica', NULL, NULL, public.instante_na_conta(82, public.hoje_da_conta(82) - 1, '10:00'), false);
+  (98409, 82, 98309, 98203, 8201, 'Unica', NULL, NULL, public.instante_na_conta(82, public.hoje_da_conta(82) - 1, '10:00'), false),
+  -- J: com dono, PEGOU e JA ENTREGOU               -> feita (nao e "em andamento", mesmo tendo aceite)
+  (98410, 82, 98310, 98202, 8201, 'Diaria', NULL, NULL, NULL, false);
 INSERT INTO public.tarefascandidatos (contaid, atribuicaoid, funcionarioid) VALUES (82, 98407, 98201), (82, 98407, 98202);
 INSERT INTO public.missoesaceites (contaid, atribuicaoid, dia, funcionarioid)
-VALUES (82, 98404, public.hoje_da_conta(82), 98203);
+VALUES (82, 98404, public.hoje_da_conta(82), 98203), (82, 98410, public.hoje_da_conta(82), 98202);
 SET session_replication_role = replica;
 INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao)
-VALUES (82, 8201, 98405, 98305, 98201, 'Pendente');
+VALUES (82, 8201, 98405, 98305, 98201, 'Pendente'), (82, 8201, 98410, 98310, 98202, 'Pendente');
 SET session_replication_role = origin;
 INSERT INTO public.linkstv (contaid, lojaid, nome, tokenhash)
 VALUES (82, 8201, 'TV 82', encode(sha256(convert_to(repeat('8', 64), 'UTF8')), 'hex'));
@@ -10526,6 +10530,10 @@ BEGIN
                         = ARRAY['Disp82 A', 'Disp82 C', 'Disp82 G', 'Disp82 H', 'Disp82 I'],
                         'disponivel: com dono, missao, compartilhada, liberada ha pouco e Unica atrasada; '
                         || 'fora: a que libera mais tarde, a em andamento, a feita e a de quem esta de folga');
+  PERFORM public.exigir((SELECT array_agg(i->>'titulo') FROM jsonb_array_elements(public.painel_da_tv(repeat('8', 64))->'emandamento') i)
+                        = (SELECT array_agg(i->>'titulo') FROM jsonb_array_elements(public.visao_fila(82, 8201)) i
+                            WHERE i->>'situacao' = 'em_andamento'),
+                        'o "Em andamento" da TV e o do tablet sao a mesma lista');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(v_tv) i
                                  WHERE i->>'titulo' = 'Disp82 C' AND i->>'pessoa' = 'a primeira que pegar leva')
                         AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_tv) i
@@ -10537,9 +10545,16 @@ BEGIN
     PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_tv) i WHERE i->>'titulo' = 'Disp82 B'),
                           'a tarefa que ainda nao liberou nao aparece como disponivel');
   END IF;
-  PERFORM public.exigir((v_barra->>'total')::integer = 7,
-                        'a barra continua como era: 7 (conta a que libera mais tarde, como deve; conta tambem '
-                        || 'a de quem esta de folga e deixa de fora missao e compartilhada: levado ao Wisley em 29/09/2026)');
+  -- A barra conta o que a fila conta: A, B (libera mais tarde), C (missao),
+  -- D (em andamento), E e J (feitas), G (compartilhada), H, I. Fora: F (folga).
+  PERFORM public.exigir((v_barra->>'total')::integer = 9
+                        AND (v_barra->>'emvalidacao')::integer = 2
+                        AND (v_barra->>'emandamento')::integer = 1
+                        AND (v_barra->>'aindanaoliberadas')::integer = (CASE WHEN v_hora < '23:59:59' THEN 1 ELSE 0 END)
+                        AND (v_barra->>'total')::integer = (v_barra->>'aprovadas')::integer + (v_barra->>'emvalidacao')::integer
+                              + (v_barra->>'emandamento')::integer + jsonb_array_length(v_tv)
+                              + (v_barra->>'aindanaoliberadas')::integer,
+                        'a barra conta o que a fila conta: 9 (missao e compartilhada entram; a de quem esta de folga sai), e fecha');
 END $$;
 
 -- Nas contas A e B, com os dados de todas as secoes: as tres telas batem em
@@ -10579,7 +10594,7 @@ BEGIN
   PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') LIKE '%fila_de_hoje(%'
                         AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_da_loja') LIKE '%fila_de_hoje(%'
                         AND (SELECT prosrc FROM pg_proc WHERE proname = 'visao_fila') LIKE '%fila_da_loja(%'
-                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') NOT LIKE '%liberada%',
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') !~ '[a-z]\.liberada|AND liberada|WHERE liberada',
                         'TV, Quadro e tablet perguntam "disponivel" a fila_de_hoje; a TV nao decide sozinha');
   PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.fila_de_hoje(integer, integer)', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.fila_de_hoje(integer, integer)', 'EXECUTE'),

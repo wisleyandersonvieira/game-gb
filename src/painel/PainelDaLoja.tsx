@@ -10,7 +10,8 @@ export type DadosPainel = {
   loja: string;
   hoje: string;
   atualizadoem: string;
-  progresso: { total: number; aprovadas: number; emvalidacao: number };
+  /** Da mesma fila do tablet: total = aprovadas + emvalidacao + emandamento + parafazer + aindanaoliberadas. */
+  progresso: { total: number; aprovadas: number; emvalidacao: number; emandamento?: number; aindanaoliberadas?: number };
   parafazer: { titulo: string; pessoa: string; pontos: number; atrasada: boolean }[];
   emvalidacao: { titulo: string; pessoa: string; pontos: number; enviadaem: string; dehoje: boolean }[];
   pendentes: number;

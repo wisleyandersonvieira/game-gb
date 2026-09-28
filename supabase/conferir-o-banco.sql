@@ -253,7 +253,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'pegar_tarefa') LIKE '%quem_pode_pegar(%'
        AND (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'visao_fila') LIKE '%quem_pode_aceitar(%')
+         WHERE n.nspname = 'public' AND p.proname = 'visao_fila') LIKE '%quem_pode_aceitar(%'),
+  (340, 'OPERACAO', 'versao', 'a barra da TV conta o que a fila conta', 'aplicar-barra-da-fila.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%aindanaoliberadas%')
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",
