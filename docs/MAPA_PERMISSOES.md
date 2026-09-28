@@ -397,3 +397,46 @@ das operações que nunca se delegam.
   cargoid > 0` — o filtro por conta estava lá, mas o `OR` o anula. Quem pegou
   foi a trava nova. A seção 14 precisa recusar `OR` que anule o filtro
   (proposto para a parte 2).
+
+---
+
+## Auditoria das regras de acesso e ajustes da parte 1 (29/09/2026)
+
+**As regras de hoje, pela checagem endurecida:** 240 regras de acesso
+(`public` e `storage`), 287 expressões (USING e WITH CHECK). **287 passam, 0
+furadas.** Âncoras: 175 `contaid = minha_conta_editavel()`, 85
+`contaid = minha_conta()`, 18 pasta do Storage começando pela conta, 9 admin
+geral. A checagem nova (seção 14) parte cada expressão nos termos ligados por
+E, recusa OU no nível de cima e exige a âncora exata; foi vista recusando 8
+formas furadas (OU no topo, só citar a função, `<>`, NOT, outra coluna, segunda
+pasta do Storage, OU só no WITH CHECK, admin OU outra coisa) e aceitando 2
+seguras — a checagem antiga aceitaria as 8. Nova trava de comportamento (seção
+92): 13 logins × 94 tabelas + Storage, nenhuma linha de outra conta. Limite: o
+teste tem dado de mais de uma conta em 33 das 94 tabelas; nas outras, quem
+garante é a checagem das regras.
+
+**As sabotagens da parte 1, revistas:** 1, 2, 3 e 5 abriram portas de verdade.
+**A 4 ("próprio cargo") NÃO abriu:** o cargo não mudou, e o teste reprovou só
+porque esperava um erro. O teste passou a tentar a mudança de verdade (subir de
+cargo, ganhar loja e permissão, virar master) e conferir o resultado. Refeita
+com a porta aberta de verdade, reprovou pelo resultado. A 4 antiga agora passa,
+e deve: não muda nada.
+
+**Histórico:** só o master lê (a regra exige o master, não depende mais de o
+gerente estar sem conta). Sobrevive ao apagamento: apagados o cargo, o usuário
+gerencial e até o login, as linhas continuam (não há ligação que as apague).
+Guarda a linha inteira de ANTES e de DEPOIS (o nome antigo do cargo, qual
+permissão foi tirada, que lojas o usuário tinha).
+
+**Último master:** a trava agora cobre também o LOGIN: apagar ou bloquear
+("Ban user" no Supabase) o login do último master ATIVO é recusado, e um
+segundo master com login bloqueado não conta como outro master.
+
+**Achado, para decisão (não mexido):** 48 colunas "quem fez" (aprovou,
+estornou, registrou, cancelou, lançou…) apontam para o login com "SET NULL":
+se um login for apagado no Supabase, essas colunas viram vazio e o "quem fez"
+some das entregas, resgates, feedbacks, metas, agenda, livro de pontos. Hoje o
+sistema nunca apaga login de gestor; só o painel do Supabase faria. (No livro
+de pontos o apagamento já é barrado, por acaso: o livro não aceita alteração.)
+Proposta: login que já fez algo nunca se apaga, só se desativa — com a trava no
+banco, como a do último master.

@@ -19,7 +19,9 @@ CREATE TABLE auth.users (
   email text,
   email_confirmed_at timestamptz,
   -- Como no Supabase real: a ficha do tablet mostra o ultimo uso.
-  last_sign_in_at timestamptz
+  last_sign_in_at timestamptz,
+  -- Como no Supabase real: login bloqueado ate esta hora (painel -> "Ban user").
+  banned_until timestamptz
 );
 
 -- Sessoes abertas, como no Supabase real: a ficha do tablet conta quantos

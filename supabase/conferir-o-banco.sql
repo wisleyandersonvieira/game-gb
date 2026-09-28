@@ -63,6 +63,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
+  ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
@@ -387,7 +388,13 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        pg_temp.tenta($q$SELECT (SELECT count(*) > 50 FROM public.catalogo_de_permissoes())
                        AND public.pode('quadro.aprovar', 0) = false
                        AND to_regclass('public.usuarioslojas') IS NOT NULL
-                       AND NOT has_table_privilege('authenticated', 'public.fornecedores', 'INSERT')$q$))
+                       AND NOT has_table_privilege('authenticated', 'public.fornecedores', 'INSERT')$q$)),
+  -- As duas travas do login do último master no lugar, e o histórico só do master.
+  (430, 'OPERACAO', 'versao', 'ultimo master ATIVO (login nao se apaga nem se bloqueia) e historico so do master', 'aplicar-permissoes-parte-1-ajustes.sql',
+       (SELECT count(*) = 2 FROM pg_trigger WHERE tgrelid = 'auth.users'::regclass
+                                             AND tgname IN ('stgame_ultimo_master_apagar', 'stgame_ultimo_master_bloquear'))
+       AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'permissoeshistorico'
+                                               AND qual LIKE '%sou_master()%'))
 ),
 tudo AS (
   SELECT x.*, a.versao

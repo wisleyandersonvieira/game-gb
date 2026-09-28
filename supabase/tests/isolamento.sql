@@ -4635,6 +4635,63 @@ SET teste.uid = '';
 
 RESET ROLE;
 
+-- O examinador das policies (usado logo abaixo).
+-- Parte uma expressão de policy nos termos ligados por AND no nível de cima.
+-- Devolve NULL se houver OR no nível de cima (o OR anula qualquer âncora).
+CREATE OR REPLACE FUNCTION pg_temp.termos_and(p text)
+RETURNS text[] LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  e text := btrim(p);
+  prof int; i int; j int; fecha int; c text; aspas boolean; ini int; termos text[] := '{}'; mudou boolean := true;
+BEGIN
+  -- tira parênteses que embrulham a expressão INTEIRA
+  WHILE mudou LOOP
+    mudou := false;
+    IF left(e, 1) = '(' AND right(e, 1) = ')' THEN
+      -- Onde fecha o parêntese que abre na posição 1? Se for no último
+      -- caractere, ele embrulha tudo e sai. (A variável de um FOR é local ao
+      -- laço: a posição fica guardada em "fecha".)
+      prof := 0; aspas := false; fecha := NULL;
+      FOR j IN 1..length(e) LOOP
+        c := substr(e, j, 1);
+        IF c = '''' THEN aspas := NOT aspas; END IF;
+        CONTINUE WHEN aspas;
+        IF c = '(' THEN prof := prof + 1; ELSIF c = ')' THEN prof := prof - 1; END IF;
+        IF prof = 0 THEN fecha := j; EXIT; END IF;
+      END LOOP;
+      IF fecha = length(e) THEN e := btrim(substr(e, 2, length(e) - 2)); mudou := true; END IF;
+    END IF;
+  END LOOP;
+  prof := 0; aspas := false; ini := 1; i := 1;
+  WHILE i <= length(e) LOOP
+    c := substr(e, i, 1);
+    IF c = '''' THEN aspas := NOT aspas;
+    ELSIF NOT aspas THEN
+      IF c = '(' THEN prof := prof + 1;
+      ELSIF c = ')' THEN prof := prof - 1;
+      ELSIF prof = 0 AND upper(substr(e, i, 4)) = ' OR ' THEN RETURN NULL;
+      ELSIF prof = 0 AND upper(substr(e, i, 5)) = ' AND ' THEN
+        termos := termos || btrim(substr(e, ini, i - ini)); ini := i + 5; i := i + 4;
+      END IF;
+    END IF;
+    i := i + 1;
+  END LOOP;
+  RETURN termos || btrim(substr(e, ini));
+END $$;
+
+-- A âncora: um termo que, sozinho, prende a linha à conta de quem pede (ou é
+-- do admin geral). Formas aceitas, EXATAS (não "contém minha_conta"):
+CREATE OR REPLACE FUNCTION pg_temp.e_ancora(t text)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT regexp_replace(t, '\s+', ' ', 'g') ~ ANY (ARRAY[
+    '^\(?contaid = \( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)?$',
+    '^\(? ?SELECT eh_admin_geral\(\) AS eh_admin_geral\)?$',
+    -- Storage: a PRIMEIRA pasta do caminho é a conta de quem pede.
+    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)::text\)?$'
+  ])
+$$;
+
+
 DO $$
 DECLARE sem_rls text; liberadas text;
 BEGIN
@@ -4651,12 +4708,23 @@ BEGIN
   PERFORM public.exigir(liberadas IS NULL, 'nenhuma policy liberada com USING (true)');
 
   -- Policies se somam: uma unica policy que nao filtre por conta abre tudo.
-  SELECT string_agg(schemaname || '.' || tablename || '.' || policyname, ', ') INTO liberadas
-  FROM pg_policies
-  WHERE schemaname IN ('public', 'storage')
-    AND coalesce(qual, '') || coalesce(with_check, '') NOT LIKE '%minha_conta%'
-    AND coalesce(qual, '') || coalesce(with_check, '') NOT LIKE '%eh_admin_geral%';
-  PERFORM public.exigir(liberadas IS NULL, 'toda policy filtra por conta ou e do admin geral');
+  -- ENDURECIDA em 29/09/2026: antes bastava a palavra "minha_conta" aparecer
+  -- no texto, e "contaid = minha_conta() OR pontos > 0" passava (o OR anula o
+  -- filtro). Agora cada expressao (USING e WITH CHECK) e partida nos termos
+  -- ligados por AND no nivel de cima: nao pode haver OR no nivel de cima, e UM
+  -- dos termos tem de ser exatamente a ancora da conta (contaid =
+  -- minha_conta()/minha_conta_editavel(), a PRIMEIRA pasta do Storage igual a
+  -- conta, ou eh_admin_geral()). Provada reprovando 8 formas furadas.
+  SELECT string_agg(x.schemaname || '.' || x.tablename || '.' || x.policyname || ' (' || x.parte || ')', ', ') INTO liberadas
+    FROM (SELECT p.schemaname, p.tablename, p.policyname, e.parte, e.expr
+            FROM pg_policies p
+            CROSS JOIN LATERAL (VALUES ('USING', p.qual), ('WITH CHECK', p.with_check)) e(parte, expr)
+           WHERE p.schemaname IN ('public', 'storage') AND e.expr IS NOT NULL) x
+   WHERE NOT coalesce((SELECT bool_or(pg_temp.e_ancora(t)) FROM unnest(pg_temp.termos_and(x.expr)) t), false);
+  PERFORM public.exigir(liberadas IS NULL,
+    'toda policy (USING e WITH CHECK) esta presa a conta por AND, sem OR no nivel de cima ('
+    || (SELECT count(*) FROM pg_policies WHERE schemaname IN ('public', 'storage')) || ' policies)'
+    || coalesce(' -- FURADA: ' || liberadas, ''));
 
   -- Uma tabela sem contaid nao teria como ser isolada. A UNICA excecao sao
   -- as tabelas da PLATAFORMA, que nao pertencem a conta nenhuma e sao so do
@@ -11476,6 +11544,11 @@ BEGIN
     INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Aprovador') RETURNING cargoid INTO v_cargo;
     INSERT INTO public.cargos (contaid, nome) VALUES (2, 'Da conta B') RETURNING cargoid INTO v_outro;
     INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.aprovar');
+    -- Um cargo mais forte, para ele tentar subir sozinho.
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Poderoso') RETURNING cargoid INTO n;
+    PERFORM set_config('teste.poderoso', n::text, true);
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo)
+    SELECT 1, current_setting('teste.poderoso')::integer, x FROM unnest(ARRAY['quadro.aprovar', 'quadro.recusar', 'quadro.estornar']) x;
     INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid)
     VALUES (1, '91919191-9191-9191-9191-919191919191', v_cargo, 100);
     INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '91919191-9191-9191-9191-919191919191', 10);
@@ -11509,19 +11582,31 @@ BEGIN
     PERFORM public.exigir(public.lojas_onde_posso('quadro.aprovar') = ARRAY[10], 'as lojas onde ele pode: so a 10');
     PERFORM public.exigir(public.lojas_onde_posso('quadro.recusar') = '{}', 'e nenhuma para o que nao foi marcado');
     PERFORM public.exigir(public.minha_conta() IS NULL, 'e o gerente continua sem conta (fechado ate a parte 5)');
-    -- Ele nao mexe no proprio cargo, nas proprias lojas nem nas permissoes.
-    BEGIN UPDATE public.usuariosgerenciais SET cargoid = cargoid; deu_erro := false;
-    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'gerente nao edita o proprio cargo');
-    BEGIN INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '91919191-9191-9191-9191-919191919191', 11); deu_erro := false;
-    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem as proprias lojas');
-    BEGIN INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.recusar'); deu_erro := false;
-    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(deu_erro, 'nem as permissoes do cargo');
-    BEGIN UPDATE public.contasusuarios SET papel = 'master' WHERE userid = '91919191-9191-9191-9191-919191919191'; deu_erro := false;
-    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
+    -- Ele nao mexe no proprio cargo, nas proprias lojas, nas permissoes nem
+    -- no proprio papel. O teste TENTA a mudanca de verdade (subir para um
+    -- cargo mais forte, ganhar loja, ganhar permissao, virar master) e confere
+    -- o RESULTADO: erro ou "0 linhas" tanto faz, o que vale e nada ter mudado.
+    -- (Em 29/09/2026 uma sabotagem "passou" por aqui sem abrir porta nenhuma:
+    -- o teste antigo so olhava se deu erro.)
+    BEGIN UPDATE public.usuariosgerenciais SET cargoid = current_setting('teste.poderoso')::integer
+           WHERE userid = auth.uid();
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '91919191-9191-9191-9191-919191919191', 11);
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.recusar');
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN UPDATE public.contasusuarios SET papel = 'master' WHERE userid = auth.uid();
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir(NOT public.pode('quadro.recusar', 10) AND NOT public.pode('quadro.aprovar', 11)
+                          AND NOT public.pode('quadro.estornar', 10),
+                          'depois de tentar se dar mais poder, o gerente continua sem ele (pelo pode())');
     RESET ROLE;
+    PERFORM public.exigir((SELECT cargoid FROM public.usuariosgerenciais WHERE userid = '91919191-9191-9191-9191-919191919191') = v_cargo,
+                          'gerente nao edita o proprio cargo (o cargo dele nao mudou)');
+    PERFORM public.exigir((SELECT array_agg(lojaid) FROM public.usuarioslojas WHERE userid = '91919191-9191-9191-9191-919191919191') = ARRAY[10],
+                          'nem as proprias lojas (continua so a 10)');
+    PERFORM public.exigir((SELECT array_agg(codigo::text) FROM public.cargospermissoes WHERE cargoid = v_cargo) = ARRAY['quadro.aprovar'],
+                          'nem as permissoes do cargo (continua so aprovar)');
     PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contasusuarios
                                        WHERE userid = '91919191-9191-9191-9191-919191919191' AND papel = 'master'),
                           'nem se promove a master');
@@ -11553,7 +11638,7 @@ BEGIN
     PERFORM public.exigir(public.lojas_onde_posso('quadro.aprovar') = current_setting('teste.lojas1')::integer[],
                           'as lojas do master: todas as dele (' || n || '), nenhuma de outra conta');
     SELECT count(*) INTO n FROM public.cargos;
-    PERFORM public.exigir(n = 1, 'o master le so os cargos da propria conta (leu ' || n || ')');
+    PERFORM public.exigir(n = 2, 'o master le so os cargos da propria conta (leu ' || n || ')');
     BEGIN INSERT INTO public.cargos (nome) VALUES ('direto na tabela'); deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
     PERFORM public.exigir(deu_erro, 'nem o master grava cargo direto na tabela (so pela pagina, parte 5)');
@@ -11615,6 +11700,199 @@ BEGIN
     RAISE EXCEPTION 'desfazer_91';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_91' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 92. Nenhuma leitura devolve linha de outra conta, em NENHUMA tabela
+--     (29/09/2026)
+-- ===========================================================================
+-- A checagem da secao 14 olha o TEXTO das policies. Esta olha o RESULTADO:
+-- com todos os dados de teste carregados, cada login le TODAS as tabelas que
+-- tem contaid (e o Storage, pela primeira pasta), e conta as linhas de outra
+-- conta. Tem de dar zero. Quem nao e master (loja, colaborador, gerente
+-- fechado, sem papel) nao le linha nenhuma. Diz tambem em quantas tabelas o
+-- teste tem dado de mais de uma conta: sem isso, "zero" nao provaria nada.
+DO $$ BEGIN RAISE NOTICE '92. nenhuma leitura devolve outra conta'; END $$;
+
+DO $$
+DECLARE
+  u record; t record; n bigint; vazou text := ''; tabelas int := 0; cobertas int := 0; logins int := 0;
+BEGIN
+  SELECT count(*) INTO tabelas
+    FROM information_schema.columns c JOIN pg_class k ON k.relname = c.table_name
+    JOIN pg_namespace s ON s.oid = k.relnamespace AND s.nspname = 'public'
+   WHERE c.table_schema = 'public' AND c.column_name = 'contaid' AND k.relkind = 'r';
+  FOR t IN SELECT c.table_name FROM information_schema.columns c JOIN pg_class k ON k.relname = c.table_name
+            JOIN pg_namespace s ON s.oid = k.relnamespace AND s.nspname = 'public'
+           WHERE c.table_schema = 'public' AND c.column_name = 'contaid' AND k.relkind = 'r' LOOP
+    EXECUTE format('SELECT count(DISTINCT contaid) FROM public.%I', t.table_name) INTO n;
+    IF n > 1 THEN cobertas := cobertas + 1; END IF;
+  END LOOP;
+
+  FOR u IN SELECT au.id, cu.papel, cu.contaid FROM auth.users au
+             LEFT JOIN public.contasusuarios cu ON cu.userid = au.id
+            WHERE NOT coalesce(lower(au.email) = 'wisley_anderson@hotmail.com', false)
+            ORDER BY au.id LOOP
+    logins := logins + 1;
+    PERFORM set_config('teste.uid', u.id::text, true);
+    FOR t IN SELECT c.table_name FROM information_schema.columns c JOIN pg_class k ON k.relname = c.table_name
+              JOIN pg_namespace s ON s.oid = k.relnamespace AND s.nspname = 'public'
+             WHERE c.table_schema = 'public' AND c.column_name = 'contaid' AND k.relkind = 'r' LOOP
+      SET LOCAL ROLE authenticated;
+      BEGIN
+        IF u.papel = 'master' THEN
+          EXECUTE format('SELECT count(*) FROM public.%I WHERE contaid IS DISTINCT FROM %s', t.table_name, u.contaid) INTO n;
+        ELSE
+          EXECUTE format('SELECT count(*) FROM public.%I', t.table_name) INTO n;
+        END IF;
+      EXCEPTION WHEN insufficient_privilege THEN n := 0;   -- nem SELECT tem: nao le nada
+      END;
+      RESET ROLE;
+      IF n > 0 THEN
+        vazou := vazou || coalesce(u.papel, 'sem papel') || ' ' || u.id || ' leu ' || n || ' em ' || t.table_name || '; ';
+      END IF;
+    END LOOP;
+    -- Storage: a primeira pasta e a conta.
+    SET LOCAL ROLE authenticated;
+    IF u.papel = 'master' THEN
+      SELECT count(*) INTO n FROM storage.objects WHERE split_part(name, '/', 1) IS DISTINCT FROM u.contaid::text;
+    ELSE
+      SELECT count(*) INTO n FROM storage.objects;
+    END IF;
+    RESET ROLE;
+    IF n > 0 THEN vazou := vazou || coalesce(u.papel, 'sem papel') || ' ' || u.id || ' leu ' || n || ' arquivos; '; END IF;
+  END LOOP;
+  PERFORM set_config('teste.uid', '', true);
+
+  PERFORM public.exigir(cobertas >= 30,
+    'o teste tem dado de mais de uma conta em ' || cobertas || ' das ' || tabelas || ' tabelas com conta (sem isso "zero" nao provaria nada)');
+  PERFORM public.exigir(vazou = '',
+    logins || ' logins x ' || tabelas || ' tabelas + Storage: nenhuma leitura devolve linha de outra conta'
+    || CASE WHEN vazou <> '' THEN ' -- VAZOU: ' || vazou ELSE '' END);
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 93. O historico de permissoes e o ultimo master ATIVO (29/09/2026)
+-- ===========================================================================
+-- Perguntas do Wisley: quem le o historico; se ele sobrevive quando se apaga
+-- o cargo, o usuario e ate o login; se guarda o ANTES e o DEPOIS; e se a trava
+-- do ultimo master cobre desativar (bloquear o login) e apagar o login.
+DO $$ BEGIN RAISE NOTICE '93. historico de permissoes e ultimo master ativo'; END $$;
+
+DO $$
+DECLARE v_cargo integer; deu_erro boolean; n integer; h jsonb;
+BEGIN
+  BEGIN
+    -- Leitura: a regra exige o master (hoje o gerente nem tem conta; a regra
+    -- nao depende disso para quando tiver, na parte 5).
+    PERFORM public.exigir(
+      (SELECT count(*) FROM pg_policies
+        WHERE schemaname = 'public' AND cmd = 'SELECT'
+          AND tablename IN ('cargos', 'cargospermissoes', 'usuariosgerenciais', 'usuarioslojas', 'permissoeshistorico')
+          AND qual LIKE '%sou_master()%') = 5
+      AND NOT EXISTS (SELECT 1 FROM pg_policies
+                       WHERE schemaname = 'public'
+                         AND tablename IN ('cargos', 'cargospermissoes', 'usuariosgerenciais', 'usuarioslojas', 'permissoeshistorico')
+                         AND (cmd <> 'SELECT' OR qual NOT LIKE '%sou_master()%')),
+      'historico, cargos, permissoes, usuarios e lojas: a unica regra de leitura exige o master');
+
+    -- Monta, muda e APAGA tudo: o historico tem de guardar cada passo.
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+      ('93939393-9393-9393-9393-939393939391', 'gerente.93@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, '93939393-9393-9393-9393-939393939391', 'gerente');
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);   -- "quem" = o master
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Supervisor 93') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'quadro.aprovar'), (1, v_cargo, 'quadro.estornar');
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, '93939393-9393-9393-9393-939393939391', v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, '93939393-9393-9393-9393-939393939391', 10);
+    UPDATE public.cargos SET nome = 'Supervisor 93 (novo)' WHERE cargoid = v_cargo;
+    DELETE FROM public.cargospermissoes WHERE cargoid = v_cargo AND codigo = 'quadro.estornar';
+    -- Apaga o usuario gerencial (leva as lojas junto), o cargo e o login.
+    DELETE FROM public.usuariosgerenciais WHERE userid = '93939393-9393-9393-9393-939393939391';
+    DELETE FROM public.cargos WHERE cargoid = v_cargo;
+    DELETE FROM public.contasusuarios WHERE userid = '93939393-9393-9393-9393-939393939391';
+    DELETE FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939391';
+    PERFORM set_config('teste.uid', '', true);
+
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.cargos WHERE cargoid = v_cargo)
+                          AND NOT EXISTS (SELECT 1 FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939391'),
+                          'o cargo, o usuario e o login foram apagados de verdade');
+    SELECT count(*) INTO n FROM public.permissoeshistorico
+     WHERE contaid = 1 AND (antes->>'cargoid' = v_cargo::text OR depois->>'cargoid' = v_cargo::text
+                            OR antes->>'userid' = '93939393-9393-9393-9393-939393939391'
+                            OR depois->>'userid' = '93939393-9393-9393-9393-939393939391');
+    PERFORM public.exigir(n >= 11, 'o historico sobrevive: ' || n || ' linhas do cargo e do usuario continuam la depois de apagar tudo');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.permissoeshistorico
+                                       WHERE contaid = 1 AND tabela IN ('cargos', 'cargospermissoes', 'usuariosgerenciais', 'usuarioslojas')
+                                         AND (antes->>'cargoid' = v_cargo::text OR depois->>'cargoid' = v_cargo::text)
+                                         AND quem IS DISTINCT FROM 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+                          'e cada linha diz quem fez (o master)');
+    -- ANTES e DEPOIS.
+    SELECT to_jsonb(x) INTO h FROM (SELECT antes, depois FROM public.permissoeshistorico
+                                     WHERE tabela = 'cargos' AND acao = 'UPDATE' AND antes->>'cargoid' = v_cargo::text) x;
+    PERFORM public.exigir(h->'antes'->>'nome' = 'Supervisor 93' AND h->'depois'->>'nome' = 'Supervisor 93 (novo)',
+                          'mudou o nome do cargo: o historico guarda o nome de ANTES e o de DEPOIS');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.permissoeshistorico
+                                   WHERE tabela = 'cargospermissoes' AND acao = 'DELETE'
+                                     AND antes->>'cargoid' = v_cargo::text AND antes->>'codigo' = 'quadro.estornar'
+                                     AND depois IS NULL),
+                          'tirou uma permissao: o historico diz QUAL foi tirada, e de que cargo');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.permissoeshistorico
+                                   WHERE tabela = 'usuarioslojas' AND acao = 'DELETE'
+                                     AND antes->>'userid' = '93939393-9393-9393-9393-939393939391' AND antes->>'lojaid' = '10'),
+                          'apagar o usuario deixa registrado tambem que ele tinha a loja 10');
+
+    -- O ultimo master ATIVO, numa conta NOVA cujo master nunca fez nada.
+    -- (Com o master da conta 1 o teste passaria pelo motivo errado: ele tem
+    -- movimentos de pontos no nome, e o livro de pontos ja impede apagar o
+    -- login dele. Visto numa sabotagem em 29/09/2026.) O teste confere o
+    -- RESULTADO: o login continua la e sem bloqueio.
+    INSERT INTO public.contas (contaid, nome, email, limitelojas, status) OVERRIDING SYSTEM VALUE
+    VALUES (93, 'Empresa 93', 'e93@exemplo.com', 1, 'ativa');
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+      ('93939393-9393-9393-9393-939393939300', 'master.93@exemplo.com', now()),
+      ('93939393-9393-9393-9393-939393939392', 'master.bloqueado.93@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (93, '93939393-9393-9393-9393-939393939300', 'master');
+
+    BEGIN DELETE FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'),
+                          'nao da para apagar o LOGIN do ultimo master (o login continua la)');
+    BEGIN UPDATE auth.users SET banned_until = now() + interval '100 years' WHERE id = '93939393-9393-9393-9393-939393939300';
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir((SELECT banned_until IS NULL FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'),
+                          'nem BLOQUEAR (desativar) o login do ultimo master (continua sem bloqueio)');
+    -- Um segundo master com o login BLOQUEADO nao conta.
+    UPDATE auth.users SET banned_until = now() + interval '1 year' WHERE id = '93939393-9393-9393-9393-939393939392';
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (93, '93939393-9393-9393-9393-939393939392', 'master');
+    BEGIN DELETE FROM public.contasusuarios WHERE userid = '93939393-9393-9393-9393-939393939300'; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.contasusuarios WHERE userid = '93939393-9393-9393-9393-939393939300' AND papel = 'master'),
+                          'um segundo master com login bloqueado nao conta: o ativo continua master');
+    BEGIN UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = '93939393-9393-9393-9393-939393939300';
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir((SELECT banned_until IS NULL FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'),
+                          'nem bloquear o ativo, com o outro ja bloqueado');
+    BEGIN DELETE FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'),
+                          'nem apagar o login do ativo, com o outro ja bloqueado');
+    -- Com o segundo master ATIVO, qualquer um dos dois pode sair.
+    UPDATE auth.users SET banned_until = NULL WHERE id = '93939393-9393-9393-9393-939393939392';
+    UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = '93939393-9393-9393-9393-939393939300';
+    PERFORM public.exigir((SELECT banned_until > now() FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'),
+                          'com outro master ativo, bloquear um deles e permitido');
+    UPDATE auth.users SET banned_until = NULL WHERE id = '93939393-9393-9393-9393-939393939300';
+    DELETE FROM public.contasusuarios WHERE userid = '93939393-9393-9393-9393-939393939392';
+    -- E o login do dia (mexe na linha, sem mudar o bloqueio) nunca e barrado.
+    UPDATE auth.users SET last_sign_in_at = now() WHERE id = '93939393-9393-9393-9393-939393939300';
+    PERFORM public.exigir((SELECT last_sign_in_at = now() FROM auth.users WHERE id = '93939393-9393-9393-9393-939393939300'),
+                          'o ultimo master entra no sistema normalmente (o login do dia nao e barrado)');
+    RAISE EXCEPTION 'desfazer_93';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_93' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

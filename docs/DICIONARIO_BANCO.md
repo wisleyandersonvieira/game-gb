@@ -605,7 +605,7 @@ O mapa e as decisões estão em `docs/MAPA_PERMISSOES.md`. O **catálogo** do qu
 | usuarioslojas | em quais lojas cada usuário gerencial age (userid, lojaid) |
 | permissoeshistorico | quem mudou o quê: contaid, em, quem, tabela, acao, antes, depois (JSON). Gravado por gatilho em cargos, cargospermissoes, usuariosgerenciais, usuarioslojas e nos logins master/gerente. **Nunca muda nem se apaga**, nem pelo dono do banco |
 
-**O último master:** o gatilho `contasusuarios_ultimo_master` recusa apagar ou rebaixar o último master de uma conta.
+**O último master ATIVO:** o gatilho `contasusuarios_ultimo_master` recusa apagar ou rebaixar o último master de uma conta, e os gatilhos `stgame_ultimo_master_apagar`/`stgame_ultimo_master_bloquear` em `auth.users` recusam apagar ou bloquear o login dele. Master com login bloqueado não conta como "outro master" (`outro_master_ativo`). As cinco tabelas acima só o master lê.
 
 **Escrita direta fechada (29/09/2026):** as 20 tabelas da Fase 2 sem tela (`configuracoesescala`, `configuracoessetores`, `escaladiaria`, `posicoesloja`, `picodiario`, `freelancers`, `grupos`, `funcionariosgrupos`, `contagensestoque`, `itenscontagemestoque`, `produtosestoque`, `fornecedores`, `produtosfornecedor`, `categoriasproduto`, `notasfiscais`, `notasfiscaisentrada`, `itensnotafiscalentrada`, `lucromensalhistorico`, `metasdiariasinstancias`, `feedbacksolicitacoes`) e as colunas `funcionarios.isgestor` e `funcionarios.chatidtelegram` não aceitam gravação de quem está logado, master inclusive. Quando a tela existir, nasce com função e permissão.
 
