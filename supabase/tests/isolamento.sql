@@ -10103,4 +10103,334 @@ BEGIN
                         'o visitante sem login nao conta nem lista nada');
 END $$;
 
+-- ===========================================================================
+-- 81. A foto da fila no fim do dia; o filtro por dia do Quadro (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '81. foto da fila e filtro por dia'; END $$;
+-- Uma conta so desta secao, com dados limpos (sem os eventos "no futuro" que
+-- outras secoes usam para simular datas): a comparacao e da loja INTEIRA.
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+  ('81818181-8181-8181-8181-818181818181', 'master.81@exemplo.com', now());
+INSERT INTO public.contas (contaid, nome, email, limitelojas, status) OVERRIDING SYSTEM VALUE
+VALUES (81, 'Empresa 81', 'e81@exemplo.com', 1, 'ativa');
+INSERT INTO public.contasusuarios (contaid, userid) VALUES (81, '81818181-8181-8181-8181-818181818181');
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES (8101, 81, 'Loja 81');
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE
+SELECT 98100 + i, 81, 'Pessoa81 ' || i, 0 FROM generate_series(1, 6) i;
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) SELECT 81, 98100 + i, 8101 FROM generate_series(1, 6) i;
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+SELECT 98200 + i, 81, 'Fila81 tarefa ' || lpad(i::text, 2, '0'), i FROM generate_series(1, 40) i;
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) SELECT 81, 98200 + i, 8101 FROM generate_series(1, 40) i;
+
+DO $$
+DECLARE
+  v_hoje  date := public.hoje_da_conta(81);
+  v_fim   timestamptz := public.instante_na_conta(81, public.hoje_da_conta(81) + 1, '00:00');
+  v_n     integer;
+  v_dif   integer;
+  v_r     jsonb;
+  v_ok    boolean;
+BEGIN
+  BEGIN
+    -- O dia de hoje, com a lista gerada do jeito normal.
+    INSERT INTO public.diasgerados (contaid, dia, recuperado) VALUES (81, v_hoje, false);
+
+    -- Hoje, antes da meia-noite. Cada atribuicao e um caso:
+    --   98301 missao ninguem pegou              -> para pegar
+    --   98302 missao aceita; revogada as 00:03  -> no fim do dia, em andamento
+    --   98303 entregue (pendente); recusada 00:03 -> no fim do dia, feita
+    --   98304 com dono; encerrada as 00:02      -> no fim do dia, para pegar
+    --   98305 entregue e aprovada; estornada 00:04 -> no fim do dia, feita
+    --   98306 justificativa pendente; recusada 00:04 -> fora da fila
+    --   98308 com dono; justificada as 00:01    -> no fim do dia, para pegar
+    --   98309 Unica de ontem, entregue as 00:04 -> no fim do dia, para pegar e atrasada
+    --   98310..98339 o dia-a-dia da loja
+    SET LOCAL session_replication_role = replica;
+    INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                          horariodisparo, dataagendamento, criadaem) OVERRIDING SYSTEM VALUE VALUES
+      (98301, 81, 98201, NULL,  8101, 'Diaria', '00:00', NULL, now() - interval '3 days'),
+      (98302, 81, 98202, NULL,  8101, 'Diaria', '00:00', NULL, now() - interval '3 days'),
+      (98303, 81, 98203, 98101, 8101, 'Diaria', NULL, NULL, now() - interval '3 days'),
+      (98304, 81, 98204, 98102, 8101, 'Diaria', NULL, NULL, now() - interval '3 days'),
+      (98305, 81, 98205, 98103, 8101, 'Diaria', NULL, NULL, now() - interval '3 days'),
+      (98306, 81, 98206, 98104, 8101, 'Diaria', NULL, NULL, now() - interval '3 days'),
+      (98308, 81, 98208, 98105, 8101, 'Diaria', NULL, NULL, now() - interval '3 days'),
+      (98309, 81, 98209, 98106, 8101, 'Unica',  NULL, public.instante_na_conta(81, v_hoje - 1, '10:00'), now() - interval '3 days');
+    INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                          horariodisparo, criadaem) OVERRIDING SYSTEM VALUE
+    SELECT 98309 + i, 81, 98210 + i, CASE WHEN i % 3 = 0 THEN NULL ELSE 98100 + (i % 6) + 1 END, 8101, 'Diaria',
+           CASE WHEN i % 3 = 0 THEN '00:00'::time END, now() - interval '2 days'
+      FROM generate_series(1, 30) i;
+    INSERT INTO public.missoesaceites (contaid, atribuicaoid, dia, funcionarioid, aceitoem)
+    VALUES (81, 98302, v_hoje, 98104, now() - interval '1 minute'),
+           (81, 98312, v_hoje, 98105, now() - interval '1 minute');
+    INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, dataenvio, statusvalidacao, dataaprovacao) VALUES
+      (81, 8101, 98303, 98203, 98101, now() - interval '1 minute', 'Pendente', NULL),
+      (81, 8101, 98305, 98205, 98103, now() - interval '1 minute', 'Aprovada', now()),
+      (81, 8101, 98311, 98221, 98102, now() - interval '1 minute', 'Aprovada', now());
+    INSERT INTO public.justificativas (contaid, lojaid, atribuicaoid, funcionarioid, dia, motivo, status)
+    VALUES (81, 8101, 98306, 98104, v_hoje, 'sem produto', 'Pendente');
+    SET LOCAL session_replication_role = origin;
+
+    -- 1. A fila AO VIVO (o "23:59"): a de hoje, pela funcao que as telas usam.
+    PERFORM set_config('teste.uid', '81818181-8181-8181-8181-818181818181', true);
+    CREATE TEMP TABLE fila_2359 ON COMMIT DROP AS
+    SELECT f.atribuicaoid, f.entregarid, f.titulo, f.pontos, f.tipofrequencia, f.aberta, f.donoid, f.quempegou,
+           f.quempegounome, f.pegaem, f.situacao, f.atrasada, f.feitapor, f.feitaem, f.feitasituacao
+      FROM public.fila_da_loja(8101) f;
+    PERFORM public.exigir((SELECT count(*) FROM fila_2359) >= 35
+                          AND EXISTS (SELECT 1 FROM fila_2359 WHERE atribuicaoid = 98302 AND situacao = 'em_andamento')
+                          AND EXISTS (SELECT 1 FROM fila_2359 WHERE atribuicaoid = 98303 AND situacao = 'feita')
+                          AND NOT EXISTS (SELECT 1 FROM fila_2359 WHERE atribuicaoid = 98306),
+                          'a fila ao vivo tem os casos montados');
+
+    -- 2. Depois da meia-noite, antes da foto: tudo que tem hora gravada muda.
+    SET LOCAL session_replication_role = replica;
+    INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, criadaem)
+      OVERRIDING SYSTEM VALUE VALUES (98307, 81, 98207, 98101, 8101, 'Diaria', v_fim + interval '2 minutes');
+    UPDATE public.tarefasatribuidas SET datafimvigencia = v_hoje + 1, encerradaem = v_fim + interval '2 minutes'
+     WHERE atribuicaoid = 98304;
+    UPDATE public.missoesaceites SET revogadoem = v_fim + interval '3 minutes', motivorevogacao = 'teste'
+     WHERE atribuicaoid = 98302 AND dia = v_hoje;
+    UPDATE public.entregas SET statusvalidacao = 'Recusada', datarecusa = v_fim + interval '3 minutes', motivorecusa = 'x'
+     WHERE atribuicaoid = 98303;
+    UPDATE public.entregas SET statusvalidacao = 'Estornada', dataestorno = v_fim + interval '4 minutes', motivoestorno = 'x'
+     WHERE atribuicaoid = 98305;
+    UPDATE public.justificativas SET status = 'Recusada', decididoem = v_fim + interval '4 minutes', motivorecusa = 'x'
+     WHERE atribuicaoid = 98306;
+    INSERT INTO public.justificativas (contaid, lojaid, atribuicaoid, funcionarioid, dia, motivo, status, registradoem)
+    VALUES (81, 8101, 98308, 98105, v_hoje, 'atrasada', 'Aceita', v_fim + interval '1 minute');
+    INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, dataenvio, statusvalidacao)
+    VALUES (81, 8101, 98309, 98209, 98106, v_fim + interval '4 minutes', 'Pendente');
+    SET LOCAL session_replication_role = origin;
+
+    -- 3. A foto, pela rotina de verdade, as 00:05.
+    PERFORM public.rotina_lista_do_dia(81, v_fim + interval '5 minutes', 'agendada');
+    PERFORM public.exigir((SELECT fotodafilaem FROM public.diasgerados WHERE contaid = 81 AND dia = v_hoje)
+                          = v_fim + interval '5 minutes',
+                          'a rotina das 00:05 tirou a foto do dia que acabou e marcou o dia');
+
+    -- 4. A fila ao vivo das 23:59 e a foto das 00:05 batem, item por item.
+    SELECT count(*) INTO v_n FROM fila_2359;
+    SELECT count(*) INTO v_dif FROM (
+      (SELECT * FROM fila_2359
+       EXCEPT ALL
+       SELECT atribuicaoid, entregarid, titulo, pontos, tipofrequencia, aberta, donoid, quempegou, quempegounome,
+              pegaem, situacao, atrasada, feitapor, feitaem, feitasituacao
+         FROM public.fotosdafila WHERE contaid = 81 AND dia = v_hoje)
+      UNION ALL
+      (SELECT atribuicaoid, entregarid, titulo, pontos, tipofrequencia, aberta, donoid, quempegou, quempegounome,
+              pegaem, situacao, atrasada, feitapor, feitaem, feitasituacao
+         FROM public.fotosdafila WHERE contaid = 81 AND dia = v_hoje
+       EXCEPT ALL
+       SELECT * FROM fila_2359)) x;
+    PERFORM public.exigir(v_dif = 0,
+                          'fila ao vivo das 23:59 = foto das 00:05, item por item (' || v_n || ' itens, ' || v_dif || ' diferencas)');
+    PERFORM public.exigir((SELECT situacao FROM public.fotosdafila WHERE dia = v_hoje AND atribuicaoid = 98309) = 'para_pegar'
+                          AND (SELECT atrasada FROM public.fotosdafila WHERE dia = v_hoje AND atribuicaoid = 98309)
+                          AND NOT EXISTS (SELECT 1 FROM public.fotosdafila WHERE dia = v_hoje AND atribuicaoid IN (98306, 98307)),
+                          'o que aconteceu depois da meia-noite nao entra na foto do dia');
+
+    -- 5. Hoje, a fila de sempre e a funcao unica sao a mesma coisa.
+    SELECT count(*) INTO v_dif FROM (
+      (SELECT to_jsonb(f) - 'agora' FROM public.fila_da_loja(8101) f
+       EXCEPT ALL
+       SELECT to_jsonb(g) - 'agora' FROM public.fila_no_dia(81, 8101, v_hoje, 'infinity') g)
+      UNION ALL
+      (SELECT to_jsonb(g) - 'agora' FROM public.fila_no_dia(81, 8101, v_hoje, 'infinity') g
+       EXCEPT ALL
+       SELECT to_jsonb(f) - 'agora' FROM public.fila_da_loja(8101) f)) x;
+    PERFORM public.exigir(v_dif = 0 AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_da_loja') LIKE '%fila_no_dia(%',
+                          'a fila de hoje sai da mesma funcao que tira a foto');
+
+    RAISE EXCEPTION 'desfazer_81';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_81' THEN RAISE; END IF;
+  END;
+END $$;
+
+-- Dias passados: a foto, o "nao registrado", a limpeza e a /saude.
+DO $$
+DECLARE
+  v_hoje  date := public.hoje_da_conta(81);
+  v_ontem date := public.hoje_da_conta(81) - 1;
+  v_r     jsonb;
+  v_ok    boolean;
+BEGIN
+  BEGIN
+    INSERT INTO public.diasgerados (contaid, dia, recuperado) VALUES (81, v_ontem, false);
+    INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
+                                          horariodisparo) OVERRIDING SYSTEM VALUE
+    VALUES (98350, 81, 98240, NULL, 8101, 'Diaria', '00:00'), (98351, 81, 98239, NULL, 8101, 'Diaria', '00:00');
+    -- Criadas ha 3 dias (o gatilho nao deixa reescrever a hora: so sem gatilhos).
+    SET LOCAL session_replication_role = replica;
+    UPDATE public.tarefasatribuidas SET criadaem = now() - interval '3 days' WHERE atribuicaoid IN (98350, 98351);
+    INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, dataenvio, statusvalidacao, dataaprovacao)
+    VALUES (81, 8101, 98350, 98240, 98101, public.instante_na_conta(81, v_ontem, '15:00'), 'Aprovada',
+            public.instante_na_conta(81, v_ontem, '16:00'));
+    SET LOCAL session_replication_role = origin;
+    PERFORM set_config('teste.uid', '81818181-8181-8181-8181-818181818181', true);
+
+    -- Lista recuperada depois de parada: a rotina NAO tira foto.
+    UPDATE public.diasgerados SET recuperado = true WHERE contaid = 81 AND dia = v_ontem;
+    PERFORM public.rotina_lista_do_dia(81, public.instante_na_conta(81, v_hoje, '00:05'), 'agendada');
+    PERFORM public.exigir((SELECT fotodafilaem FROM public.diasgerados WHERE contaid = 81 AND dia = v_ontem) IS NULL,
+                          'dia com lista recuperada depois de parada fica sem foto');
+    -- Rotina atrasada (depois das 03:00): tambem nao.
+    UPDATE public.diasgerados SET recuperado = false WHERE contaid = 81 AND dia = v_ontem;
+    PERFORM public.rotina_lista_do_dia(81, public.instante_na_conta(81, v_hoje, '03:10'), 'agendada');
+    PERFORM public.exigir((SELECT fotodafilaem FROM public.diasgerados WHERE contaid = 81 AND dia = v_ontem) IS NULL,
+                          'foto que nao saiu ate as 03:00 nao sai mais (o cadastro ja pode ter mudado)');
+
+    SET LOCAL ROLE authenticated;
+    v_r := public.fila_de_um_dia(8101, v_ontem);
+    PERFORM public.exigir(NOT (v_r->>'registrado')::boolean AND v_r->>'motivo' = 'anterior'
+                          AND NOT (v_r ? 'itens') AND NOT (v_r ? 'parapegar')
+                          AND jsonb_array_length(v_r->'feitas') = 1 AND v_r->'feitas'->0->>'feitasituacao' = 'Aprovada',
+                          'dia sem foto: "nao registrado", sem numero para pegar; o que foi feito aparece');
+    RESET ROLE;
+
+    -- Dentro da janela, a foto sai.
+    PERFORM public.rotina_lista_do_dia(81, public.instante_na_conta(81, v_hoje, '00:05'), 'agendada');
+    SET LOCAL ROLE authenticated;
+    v_r := public.fila_de_um_dia(8101, v_ontem);
+    PERFORM public.exigir((v_r->>'registrado')::boolean
+                          AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_r->'itens') i
+                                       WHERE (i->>'atribuicaoid')::integer = 98350 AND i->>'situacao' = 'feita')
+                          AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_r->'itens') i
+                                       WHERE (i->>'atribuicaoid')::integer = 98351 AND i->>'situacao' = 'para_pegar'),
+                          'dia com foto: a fila inteira do fim do dia');
+    -- So leitura, e so dentro do alcance.
+    v_ok := false;
+    BEGIN PERFORM public.fila_de_um_dia(8101, v_hoje); EXCEPTION WHEN check_violation THEN v_ok := true; END;
+    PERFORM public.exigir(v_ok, 'o dia de hoje nao vem da foto (e a fila ao vivo)');
+    v_ok := false;
+    BEGIN PERFORM public.fila_de_um_dia(8101, v_hoje + 1); EXCEPTION WHEN check_violation THEN v_ok := true; END;
+    PERFORM public.exigir(v_ok, 'dia futuro nao se escolhe');
+    v_ok := false;
+    BEGIN PERFORM public.fila_de_um_dia(8101, (public.alcance_da_fila()->>'primeirodia')::date - 1);
+    EXCEPTION WHEN check_violation THEN v_ok := true; END;
+    PERFORM public.exigir(v_ok AND (public.alcance_da_fila()->>'primeirodia')::date
+                                   = (date_trunc('month', v_hoje) - interval '1 month')::date,
+                          'o filtro alcanca o mes corrente e o anterior, e nada antes');
+    RESET ROLE;
+
+    -- A conta A nao le a foto nem o dia da conta 81.
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosdafila WHERE contaid = 81),
+                          'a conta A nao enxerga a foto da fila da conta 81');
+    v_ok := false;
+    BEGIN PERFORM public.fila_de_um_dia(8101, v_ontem); EXCEPTION WHEN no_data_found THEN v_ok := true; END;
+    PERFORM public.exigir(v_ok, 'a conta A nao le um dia da loja da conta 81');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', '81818181-8181-8181-8181-818181818181', true);
+
+    -- A /saude: a partir da primeira foto, dia sem foto aparece.
+    INSERT INTO public.diasgerados (contaid, dia, recuperado) VALUES (81, v_hoje - 4, false), (81, v_hoje - 3, false);
+    INSERT INTO public.rotinasexecucoes (contaid, rotina, referencia, resultado)
+    VALUES (81, 'foto_da_fila', v_hoje - 4, 'erro');
+    v_r := public.fila_dias_sem_foto(81);
+    PERFORM public.exigir((v_r->>'dias')::integer >= 3 AND (v_r->>'ultimo')::date >= v_hoje - 2,
+                          'a /saude conta os dias sem foto (' || (v_r->>'dias') || ')');
+    PERFORM public.exigir((public.saude_das_rotinas()->'fila'->>'dias')::integer >= 3
+                          AND (public.saude_das_rotinas()->'fila'->>'contas')::integer >= 1,
+                          'a /saude da plataforma soma os dias sem foto de todas as contas');
+    UPDATE public.diasgerados SET fotodafilaem = now() WHERE contaid = 81 AND dia BETWEEN v_hoje - 4 AND v_hoje - 1;
+    INSERT INTO public.diasgerados (contaid, dia, fotodafilaem) VALUES (81, v_hoje - 2, now());
+    PERFORM public.exigir((public.fila_dias_sem_foto(81)->>'dias')::integer = 0,
+                          'com todos os dias fotografados, a /saude fica verde');
+
+    -- A limpeza: dia completo -> a limpeza apaga -> "nao registrado", NAO zero.
+    PERFORM public.rotina_limpeza(81, public.instante_na_conta(81, (v_hoje + interval '4 months')::date, '04:00'));
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.fotosdafila WHERE contaid = 81 AND dia = v_ontem)
+                          AND (SELECT fotodafilaem FROM public.diasgerados WHERE contaid = 81 AND dia = v_ontem) IS NULL,
+                          'a limpeza apagou a foto do dia e a marca caiu junto');
+    SET LOCAL ROLE authenticated;
+    v_r := public.fila_de_um_dia(8101, v_ontem);
+    PERFORM public.exigir(NOT (v_r->>'registrado')::boolean AND NOT (v_r ? 'itens'),
+                          'depois da limpeza o dia mostra "nao registrado", e nao zero');
+    RESET ROLE;
+
+    -- Apagar linhas por outro caminho tambem derruba a marca.
+    UPDATE public.diasgerados SET fotodafilaem = NULL WHERE contaid = 81 AND dia = v_ontem;
+    PERFORM public.fila_foto_tirar(81, v_ontem, now());
+    DELETE FROM public.fotosdafila WHERE contaid = 81 AND dia = v_ontem AND atribuicaoid = 98350;
+    PERFORM public.exigir((SELECT fotodafilaem FROM public.diasgerados WHERE contaid = 81 AND dia = v_ontem) IS NULL,
+                          'apagou uma linha da foto: a marca do dia cai na mesma operacao');
+
+    RAISE EXCEPTION 'desfazer_81';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_81' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+
+-- A regra unica da guarda, a virada do dia na catraca, e as permissoes.
+DO $$
+DECLARE v_n integer;
+BEGIN
+  -- Em todo dia de 2026 a 2030: a guarda comeca antes do alcance do filtro,
+  -- e o alcance e o mes corrente mais o anterior.
+  SELECT count(*) INTO v_n
+    FROM generate_series('2026-01-01'::date, '2030-12-31'::date, interval '1 day') g,
+         LATERAL public.fila_alcance(g::date) a
+   WHERE NOT (a.guardardesde < a.primeirodia
+              AND a.primeirodia = (date_trunc('month', g) - interval '1 month')::date
+              AND a.primeirodia <= g::date - 28);
+  PERFORM public.exigir(v_n = 0, 'a guarda da foto cobre todo o alcance do filtro, em 1826 dias');
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'rotina_limpeza') LIKE '%fila_alcance(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_de_um_dia') LIKE '%fila_alcance(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'alcance_da_fila') LIKE '%fila_alcance(%',
+                        'a limpeza, a leitura e a tela tiram o prazo e o alcance da MESMA regra');
+
+  -- A virada do dia da foto e a de rotina_lista_do_dia, que a catraca do
+  -- "Sao Paulo fixo" (secao 68) conta. Ninguem mais tira foto, e quem tira
+  -- recebe o dia pronto.
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'rotina_lista_do_dia') LIKE '%rotina_hora_local(p_agora)%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'rotina_lista_do_dia') LIKE '%fila_foto_tirar(%',
+                        'quem decide o dia da foto e rotina_lista_do_dia, contada pela catraca do Sao Paulo fixo');
+  SELECT count(*) INTO v_n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prosrc LIKE '%fila_foto_tirar(%' AND p.proname NOT IN ('rotina_lista_do_dia', 'exigir');
+  PERFORM public.exigir(v_n = 0, 'so rotina_lista_do_dia tira a foto');
+  SELECT count(*) INTO v_n FROM pg_proc p
+   WHERE p.proname IN ('fila_no_dia', 'fila_foto_tirar')
+     AND (p.prosrc LIKE '%hoje_da_conta(%' OR p.prosrc LIKE '%rotina_hora_local(%' OR p.prosrc LIKE '%dia_em_sao_paulo(%'
+          OR p.prosrc LIKE '%current_date%');
+  PERFORM public.exigir(v_n = 0, 'a fila de um dia e a foto nao decidem o dia sozinhas: recebem pronto');
+
+  PERFORM public.exigir(NOT has_function_privilege('authenticated', 'public.fila_no_dia(integer, integer, date, timestamp with time zone)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.fila_foto_tirar(integer, date, timestamp with time zone)', 'EXECUTE')
+                        AND NOT has_function_privilege('authenticated', 'public.fila_dias_sem_foto(integer)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.fila_de_um_dia(integer, date)', 'EXECUTE')
+                        AND NOT has_function_privilege('anon', 'public.alcance_da_fila()', 'EXECUTE')
+                        AND has_function_privilege('authenticated', 'public.fila_de_um_dia(integer, date)', 'EXECUTE'),
+                        'as funcoes que recebem a conta sao internas; o visitante sem login nao le dia nenhum');
+  PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.fotosdafila', 'INSERT')
+                        AND NOT has_table_privilege('authenticated', 'public.fotosdafila', 'UPDATE')
+                        AND NOT has_table_privilege('authenticated', 'public.fotosdafila', 'DELETE'),
+                        'ninguem de fora escreve na foto');
+END $$;
+
+-- A hora de criar e de encerrar a atribuicao e do banco, nao de quem escreve.
+DO $$
+DECLARE v_c timestamptz; v_e timestamptz;
+BEGIN
+  BEGIN
+    INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, criadaem, encerradaem)
+      OVERRIDING SYSTEM VALUE VALUES (98360, 81, 98201, 98101, 8101, 'Diaria', '2020-01-01', '2020-01-01');
+    SELECT criadaem, encerradaem INTO v_c, v_e FROM public.tarefasatribuidas WHERE atribuicaoid = 98360;
+    PERFORM public.exigir(v_c = now() AND v_e IS NULL, 'a hora de criacao e gravada pelo banco');
+    UPDATE public.tarefasatribuidas SET datafimvigencia = current_date + 30, criadaem = '2020-01-01' WHERE atribuicaoid = 98360;
+    SELECT criadaem, encerradaem INTO v_c, v_e FROM public.tarefasatribuidas WHERE atribuicaoid = 98360;
+    PERFORM public.exigir(v_c = now() AND v_e = now(), 'encerrar grava a hora de agora, seja qual for a data escrita');
+    UPDATE public.tarefasatribuidas SET encerradaem = '2099-01-01' WHERE atribuicaoid = 98360;
+    PERFORM public.exigir((SELECT encerradaem FROM public.tarefasatribuidas WHERE atribuicaoid = 98360) = now(),
+                          'a hora do encerramento nao se reescreve');
+    RAISE EXCEPTION 'desfazer_81';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_81' THEN RAISE; END IF;
+  END;
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

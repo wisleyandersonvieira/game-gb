@@ -6,6 +6,7 @@
 // o que ninguém pegou precisa aparecer aqui para o gestor decidir.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AindaNaoLiberadas } from "@/painel/AindaNaoLiberadas";
+import { FilaDeUmDia, SeletorDeDia, useDiaQuePassou } from "@/painel/FilaDeUmDia";
 import { ListaRolavel } from "@/painel/ListaRolavel";
 import { separarParaPegar, textoDisponivel } from "@/painel/textoDaFila";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,10 +37,22 @@ type Item = {
   liberaas: string | null;
 };
 
-export function FilaDoDia({ lojaid }: { lojaid: number }) {
+export function FilaDoDia({
+  lojaid,
+  dia = null,
+  aoMudarDia = () => {},
+}: {
+  lojaid: number;
+  /** null = hoje (a fila ao vivo); AAAA-MM-DD = um dia que passou. */
+  dia?: string | null;
+  aoMudarDia?: (dia: string | null) => void;
+}) {
   const qc = useQueryClient();
+  const passado = useDiaQuePassou(lojaid, dia);
   const fila = useQuery({
     queryKey: ["fila-da-loja", lojaid],
+    // Num dia que passou, a fila de hoje não é pedida.
+    enabled: dia === null,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("fila_da_loja", { p_lojaid: lojaid });
       if (error) throw error;
@@ -74,10 +87,28 @@ export function FilaDoDia({ lojaid }: { lojaid: number }) {
   // A MESMA separação do tablet: "Para pegar" só com o que já liberou.
   const { liberadas: paraPegar, aindaNao } = separarParaPegar(lista);
 
+  const seletor = (
+    <SeletorDeDia
+      dia={dia}
+      hoje={lista[0]?.hoje ?? passado.data?.hoje ?? null}
+      primeirodia={passado.data?.primeirodia ?? null}
+      aoMudar={aoMudarDia}
+    />
+  );
+
+  if (dia !== null) {
+    return (
+      <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+        {seletor}
+        <FilaDeUmDia consulta={passado} />
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <div>
-        <h2 className="font-semibold">Fila</h2>
+      <div className="space-y-1">
+        {seletor}
         <p className="text-xs text-muted-foreground">
           O que a loja tem para fazer hoje. A tarefa compartilhada fica em "para pegar" até alguém assumir; a partir
           daí ela pesa na nota de quem pegou, e de mais ninguém.

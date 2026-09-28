@@ -54,6 +54,20 @@ export function quandoFoi(iso: string | null, hoje: string | null | undefined, f
   return `${dd}/${mes} às ${hora}`;
 }
 
+/** Soma dias a uma data AAAA-MM-DD. Conta de calendário, sem relógio nem fuso. */
+export function somarDias(dia: string, n: number): string {
+  return new Date(Date.parse(`${dia}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** "sexta, 26/09/2026" — o dia da semana de uma data AAAA-MM-DD (conta de calendário). */
+export function diaPorExtenso(dia: string): string {
+  const semana = new Intl.DateTimeFormat("pt-BR", { weekday: "long", timeZone: "UTC" })
+    .format(new Date(`${dia}T12:00:00Z`))
+    .replace("-feira", "");
+  const [a, m, d] = dia.split("-");
+  return `${semana}, ${d}/${m}/${a}`;
+}
+
 /** O primeiro dia do mês de uma data AAAA-MM-DD. */
 export const primeiroDoMes = (dia: string) => `${dia.slice(0, 7)}-01`;
 

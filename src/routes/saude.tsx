@@ -169,6 +169,9 @@ function Saude() {
 /** Uma hora sem rodar já é sinal de agendamento parado (ele roda a cada 5 minutos). */
 const PARADO_DEPOIS_DE_MS = 60 * 60 * 1000;
 
+/** "2026-09-27" → "27/09/2026" (o dia já vem do banco; nada de fuso aqui). */
+const diaBr = (dia: string) => dia.split("-").reverse().join("/");
+
 /**
  * O que as rotinas automáticas precisam para rodar (29/09/2026). Diz só SE
  * cada segredo existe, nunca o valor. Os números somados de todas as contas
@@ -226,6 +229,13 @@ function Rotinas({ r }: { r: SaudeDasRotinas }) {
             ajuda={`A mais antiga passou do prazo há ${r.fotos.diasdeatraso} dia(s)${r.fotos.presas > 0 ? `; ${r.fotos.presas} com a remoção falhando` : ""}. A política de uso promete que elas são apagadas. Todas as contas somadas.`}
           />
         )}
+        {r.fila && (
+          <Linha
+            ok={r.fila.dias === 0}
+            titulo={`Dias sem foto da fila (últimos 30): ${r.fila.dias}`}
+            ajuda={`A rotina da madrugada não tirou a foto da fila desses dias até as 03:00${r.fila.ultimo ? ` (o mais recente: ${diaBr(r.fila.ultimo)})` : ""}. No Quadro, eles aparecem como "não registrado". ${r.fila.contas} conta(s) afetada(s).`}
+          />
+        )}
       </ul>
     </div>
   );
@@ -257,6 +267,7 @@ function SaudeDaConta() {
         saude: saude.data as unknown as {
           fotos: { vencidas: number; diasdeatraso: number; presas: number };
           mensagensfalhadas: number;
+          fila: { dias: number; ultimo: string | null };
         } | null,
         avisos: avisos.data ?? [],
       };
@@ -279,6 +290,11 @@ function SaudeDaConta() {
               ok={saude.mensagensfalhadas === 0}
               titulo={`Mensagens do Telegram que falharam nas últimas 24 horas: ${saude.mensagensfalhadas}`}
               ajuda="O Telegram recusou essas mensagens até o sistema desistir."
+            />
+            <Linha
+              ok={saude.fila.dias === 0}
+              titulo={`Dias sem foto da fila (últimos 30): ${saude.fila.dias}`}
+              ajuda={`A rotina da madrugada não tirou a foto da fila desses dias até as 03:00${saude.fila.ultimo ? ` (o mais recente: ${diaBr(saude.fila.ultimo)})` : ""}. No Quadro, "para pegar" desses dias aparece como "não registrado".`}
             />
           </>
         )}

@@ -25,6 +25,7 @@ const NOME: Record<string, string> = {
   conferencia_livro: "Conferência do livro de pontos",
   limpeza: "Limpeza do registro",
   expurgo_fotos: "Expurgo das fotos antigas",
+  foto_da_fila: "Foto da fila do dia que acabou",
 };
 
 const FUSO = "America/Sao_Paulo";
@@ -51,7 +52,13 @@ function resumo(e: Execucao): string {
   }
   if (e.rotina === "fechamento_mensal") return `${d.mes ?? ""}: ${d.acao ?? ""}`;
   if (e.rotina === "conferencia_livro") return `${d.pessoas ?? 0} pessoas conferidas, tudo certo`;
-  if (e.rotina === "limpeza") return `${d.apagados ?? 0} registros antigos apagados`;
+  if (e.rotina === "limpeza") {
+    const fotos = Number(d.fotosdafila ?? 0);
+    return `${d.apagados ?? 0} registros antigos apagados${fotos > 0 ? ` · ${fotos} itens de fotos da fila fora do prazo` : ""}`;
+  }
+  if (e.rotina === "foto_da_fila") {
+    return `Fila de ${e.referencia ? dia(e.referencia) : "ontem"}: ${d.itens ?? 0} tarefas, ${d.parapegar ?? 0} ficaram para pegar`;
+  }
   if (e.rotina === "expurgo_fotos") {
     // Desde 29/09/2026 a rotina só PÕE NA FILA: "apagada" só depois de o
     // arquivo sair de verdade (a Edge Function confirma).
@@ -125,7 +132,7 @@ export function Rotinas({ podeRodar }: { podeRodar: boolean }) {
       {rodar.isError && <p className="text-sm text-destructive">{(rodar.error as Error).message}</p>}
 
       <div className="grid gap-2 sm:grid-cols-2">
-        {(["lista_do_dia", "fechamento_mensal", "conferencia_livro", "limpeza", "expurgo_fotos"] as const).map((r) => {
+        {(["lista_do_dia", "foto_da_fila", "fechamento_mensal", "conferencia_livro", "limpeza", "expurgo_fotos"] as const).map((r) => {
           const e = ultima(r);
           const ok = e?.resultado === "ok";
           return (

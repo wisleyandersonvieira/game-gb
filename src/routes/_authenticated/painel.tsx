@@ -81,6 +81,8 @@ type Entrega = {
 
 function Quadro() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
+  // O dia da Fila: null = hoje (ao vivo). Dia que passou é só leitura.
+  const [dia, setDia] = useState<string | null>(null);
 
   if (carregando) {
     return (
@@ -107,9 +109,21 @@ function Quadro() {
         </p>
       }
     >
-      <FilaDoDia lojaid={lojaAtiva} />
-      <RegistrarEntrega lojaid={lojaAtiva} />
-      <FolgaDeHoje lojaid={lojaAtiva} />
+      <FilaDoDia lojaid={lojaAtiva} dia={dia} aoMudarDia={setDia} />
+      {dia === null ? (
+        <>
+          <RegistrarEntrega lojaid={lojaAtiva} />
+          <FolgaDeHoje lojaid={lojaAtiva} />
+        </>
+      ) : (
+        <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+          "Registrar entrega" e as tarefas de quem está de folga só valem para hoje: não se entrega nem se passa
+          tarefa num dia que já passou.{" "}
+          <button type="button" className="underline" onClick={() => setDia(null)}>
+            Voltar para hoje
+          </button>
+        </p>
+      )}
       <Validacao lojaid={lojaAtiva} />
     </Pagina>
   );

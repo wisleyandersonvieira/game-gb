@@ -1220,6 +1220,8 @@ export type SaudeDasRotinas = {
   /** null = só o admin geral vê o total de todas as contas. */
   mensagensfalhadas: number | null;
   fotos: { vencidas: number; diasdeatraso: number; presas: number } | null;
+  /** Dias sem foto da fila do Quadro (29/09/2026), todas as contas somadas. */
+  fila: { dias: number; contas: number; ultimo: string | null } | null;
 };
 
 /** O tipo de acesso de quem mandou o token ("master", "admin"...), ou null. */
@@ -1315,7 +1317,7 @@ export const diagnostico = createServerFn({ method: "GET" })
       if (!error && r) {
         const bruto = r as unknown as SaudeDasRotinas;
         const verTudo = tipo === "admin" || porChave;
-        rotinas = verTudo ? bruto : { ...bruto, mensagensfalhadas: null, fotos: null };
+        rotinas = verTudo ? bruto : { ...bruto, mensagensfalhadas: null, fotos: null, fila: null };
       }
     } catch {
       rotinas = null;

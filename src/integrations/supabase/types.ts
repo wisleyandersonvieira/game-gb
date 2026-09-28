@@ -895,18 +895,21 @@ export type Database = {
         Row: {
           contaid: number
           dia: string
+          fotodafilaem: string | null
           geradoem: string
           recuperado: boolean
         }
         Insert: {
           contaid?: number
           dia: string
+          fotodafilaem?: string | null
           geradoem?: string
           recuperado?: boolean
         }
         Update: {
           contaid?: number
           dia?: string
+          fotodafilaem?: string | null
           geradoem?: string
           recuperado?: boolean
         }
@@ -919,6 +922,72 @@ export type Database = {
             referencedColumns: ["contaid"]
           },
         ]
+      }
+      fotosdafila: {
+        Row: {
+          contaid: number
+          lojaid: number
+          dia: string
+          atribuicaoid: number
+          entregarid: number | null
+          titulo: string
+          pontos: number
+          tipofrequencia: string
+          aberta: boolean
+          donoid: number | null
+          quempegou: number | null
+          quempegounome: string | null
+          pegaem: string | null
+          situacao: string
+          atrasada: boolean
+          feitapor: string | null
+          feitaem: string | null
+          feitasituacao: string | null
+          tiradaem: string
+        }
+        Insert: {
+          contaid?: number
+          lojaid: number
+          dia: string
+          atribuicaoid: number
+          entregarid?: number | null
+          titulo: string
+          pontos: number
+          tipofrequencia: string
+          aberta: boolean
+          donoid?: number | null
+          quempegou?: number | null
+          quempegounome?: string | null
+          pegaem?: string | null
+          situacao: string
+          atrasada?: boolean
+          feitapor?: string | null
+          feitaem?: string | null
+          feitasituacao?: string | null
+          tiradaem?: string
+        }
+        Update: {
+          contaid?: number
+          lojaid?: number
+          dia?: string
+          atribuicaoid?: number
+          entregarid?: number | null
+          titulo?: string
+          pontos?: number
+          tipofrequencia?: string
+          aberta?: boolean
+          donoid?: number | null
+          quempegou?: number | null
+          quempegounome?: string | null
+          pegaem?: string | null
+          situacao?: string
+          atrasada?: boolean
+          feitapor?: string | null
+          feitaem?: string | null
+          feitasituacao?: string | null
+          tiradaem?: string
+        }
+        Relationships: []
       }
       documentos: {
         Row: {
@@ -4237,10 +4306,12 @@ export type Database = {
           agendamentoid: number | null
           atribuicaoid: number
           contaid: number
+          criadaem: string | null
           dataaceite: string | null
           compartilhada: boolean
           dataagendamento: string | null
           dataatribuicao: string | null
+          encerradaem: string | null
           datafimvigencia: string | null
           datainiciovigencia: string | null
           descricaooverride: string | null
@@ -4260,10 +4331,12 @@ export type Database = {
           agendamentoid?: number | null
           atribuicaoid?: number
           contaid?: number
+          criadaem?: string | null
           dataaceite?: string | null
           compartilhada?: boolean
           dataagendamento?: string | null
           dataatribuicao?: string | null
+          encerradaem?: string | null
           datafimvigencia?: string | null
           datainiciovigencia?: string | null
           descricaooverride?: string | null
@@ -4283,10 +4356,12 @@ export type Database = {
           agendamentoid?: number | null
           atribuicaoid?: number
           contaid?: number
+          criadaem?: string | null
           dataaceite?: string | null
           compartilhada?: boolean
           dataagendamento?: string | null
           dataatribuicao?: string | null
+          encerradaem?: string | null
           datafimvigencia?: string | null
           datainiciovigencia?: string | null
           descricaooverride?: string | null
@@ -5620,8 +5695,52 @@ export type Database = {
         Args: { p_editavel: boolean; p_nome: string }
         Returns: boolean
       }
+      fila_de_um_dia: {
+        Args: { p_dia: string; p_lojaid: number }
+        Returns: Json
+      }
+      alcance_da_fila: { Args: never; Returns: Json }
+      fila_alcance: {
+        Args: { p_hoje: string }
+        Returns: { guardardesde: string; primeirodia: string }[]
+      }
+      fila_foto_tirar: {
+        Args: { p_agora: string; p_contaid: number; p_dia: string }
+        Returns: Json
+      }
+      fila_dias_sem_foto: {
+        Args: { p_contaid: number }
+        Returns: Json
+      }
       fila_da_loja: {
         Args: { p_lojaid: number }
+        Returns: {
+          aberta: boolean
+          agora: string
+          atrasada: boolean
+          atribuicaoid: number
+          disponiveldesde: string | null
+          donoid: number | null
+          entregarid: number | null
+          pegaem: string | null
+          pontos: number
+          quempegou: number | null
+          quempegounome: string | null
+          rodizio: boolean
+          situacao: string
+          tipofrequencia: string
+          titulo: string
+          feitapor: string | null
+          feitaem: string | null
+          feitasituacao: string | null
+          liberada: boolean
+          liberaas: string | null
+          hoje: string
+          fuso: string
+        }[]
+      }
+      fila_no_dia: {
+        Args: { p_contaid: number; p_dia: string; p_fim: string; p_lojaid: number }
         Returns: {
           aberta: boolean
           agora: string

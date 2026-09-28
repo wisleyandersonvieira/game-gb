@@ -83,6 +83,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `intervalosdomapa` | conta | (contaid, funcionarioid) | funcionarios |
 | `senhasgestor` | conta (vazia no admin geral) | userid |  |
 | `tarefasdodia` | **loja** | itemid | tarefasatribuidas, funcionarios, tarefas |
+| `fotosdafila` | **loja** | (contaid, dia, atribuicaoid) | lojas |
 | `tarefas` | conta | tarefaid |  |
 | `tiposevento` | conta | tipoeventoid |  |
 | `tarefasatribuidas` | **loja** | atribuicaoid | funcionarios, grupos, tarefas, tarefasatribuidas |
@@ -495,11 +496,30 @@ Só a situação (hoje) e o repasse mudam; dia passado nunca muda; item nunca se
 ## diasgerados (Etapa 1.11)
 Dias em que a lista da conta foi gerada (`contaid`, `dia`, `recuperado`). Nunca é limpo: diz de onde vêm os números da nota (lista ou regra do cadastro).
 
+`fotodafilaem` (timestamptz, 29/09/2026): a marca "registro completo" do filtro por dia do Quadro — quando a foto da fila daquele dia foi tirada. Vazia = o Quadro mostra "não registrado" em "para pegar". Cai junto quando a limpeza (ou qualquer outro caminho) apaga linhas da foto do dia.
+
+## fotosdafila (29/09/2026)
+Tabela **nova**, **nível loja**. A fila de cada loja como estava no **fim** de cada dia, tirada por `rotina_lista_do_dia` logo depois da meia-noite (só vale até as 03:00 do dia seguinte, e nunca de dia com lista recuperada depois de parada). Sai de `fila_no_dia`, a MESMA função da fila de hoje (`fila_da_loja`), com o fim do dia no lugar de "sem fim".
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| contaid, lojaid | integer | obrigatórios; → lojas (junto com contaid) |
+| dia | date | o dia fotografado |
+| atribuicaoid | integer | a atribuição (sem FK: a foto se basta, com título e pontos daquele dia) |
+| entregarid, titulo, pontos, tipofrequencia, aberta, donoid | | como na fila |
+| quempegou, quempegounome, pegaem | | o aceite que valia no fim do dia |
+| situacao | varchar(12) | `para_pegar`, `em_andamento` ou `feita` |
+| atrasada | boolean | Única de dia anterior que continuava por fazer |
+| feitapor, feitaem, feitasituacao | | a entrega que valia no fim do dia, com a situação daquele momento |
+| tiradaem | timestamptz | quando a foto foi tirada |
+
+Chave (contaid, dia, atribuicaoid). O navegador só lê (a escrita nem existe como permissão). Guardada desde `fila_alcance(hoje).guardardesde`: o alcance do filtro (mês corrente e anterior) mais um mês de margem — a limpeza e a tela tiram prazo e alcance da MESMA regra.
+
 ## rotinasexecucoes (Etapa 1.11)
 | Coluna | Tipo | Obs |
 |---|---|---|
 | execucaoid | integer | ID automático |
-| rotina | varchar | lista_do_dia, fechamento_mensal, conferencia_livro, limpeza, mensagens, expurgo_fotos |
+| rotina | varchar | lista_do_dia, fechamento_mensal, conferencia_livro, limpeza, mensagens, expurgo_fotos, foto_da_fila |
 | referencia | date | o dia a que se refere |
 | origem | varchar | agendada ou manual ("Rodar agora") |
 | recuperado | boolean | dia recuperado depois de parada |
@@ -884,6 +904,8 @@ Tabela **nova** (Etapa 1.10), **nível conta**. O checklist de cada pessoa. **Ú
 | dataagendamento | timestamptz |  |
 | descricaooverride | text |  |
 | origematribuicaoid | integer | → tarefasatribuidas.atribuicaoid |
+| criadaem | timestamptz | **29/09/2026.** Quando a atribuição foi gravada. Gravada pelo banco (gatilho), ninguém reescreve. Vazia nas de antes dessa data |
+| encerradaem | timestamptz | **29/09/2026.** Quando `datafimvigencia` foi preenchida. Gravada pelo banco; a foto da fila usa para saber se a atribuição ainda valia no fim do dia |
 | compartilhada | boolean | padrão false. **Etapa 1.12 B1a.** Tarefa atribuída a várias pessoas: uma tarefa só, sem dono, e a lista de quem pode pegar está em `tarefascandidatos`. A primeira que pega ganha uma cópia no próprio nome (`origematribuicaoid` aponta para esta) |
 
 
