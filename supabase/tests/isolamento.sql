@@ -10719,4 +10719,51 @@ BEGIN
 END $$;
 SET teste.uid = '';
 
+-- ===========================================================================
+-- 84. A faixa "Meta do mes" na TV e a regra do R$ (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '84. faixa meta do mes na TV'; END $$;
+-- A loja da secao 82 ganha uma meta do mes (e a TV dela, codigo 8888...).
+INSERT INTO public.metasprincipais (contaid, lojaid, nomemeta, valormetatotal, datainicio, datafim, pontospremio)
+VALUES (82, 8201, 'Setembro forte', 10000,
+        date_trunc('month', public.hoje_da_conta(82))::date,
+        (date_trunc('month', public.hoje_da_conta(82)) + interval '1 month - 1 day')::date, 50);
+SET session_replication_role = replica;
+INSERT INTO public.metasdiariasapuracoes (contaid, lojaid, dataapuracao, valordia)
+VALUES (82, 8201, public.hoje_da_conta(82), 2500);
+SET session_replication_role = origin;
+
+DO $$
+DECLARE v jsonb;
+BEGIN
+  PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+
+  -- So a faixa do MES marcada, e o R$ DESLIGADO.
+  PERFORM public.salvar_tv_da_loja(8201, '{"metames": true, "parafazer": true}'::jsonb, 60, false);
+  v := public.painel_da_tv(repeat('8', 64));
+  PERFORM public.exigir((v->'config'->'blocos'->>'metames')::boolean
+                        AND NOT (v->'config'->'blocos'->>'meta')::boolean,
+                        'a faixa "Meta do mes" se marca e se guarda como as outras');
+  PERFORM public.exigir(v->'meta'->'mes'->>'nome' = 'Setembro forte'
+                        AND (v->'meta'->'mes'->>'percentual')::numeric = 25,
+                        'a faixa recebe o nome e o percentual (2.500 de 10.000 = 25%)');
+  PERFORM public.exigir(NOT (v->'meta'->'mes' ? 'vendido') AND NOT (v->'meta'->'mes' ? 'meta')
+                        AND NOT (v->'meta'->'mes' ? 'projecao') AND NOT (v->'config'->'blocos'->>'valores')::boolean
+                        AND v::text NOT LIKE '%10000%' AND v::text NOT LIKE '%2500%',
+                        'com "mostrar R$" desmarcado, nenhum real chega a TV: so percentual');
+
+  -- R$ LIGADO, com so a faixa do mes (sem a do dia).
+  PERFORM public.salvar_tv_da_loja(8201, '{"metames": true, "parafazer": true}'::jsonb, 60, true);
+  v := public.painel_da_tv(repeat('8', 64));
+  PERFORM public.exigir((v->'meta'->'mes'->>'vendido')::numeric = 2500 AND (v->'meta'->'mes'->>'meta')::numeric = 10000
+                        AND (v->'config'->'blocos'->>'valores')::boolean,
+                        'com "mostrar R$" marcado, a faixa do mes recebe o vendido e a meta em reais');
+
+  -- A chave nova nao abre a porta para chave inventada.
+  PERFORM public.salvar_tv_da_loja(8201, '{"metames": true, "parafazer": true, "invasao": true}'::jsonb, 60, false);
+  PERFORM public.exigir(NOT ((SELECT tvblocos FROM public.lojas WHERE lojaid = 8201) ? 'invasao'),
+                        'chave que o banco nao conhece continua de fora');
+END $$;
+SET teste.uid = '';
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

@@ -13,6 +13,10 @@ import { supabase } from "@/integrations/supabase/client";
 import tvCss from "./tv.css?raw";
 import type { DadosPainel } from "./PainelDaLoja";
 
+/** R$ sem centavos: lido de longe, "R$ 12.300" basta. */
+const reaisTv = (v: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(v);
+
 const ATUALIZAR_A_CADA = 30_000;
 /** Quantas linhas cabem numa coluna, no desenho de 1080p. */
 const LINHAS = 5;
@@ -242,6 +246,11 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
   const p = dados?.progresso;
   const feitas = p && p.total > 0 ? Math.round((p.aprovadas / p.total) * 100) : 0;
   const meta = dados?.meta?.dia;
+  const mes = dados?.meta?.mes ?? null;
+  // As faixas na ordem da configuração; a do mês só com meta do mês cadastrada.
+  const faixas = (
+    [blocos.barra && "barra", blocos.meta && "meta", blocos.metames && mes && "metames"] as const
+  ).filter(Boolean) as ("barra" | "meta" | "metames")[];
   const daVez = telas[Math.min(tela, quantas - 1)] ?? [];
 
   function coluna(qual: string, ultima: boolean) {
@@ -382,39 +391,66 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
         </div>
       </div>
 
-      {/* As faixas marcadas: finas, lado a lado, em TODAS as telas. */}
-      {dados && (blocos.barra || blocos.meta) && (
+      {/* As faixas marcadas: finas, lado a lado, em TODAS as telas. A do
+          mês só existe quando a loja tem meta do mês: nada de 0% inventado. */}
+      {dados && faixas.length > 0 && (
         <div className="tv-faixas">
-          {blocos.barra && (
-            <div className={blocos.meta ? "tv-faixa" : "tv-faixa tv-faixa-fim"}>
-              <div className="tv-faixa-alto">
-                <span className="tv-faixa-texto">
-                  <span className="tv-faixa-forte">
-                    {p!.aprovadas} de {p!.total}
-                  </span>{" "}
-                  tarefas concluídas hoje
-                </span>
-                <span className="tv-faixa-numero tv-verde">{feitas}%</span>
+          {faixas.map((f, i) => {
+            const classe = i === faixas.length - 1 ? "tv-faixa tv-faixa-fim" : "tv-faixa";
+            if (f === "barra")
+              return (
+                <div key={f} className={classe}>
+                  <div className="tv-faixa-alto">
+                    <span className="tv-faixa-texto">
+                      <span className="tv-faixa-forte">
+                        {p!.aprovadas} de {p!.total}
+                      </span>{" "}
+                      tarefas concluídas hoje
+                    </span>
+                    <span className="tv-faixa-numero tv-verde">{feitas}%</span>
+                  </div>
+                  <div className="tv-barra">
+                    <div className="tv-barra-verde" style={{ width: feitas + "%" }} />
+                  </div>
+                </div>
+              );
+            if (f === "meta")
+              return (
+                <div key={f} className={classe}>
+                  <div className="tv-faixa-alto">
+                    <span className="tv-faixa-texto">Meta do dia</span>
+                    <span className="tv-faixa-numero tv-azul">{Math.round(meta?.percentual ?? 0)}%</span>
+                  </div>
+                  <div className="tv-barra">
+                    <div
+                      className="tv-barra-azul"
+                      style={{ width: Math.min(100, Math.round(meta?.percentual ?? 0)) + "%" }}
+                    />
+                  </div>
+                </div>
+              );
+            // Meta do mês: o nome, o progresso e o percentual. O R$ só vem
+            // do banco quando a loja marcou "mostrar valores" (senão, nem chega).
+            return (
+              <div key={f} className={classe}>
+                <div className="tv-faixa-alto">
+                  <span className="tv-faixa-texto tv-faixa-corta">
+                    <span className="tv-faixa-forte">{mes!.nome}</span>
+                    {mes!.vendido !== undefined && mes!.meta !== undefined && (
+                      <>
+                        {" "}
+                        · {reaisTv(mes!.vendido)} de {reaisTv(mes!.meta)}
+                      </>
+                    )}
+                  </span>
+                  <span className="tv-faixa-numero tv-ouro">{Math.round(mes!.percentual)}%</span>
+                </div>
+                <div className="tv-barra">
+                  <div className="tv-barra-ouro" style={{ width: Math.min(100, Math.round(mes!.percentual)) + "%" }} />
+                </div>
               </div>
-              <div className="tv-barra">
-                <div className="tv-barra-verde" style={{ width: feitas + "%" }} />
-              </div>
-            </div>
-          )}
-          {blocos.meta && (
-            <div className="tv-faixa tv-faixa-fim">
-              <div className="tv-faixa-alto">
-                <span className="tv-faixa-texto">Meta do dia</span>
-                <span className="tv-faixa-numero tv-azul">{Math.round(meta?.percentual ?? 0)}%</span>
-              </div>
-              <div className="tv-barra">
-                <div
-                  className="tv-barra-azul"
-                  style={{ width: Math.min(100, Math.round(meta?.percentual ?? 0)) + "%" }}
-                />
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
       )}
 

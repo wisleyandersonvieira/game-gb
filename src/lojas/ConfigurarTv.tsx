@@ -27,6 +27,7 @@ export const PADRAO: BlocosDaTv = {
 const FAIXAS = [
   { chave: "barra", nome: "Barra de tarefas" },
   { chave: "meta", nome: "Meta do dia" },
+  { chave: "metames", nome: "Meta do mês" },
 ] as const;
 
 const COLUNAS = [
@@ -104,16 +105,16 @@ export function ConfigurarTv({
               {f.nome}
             </label>
           ))}
-          {/* Só faz sentido com a meta marcada: sem ela, não há valor nenhum. */}
+          {/* Só faz sentido com uma faixa de meta marcada: sem ela, não há valor nenhum. */}
           <label
             className={`mt-2 flex items-center gap-2 pl-6 text-sm ${
-              marcados.meta ? "" : "text-muted-foreground opacity-60"
+              marcados.meta || marcados.metames ? "" : "text-muted-foreground opacity-60"
             }`}
           >
             <input
               type="checkbox"
               checked={emReais}
-              disabled={!marcados.meta}
+              disabled={!marcados.meta && !marcados.metames}
               onChange={(e) => setEmReais(e.target.checked)}
             />
             Mostrar valores em R$ da meta (desligado: só a porcentagem)

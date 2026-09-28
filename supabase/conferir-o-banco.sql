@@ -256,7 +256,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
          WHERE n.nspname = 'public' AND p.proname = 'visao_fila') LIKE '%quem_pode_aceitar(%'),
   (340, 'OPERACAO', 'versao', 'a barra da TV conta o que a fila conta', 'aplicar-barra-da-fila.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%aindanaoliberadas%')
+         WHERE n.nspname = 'public' AND p.proname = 'montar_painel') LIKE '%aindanaoliberadas%'),
+  (350, 'OPERACAO', 'versao', 'TV com a faixa "Meta do mes"', 'aplicar-faixa-meta-do-mes.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'salvar_tv_da_loja') LIKE '%metames%')
 )
 SELECT CASE WHEN tem THEN 'ok' ELSE '>>> FALTA' END AS "situacao",
        parte AS "parte", tipo AS "tipo", nome AS "nome",

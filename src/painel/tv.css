@@ -159,6 +159,16 @@ html.tv, html.tv body {
 
 .tv-barra-verde { height: 8px; background-color: #3ddc84; border-radius: 4px; }
 .tv-barra-azul  { height: 8px; background-color: #6f9bff; border-radius: 4px; }
+.tv-barra-ouro  { height: 8px; background-color: #f0b429; border-radius: 4px; }
+
+/* Nome longo da meta do mês: corta com reticências, sem empurrar o número. */
+.tv-faixa-corta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+  margin-right: 16px;
+}
 
 /* --- Colunas: separadas por linha fina de 1 px --------------------------- */
 .tv-colunas {
