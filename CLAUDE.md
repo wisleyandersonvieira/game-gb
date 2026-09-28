@@ -79,6 +79,11 @@ Na prática: não construa contagem de presença, relógio de ponto, "na equipe 
 
 O **Mapa da jornada** (Pessoas → Jornada → Mapa, 27/09/2026) é **planejamento de escala**, montado só com o cadastro: não olha a hora de agora, não destaca "a hora atual" e não vai para a TV. O **intervalo do mapa** (`intervalosdomapa`, "Intervalo (planejamento, não afeta o sistema)") é outro campo que o intervalo da jornada (silêncio do bot): **nenhuma regra do sistema pode lê-lo** — bot, tarefa, liberação, nota, rodízio. Só `mapa_da_jornada` e `salvar_intervalo_do_mapa`; a seção 75 do teste de isolamento e `src/jornada/mapa-catraca.test.ts` reprovam qualquer outra leitura. Se um dia ele precisar afetar algo, é decisão do Wisley, com prova de antes e depois.
 
+## Espaço em disco do Codespace
+- `bun run espaco` mostra quanto do disco está ocupado e por quem, do maior para o menor, sem apagar nada, e avisa quando o livre cai abaixo de 5 GB.
+- `bun run limpar-espaco` libera o que é seguro (bancos de teste que sobraram, build, caches) e diz quanto cada passo rendeu.
+- Todo Postgres descartável (teste, prova, medição) sobe com `--tmpfs /var/lib/postgresql/data` e sai com `docker rm -f -v`. Sem isso, cada um deixa ~51 MB no disco para sempre (em 28/09/2026 eram 220, 11 GB, e o Codespace encheu). Saídas de teste, capturas e PDFs de conferência vão para a pasta temporária (`/tmp`, outro disco), nunca para o projeto.
+
 ## Como fechar uma entrega (obrigatório)
 Commit **não** é publicação: o Lovable publica do GitHub, e commit que não foi **enviado** não chega no ar. Isso já custou um dia de teste em 25/09/2026, com o Wisley procurando defeito numa tela que nunca tinha sido publicada.
 

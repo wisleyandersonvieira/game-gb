@@ -8,7 +8,9 @@
     "start": "vite preview",
     "build:dev": "vite build --mode development",
     "contrato": "bun run scripts/gerar-contrato.ts",
-    "test": "TZ=UTC bun test src/"
+    "test": "TZ=UTC bun test src/",
+    "espaco": "bash scripts/espaco.sh",
+    "limpar-espaco": "bash scripts/limpar-espaco.sh"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

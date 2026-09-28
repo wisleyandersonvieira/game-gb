@@ -12,12 +12,16 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONTAINER="gamegb-teste"
 IMAGEM="postgres:17"
 
-limpar() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+# -v: apaga JUNTO o disco do banco. Sem ele, cada rodada deixava para trás um
+# volume de ~51 MB; em 28/09/2026 eram 220 (11 GB) e o Codespace encheu.
+limpar() { docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || true; }
 trap limpar EXIT
 limpar
 
 echo "==> subindo $IMAGEM"
-docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=teste "$IMAGEM" >/dev/null
+# O banco descartável mora na MEMÓRIA (--tmpfs): não grava nada no disco do
+# Codespace, nem se a rodada for interrompida no meio (aí o trap não roda).
+docker run -d --name "$CONTAINER" --tmpfs /var/lib/postgresql/data -e POSTGRES_PASSWORD=teste "$IMAGEM" >/dev/null
 # A imagem oficial sobe um servidor temporario, roda a inicializacao e
 # reinicia. So consideramos pronto quando o servidor definitivo responde, que
 # e quando a mensagem "ready to accept connections" aparece pela segunda vez.

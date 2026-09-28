@@ -25,3 +25,9 @@ pnpm-lock.yaml
 
 # Prints de conferência (ficam só na máquina)
 prints/
+
+# Saídas de teste e dumps de banco: nunca vão para o Git (28/09/2026).
+test-results/
+playwright-report/
+*.dump
+*.backup
