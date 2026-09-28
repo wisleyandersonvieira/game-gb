@@ -11,7 +11,16 @@ export type DadosPainel = {
   hoje: string;
   atualizadoem: string;
   /** Da mesma fila do tablet: total = aprovadas + emvalidacao + emandamento + parafazer + aindanaoliberadas. */
-  progresso: { total: number; aprovadas: number; emvalidacao: number; emandamento?: number; aindanaoliberadas?: number };
+  progresso: {
+    total: number;
+    aprovadas: number;
+    emvalidacao: number;
+    emandamento?: number;
+    parafazer?: number;
+    aindanaoliberadas?: number;
+    /** Concluídas (só aprovadas) sobre o total, pronto do banco. */
+    percentual?: number;
+  };
   parafazer: { titulo: string; pessoa: string; pontos: number; atrasada: boolean }[];
   emvalidacao: { titulo: string; pessoa: string; pontos: number; enviadaem: string; dehoje: boolean }[];
   pendentes: number;
@@ -41,8 +50,9 @@ function diaEHora(iso: string) {
   });
 }
 
+/** O percentual de concluídas vem pronto do banco (progresso_da_fila). */
 export function percentual(p: DadosPainel["progresso"]) {
-  return p.total > 0 ? Math.round((p.aprovadas / p.total) * 100) : 0;
+  return p.percentual ?? 0;
 }
 
 export function PainelDaLoja({ dados, tv = false }: { dados: DadosPainel; tv?: boolean }) {
@@ -130,7 +140,7 @@ export function BarraDoDia({
   compacta?: boolean;
 }) {
   const { total, aprovadas, emvalidacao } = progresso;
-  const pAprovado = total > 0 ? (aprovadas / total) * 100 : 0;
+  const pAprovado = percentual(progresso);
   const pValidacao = total > 0 ? (emvalidacao / total) * 100 : 0;
 
   return (

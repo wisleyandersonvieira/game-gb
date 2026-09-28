@@ -304,7 +304,8 @@ export function TelaDaTv({ codigo, aoPerderAcesso }: { codigo: string; aoPerderA
   }
 
   const p = dados?.progresso;
-  const feitas = p && p.total > 0 ? Math.round((p.aprovadas / p.total) * 100) : 0;
+  // O percentual de concluídas vem pronto do banco: a TV não divide sozinha.
+  const feitas = p?.percentual ?? 0;
   const meta = dados?.meta?.dia;
   const mes = dados?.meta?.mes ?? null;
   // As faixas na ordem da configuração; a do mês só com meta do mês cadastrada.

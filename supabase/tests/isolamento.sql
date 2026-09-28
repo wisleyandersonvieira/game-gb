@@ -10781,10 +10781,9 @@ BEGIN
     FOR l IN SELECT lojaid FROM public.lojas WHERE contaid = c.contaid AND ativa LOOP
       v_ini := public.painel_inicio(l.lojaid)->'cartoes'->'tarefas';
       v_tv  := public.montar_painel(c.contaid, l.lojaid, true)->'progresso';
-      IF (v_ini->>'total') IS DISTINCT FROM (v_tv->>'total')
-         OR (v_ini->>'aprovadas') IS DISTINCT FROM (v_tv->>'aprovadas')
-         OR (v_ini->>'emvalidacao') IS DISTINCT FROM (v_tv->>'emvalidacao')
-         OR (v_ini->>'feitas')::integer <> (v_tv->>'aprovadas')::integer + (v_tv->>'emvalidacao')::integer THEN
+      -- Desde 29/09/2026 (tarde): a MESMA conta (progresso_da_fila), entao o
+      -- objeto inteiro e igual, percentual incluido.
+      IF v_ini IS DISTINCT FROM v_tv THEN
         RAISE EXCEPTION 'FALHOU: loja % — Inicio % / TV %', l.lojaid, v_ini, v_tv;
       END IF;
       v_lojas := v_lojas + 1;
@@ -10876,5 +10875,119 @@ BEGIN
                         'a meta da TV pergunta o dia ao lugar unico');
 END $$;
 SET teste.uid = '';
+
+-- ===========================================================================
+-- 87. "Concluidas" com uma conta (TV = Inicio), e a venda de ontem nao
+--     lancada (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '87. concluidas com uma conta; venda de ontem'; END $$;
+DO $$
+DECLARE
+  v_tv jsonb; v_ini jsonb; v_antes jsonb; e_e integer; e_j integer;
+BEGIN
+  PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+  SELECT entregaid INTO e_e FROM public.entregas WHERE atribuicaoid = 98405;
+  SELECT entregaid INTO e_j FROM public.entregas WHERE atribuicaoid = 98410;
+  BEGIN
+    -- 1. Com tarefa EM VALIDACAO: a fracao conta so as aprovadas, nas duas telas.
+    v_tv  := public.montar_painel(82, 8201, true)->'progresso';
+    v_ini := public.painel_inicio(8201)->'cartoes'->'tarefas';
+    PERFORM public.exigir(v_tv = v_ini AND (v_tv->>'emvalidacao')::integer >= 2 AND (v_tv->>'aprovadas')::integer = 0
+                          AND (v_tv->>'percentual')::integer = 0,
+                          'em validacao nao entra na fracao: 0 aprovadas = 0% na TV e no Inicio, com '
+                          || (v_tv->>'emvalidacao') || ' esperando o gestor');
+    -- 2. O gestor APROVA uma: sobe 1 nas duas.
+    PERFORM public.aprovar_entrega(e_e);
+    v_antes := v_tv;
+    v_tv  := public.montar_painel(82, 8201, true)->'progresso';
+    v_ini := public.painel_inicio(8201)->'cartoes'->'tarefas';
+    PERFORM public.exigir(v_tv = v_ini AND (v_tv->>'aprovadas')::integer = (v_antes->>'aprovadas')::integer + 1
+                          AND (v_tv->>'percentual')::integer = round(100.0 * (v_tv->>'aprovadas')::integer / (v_tv->>'total')::integer),
+                          'aprovou: a fracao sobe 1, igual nas duas telas');
+    -- 3. O gestor RECUSA outra que tinha sido entregue: a fracao NAO desce
+    --    (a recusada nunca contou), e as duas continuam iguais.
+    v_antes := v_tv;
+    PERFORM public.recusar_entrega(e_j, 'foto sem a vitrine');
+    v_tv  := public.montar_painel(82, 8201, true)->'progresso';
+    v_ini := public.painel_inicio(8201)->'cartoes'->'tarefas';
+    PERFORM public.exigir(v_tv = v_ini AND (v_tv->>'aprovadas')::integer = (v_antes->>'aprovadas')::integer
+                          AND (v_tv->>'total')::integer = (v_antes->>'total')::integer
+                          AND (v_tv->>'emvalidacao')::integer = (v_antes->>'emvalidacao')::integer - 1,
+                          'recusada depois de entregue: o numero de concluidas nao desce, e TV = Inicio');
+    RAISE EXCEPTION 'desfazer_87';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_87' THEN RAISE; END IF;
+  END;
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') LIKE '%progresso_da_fila(%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_inicio') LIKE '%progresso_da_fila(%'
+                        -- Nenhuma das duas decide sozinha o que e "aprovada" na fila.
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_inicio') NOT LIKE '%feitasituacao =%'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'montar_painel') NOT LIKE '%feitasituacao =%',
+                        'a conta de concluidas e escrita uma vez (progresso_da_fila); TV e Inicio leem dela');
+END $$;
+
+-- A venda de ONTEM nao lancada.
+DO $$
+DECLARE v_ontem date := public.hoje_da_conta(82) - 1; v jsonb;
+BEGIN
+  BEGIN
+    UPDATE public.lojas SET criadoem = now() - interval '10 days' WHERE lojaid = 8201;
+    INSERT INTO public.metasdiariasmodelos (contaid, lojaid, diasemanaid, nomedia, valormeta, pontospremio)
+    VALUES (82, 8201, extract(dow FROM v_ontem)::integer + 1, 'ontem', 5000, 0)
+    ON CONFLICT (lojaid, diasemanaid) DO UPDATE SET valormeta = 5000;
+    PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+    SET LOCAL ROLE authenticated;
+    v := public.painel_inicio(NULL)->'avisos'->'vendaontem';
+    PERFORM public.exigir(v = '[{"loja": "Loja 82", "lojaid": 8201}]'::jsonb,
+                          'loja com meta ontem e sem lancamento: o Inicio avisa');
+    -- Filtrado em OUTRA loja? O aviso continua (vale para toda loja que a pessoa enxerga).
+    RESET ROLE;
+    PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.painel_inicio(NULL)->'avisos'->'vendaontem') x
+                                       WHERE (x->>'lojaid')::integer = 8201),
+                          'quem nao enxerga a loja nao recebe o aviso dela');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', '82828282-8282-8282-8282-828282828282', true);
+
+    -- Feriado: meta especial com valor 0 naquela data ("dia sem meta"): nao avisa.
+    INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio)
+    VALUES (82, 8201, v_ontem, 'Feriado', 0, 0);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.painel_inicio(NULL)->'avisos'->'vendaontem' = '[]'::jsonb,
+                          'feriado cadastrado como dia sem meta: nenhum aviso');
+    RESET ROLE;
+    DELETE FROM public.metasespeciais WHERE lojaid = 8201 AND data = v_ontem;
+
+    -- Dia em que a loja nao abre (modelo do dia com meta 0): nao avisa.
+    UPDATE public.metasdiariasmodelos SET valormeta = 0 WHERE lojaid = 8201 AND diasemanaid = extract(dow FROM v_ontem)::integer + 1;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.painel_inicio(NULL)->'avisos'->'vendaontem' = '[]'::jsonb,
+                          'dia sem meta (loja fechada): nenhum aviso');
+    RESET ROLE;
+    UPDATE public.metasdiariasmodelos SET valormeta = 5000 WHERE lojaid = 8201 AND diasemanaid = extract(dow FROM v_ontem)::integer + 1;
+
+    -- Loja criada hoje nao "esqueceu" o dia de ontem.
+    UPDATE public.lojas SET criadoem = now() WHERE lojaid = 8201;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.painel_inicio(NULL)->'avisos'->'vendaontem' = '[]'::jsonb,
+                          'loja criada hoje nao avisa sobre ontem');
+    RESET ROLE;
+    UPDATE public.lojas SET criadoem = now() - interval '10 days' WHERE lojaid = 8201;
+
+    -- Lancou a venda de ontem: o aviso some sozinho.
+    PERFORM public.lancar_venda_do_dia(8201, v_ontem, 4800);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.painel_inicio(NULL)->'avisos'->'vendaontem' = '[]'::jsonb,
+                          'lancou a venda de ontem: o aviso some sozinho');
+    RESET ROLE;
+
+    RAISE EXCEPTION 'desfazer_87';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_87' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

@@ -27,9 +27,26 @@ export function SituacaoRotina({ rotina }: { rotina: PainelInicio["rotina"] }) {
   );
 }
 
+/**
+ * "A venda de ontem não foi lançada na Loja X": uma linha por loja; acima de
+ * três, uma linha só, resumida. Some sozinho quando a venda é lançada (o
+ * banco só manda as lojas que continuam sem lançamento).
+ */
+export function linhasVendaOntem(lojas: { loja: string }[]): string[] {
+  if (lojas.length === 0) return [];
+  if (lojas.length <= 3) return lojas.map((l) => `A venda de ontem não foi lançada na ${l.loja}.`);
+  const nomes = lojas.slice(0, 3).map((l) => l.loja).join(", ");
+  return [`A venda de ontem não foi lançada em ${lojas.length} lojas: ${nomes} e mais ${lojas.length - 3}.`];
+}
+
 export function Avisos({ avisos }: { avisos: PainelInicio["avisos"] }) {
   if (!avisos) return null;
   const itens: { texto: string; para: string; grave?: boolean }[] = [];
+  // Primeiro: é a equipe que paga pelo esquecimento (a meta não bate e o
+  // prêmio não sai), então fica no topo.
+  for (const texto of linhasVendaOntem(avisos.vendaontem ?? [])) {
+    itens.push({ texto, para: "/metas", grave: true });
+  }
   if (avisos.livro === "diferenca") {
     itens.push({ texto: "Diferença encontrada entre o saldo e o livro de pontos. Nada foi corrigido: veja os detalhes.", para: "/configuracoes", grave: true });
   }

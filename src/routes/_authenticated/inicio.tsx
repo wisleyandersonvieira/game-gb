@@ -10,7 +10,7 @@ import { Carregando, ErroTela } from "@/ui/Estados";
 const PainelDeGraficos = lazy(() => import("@/inicio/PainelDeGraficos"));
 import { Guia, guiaCompleto } from "@/inicio/Guia";
 import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
-import { pct, quando, reais, type PainelInicio } from "@/inicio/tipos";
+import { pct, quando, reais, textoSemLancamento, type PainelInicio } from "@/inicio/tipos";
 import { Pontos } from "@/ui/Pontos";
 import { AvisosDoSistema } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
@@ -169,6 +169,12 @@ function CartaoMeta({ titulo, meta }: { titulo: string; meta: PainelInicio["cart
   if (!meta) {
     return <CartaoNumero titulo={titulo} valor="—" detalhe="Definir meta" tom="primario" para="/metas" />;
   }
+  // Nunca um número parcial como se fosse o número: sem lançamento, 0% seria
+  // "não vendemos nada" (a mesma regra da TV).
+  const semLancar = textoSemLancamento(meta);
+  if (semLancar) {
+    return <CartaoNumero titulo={titulo} valor="—" detalhe={semLancar} tom="primario" para="/metas" />;
+  }
   const bateu = meta.percentual >= 100;
   return (
     <CartaoNumero
@@ -190,12 +196,18 @@ function Cartoes({ p, naoPegas }: { p: PainelInicio; naoPegas: number }) {
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       <CartaoMeta titulo="Meta do dia" meta={c.metadia} />
       <CartaoMeta titulo="Meta do mês" meta={c.metames} />
+      {/* A MESMA conta da TV: concluídas = só aprovadas; o que espera o
+          gestor aparece à parte. O percentual vem pronto do banco. */}
       <CartaoNumero
         titulo="Tarefas de hoje"
-        valor={`${t.feitas}/${t.total}`}
-        detalhe={t.total === 0 ? "Nenhuma tarefa hoje" : `${t.aprovadas} aprovadas · ${t.emvalidacao} em validação`}
-        tom={t.total > 0 && t.feitas === t.total ? "sucesso" : "neutro"}
-        progresso={t.total > 0 ? (t.feitas * 100) / t.total : undefined}
+        valor={`${t.aprovadas}/${t.total}`}
+        detalhe={
+          t.total === 0
+            ? "Nenhuma tarefa hoje"
+            : `${t.percentual}% concluídas${t.emvalidacao > 0 ? ` · ${t.emvalidacao} esperando o gestor` : ""}`
+        }
+        tom={t.total > 0 && t.aprovadas === t.total ? "sucesso" : "neutro"}
+        progresso={t.total > 0 ? t.percentual : undefined}
         para="/operacional"
       />
       <CartaoNumero
