@@ -134,6 +134,17 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (85, 'C1+', 'versao', 'o Inicio do colaborador passa pela conferencia unica', 'aplicar-consertos-da-revisao-c1.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'eu_inicio') LIKE '%eu_confere_pessoa%'),
+  -- Estas duas conferem se a REGRA continua valendo (não só se a migração
+  -- foi aplicada). Vieram do ramo revisao-c1-guardada, conferido linha a
+  -- linha e apagado em 28/09/2026.
+  (86, 'C1+', 'versao', 'a entrega pelo celular exige que a tarefa esteja na fila de hoje', 'aplicar-consertos-da-revisao-c1.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'eu_entregar') LIKE '%fila_da_loja(%'
+       AND (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'eu_entregar') LIKE '%não está na fila de hoje%'),
+  (87, 'C1+', 'versao', 'o tablet grava a impressao digital da foto (a mesma foto nao prova duas tarefas)', 'aplicar-consertos-da-revisao-c1.sql',
+       (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'visao_entregar') LIKE '%p_fotoidunico%'),
   (94, 'TV', 'versao', 'a trava conhece o pareamento da TV', 'aplicar-tv-por-codigo.sql',
        (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'tentativa_abrir_ex') LIKE '%tvcodigo%'),
