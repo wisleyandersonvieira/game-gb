@@ -5285,6 +5285,7 @@ export type Database = {
         }
         Returns: Json
       }
+      ativar_premio: { Args: { p_ativo: boolean; p_produtoid: number }; Returns: undefined }
       atribuir_tarefa: {
         Args: {
           p_dataagendamento?: string
@@ -6478,6 +6479,16 @@ export type Database = {
       eu_cancelar_resgate: {
         Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
         Returns: undefined
+      }
+      salvar_premio: {
+        Args: {
+          p_custoempontos: number
+          p_descricao?: string
+          p_estoquedisponivel?: number
+          p_nome: string
+          p_produtoid?: number
+        }
+        Returns: number
       }
       salvar_som_da_loja: {
         Args: {
