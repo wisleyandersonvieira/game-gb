@@ -73,6 +73,16 @@ if [ "$ok" != "1" ]; then
   exit 1
 fi
 
+# A contagem: quantas checagens passaram e quantas estao PULADAS (passariam
+# pelo motivo errado). As puladas aparecem com o motivo, toda rodada.
+oks=$(echo "$saida" | grep -c '  ok  ' || true)
+puladas=$(echo "$saida" | grep -c '  PULADO  ' || true)
+echo "==> isolamento: $oks checagens ok, $puladas PULADAS"
+if [ "$puladas" != "0" ]; then
+  echo "$saida" | sed -n 's/^psql:[^ ]* //p' | grep '  PULADO  ' | sed 's/^NOTICE:  */    /; s/ \[motivo:.*//'
+  echo "$saida" | grep -o '\[motivo: [^]]*' | sed 's/\[motivo: /    motivo: /' | sort -u
+fi
+
 echo "==> o conferidor (conferir-o-banco.sql) rodando de verdade"
 if ! bash "$RAIZ/supabase/tests/conferidor.sh" "$CONTAINER"; then
   echo

@@ -66,13 +66,18 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `posicoesloja` | **loja** | posicaoid |  |
 | `produtosestoque` | conta | produtoid |  |
 | `produtosfornecedor` | conta | produtofornecedorid | fornecedores, produtosestoque |
-| `produtosloja` | conta | produtoid |  |
+| `produtosloja` | **conta** (o nome engana: é a loja de RECOMPENSAS, não uma loja física) | produtoid |  |
 | `resgates` | conta | resgateid | funcionarios, produtosloja |
 | `solicitacoeshistorico` | **loja** | historicoid | solicitacoesinternas |
 | `solicitacoesinternas` | **loja** | solicitacaoid | funcionarios |
 | `rotinasexecucoes` | conta | execucaoid |  |
 | `fotosexpurgo` | conta | expurgoid | entregas |
 | `tentativasacesso` | conta | tentativaid |  |
+| `cargos` | conta | cargoid | — |
+| `cargospermissoes` | conta | (contaid, cargoid, codigo) | cargos |
+| `usuariosgerenciais` | conta | (contaid, userid) | contasusuarios, cargos, funcionarios |
+| `usuarioslojas` | conta (a loja é o dado) | (userid, lojaid) | usuariosgerenciais, lojas |
+| `permissoeshistorico` | conta | historicoid | — |
 | `travaspin` | conta | (contaid, funcionarioid) | funcionarios |
 | `pinliberacoes` | conta | liberacaoid | funcionarios |
 | `codigosacesso` | conta | codigoid | funcionarios |
@@ -589,6 +594,21 @@ Tentativas de entrar (senha) e de usar o PIN no tablet. Nível conta (vazio só 
 
 **Ninguém lê pelo navegador.** Conferir e registrar são **a mesma operação** (`tentativa_abrir`, que tranca a chave): sem isso, uma rajada de pedidos simultâneos passava toda de uma vez. PIN: 5 erros em 1 minuto travam, contados por pessoa e por tablet, **mais um teto de 30 tentativas por dia** (é o que impede usar a tela do PIN como adivinhador). **Desde 29/09/2026 o PIN do tablet não usa mais esta tabela:** a trava é por pessoa, em `travaspin`. Senha: 5 erros em 15 minutos e teto de 50 por dia, contados pelo CPF/e-mail **e** pela origem, que é definida pelo servidor. O que passa de 7 dias é apagado. Funções: `acesso_travado` e `registrar_tentativa` (só o servidor).
 
+## Permissões dos usuários gerenciais (29/09/2026, parte 1)
+O mapa e as decisões estão em `docs/MAPA_PERMISSOES.md`. O **catálogo** do que existe para marcar não é tabela: é a função `catalogo_de_permissoes()` (é o mesmo para toda conta; mudar é migração nova). Quem decide é **uma função só**, `pode(codigo, loja)`: o master pode todo o catálogo nas lojas dele; o gerente só se o cargo tem o código **e** a loja está na lista dele; código fora do catálogo, ninguém. `lojas_onde_posso(codigo)` devolve as lojas (para as leituras). Nenhuma das tabelas abaixo aceita escrita de quem está logado: só as funções da página de Usuários (parte 5).
+
+| Tabela | O que guarda |
+|---|---|
+| cargos | cargoid, contaid, nome (único por conta), criadoem, criadopor |
+| cargospermissoes | um código do catálogo por linha (contaid, cargoid, codigo). Sem linha = não pode. Código que não existe é recusado |
+| usuariosgerenciais | userid (login com papel `gerente` da mesma conta), cargoid, funcionarioid (quem ele é na equipe, quando também é da equipe; um por pessoa), ativo, criadoem, criadopor |
+| usuarioslojas | em quais lojas cada usuário gerencial age (userid, lojaid) |
+| permissoeshistorico | quem mudou o quê: contaid, em, quem, tabela, acao, antes, depois (JSON). Gravado por gatilho em cargos, cargospermissoes, usuariosgerenciais, usuarioslojas e nos logins master/gerente. **Nunca muda nem se apaga**, nem pelo dono do banco |
+
+**O último master:** o gatilho `contasusuarios_ultimo_master` recusa apagar ou rebaixar o último master de uma conta.
+
+**Escrita direta fechada (29/09/2026):** as 20 tabelas da Fase 2 sem tela (`configuracoesescala`, `configuracoessetores`, `escaladiaria`, `posicoesloja`, `picodiario`, `freelancers`, `grupos`, `funcionariosgrupos`, `contagensestoque`, `itenscontagemestoque`, `produtosestoque`, `fornecedores`, `produtosfornecedor`, `categoriasproduto`, `notasfiscais`, `notasfiscaisentrada`, `itensnotafiscalentrada`, `lucromensalhistorico`, `metasdiariasinstancias`, `feedbacksolicitacoes`) e as colunas `funcionarios.isgestor` e `funcionarios.chatidtelegram` não aceitam gravação de quem está logado, master inclusive. Quando a tela existir, nasce com função e permissão.
+
 ## travaspin (29/09/2026)
 A trava do PIN do tablet, **por pessoa**. Nível conta. Uma linha por pessoa que já errou.
 
@@ -860,6 +880,8 @@ Tabela **nova** (Etapa 1.10), **nível conta**. O checklist de cada pessoa. **Ú
 | fatorconversao | numeric(10,4) | padrão 1.0 |
 
 ## produtosloja
+> **O nome engana.** "Loja" aqui é a **loja de recompensas** (onde se trocam pontos), nome herdado do sistema antigo (`ProdutosLoja`). O prêmio vale para a **conta inteira**: não tem `lojaid`, e o `estoquedisponivel` é um só para todas as lojas. Por isso "editar catálogo de prêmios" não é delegável a gerente de loja (decisão de 29/09/2026). Conferido no mesmo dia: é a única tabela com "loja" no nome sem `lojaid`.
+
 | Coluna | Tipo | Obs |
 |---|---|---|
 | produtoid | integer | ID automático; obrigatório |

@@ -364,3 +364,36 @@ de pontos por ciência). Com o papel fechado, elas passam porque o gerente não 
 acesso a nada, e não mais porque a função confere "é o master?". **Voltam a
 valer na etapa dos cargos**, com um gerente de "Acesso total", e entram na lista
 das operações que nunca se delegam.
+
+---
+
+## Segunda rodada de decisões e a parte 1 (29/09/2026)
+
+- **Jornada (aprovado):** ligar uma pessoa das lojas dele a uma jornada que já
+  existe fica com o gerente (`jornada.vincular`: é editar a pessoa), com as
+  bordas da decisão 4. Criar e editar a jornada em si: só master, junto com
+  conquistas.
+- **`produtosloja` engana no nome.** "Loja" ali é a **loja de recompensas**
+  (nome herdado do sistema antigo, `ProdutosLoja`), não uma loja física. O
+  prêmio e o estoque dele valem para a conta inteira. Continua só master.
+  Conferido no banco: é a **única** tabela com "loja" no nome sem `lojaid`.
+  Anotado no dicionário e num comentário na própria tabela.
+- **Pela mesma régua (catálogo sem alcance por loja = só master), mais dois
+  ficam fora do catálogo:** as etapas do modelo de onboarding
+  (`onboardingetapas`) e os tipos de evento da agenda (`tiposevento`). São
+  listas da conta, sem loja. "Onboarding: conduzir" e "Agenda: criar e editar"
+  continuam delegáveis, sem mexer nessas listas.
+- **CPF na Equipe (desvio da decisão 6, explicado):** fechar a coluna `cpf`
+  agora quebraria o "Editar" da Equipe, que grava o CPF de quem ainda não tem
+  login. O perigo de verdade (trocar o CPF de quem JÁ entra pelo CPF) o banco
+  já barra desde 27/09 (`funcionarios_protege_cpf`): só o "Trocar CPF", que é
+  só master, passa. Na parte 2 a gravação da Equipe vira função, e o CPF de
+  quem já existe fica só com o master.
+- **As 8 checagens do gerente de mentira** (eram 8, não 6) estão marcadas como
+  PULADAS, com o motivo dentro do teste. Toda rodada mostra "N checagens ok, 8
+  PULADAS" e a lista.
+- **Fraqueza antiga achada por uma sabotagem:** a checagem "toda policy filtra
+  por conta" (seção 14) aceitou uma regra `contaid = minha_conta() OR
+  cargoid > 0` — o filtro por conta estava lá, mas o `OR` o anula. Quem pegou
+  foi a trava nova. A seção 14 precisa recusar `OR` que anule o filtro
+  (proposto para a parte 2).

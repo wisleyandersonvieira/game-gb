@@ -4917,6 +4917,183 @@ export type Database = {
           },
         ]
       }
+      cargos: {
+        Row: {
+          cargoid: number
+          contaid: number
+          criadoem: string
+          criadopor: string | null
+          nome: string
+        }
+        Insert: {
+          cargoid?: number
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          nome: string
+        }
+        Update: {
+          cargoid?: number
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cargos_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
+      cargospermissoes: {
+        Row: {
+          cargoid: number
+          codigo: string
+          contaid: number
+        }
+        Insert: {
+          cargoid: number
+          codigo: string
+          contaid?: number
+        }
+        Update: {
+          cargoid?: number
+          codigo?: string
+          contaid?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cargospermissoes_cargo_fk"
+            columns: ["contaid", "cargoid"]
+            isOneToOne: false
+            referencedRelation: "cargos"
+            referencedColumns: ["contaid", "cargoid"]
+          },
+        ]
+      }
+      permissoeshistorico: {
+        Row: {
+          acao: string
+          antes: Json | null
+          contaid: number
+          depois: Json | null
+          em: string
+          historicoid: number
+          quem: string | null
+          tabela: string
+        }
+        Insert: {
+          acao: string
+          antes?: Json | null
+          contaid: number
+          depois?: Json | null
+          em?: string
+          historicoid?: number
+          quem?: string | null
+          tabela: string
+        }
+        Update: {
+          acao?: string
+          antes?: Json | null
+          contaid?: number
+          depois?: Json | null
+          em?: string
+          historicoid?: number
+          quem?: string | null
+          tabela?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "permissoeshistorico_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
+      usuariosgerenciais: {
+        Row: {
+          ativo: boolean
+          cargoid: number
+          contaid: number
+          criadoem: string
+          criadopor: string | null
+          funcionarioid: number | null
+          userid: string
+        }
+        Insert: {
+          ativo?: boolean
+          cargoid: number
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          funcionarioid?: number | null
+          userid: string
+        }
+        Update: {
+          ativo?: boolean
+          cargoid?: number
+          contaid?: number
+          criadoem?: string
+          criadopor?: string | null
+          funcionarioid?: number | null
+          userid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usuariosgerenciais_cargo_fk"
+            columns: ["contaid", "cargoid"]
+            isOneToOne: false
+            referencedRelation: "cargos"
+            referencedColumns: ["contaid", "cargoid"]
+          },
+          {
+            foreignKeyName: "usuariosgerenciais_funcionario_fk"
+            columns: ["contaid", "funcionarioid"]
+            isOneToOne: false
+            referencedRelation: "funcionarios"
+            referencedColumns: ["contaid", "funcionarioid"]
+          },
+        ]
+      }
+      usuarioslojas: {
+        Row: {
+          contaid: number
+          lojaid: number
+          userid: string
+        }
+        Insert: {
+          contaid?: number
+          lojaid: number
+          userid: string
+        }
+        Update: {
+          contaid?: number
+          lojaid?: number
+          userid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usuarioslojas_usuario_fk"
+            columns: ["contaid", "userid"]
+            isOneToOne: false
+            referencedRelation: "usuariosgerenciais"
+            referencedColumns: ["contaid", "userid"]
+          },
+          {
+            foreignKeyName: "usuarioslojas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
       usomensagens: {
         Row: {
           canal: string
@@ -5655,6 +5832,17 @@ export type Database = {
         }
         Returns: number
       }
+      catalogo_de_permissoes: {
+        Args: never
+        Returns: {
+          codigo: string
+          nome: string
+          ordem: number
+          tela: string
+        }[]
+      }
+      lojas_onde_posso: { Args: { p_codigo: string }; Returns: number[] }
+      pode: { Args: { p_codigo: string; p_lojaid?: number }; Returns: boolean }
       liberar_pin: { Args: { p_funcionarioid: number }; Returns: undefined }
       liberar_documento_pessoal: {
         Args: { p_documentoid: number }

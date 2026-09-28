@@ -63,6 +63,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
+  ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
   ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
@@ -379,7 +380,14 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public'
                       AND p.proname IN ('minha_conta', 'minha_conta_editavel', 'acesso_por_email')
-                      AND p.prosrc LIKE '%gerente%'))
+                      AND p.prosrc LIKE '%gerente%')),
+  -- Comportamento: o catálogo responde, pode() de quem não tem login é "não",
+  -- e a escrita direta numa tabela sem tela foi fechada.
+  (420, 'OPERACAO', 'versao', 'permissoes, parte 1: catalogo, cargos, pode() e tabelas sem tela fechadas', 'aplicar-permissoes-parte-1-base.sql',
+       pg_temp.tenta($q$SELECT (SELECT count(*) > 50 FROM public.catalogo_de_permissoes())
+                       AND public.pode('quadro.aprovar', 0) = false
+                       AND to_regclass('public.usuarioslojas') IS NOT NULL
+                       AND NOT has_table_privilege('authenticated', 'public.fornecedores', 'INSERT')$q$))
 ),
 tudo AS (
   SELECT x.*, a.versao
