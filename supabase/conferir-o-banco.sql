@@ -60,6 +60,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-hora-de-liberacao.sql', '20260929100600'),
   ('aplicar-inicio-da-fila.sql', '20260929242000'),
   ('aplicar-jornadas.sql', '20260929190000'),
+  ('aplicar-lojas-do-gerente-uma-vez.sql', '20260929268500'),
   ('aplicar-mapa-da-jornada.sql', '20260929210000'),
   ('aplicar-mapa-intervalo-por-dia.sql', '20260929233000'),
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
@@ -490,7 +491,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'historico_da_pessoa') LIKE '%historico_da_pessoa_gerente%'),
   (620, 'OPERACAO', 'versao', 'Leituras do gerente: Metas', 'aplicar-permissoes-parte-3-metas.sql',
        to_regprocedure('public.metas_do_mes_gerente(integer, date)') IS NOT NULL
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'metas_do_mes') LIKE '%metas_do_mes_gerente%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'metas_do_mes') LIKE '%metas_do_mes_gerente%'),
+  (625, 'OPERACAO', 'versao', 'Lojas do gerente calculadas uma vez por leitura', 'aplicar-lojas-do-gerente-uma-vez.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu_gerente') LIKE '%(SELECT public.lojas_onde_posso(''premios.ver''))::integer[]%')
 ),
 tudo AS (
   SELECT x.*, a.versao
