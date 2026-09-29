@@ -64,6 +64,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-mapa-da-jornada.sql', '20260929210000'),
   ('aplicar-mapa-intervalo-por-dia.sql', '20260929233000'),
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
+  ('aplicar-meta-so-do-master.sql', '20260929273000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
   ('aplicar-ninguem-gera-pontos-para-si.sql', '20260929271000'),
   ('aplicar-parte-4-porta-do-gerente.sql', '20260929270000'),
@@ -502,7 +503,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (640, 'OPERACAO', 'versao', 'Ninguem gera pontos para si mesmo (comunicado)', 'aplicar-ninguem-gera-pontos-para-si.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'incluir_destinatarios') LIKE '%ninguém gera pontos para si%'),
   (650, 'OPERACAO', 'versao', 'Pessoa em varias lojas: a linha e o tipo da acao', 'aplicar-pessoa-pelo-tipo-da-acao.sql',
-       to_regprocedure('public.posso_na_pessoa(text,integer)') IS NOT NULL AND (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_pessoa') LIKE '%só o dono da conta troca as lojas dela%')
+       to_regprocedure('public.posso_na_pessoa(text,integer)') IS NOT NULL AND (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_pessoa') LIKE '%só o dono da conta troca as lojas dela%'),
+  (660, 'OPERACAO', 'versao', 'Meta so do master; quem lancou a venda, pelo nome', 'aplicar-meta-so-do-master.sql',
+       to_regprocedure('public.historico_das_vendas(integer)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes() WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial')))
 ),
 tudo AS (
   SELECT x.*, a.versao

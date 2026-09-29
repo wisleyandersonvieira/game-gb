@@ -5926,6 +5926,19 @@ export type Database = {
       }
       lojas_onde_posso: { Args: { p_codigo: string }; Returns: number[] }
       pode: { Args: { p_codigo: string; p_lojaid?: number }; Returns: boolean }
+      historico_das_vendas: {
+        Args: { p_lojaid: number }
+        Returns: {
+          alteradoem: string
+          dataapuracao: string
+          foivoce: boolean
+          historicoid: number
+          motivo: string | null
+          quem: string
+          valoranterior: number | null
+          valornovo: number
+        }[]
+      }
       posso_na_pessoa: {
         Args: { p_codigo: string; p_funcionarioid: number }
         Returns: Json

@@ -93,6 +93,7 @@ export const CONTRATO: Record<string, string[]> = {
   folha_de_acesso: ["p_contaid", "p_funcionarioids"],
   fora_do_comunicado: ["p_documentoid"],
   historico_da_pessoa: ["p_funcionarioid", "p_limite"],
+  historico_das_vendas: ["p_lojaid"],
   justificaveis: ["p_dia", "p_funcionarioid"],
   lancar_venda_do_dia: ["p_dia", "p_lojaid", "p_motivo", "p_valor"],
   liberar_documento_pessoal: ["p_documentoid"],

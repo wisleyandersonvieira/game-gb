@@ -5203,6 +5203,8 @@ BEGIN
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
+      -- Decisao 5: so o master le (sou_master e a conta dele) (secao 97).
+      'historico_das_vendas',
       -- 29/09/2026 (parte 2, Tarefas): leem a conta de quem chamou e conferem
       -- pode() nas lojas (secao 98).
       'salvar_tarefa', 'ativar_tarefa', 'encerrar_atribuicoes'
@@ -12004,7 +12006,8 @@ SELECT unnest(ARRAY[
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
   'salvar_tipo_evento', 'ativar_tipo_evento',
   'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
-  'criar_loja', 'ativar_loja', 'apagar_jornada']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'criar_loja', 'ativar_loja', 'apagar_jornada',
+  'salvar_meta_do_mes', 'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial']), 'so_master'   -- decisao 5: a meta e so do master   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -13051,13 +13054,16 @@ RESET ROLE;
 -- ===========================================================================
 -- 97. Usuarios gerenciais, parte 2, fatia 4: Metas (29/09/2026)
 -- ===========================================================================
-DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: permissao e loja no banco'; END $$;
+-- Decisao 5 do Wisley (29/09/2026): o gerente LANCA a venda da loja dele; a
+-- meta e os pontos (meta do mes, da semana, especial) sao so do master, e o
+-- master ve o nome de quem lancou e de quem corrigiu cada venda.
+DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: venda pela loja; meta so do master; quem lancou'; END $$;
 
 DO $$
 DECLARE
   G constant uuid := '97979797-9797-9797-9797-979797979701';
   M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-  v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; e11 integer;
+  v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; e11 integer; e10 integer;
   semana jsonb := (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d, 'valormeta', 777, 'pontospremio', 7))
                      FROM generate_series(1, 7) d);
 BEGIN
@@ -13070,6 +13076,7 @@ BEGIN
     PERFORM set_config('teste.uid', M::text, true);
     SET LOCAL ROLE authenticated;
     e11 := public.criar_meta_especial(11, v_hoje + 20, 'Especial da 11', 900, 9);
+    e10 := public.criar_meta_especial(10, v_hoje + 20, 'Especial da 10', 900, 9);
     RESET ROLE;
 
     PERFORM set_config('teste.uid', G::text, true);
@@ -13083,28 +13090,59 @@ BEGIN
     PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao lanca venda, nao mexe em meta do mes, da semana nem especial');
     RESET ROLE;
 
-    -- 2. Com as permissoes: na loja 10 sim, na 11 nao.
-    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
-      (1, v_cargo, 'metas.lancar_venda'), (1, v_cargo, 'metas.criar_meta'), (1, v_cargo, 'metas.meta_especial');
+    -- 2. Os codigos de criar meta sairam do catalogo: nenhum cargo os recebe.
+    PERFORM public.guardar_foto();
+    BEGIN
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.criar_meta');
+    EXCEPTION WHEN check_violation OR foreign_key_violation THEN NULL; END;
+    BEGIN
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.meta_especial');
+    EXCEPTION WHEN check_violation OR foreign_key_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou() AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes()
+                                                              WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial')),
+                          'criar meta e meta especial nao existem mais no catalogo nem entram em cargo');
+
+    -- 3. Com TODAS as permissoes do catalogo: a venda na loja 10 sim, na 11 nao; a meta, em loja nenhuma.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) SELECT 1, v_cargo, codigo FROM public.catalogo_de_permissoes();
     SET LOCAL ROLE authenticated;
     PERFORM public.lancar_venda_do_dia(10, v_hoje, 1234);
+    PERFORM public.lancar_venda_do_dia(10, v_hoje, 1500, 'faltou uma comanda');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.lancar_venda_do_dia(11, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: NAO lanca venda na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(10, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem na loja DELE mexe na meta do mes, da semana ou especial (so o master)');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(h) FROM public.historico_das_vendas(10) h));
+    PERFORM public.exigir(public.nada_voltou(), 'o historico com nomes e a conferencia do master: o gerente nao le');
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje AND valordia = 1500 AND lancadopor = G AND atualizadopor = G),
+                          'e na loja 10 lanca e corrige a venda de verdade, gravando quem foi');
+
+    -- 4. O master: ve quem lancou e quem corrigiu, pelo nome; e mexe na meta.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT count(*) FROM public.historico_das_vendas(10) h
+                            WHERE h.dataapuracao = v_hoje AND h.quem LIKE '%gui.97@exemplo.com%' AND NOT h.foivoce
+                              AND ((h.valoranterior IS NULL AND h.valornovo = 1234)
+                                OR (h.valoranterior = 1234 AND h.valornovo = 1500 AND h.motivo = 'faltou uma comanda'))) = 2,
+                          'o master ve o lancamento e a correcao do gerente, com o nome dele e o motivo');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.historico_das_vendas(11) h WHERE h.quem LIKE '%gui.97%'),
+                          'e nada do gerente no historico da loja 11');
     PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5);
     PERFORM public.salvar_metas_da_semana(10, semana);
     n := public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9);
-    PERFORM public.guardar_foto();
-    BEGIN PERFORM public.lancar_venda_do_dia(11, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_metas_da_semana(11, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.criar_meta_especial(11, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: NADA na loja 11 (venda, meta do mes, da semana, especial, apagar)');
     PERFORM public.apagar_meta_especial(n);
     RESET ROLE;
-    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje AND valordia = 1234 AND lancadopor = G)
-                          AND EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND nomemeta = 'Meta 97')
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND nomemeta = 'Meta 97')
                           AND (SELECT count(*) FROM public.metasdiariasmodelos WHERE lojaid = 10 AND valormeta = 777) = 7
                           AND NOT EXISTS (SELECT 1 FROM public.metasespeciais WHERE metaespecialid = n),
-                          'e na loja 10 faz de verdade: lanca, salva a meta do mes e da semana, cria e apaga a especial');
+                          'e o master salva a meta do mes e da semana, cria e apaga a especial');
 
     -- 3. Nem o master grava direto nas tabelas (so pela funcao).
     PERFORM set_config('teste.uid', M::text, true);

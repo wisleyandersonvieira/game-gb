@@ -127,8 +127,8 @@ não estava e o sistema faz · **(só master)** = proposta de não delegar.
 | Ver metas | `metas_do_mes`, `meta_do_dia` | Metas: ver (sua) |
 |---|---|---|
 | Lançar a venda do dia | `lancar_venda_do_dia` | Metas: lançar venda (sua) |
-| Meta do mês e meta de cada dia da semana | `salvar_meta_do_mes`, escrita direta em `metasdiariasmodelos` | Metas: criar meta (sua) |
-| Meta especial (criar, apagar) | escrita direta em `metasespeciais` | Metas: criar meta especial (sua) |
+| Meta do mês e meta de cada dia da semana | `salvar_meta_do_mes`, escrita direta em `metasdiariasmodelos` | **Só o master** (decisão 5, 29/09/2026; o código saiu do catálogo) |
+| Meta especial (criar, apagar) | escrita direta em `metasespeciais` | **Só o master** (decisão 5, 29/09/2026; o código saiu do catálogo) |
 
 ### Agenda (FALTOU a tela inteira)
 | Ver agenda, conflitos | `conflitos_agendamento`, `agendamentos_sem_tarefa` | Agenda: ver (FALTOU) |
@@ -526,18 +526,13 @@ trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
 
 **Pendentes (não adivinhadas):**
 - ~~Equipe: quem valida / desativar e acesso~~ **Decidido** (29/09/2026): quem valida fica com o master; desativar e acesso, só com todas as lojas da pessoa dele.
-- Comunicados: um gerente que também é funcionário pode publicar um comunicado
-  com pontos para a própria loja (ele mesmo recebe) e depois dar ciência pelo
-  celular, ganhando os pontos. O teto de pontos por ciência limita o valor.
-  Bloquear, ou o teto basta?
+- ~~Comunicados com pontos para si~~ **Decidido** (29/09/2026): bloqueado pela regra geral "ninguém gera pontos para si mesmo".
 - Agenda, anexo: o gerente registra e remove anexo, mas o ENVIO do arquivo ao
   Storage continua só do master. A trava das regras de acesso (seção 14) só
   aceita a conta do master como âncora no Storage; abrir para o gerente é
   mudar essa trava. Liberar?
 - ~~Pessoa em várias lojas~~ **Decidido** (29/09/2026): a linha é o tipo da ação (acima).
-- Metas: o gerente lança a venda da loja dele; se a loja bater a meta, ele
-  (se for da equipe) ganha os pontos da meta. Conflito aceitável, ou só o
-  master lança?
+- ~~Metas: gerente lança a venda~~ **Decidido** (29/09/2026): aceitável; a meta e os pontos são só do master, e o master vê pelo nome quem lançou e quem corrigiu cada venda.
 
 **Achados (não mexidos):**
 - ~~A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).~~ **Resolvido** (desempate fixo, 29/09/2026).

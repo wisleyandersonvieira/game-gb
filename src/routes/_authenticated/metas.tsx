@@ -662,19 +662,12 @@ function Especiais({ lojaid }: { lojaid: number }) {
 /* ------------------------------------------------------------------ */
 
 function Historico({ lojaid }: { lojaid: number }) {
-  const eu = useQuery({
-    queryKey: ["meu-uid"],
-    queryFn: async () => (await supabase.auth.getUser()).data.user?.id ?? null,
-  });
+  // Quem lançou e quem corrigiu cada venda, pelo nome (decisão 5, 29/09/2026):
+  // o gerente pode lançar a venda, e o master confere aqui.
   const historico = useQuery({
     queryKey: ["metas-historico", lojaid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("metashistorico")
-        .select("historicoid, dataapuracao, valoranterior, valornovo, motivo, alteradopor, alteradoem")
-        .eq("lojaid", lojaid)
-        .order("alteradoem", { ascending: false })
-        .limit(200);
+      const { data, error } = await supabase.rpc("historico_das_vendas", { p_lojaid: lojaid });
       if (error) throw error;
       return data ?? [];
     },
@@ -698,8 +691,8 @@ function Historico({ lojaid }: { lojaid: number }) {
         { titulo: "Motivo", valor: (h) => h.motivo ?? "—", classe: () => "text-muted-foreground" },
         {
           titulo: "Quem",
-          valor: (h) => (h.alteradopor && h.alteradopor === eu.data ? "Você" : h.alteradopor ? "Outro usuário" : "—"),
-          classe: () => "text-muted-foreground",
+          valor: (h) => (h.foivoce ? "Você" : h.quem),
+          classe: (h) => (h.foivoce ? "text-muted-foreground" : h.valoranterior !== null ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground"),
         },
       ]}
     />
