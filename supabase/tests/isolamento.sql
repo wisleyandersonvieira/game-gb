@@ -14151,4 +14151,105 @@ BEGIN
   PERFORM public.exigir(sobra IS NULL, 'toda versao do gerente confere a permissao de ver (sem: ' || coalesce(sobra, '') || ')');
 END $$;
 
+-- ===========================================================================
+-- 109. Desempate: a mesma consulta devolve sempre a mesma ordem (29/09/2026)
+-- ===========================================================================
+-- Empates de proposito (mesmo horario, mesmo nome e titulo). A lista e lida,
+-- as linhas sao regravadas no disco em ordem INVERSA, e a lista e lida de
+-- novo: tem de sair igual, caractere por caractere. Sem desempate fixo, a
+-- ordem dos empates segue a ordem fisica e a segunda leitura sai diferente.
+-- Mais a numeracao da lista do dia: gerada duas vezes, com as atribuicoes
+-- regravadas ao contrario no meio, as linhas tem de sair na mesma ordem.
+DO $$ BEGIN RAISE NOTICE '109. desempate fixo: mesma consulta, mesma ordem'; END $$;
+
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES ('97979797-9797-9797-9797-979797979797', 'master.97@exemplo.com', now());
+INSERT INTO public.contas (contaid, nome, email, limitelojas, status) OVERRIDING SYSTEM VALUE
+VALUES (97, 'Empresa 97', 'e97@exemplo.com', 1, 'ativa');
+INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (97, '97979797-9797-9797-9797-979797979797', 'master');
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES (9701, 97, 'Loja 97');
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+  (97001, 97, 'Mesmo Nome', 0), (97002, 97, 'Mesmo Nome', 0), (97003, 97, 'Mesmo Nome', 0);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (97, 97001, 9701), (97, 97002, 9701), (97, 97003, 9701);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (97101, 97, 'Mesmo Titulo', 1), (97102, 97, 'Mesmo Titulo', 2), (97103, 97, 'Mesmo Titulo', 3);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (97, 97101, 9701), (97, 97102, 9701), (97, 97103, 9701);
+INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia) OVERRIDING SYSTEM VALUE
+VALUES (97201, 97, 97101, 97001, 9701, 'Diaria'), (97202, 97, 97102, 97002, 9701, 'Diaria'), (97203, 97, 97103, 97003, 9701, 'Diaria'),
+       (97204, 97, 97101, 97001, 9701, 'Diaria'), (97205, 97, 97102, 97002, 9701, 'Diaria'), (97206, 97, 97103, 97003, 9701, 'Diaria');
+-- Tres entregas pendentes no MESMO instante.
+SET session_replication_role = replica;
+INSERT INTO public.entregas (entregaid, contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao, dataenvio, pontosganhos)
+OVERRIDING SYSTEM VALUE VALUES
+  (97301, 97, 9701, 97201, 97101, 97001, 'Pendente', '2026-09-28 12:00+00', 1),
+  (97302, 97, 9701, 97202, 97102, 97002, 'Pendente', '2026-09-28 12:00+00', 2),
+  (97303, 97, 9701, 97203, 97103, 97003, 'Pendente', '2026-09-28 12:00+00', 3);
+SET session_replication_role = origin;
+
+-- Regrava as linhas de uma tabela da conta 97 em ordem inversa da chave.
+CREATE OR REPLACE FUNCTION pg_temp.inverter(p_tabela text, p_chave text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  SET LOCAL session_replication_role = replica;
+  EXECUTE format('CREATE TEMP TABLE inv AS SELECT * FROM public.%I WHERE contaid = 97 ORDER BY %I DESC', p_tabela, p_chave);
+  EXECUTE format('DELETE FROM public.%I WHERE contaid = 97', p_tabela);
+  EXECUTE format('INSERT INTO public.%I OVERRIDING SYSTEM VALUE SELECT * FROM inv ORDER BY %I DESC', p_tabela, p_chave);
+  DROP TABLE inv;
+  SET LOCAL session_replication_role = origin;
+END $$;
+
+DO $$
+DECLARE v1 text; v2 text; w1 text; w2 text; o1 text; o2 text; h date := public.hoje_da_conta(97);
+BEGIN
+  BEGIN
+    PERFORM set_config('teste.uid', '97979797-9797-9797-9797-979797979797', true);
+    SET LOCAL ROLE authenticated;
+    v1 := (public.quadro_validacao(9701)->'pendentes')::text;
+    w1 := (SELECT jsonb_agg(a)::text FROM public.atribuicoes_para_entregar(9701) a);
+    SET LOCAL ROLE NONE;
+    PERFORM pg_temp.inverter('entregas', 'entregaid');
+    PERFORM pg_temp.inverter('tarefasatribuidas', 'atribuicaoid');
+    PERFORM pg_temp.inverter('tarefas', 'tarefaid');
+    PERFORM pg_temp.inverter('funcionarios', 'funcionarioid');
+    PERFORM pg_temp.inverter('funcionarioslojas', 'funcionarioid');
+    PERFORM pg_temp.inverter('tarefaslojas', 'tarefaid');
+    -- E outro plano de consulta na segunda leitura.
+    SET LOCAL enable_hashjoin = off;
+    SET LOCAL enable_mergejoin = off;
+    SET LOCAL ROLE authenticated;
+    v2 := (public.quadro_validacao(9701)->'pendentes')::text;
+    w2 := (SELECT jsonb_agg(a)::text FROM public.atribuicoes_para_entregar(9701) a);
+    SET LOCAL ROLE NONE;
+    PERFORM public.exigir(v1 IS NOT NULL AND v1 LIKE '%97301%' AND v1 = v2,
+                          'Quadro: entregas no mesmo instante saem sempre na mesma ordem');
+    PERFORM public.exigir(w1 IS NOT NULL AND w1 LIKE '%97204%' AND w1 = w2,
+                          'lista para registrar entrega: mesmo nome e titulo saem sempre na mesma ordem');
+
+    -- A lista do dia: numerada duas vezes, com as atribuicoes regravadas ao contrario.
+    PERFORM public.lista_do_dia_gerar(97, h, h, false);
+    o1 := (SELECT string_agg(atribuicaoid::text, ',' ORDER BY itemid) FROM public.tarefasdodia WHERE contaid = 97 AND dia = h);
+    SET LOCAL session_replication_role = replica;   -- a lista nao se apaga pelo sistema; aqui e so o teste
+    SET LOCAL session_replication_role = replica;   -- so para limpar a lista entre as duas geracoes
+    DELETE FROM public.tarefasdodia WHERE contaid = 97 AND dia = h;
+    SET LOCAL session_replication_role = origin;
+    SET LOCAL session_replication_role = origin;
+    PERFORM pg_temp.inverter('tarefasatribuidas', 'atribuicaoid');
+    PERFORM pg_temp.inverter('funcionarios', 'funcionarioid');
+    PERFORM pg_temp.inverter('funcionarioslojas', 'funcionarioid');
+    SET LOCAL enable_hashjoin = on;
+    SET LOCAL enable_mergejoin = on;
+    PERFORM public.lista_do_dia_gerar(97, h, h, false);
+    o2 := (SELECT string_agg(atribuicaoid::text, ',' ORDER BY itemid) FROM public.tarefasdodia WHERE contaid = 97 AND dia = h);
+    -- A regra fixa: numeradas por loja e atribuicao. Sem ela, quem decide e o
+    -- plano da consulta (visto: sai ao contrario).
+    PERFORM public.exigir(o1 IS NOT NULL AND o1 = o2
+                          AND o1 = (SELECT string_agg(atribuicaoid::text, ',' ORDER BY lojaid, atribuicaoid)
+                                      FROM public.tarefasdodia WHERE contaid = 97 AND dia = h),
+                          'lista do dia: as linhas saem numeradas sempre na mesma ordem, por loja e atribuicao (' || coalesce(o1, '') || ' / ' || coalesce(o2, '') || ')');
+    RAISE EXCEPTION 'desfazer_109';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_109' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

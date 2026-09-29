@@ -44,6 +44,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-concluidas-e-venda-de-ontem.sql', '20260929244000'),
   ('aplicar-consertos-da-revisao-c1.sql', '20260929100400'),
   ('aplicar-desempate-e-dias-sem-lancamento.sql', '20260929245000'),
+  ('aplicar-desempate-nas-listas.sql', '20260929265500'),
   ('aplicar-disponivel-uma-fonte.sql', '20260929238000'),
   ('aplicar-entrega-da-copia.sql', '20260929234000'),
   ('aplicar-entrega-do-celular.sql', '20260929235000'),
@@ -471,7 +472,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_da_loja') LIKE '%pode(''painel.ver''%'),
   (590, 'OPERACAO', 'versao', 'Leituras do gerente: Quadro', 'aplicar-permissoes-parte-3-quadro.sql',
        to_regprocedure('public.quadro_validacao_gerente(integer, date, date, integer)') IS NOT NULL
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%quadro_validacao_gerente%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%quadro_validacao_gerente%'),
+  (595, 'OPERACAO', 'versao', 'Desempate fixo nas listas', 'aplicar-desempate-nas-listas.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%ORDER BY x.dataenvio, x.entregaid)%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lista_do_dia_gerar') LIKE '%ORDER BY c.lojaid, c.atribuicaoid%')
 ),
 tudo AS (
   SELECT x.*, a.versao

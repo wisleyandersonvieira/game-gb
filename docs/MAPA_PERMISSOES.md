@@ -541,5 +541,5 @@ trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
   master lança?
 
 **Achados (não mexidos):**
-- A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).
-- Quadro (validação e lista para registrar entrega): entregas gravadas no mesmo instante saem em ordem incerta (a prova da parte 3 viu a MESMA resposta em outra ordem, banco igual). Juntar com o desempate.
+- ~~A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).~~ **Resolvido** (desempate fixo, 29/09/2026).
+- ~~Quadro (validação e lista para registrar entrega): entregas gravadas no mesmo instante saem em ordem incerta (a prova da parte 3 viu a MESMA resposta em outra ordem, banco igual). Juntar com o desempate.~~ **Resolvido** (desempate fixo, 29/09/2026).

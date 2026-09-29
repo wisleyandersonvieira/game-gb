@@ -53,8 +53,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP FUNCTION public.quadro_validacao_gerente(integer, date, date, integer);")"
-if echo "$s" | grep -q "|rode aplicar-permissoes-parte-3-quadro.sql"; then
+s="$(conferir "CREATE OR REPLACE FUNCTION public.lista_do_dia_gerar(p_contaid integer, p_dia date, p_hoje date, p_recuperado boolean) RETURNS integer LANGUAGE sql AS 'SELECT 0';")"
+if echo "$s" | grep -q "|rode aplicar-desempate-nas-listas.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1
