@@ -92,7 +92,7 @@ O **Mapa da jornada** (Pessoas → Jornada → Mapa, 27/09/2026) é **planejamen
 Commit **não** é publicação: o Lovable publica do GitHub, e commit que não foi **enviado** não chega no ar. Isso já custou um dia de teste em 25/09/2026, com o Wisley procurando defeito numa tela que nunca tinha sido publicada.
 
 A mensagem final de **toda** entrega diz, sempre, nesta ordem:
-1. **`enviado ao GitHub: <commit>`** — enviado, não só commitado. Confira com `git status -sb` que não sobrou nada em `ahead`.
+1. **`enviado ao GitHub: <commit>`** — enviado, não só commitado. Confira com `git status -sb` que não sobrou nada em `ahead`. **E as verificações do GitHub desse commit estão VERDES** (`gh run list --commit <commit>` / `gh run watch`), não só as locais: de 25 a 29/09/2026 a `main` ficou 51 rodadas vermelha (um `bun.lock` com um pacote que já tinha saído do `package.json`, e um comentário que a verificação lia como chamada), inclusive a versão no ar, e ninguém olhou — o "passou" era só local, com `node_modules` já instalado. Antes de enviar, rode os passos do `.github/workflows/verificacao.yml` numa cópia limpa do commit (sem `node_modules`), não só a suíte local.
 2. **Quantas migrações** tem o arquivo de aplicar, e qual é o nome dele.
 3. **O que o Wisley precisa fazer, na ordem** (aplicar o SQL → publicar → conferir).
 
