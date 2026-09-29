@@ -5195,6 +5195,7 @@ BEGIN
       'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje_gerente',
       'painel_inicio_gerente', 'contagem_do_menu_gerente',
       'analise_de_tarefas_gerente', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa_gerente',
+      'metas_do_mes_gerente',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -14167,6 +14168,23 @@ BEGIN
     PERFORM public.guardar_resultado((SELECT jsonb_agg(t) FROM public.tarefas_pegas_da_pessoa(g.outrapessoa, v_hoje - 30, v_hoje) t));
     PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': tarefas pegas de pessoa de outra loja vem vazio');
 
+    -- Metas
+    v := public.metas_do_mes(g.loja, v_mes);
+    PERFORM public.exigir(v::text LIKE '%Meta-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': metas do mes da loja dele');
+    PERFORM public.guardar_resultado(public.metas_do_mes(g.outra, v_mes));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': metas de outra loja vem vazio');
+    IF g.m = 'A' THEN
+      -- O mes da meta e todo em R$: sem "Ver valores em R$", nem da propria loja.
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'valores.ver_rs';
+      SET LOCAL ROLE authenticated;
+      PERFORM public.guardar_resultado(public.metas_do_mes(g.loja, v_mes));
+      PERFORM public.exigir(public.nada_voltou(), 'sem "Ver R$", o gerente nao recebe o mes da meta (nem da loja dele)');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs');
+      SET LOCAL ROLE authenticated;
+    END IF;
   END LOOP;
 
   -- E o master da conta ve as tres lojas (o teste enxerga as marcas quando elas existem).
@@ -14194,7 +14212,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa');
+     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).

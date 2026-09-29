@@ -81,6 +81,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
   ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
   ('aplicar-permissoes-parte-3-inicio.sql', '20260929266000'),
+  ('aplicar-permissoes-parte-3-metas.sql', '20260929268000'),
   ('aplicar-permissoes-parte-3-painel-fila.sql', '20260929264000'),
   ('aplicar-permissoes-parte-3-quadro.sql', '20260929265000'),
   ('aplicar-permissoes-parte-3-relatorios.sql', '20260929267000'),
@@ -486,7 +487,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu') LIKE '%contagem_do_menu_gerente%'),
   (610, 'OPERACAO', 'versao', 'Leituras do gerente: Relatorios', 'aplicar-permissoes-parte-3-relatorios.sql',
        to_regprocedure('public.pendencias_da_pessoa_gerente(integer, date, date)') IS NOT NULL
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'historico_da_pessoa') LIKE '%historico_da_pessoa_gerente%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'historico_da_pessoa') LIKE '%historico_da_pessoa_gerente%'),
+  (620, 'OPERACAO', 'versao', 'Leituras do gerente: Metas', 'aplicar-permissoes-parte-3-metas.sql',
+       to_regprocedure('public.metas_do_mes_gerente(integer, date)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'metas_do_mes') LIKE '%metas_do_mes_gerente%')
 ),
 tudo AS (
   SELECT x.*, a.versao
