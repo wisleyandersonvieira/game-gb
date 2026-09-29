@@ -11946,11 +11946,11 @@ SELECT unnest(ARRAY[
   'alterar_pagamento_agendamento',
   'arquivar_comunicado', 'cancelar_agendamento',
   'criar_agendamento', 'criar_conquista', 'criar_link_tv',
-  'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
+  'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
   'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'parear_tv',
   'publicar_comunicado', 'reabrir_agendamento',
   'recriar_tarefa_do_agendamento', 'registrar_anexo_agendamento', 'registrar_ciencia',
-  'registrar_justificativa', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
+  'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'trocar_responsavel_agendamento', 'vincular_jornada']), 'pendente_parte2';
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
@@ -13234,6 +13234,99 @@ BEGIN
     RAISE EXCEPTION 'desfazer_99';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_99' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 100. Usuarios gerenciais, parte 2, fatia 7: Justificativas (29/09/2026)
+-- ===========================================================================
+-- Registrar e decidir: permissao na loja da atribuicao. Registrar ja aceitando
+-- exige as duas. Ninguem registra nem decide a PROPRIA justificativa.
+DO $$ BEGIN RAISE NOTICE '100. parte 2, Justificativas: loja, as duas permissoes e a propria'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '10010010-0100-1001-0010-010010010001';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; t10 integer; t11 integer; a10 integer; a10b integer; a11 integer; a_eu integer; a11b integer; a_eu2 integer;
+  j10 integer; j11 integer; j_eu integer; n integer; v_hoje date := public.dia_em_sao_paulo(now());
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (10012, 1, 'Vera Dez', 0), (10013, 1, 'Wagner Onze', 0), (10014, 1, 'Xenia Gerente', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 10012, 10), (1, 10013, 11), (1, 10014, 10);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'jus.100@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Justificativas 100') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid) VALUES (1, G, v_cargo, 10014);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    t10 := public.salvar_tarefa('Limpar vitrine 100', 5, ARRAY[10]);
+    t11 := public.salvar_tarefa('Repor copos 100', 5, ARRAY[11]);
+    a10  := public.atribuir_tarefa(t10, 10, ARRAY[10012], 'Diaria');
+    a11  := public.atribuir_tarefa(t11, 11, ARRAY[10013], 'Diaria');
+    a_eu := public.atribuir_tarefa(t10, 10, ARRAY[10014], 'Diaria');
+    -- Pendentes, criadas pelo master, para o gerente decidir.
+    j10  := public.registrar_justificativa(a10, v_hoje, 'Faltou produto', false);
+    j11  := public.registrar_justificativa(a11, v_hoje, 'Faltou copo', false);
+    j_eu := public.registrar_justificativa(a_eu, v_hoje, 'Estava no banco', false);
+    RESET ROLE;
+    -- Uma segunda tarefa na loja 10, ainda sem justificativa.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    a10b := public.atribuir_tarefa(public.salvar_tarefa('Contar estoque 100', 5, ARRAY[10]), 10, ARRAY[10012], 'Diaria');
+    a11b := public.atribuir_tarefa(public.salvar_tarefa('Varrer 100', 5, ARRAY[11]), 11, ARRAY[10013], 'Diaria');
+    a_eu2 := public.atribuir_tarefa(public.salvar_tarefa('Fechar caixa 100', 5, ARRAY[10]), 10, ARRAY[10014], 'Diaria');
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_justificativa(a10b, v_hoje, 'Chuva', false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.decidir_justificativa(j10, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao registra nem decide justificativa');
+    RESET ROLE;
+
+    -- 2. Com "registrar": na loja 10 registra pendente; ja aceitar, nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'justificativas.registrar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_justificativa(a10b, v_hoje, 'Chuva', true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'so com "registrar": nao registra ja aceitando (isso e decidir)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.decidir_justificativa(j10, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'so com "registrar": nao decide');
+    n := public.registrar_justificativa(a10b, v_hoje, 'Chuva', false);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT status = 'Pendente' AND lojaid = 10 AND registradopor = G FROM public.justificativas WHERE justificativaid = n),
+                          'e registra de verdade, pendente, na loja 10');
+
+    -- 3. Com "decidir": na loja 10 decide; na 11 e a propria, nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'justificativas.decidir');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.decidir_justificativa(j11, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.registrar_justificativa(a11b, v_hoje, 'Outra', false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com as duas: nada na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.decidir_justificativa(j_eu, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'ninguem decide a PROPRIA justificativa');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_justificativa(a_eu2, v_hoje, 'Eu mesmo', false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'ninguem registra justificativa da PROPRIA tarefa');
+    PERFORM public.decidir_justificativa(j10, false, 'Tinha produto no estoque');
+    PERFORM public.decidir_justificativa(n, true);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT status = 'Recusada' AND decididopor = G FROM public.justificativas WHERE justificativaid = j10)
+                          AND (SELECT status = 'Aceita' FROM public.justificativas WHERE justificativaid = n),
+                          'e na loja 10 recusa e aceita de verdade');
+    RAISE EXCEPTION 'desfazer_100';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_100' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

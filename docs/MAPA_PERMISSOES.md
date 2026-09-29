@@ -506,6 +506,7 @@ fácil); decisão de negócio não se adivinha — fica aqui.
   INTEIRAMENTE dentro das lojas em que ele tem a permissão; ninguém dá nem
   anula feedback de si mesmo.
 - Tarefas: tarefa sem loja nenhuma é só do master.
+- Justificativas: ninguém registra nem decide a PRÓPRIA justificativa; registrar já aceitando exige também a permissão de decidir.
 
 **Pendentes (não adivinhadas):**
 - Pessoa em várias lojas: soltar para "pelo menos uma loja em comum" nas

@@ -66,6 +66,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
   ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
+  ('aplicar-permissoes-parte-2-justificativas.sql', '20260929256000'),
   ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
   ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
@@ -427,7 +428,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'atribuir_tarefa') LIKE '%pode(''tarefas.atribuir''%'),
   (490, 'OPERACAO', 'versao', 'Solicitacoes com permissao e loja no banco', 'aplicar-permissoes-parte-2-solicitacoes.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'mudar_situacao_solicitacao') LIKE '%pode(''solicitacoes.recusar''%'
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'abrir_solicitacao') LIKE '%pode(''solicitacoes.abrir''%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'abrir_solicitacao') LIKE '%pode(''solicitacoes.abrir''%'),
+  (500, 'OPERACAO', 'versao', 'Justificativas com permissao e loja no banco', 'aplicar-permissoes-parte-2-justificativas.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_justificativa') LIKE '%pode(''justificativas.registrar''%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'decidir_justificativa') LIKE '%pode(''justificativas.decidir''%')
 ),
 tudo AS (
   SELECT x.*, a.versao
