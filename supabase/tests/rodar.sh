@@ -336,6 +336,23 @@ ERROR: teste do segredo do webhook FALHOU"
 fi
 rm -f /tmp/gamegb-deno.txt
 
+# Por ultimo: o volume gera milhares de linhas (e numeros de entrega) que
+# esbarrariam nos numeros fixos dos testes de concorrencia acima.
+echo "==> tempo das telas com volume de loja real (reprova acima de 1,5 s ou tela vazia)"
+if ! rodar "$RAIZ/supabase/tests/volume_semear.sql" >/dev/null 2>&1; then
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (nao deu para montar o volume de loja real)"
+  exit 1
+fi
+saida_v="$(rodar "$RAIZ/supabase/tests/volume_medir.sql" 2>&1)" && ok_v=1 || ok_v=0
+echo "$saida_v" | sed -n 's/^psql:[^ ]* //p' | grep -E 'NOTICE' | sed 's/^NOTICE:  //' || true
+if [ "$ok_v" != "1" ]; then
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (tempo das telas)"
+  echo "$saida_v" | grep -E 'ERROR|FALHOU' || true
+  exit 1
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"
