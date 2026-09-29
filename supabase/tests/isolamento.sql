@@ -1515,7 +1515,9 @@ BEGIN
   BEGIN UPDATE public.conquistas SET criteriovalor = 1 WHERE conquistaid = k2; deu_erro := false;
   EXCEPTION WHEN insufficient_privilege OR restrict_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a regra da conquista nao muda depois de criada');
-  UPDATE public.conquistas SET nome = 'Tres tarefas!', pontosbonus = 12 WHERE conquistaid = k2;
+  -- Desde a parte 2 (Conquistas), pela funcao do master: ninguem grava direto.
+  PERFORM public.editar_conquista(k2, 'Tres tarefas!', (SELECT descricao FROM public.conquistas WHERE conquistaid = k2),
+                                  (SELECT icone FROM public.conquistas WHERE conquistaid = k2), 12);
   PERFORM public.exigir((SELECT nome FROM public.conquistas WHERE conquistaid = k2) = 'Tres tarefas!', 'o nome e o bonus podem mudar');
 
   PERFORM public.guardar_foto();
@@ -1777,9 +1779,11 @@ BEGIN
   -- a prova e que nenhuma linha de OUTRA conta aparece.
   PERFORM public.exigir((SELECT count(*) FROM public.configuracoeshistorico WHERE contaid <> 2) = 0,
                         'B nao ve o historico de configuracoes de A');
-  UPDATE public.conquistas SET nome = 'INVADIDA';
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'B nao altera conquista de A');
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.conquistas SET nome = 'INVADIDA'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM public.editar_conquista(current_setting('teste.k5')::integer, 'INVADIDA', 'x', NULL, 0);
+  EXCEPTION WHEN no_data_found THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'B nao altera conquista de A (nem direto, nem pela funcao)');
 
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.ranking_mensal(extract(year FROM ini)::integer, extract(month FROM ini)::integer)),
                         'o ranking mensal de B nao mostra ninguem de A');
@@ -5146,7 +5150,7 @@ BEGIN
       'estornos_da_conta',
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
-      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento',
+      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -11939,7 +11943,8 @@ SELECT unnest(ARRAY[
   'salvar_jornada', 'tratar_relato',
   'pegar_tarefa',
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
-  'salvar_tipo_evento', 'ativar_tipo_evento']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'salvar_tipo_evento', 'ativar_tipo_evento',
+  'criar_conquista', 'editar_conquista', 'ativar_conquista']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -11947,7 +11952,7 @@ SELECT unnest(ARRAY[
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[
-  'criar_conquista', 'criar_link_tv',
+  'criar_link_tv',
   'iniciar_onboarding', 'liberar_pin',
   'marcar_etapa_onboarding', 'parear_tv',
   'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
@@ -11957,7 +11962,7 @@ CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NU
 INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
-SELECT unnest(ARRAY['conquistas', 'funcionarios', 'funcionarioslojas', 'jornadas', 'lojas',
+SELECT unnest(ARRAY['funcionarios', 'funcionarioslojas', 'jornadas', 'lojas',
                     'onboardingetapas']), 'pendente_parte2';
 
 DO $$
@@ -13553,6 +13558,56 @@ BEGIN
     RAISE EXCEPTION 'desfazer_102';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_102' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 103. Usuarios gerenciais, parte 2, fatia 10: Conquistas (29/09/2026)
+-- ===========================================================================
+-- Catalogo da conta, sem loja: so o master cria, edita e ativa; ninguem grava
+-- direto na tabela. O gerente de "Acesso total" (tem tudo) e barrado pelo
+-- sou_master, nao pela conta.
+DO $$ BEGIN RAISE NOTICE '103. parte 2, Conquistas: catalogo so do master'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '12121212-1212-1212-1212-121212121212';   -- gerente "Acesso total", lojas 10 e 11
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  c integer; x jsonb;
+BEGIN
+  BEGIN
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    x := public.criar_conquista('Conquista 103', 'desc', NULL, 'total_tarefas_aprovadas', 999, NULL, 0, false);
+    c := (x->>'conquistaid')::integer;
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_conquista('Do gerente', 'desc', NULL, 'total_tarefas_aprovadas', 5, NULL, 10, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_conquista(c, 'Mudada', 'desc', NULL, 50); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.ativar_conquista(c, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente de "Acesso total" nao cria, edita nem desativa conquista (so o master)');
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.conquistas SET pontosbonus = 77 WHERE conquistaid = c; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM public.conquistas WHERE conquistaid = c; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava conquista direto na tabela');
+    PERFORM public.editar_conquista(c, 'Conquista 103 (nova)', '', ' ', 7);
+    PERFORM public.ativar_conquista(c, false);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT nome = 'Conquista 103 (nova)' AND descricao = 'Conquista 103 (nova)' AND icone IS NULL
+                                  AND pontosbonus = 7 AND NOT ativa FROM public.conquistas WHERE conquistaid = c),
+                          'e o master edita e desativa pela funcao, de verdade');
+    RAISE EXCEPTION 'desfazer_103';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_103' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

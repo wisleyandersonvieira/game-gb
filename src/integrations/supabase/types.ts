@@ -5288,6 +5288,7 @@ export type Database = {
       }
       ativar_tarefa: { Args: { p_ativa: boolean; p_tarefaid: number }; Returns: undefined }
       ativar_premio: { Args: { p_ativo: boolean; p_produtoid: number }; Returns: undefined }
+      ativar_conquista: { Args: { p_ativa: boolean; p_conquistaid: number }; Returns: undefined }
       atribuir_tarefa: {
         Args: {
           p_dataagendamento?: string
@@ -5779,6 +5780,10 @@ export type Database = {
           p_telefone: string
           p_tipoeventoid: number
         }
+        Returns: undefined
+      }
+      editar_conquista: {
+        Args: { p_bonus: number; p_conquistaid: number; p_descricao: string; p_icone: string; p_nome: string }
         Returns: undefined
       }
       editar_comunicado: {

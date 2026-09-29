@@ -152,15 +152,13 @@ function Cadastro() {
     mutationFn: async (conquistaid: number) => {
       if (!edicao.nome.trim()) throw new Error("Dê um nome à conquista.");
       if (!Number.isInteger(edicao.bonus) || edicao.bonus < 0) throw new Error("Bônus precisa ser 0 ou mais.");
-      const { error } = await supabase
-        .from("conquistas")
-        .update({
-          nome: edicao.nome.trim(),
-          descricao: edicao.descricao.trim() || edicao.nome.trim(),
-          icone: edicao.icone.trim() || null,
-          pontosbonus: edicao.bonus,
-        })
-        .eq("conquistaid", conquistaid);
+      const { error } = await supabase.rpc("editar_conquista", {
+        p_conquistaid: conquistaid,
+        p_nome: edicao.nome.trim(),
+        p_descricao: edicao.descricao.trim() || edicao.nome.trim(),
+        p_icone: edicao.icone.trim(),
+        p_bonus: edicao.bonus,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -171,7 +169,7 @@ function Cadastro() {
 
   const alternar = useMutation({
     mutationFn: async ({ conquistaid, ativa }: { conquistaid: number; ativa: boolean }) => {
-      const { error } = await supabase.from("conquistas").update({ ativa }).eq("conquistaid", conquistaid);
+      const { error } = await supabase.rpc("ativar_conquista", { p_conquistaid: conquistaid, p_ativa: ativa });
       if (error) throw error;
     },
     onSuccess: () => atualizarTudo(qc),
