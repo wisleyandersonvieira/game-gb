@@ -53,7 +53,7 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "CREATE OR REPLACE FUNCTION public.lista_do_dia_gerar(p_contaid integer, p_dia date, p_hoje date, p_recuperado boolean) RETURNS integer LANGUAGE sql AS 'SELECT 0';")"
+s="$(conferir "CREATE OR REPLACE FUNCTION public.lista_do_dia_gerar(p_contaid integer, p_dia date, p_hoje date, p_recuperado boolean) RETURNS jsonb LANGUAGE sql AS 'SELECT NULL::jsonb';")"
 if echo "$s" | grep -q "|rode aplicar-desempate-nas-listas.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
