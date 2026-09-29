@@ -46,6 +46,27 @@ async function exigirMaster(supabase: ClienteDoUsuario) {
   if (data !== true) throw new Error("Acesso negado: só o dono da conta pode fazer isso.");
 }
 
+/**
+ * O acesso de uma pessoa (criar, redefinir, desativar): o master, ou o gerente
+ * cujo cargo deixa E que tem TODAS as lojas da pessoa (29/09/2026, decisões 2
+ * e 4). Ninguém mexe no próprio acesso. Checado no banco, pelo token de quem
+ * pediu; devolve a conta dele, que é a única onde o servidor pode mexer.
+ */
+async function exigirNaPessoa(supabase: ClienteDoUsuario, codigo: string, funcionarioids: number[]) {
+  let conta: number | null = null;
+  for (const funcionarioid of funcionarioids) {
+    const { data, error } = await supabase.rpc("posso_na_pessoa", { p_codigo: codigo, p_funcionarioid: funcionarioid });
+    if (error) throw new Error("Não foi possível verificar a permissão.");
+    const r = data as { pode?: boolean; conta?: number } | null;
+    if (r?.pode !== true || typeof r.conta !== "number") {
+      throw new Error("Acesso negado: esta pessoa trabalha em loja fora das suas, ou o seu cargo não permite isto.");
+    }
+    conta = r.conta;
+  }
+  if (conta === null) throw new Error("Acesso negado.");
+  return conta;
+}
+
 async function contaDoMaster(supabase: ClienteDoUsuario) {
   const { data, error } = await supabase.rpc("minha_conta");
   if (error || typeof data !== "number") throw new Error("Não foi possível descobrir a sua conta.");
@@ -617,8 +638,7 @@ export const criarAcessoColaborador = createServerFn({ method: "POST" })
   .validator((d: { funcionarioid: number }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    await exigirMaster(supabase);
-    const contaid = await contaDoMaster(supabase);
+    const contaid = await exigirNaPessoa(supabase, "equipe.criar_acesso", [data.funcionarioid]);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: pessoa, error: erroPessoa } = await supabaseAdmin
@@ -674,8 +694,7 @@ export const gerarCodigoDeAcesso = createServerFn({ method: "POST" })
   .validator((d: { funcionarioid: number }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    await exigirMaster(supabase);
-    const contaid = await contaDoMaster(supabase);
+    const contaid = await exigirNaPessoa(supabase, "equipe.criar_acesso", [data.funcionarioid]);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: pessoa } = await supabaseAdmin
@@ -696,9 +715,7 @@ export const redefinirAcessoColaborador = createServerFn({ method: "POST" })
   .validator((d: { funcionarioid: number }) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    await exigirMaster(supabase);
-    const contaid = await contaDoMaster(supabase);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const contaid = await exigirNaPessoa(supabase, "equipe.redefinir_acesso", [data.funcionarioid]);
 
     const r = await redefinirInterno(contaid, data.funcionarioid, userId);
     return { nome: r.nome, codigo: r.codigo, dias: DIAS_DO_CODIGO };
@@ -799,8 +816,9 @@ export const emitirFolhasDeAcesso = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as unknown as { supabase: ClienteDoUsuario; userId: string };
-    await exigirMaster(supabase);
-    const contaid = await contaDoMaster(supabase);
+    // Redefinir derruba senha e PIN; o resto só cria acesso ou código.
+    const codigo = data.modo === "redefinir" ? "equipe.redefinir_acesso" : "equipe.criar_acesso";
+    const contaid = await exigirNaPessoa(supabase, codigo, data.funcionarioids);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const ler = async () => {
@@ -957,8 +975,7 @@ export const desativarColaborador = createServerFn({ method: "POST" })
   .validator((d: { funcionarioid: number; ativo: boolean }) => d)
   .handler(async ({ data, context }) => {
     const { supabase } = context as unknown as { supabase: ClienteDoUsuario };
-    await exigirMaster(supabase);
-    const contaid = await contaDoMaster(supabase);
+    const contaid = await exigirNaPessoa(supabase, "equipe.desativar", [data.funcionarioid]);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { error } = await supabaseAdmin

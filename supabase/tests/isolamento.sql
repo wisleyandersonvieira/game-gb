@@ -5197,6 +5197,9 @@ BEGIN
       'analise_de_tarefas_gerente', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa_gerente',
       'metas_do_mes_gerente',
       'minhas_lojas', 'minhas_permissoes',
+      -- Decisoes 2 e 4: so responde sobre quem chama (conta dele, pessoa da
+      -- conta dele, pode_na_pessoa e nunca o proprio) (secao 111).
+      'posso_na_pessoa',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -12957,16 +12960,16 @@ RESET ROLE;
 -- ===========================================================================
 -- 96. Usuarios gerenciais, parte 2, fatia 3: Feedbacks (29/09/2026)
 -- ===========================================================================
--- Feedback e sobre a PESSOA: o gerente so age sobre quem esta INTEIRAMENTE
--- dentro das lojas em que ele tem a permissao, e nunca sobre si mesmo.
-DO $$ BEGIN RAISE NOTICE '96. parte 2, Feedbacks: a pessoa inteira dentro das lojas dele'; END $$;
+-- Feedback e sobre a PESSOA, e e dia a dia: basta UMA loja em comum com o
+-- gerente (decisao 4 do Wisley, 29/09/2026); nunca sobre si mesmo.
+DO $$ BEGIN RAISE NOTICE '96. parte 2, Feedbacks: uma loja em comum basta, nunca o proprio'; END $$;
 
 DO $$
 DECLARE
   G constant uuid := '96969696-9696-9696-9696-969696969601';
   M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
   v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; v text;
-  fb_dentro integer; fb_meio integer; fb_proprio integer;
+  fb_dentro integer; fb_meio integer; fb_proprio integer; fb_onze integer; n2 integer;
 BEGIN
   BEGIN
     -- 9611 e o proprio gerente; 9612 so na loja 10; 9613 nas lojas 10 e 11; 9614 so na 11.
@@ -12986,6 +12989,7 @@ BEGIN
     fb_dentro  := public.registrar_feedback(9612, v_hoje - 1, 8, 'bom');
     fb_meio    := public.registrar_feedback(9613, v_hoje - 1, 8, 'bom');
     fb_proprio := public.registrar_feedback(9611, v_hoje - 1, 8, 'bom');
+    fb_onze    := public.registrar_feedback(9614, v_hoje - 1, 8, 'bom');
     RESET ROLE;
 
     PERFORM set_config('teste.uid', G::text, true);
@@ -12997,13 +13001,11 @@ BEGIN
     PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao da nem anula feedback');
     RESET ROLE;
 
-    -- 2. Com "registrar": so quem esta inteiro dentro da loja dele.
+    -- 2. Com "registrar": quem tem uma loja em comum com ele.
     INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'feedbacks.registrar');
     SET LOCAL ROLE authenticated;
     n := public.registrar_feedback(9612, v_hoje, 9, 'otimo');
-    PERFORM public.guardar_foto();
-    BEGIN PERFORM public.registrar_feedback(9613, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'com "registrar": NAO da feedback a quem tambem trabalha na loja 11 (Meire)');
+    n2 := public.registrar_feedback(9613, v_hoje, 9, 'otimo');
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.registrar_feedback(9614, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nem a quem so trabalha na loja 11');
@@ -13014,19 +13016,23 @@ BEGIN
     PERFORM public.exigir((SELECT registradopor = G FROM public.feedbacks WHERE feedbackid = n)
                           AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = n AND tipo = 'bonus'),
                           'e da de verdade a quem esta so na loja dele, com o bonus no livro');
+    PERFORM public.exigir((SELECT registradopor = G FROM public.feedbacks WHERE feedbackid = n2)
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = n2 AND tipo = 'bonus'),
+                          'e a quem esta na loja dele E na 11 (Meire): uma loja em comum basta, com o bonus no livro');
 
     -- 3. Anular: as mesmas bordas.
     INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'feedbacks.anular');
     SET LOCAL ROLE authenticated;
     PERFORM public.anular_feedback(fb_dentro, 'nota lancada errada');
+    PERFORM public.anular_feedback(fb_meio, 'nota lancada errada');
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.anular_feedback(fb_meio, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.anular_feedback(fb_onze, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.anular_feedback(fb_proprio, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'com "anular": nao anula o de quem tambem e da loja 11, nem o proprio');
+    PERFORM public.exigir(public.nada_mudou(), 'com "anular": nao anula o de quem so e da loja 11, nem o proprio');
     RESET ROLE;
-    PERFORM public.exigir((SELECT anuladopor = G FROM public.feedbacks WHERE feedbackid = fb_dentro)
-                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = fb_dentro AND tipo = 'estorno_bonus'),
-                          'e anula de verdade o de quem esta so na loja dele, com o estorno do bonus no livro');
+    PERFORM public.exigir((SELECT count(*) = 2 FROM public.feedbacks WHERE feedbackid IN (fb_dentro, fb_meio) AND anuladopor = G)
+                          AND (SELECT count(*) = 2 FROM public.movimentospontos WHERE feedbackid IN (fb_dentro, fb_meio) AND tipo = 'estorno_bonus'),
+                          'e anula de verdade o de quem esta na loja dele (so nela ou tambem na 11), com o estorno no livro');
 
     -- 4. A lista de estornos do master mostra o feedback anulado, com quem anulou.
     PERFORM set_config('teste.uid', M::text, true);
@@ -13861,7 +13867,8 @@ RESET ROLE;
 -- 106. Usuarios gerenciais, parte 2, fatia 13: Equipe (29/09/2026)
 -- ===========================================================================
 -- As bordas: criar so nas lojas dele; dados da pessoa so com ela inteira nas
--- lojas dele; lojas, so as dele mudam; CPF de quem existe e validador, so o
+-- lojas dele; trocar as lojas e cadastro: a pessoa inteira nas lojas dele, e
+-- so as dele mudam (decisao 4, 29/09/2026); CPF de quem existe e validador, so o
 -- master; nunca o proprio cadastro. PIN e jornada: na pessoa, nunca o proprio.
 DO $$ BEGIN RAISE NOTICE '106. parte 2, Equipe: as bordas, o CPF, o PIN e a jornada'; END $$;
 
@@ -13917,6 +13924,12 @@ BEGIN
     BEGIN PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[]::integer[]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nao tira ninguem da loja 11');
     PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao poe na loja DELE quem so trabalha na 11 (trocar as lojas: a pessoa inteira nas dele)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao tira da loja DELE quem tambem trabalha na 11');
+    PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Dez', '30630630615', NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nao muda o CPF de quem ja existe (so o master)');
     PERFORM public.guardar_foto();
@@ -13940,10 +13953,14 @@ BEGIN
     -- 4. O que ele pode, de verdade.
     n := public.salvar_pessoa(NULL, 'Nova 106', '20620620609', 'Caixa', NULL, NULL, 2, ARRAY[10]);
     PERFORM public.salvar_pessoa(10612, 'Hugo Dez (novo)', '10610610600', 'Balcao', NULL, '11999990000', 3, ARRAY[10]);
-    PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]);
-    PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]);
     PERFORM public.liberar_pin(10612);
     PERFORM public.vincular_jornada(ARRAY[10612, n], j);
+    RESET ROLE;
+    -- Com a loja 11 tambem dele, Iris e Kaio ficam inteiros nas lojas dele: ai troca.
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 11);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]);
+    PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]);
     RESET ROLE;
     PERFORM public.exigir((SELECT cpf = '20620620609' AND diadefolga = 2 FROM public.funcionarios WHERE funcionarioid = n)
                           AND EXISTS (SELECT 1 FROM public.funcionarioslojas WHERE funcionarioid = n AND lojaid = 10 AND ativo)
@@ -14437,5 +14454,59 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL; END;
   PERFORM public.exigir(public.nada_mudou(), 'o master nunca e pessoa da equipe: ele nao gera pontos para si (conquista so o master cria)');
 END $$;
+
+-- ===========================================================================
+-- 111. O acesso da pessoa pelo gerente (29/09/2026, decisoes 2 e 4)
+-- ===========================================================================
+-- Criar acesso, redefinir e desativar rodam no servidor, que pergunta ao banco
+-- com o login de quem pediu (posso_na_pessoa). Pode: o master, e o gerente
+-- com o codigo no cargo e TODAS as lojas da pessoa dentro das dele; nunca o
+-- proprio. A resposta negada nao diz nem a conta.
+DO $$ BEGIN RAISE NOTICE '111. o acesso da pessoa: todas as lojas dela sao dele, nunca o proprio'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  NAO constant jsonb := '{"pode": false}';
+  fora integer := (SELECT min(funcionarioid) FROM public.funcionarios WHERE contaid <> 96);
+  cod text; r jsonb;
+BEGIN
+  BEGIN
+    UPDATE public.usuariosgerenciais SET funcionarioid = 96012 WHERE userid = GA;
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    FOREACH cod IN ARRAY ARRAY['equipe.desativar', 'equipe.criar_acesso', 'equipe.redefinir_acesso'] LOOP
+      -- Pode: Ana-A, so na loja A (a dele).
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96011) = '{"pode": true, "conta": 96}',
+                            cod || ': o gerente da A pode no acesso de quem so trabalha na A');
+      -- Nega: Duo-AB (tambem na B), Bia-B, ele mesmo (Folga-A), pessoa de outra conta.
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96041) = NAO, cod || ': nao, se a pessoa tambem trabalha na B');
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96021) = NAO, cod || ': nao, se a pessoa so trabalha na B');
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96012) = NAO, cod || ': nunca no proprio acesso');
+      PERFORM public.exigir(public.posso_na_pessoa(cod, fora) = NAO, cod || ': nada de outra conta, nem a conta volta');
+    END LOOP;
+    -- Codigo fora dos tres (quem valida, CPF): nao.
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.editar', 96011) = NAO, 'so os tres codigos do acesso passam por aqui');
+    RESET ROLE;
+    -- Sem o codigo no cargo: nao.
+    DELETE FROM public.cargospermissoes WHERE codigo = 'equipe.desativar'
+       AND cargoid = (SELECT cargoid FROM public.usuariosgerenciais WHERE userid = GA);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.desativar', 96011) = NAO, 'sem "desativar" no cargo: nao');
+    RESET ROLE;
+    -- O master: qualquer pessoa da conta dele; de outra conta, nao.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.desativar', 96041) = '{"pode": true, "conta": 96}', 'o master pode em todos');
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.desativar', fora) = NAO, 'o master nao pode em outra conta');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_111';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_111' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

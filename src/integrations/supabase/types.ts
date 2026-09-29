@@ -5926,6 +5926,10 @@ export type Database = {
       }
       lojas_onde_posso: { Args: { p_codigo: string }; Returns: number[] }
       pode: { Args: { p_codigo: string; p_lojaid?: number }; Returns: boolean }
+      posso_na_pessoa: {
+        Args: { p_codigo: string; p_funcionarioid: number }
+        Returns: Json
+      }
       liberar_pin: { Args: { p_funcionarioid: number }; Returns: undefined }
       liberar_documento_pessoal: {
         Args: { p_documentoid: number }

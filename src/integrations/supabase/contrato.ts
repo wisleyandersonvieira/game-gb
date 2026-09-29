@@ -121,6 +121,7 @@ export const CONTRATO: Record<string, string[]> = {
   pendencias_da_pessoa: ["p_ate", "p_de", "p_funcionarioid"],
   pin_conferir_pessoa: ["p_contaid", "p_funcionarioid", "p_lojaid", "p_pinhash"],
   politica_dar_ciencia: ["p_assinaturaid", "p_contaid", "p_funcionarioid"],
+  posso_na_pessoa: ["p_codigo", "p_funcionarioid"],
   preparar_envio_documento: ["p_funcionarioid", "p_nomearquivo"],
   publicar_comunicado: ["p_alvo", "p_conteudo", "p_funcionarios", "p_lojas", "p_pontos", "p_titulo"],
   publicar_politica_de_uso: ["p_conteudo"],
