@@ -119,16 +119,16 @@ function Gestao() {
       };
       const { error } =
         editando === null
-          ? await supabase.from("lojas").insert(dados)
-          : await supabase
-              .from("lojas")
-              .update({
-                ...dados,
-                gestorid: form.gestorid === "" ? null : form.gestorid,
-                responsavelagendamentosid:
-                  form.responsavelagendamentosid === "" ? null : form.responsavelagendamentosid,
-              })
-              .eq("lojaid", editando);
+          ? await supabase.rpc("criar_loja", { p_nome: dados.nome, p_cidade: dados.cidade, p_endereco: dados.endereco })
+          : await supabase.rpc("editar_loja", {
+              p_lojaid: editando,
+              p_nome: dados.nome,
+              p_cidade: dados.cidade,
+              p_endereco: dados.endereco,
+              p_gestorid: form.gestorid === "" ? null : form.gestorid,
+              p_responsavelagendamentosid:
+                form.responsavelagendamentosid === "" ? null : form.responsavelagendamentosid,
+            });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -141,7 +141,7 @@ function Gestao() {
 
   const alternarAtiva = useMutation({
     mutationFn: async ({ lojaid, ativa }: { lojaid: number; ativa: boolean }) => {
-      const { error } = await supabase.from("lojas").update({ ativa }).eq("lojaid", lojaid);
+      const { error } = await supabase.rpc("ativar_loja", { p_lojaid: lojaid, p_ativa: ativa });
       if (error) throw error;
     },
     onSuccess: atualizarListas,

@@ -70,6 +70,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-conquistas.sql', '20260929259000'),
   ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
   ('aplicar-permissoes-parte-2-justificativas.sql', '20260929256000'),
+  ('aplicar-permissoes-parte-2-lojas.sql', '20260929261000'),
   ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
   ('aplicar-permissoes-parte-2-onboarding.sql', '20260929260000'),
   ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
@@ -449,7 +450,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (540, 'OPERACAO', 'versao', 'Onboarding com permissao na pessoa; etapas so do master', 'aplicar-permissoes-parte-2-onboarding.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'iniciar_onboarding') LIKE '%pode_na_pessoa(''onboarding.conduzir''%'
        AND to_regprocedure('public.salvar_etapa_onboarding(integer, text, integer, boolean)') IS NOT NULL
-       AND NOT has_column_privilege('authenticated', 'public.onboardingetapas', 'nome', 'UPDATE'))
+       AND NOT has_column_privilege('authenticated', 'public.onboardingetapas', 'nome', 'UPDATE')),
+  (550, 'OPERACAO', 'versao', 'Lojas e TV com permissao e loja no banco', 'aplicar-permissoes-parte-2-lojas.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_tv_da_loja') LIKE '%pode(''lojas.tv''%'
+       AND to_regprocedure('public.editar_loja(integer, text, text, text, integer, integer)') IS NOT NULL
+       AND NOT has_column_privilege('authenticated', 'public.lojas', 'nome', 'UPDATE'))
 ),
 tudo AS (
   SELECT x.*, a.versao

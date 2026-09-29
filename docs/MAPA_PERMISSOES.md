@@ -510,6 +510,7 @@ fácil); decisão de negócio não se adivinha — fica aqui.
 - Agenda: criar agendamento já com valor ou já pago exige também "Agenda: pagamento". Tipos de evento são catálogo da conta: só o master.
 - Comunicados: registrar ciência em nome da pessoa exige "Comunicados: publicar" com a pessoa inteira nas lojas dele, e nunca a própria ciência (ela paga pontos).
 - Onboarding: ninguém conduz o próprio; ligar documento pessoal à etapa é só do master (documento pessoal é só do master).
+- Lojas: trocar o GESTOR da loja é só do master (os outros dados da loja, com "Lojas: editar"); ligar ou desligar os valores em R$ na TV pede também "Ver valores em R$".
 
 **Pendentes (não adivinhadas):**
 - Comunicados: um gerente que também é funcionário pode publicar um comunicado

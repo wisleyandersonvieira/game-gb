@@ -53,8 +53,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "GRANT UPDATE (nome) ON public.onboardingetapas TO authenticated;")"
-if echo "$s" | grep -q "|rode aplicar-permissoes-parte-2-onboarding.sql"; then
+s="$(conferir "GRANT UPDATE (nome) ON public.lojas TO authenticated;")"
+if echo "$s" | grep -q "|rode aplicar-permissoes-parte-2-lojas.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

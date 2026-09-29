@@ -155,7 +155,7 @@ INSERT INTO public.contasusuarios (contaid, userid) VALUES
 SET ROLE authenticated;
 
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (10, 'Loja A1'), (11, 'Loja A2');
+SELECT public.como_dono($q$INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (10, 'Loja A1'), (11, 'Loja A2')$q$);
 INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (100, 'Ana da conta A');
 SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (1000, 'Tarefa A', 5)$q$);
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 10);
@@ -170,7 +170,7 @@ SET ROLE authenticated;
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '1/10/foto-a.jpg');
 
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (20, 'Loja B1');
+SELECT public.como_dono($q$INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (20, 'Loja B1')$q$);
 INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (200, 'Bruno da conta B');
 SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (2000, 'Tarefa B', 7)$q$);
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (200, 20);
@@ -247,9 +247,10 @@ BEGIN
   GET DIAGNOSTICS afetadas = ROW_COUNT;
   PERFORM public.exigir(afetadas = 0, 'A nao altera funcionario de B');
 
-  UPDATE public.lojas SET nome = 'INVADIDA' WHERE lojaid = 20;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'A nao altera loja de B');
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.lojas SET nome = 'INVADIDA' WHERE lojaid = 20; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM public.editar_loja(20, 'INVADIDA', NULL, NULL, NULL, NULL); EXCEPTION WHEN no_data_found THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'A nao altera loja de B (nem direto, nem pela funcao)');
 
   DELETE FROM public.funcionarios WHERE funcionarioid = 200;
   GET DIAGNOSTICS afetadas = ROW_COUNT;
@@ -427,7 +428,7 @@ BEGIN
 
   PERFORM public.guardar_foto();
   BEGIN
-    INSERT INTO public.lojas (nome) VALUES ('Loja A3 (acima do limite)');
+    PERFORM public.criar_loja('Loja A3 (acima do limite)');
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN
     deu_erro := true;
@@ -435,17 +436,16 @@ BEGIN
   PERFORM public.exigir(public.nada_mudou(), 'conta com limite 2 nao cria a terceira loja ativa');
 
   -- Loja desativada nao ocupa vaga.
-  UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 1, 'desativar loja sempre e permitido, mesmo no limite');
+  PERFORM public.ativar_loja(11, false);
+  PERFORM public.exigir(NOT (SELECT ativa FROM public.lojas WHERE lojaid = 11), 'desativar loja sempre e permitido, mesmo no limite');
 
-  INSERT INTO public.lojas (nome) VALUES ('Loja A3') RETURNING lojaid INTO nova;
+  nova := public.criar_loja('Loja A3');
   PERFORM public.exigir(nova IS NOT NULL, 'com uma loja desativada, a vaga liberada permite criar outra');
 
   -- Reativar tambem passa pela conferencia do limite.
   PERFORM public.guardar_foto();
   BEGIN
-    UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+    PERFORM public.ativar_loja(11, true);
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN
     deu_erro := true;
@@ -453,7 +453,7 @@ BEGIN
   PERFORM public.exigir(public.nada_mudou(), 'reativar loja acima do limite e recusado');
 
   -- Desativar nao apaga nada: o historico da loja continua inteiro.
-  UPDATE public.lojas SET ativa = false WHERE lojaid = 10;
+  PERFORM public.ativar_loja(10, false);
   PERFORM public.exigir((SELECT count(*) FROM public.tarefasatribuidas WHERE lojaid = 10) = 1,
                         'atribuicoes da loja desativada continuam la');
   PERFORM public.exigir((SELECT count(*) FROM public.entregas WHERE lojaid = 10) = 1,
@@ -462,8 +462,9 @@ BEGIN
                         'a propria loja desativada continua acessivel');
 
   -- Devolve o cenario ao estado anterior para as checagens seguintes.
-  DELETE FROM public.lojas WHERE lojaid = nova;
-  UPDATE public.lojas SET ativa = true WHERE lojaid IN (10, 11);
+  PERFORM public.como_dono(format($q$DELETE FROM public.lojas WHERE lojaid = %L$q$, nova));
+  PERFORM public.ativar_loja(10, true);
+  PERFORM public.ativar_loja(11, true);
   PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE ativa) = 2, 'cenario restaurado: 2 lojas ativas');
 END $$;
 
@@ -478,9 +479,10 @@ BEGIN
 
   PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE lojaid = 20) = 0, 'A nao ve a loja de B');
 
-  UPDATE public.lojas SET ativa = false WHERE lojaid = 20;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'A nao desativa a loja de B');
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.lojas SET ativa = false WHERE lojaid = 20; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM public.ativar_loja(20, false); EXCEPTION WHEN no_data_found THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'A nao desativa a loja de B (nem direto, nem pela funcao)');
 
   PERFORM public.guardar_foto();
   BEGIN
@@ -537,12 +539,13 @@ DECLARE afetadas integer;
 BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.lojas WHERE lojaid = 30) = 1,
                         'conta suspensa continua lendo a propria loja');
-  UPDATE public.lojas SET nome = 'Tentativa' WHERE lojaid = 30;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'conta suspensa nao altera a propria loja');
-  DELETE FROM public.lojas WHERE lojaid = 30;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'conta suspensa nao apaga a propria loja');
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.lojas SET nome = 'Tentativa' WHERE lojaid = 30; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM public.editar_loja(30, 'Tentativa', NULL, NULL, NULL, NULL); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao altera a propria loja');
+  PERFORM public.guardar_foto();
+  BEGIN DELETE FROM public.lojas WHERE lojaid = 30; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'conta suspensa nao apaga a propria loja');
 END $$;
 
 -- ===========================================================================
@@ -704,16 +707,16 @@ END $$;
 DO $$
 DECLARE nova integer;
 BEGIN
-  UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
-  INSERT INTO public.lojas (nome) VALUES ('Loja A4') RETURNING lojaid INTO nova;
+  PERFORM public.ativar_loja(11, false);
+  nova := public.criar_loja('Loja A4');
   PERFORM public.exigir(
     (SELECT count(*) FROM public.tarefaslojas tl
       JOIN public.tarefas t ON t.tarefaid = tl.tarefaid
      WHERE t.sistema IS NOT NULL AND tl.lojaid = nova) = 6,
     'loja nova ja nasce com as 6 tarefas do sistema');
   PERFORM public.como_dono(format($q$DELETE FROM public.tarefaslojas WHERE lojaid = %L$q$, nova));
-  DELETE FROM public.lojas WHERE lojaid = nova;
-  UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+  PERFORM public.como_dono(format($q$DELETE FROM public.lojas WHERE lojaid = %L$q$, nova));
+  PERFORM public.ativar_loja(11, true);
 END $$;
 
 -- Tarefas de outro cliente nao existem para mim.
@@ -978,20 +981,20 @@ DECLARE deu_erro boolean;
 BEGIN
   RAISE NOTICE '18. gestor e responsavel pelos agendamentos';
 
-  UPDATE public.lojas SET gestorid = 100, responsavelagendamentosid = 100 WHERE lojaid = 10;
+  PERFORM public.editar_loja(10, l.nome, l.cidade, l.endereco, 100, 100) FROM public.lojas l WHERE l.lojaid = 10;
   PERFORM public.exigir((SELECT gestorid FROM public.lojas WHERE lojaid = 10) = 100,
                         'quem trabalha na loja pode ser o gestor dela');
 
   PERFORM public.guardar_foto();
   BEGIN
-    UPDATE public.lojas SET gestorid = 101 WHERE lojaid = 10;
+    PERFORM public.editar_loja(10, l.nome, l.cidade, l.endereco, 101, l.responsavelagendamentosid) FROM public.lojas l WHERE l.lojaid = 10;
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'quem nao trabalha na loja nao pode ser o gestor');
 
   PERFORM public.guardar_foto();
   BEGIN
-    UPDATE public.lojas SET responsavelagendamentosid = 200 WHERE lojaid = 10;
+    PERFORM public.editar_loja(10, l.nome, l.cidade, l.endereco, l.gestorid, 200) FROM public.lojas l WHERE l.lojaid = 10;
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'funcionario de outro cliente nao pode ser o responsavel');
@@ -1135,7 +1138,7 @@ DO $$ BEGIN
   PERFORM public.revogar_link_tv((SELECT linktvid FROM public.linkstv WHERE nome = 'TV da cozinha'));
   PERFORM set_config('teste.tv_a3', public.criar_link_tv(11, 'TV da vitrine'), false);
 END $$;
-UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+SELECT public.ativar_loja(11, false);
 RESET ROLE;
 UPDATE public.contas SET status = 'suspensa' WHERE contaid = 2;
 
@@ -5150,7 +5153,7 @@ BEGIN
       'estornos_da_conta',
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
-      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
+      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding', 'criar_loja', 'ativar_loja', 'editar_loja',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -8594,10 +8597,10 @@ BEGIN
                         'a bandeirinha do menu bate com a tabela inteira da conta');
 
   -- Loja desativada some do seletor do topo: nao pode ficar cobrando o gestor.
-  UPDATE public.lojas SET ativa = false WHERE lojaid = 11;
+  PERFORM public.ativar_loja(11, false);
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.contagem_solicitacoes() WHERE loja = 11),
                         'loja desativada nao conta: ela nem aparece no seletor');
-  UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
+  PERFORM public.ativar_loja(11, true);
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.contagem_solicitacoes() WHERE loja = 11),
                         'e volta a contar quando a loja e reativada');
 
@@ -8688,12 +8691,12 @@ BEGIN
 
   -- E nem mexendo na coluna direto: o CHECK da tabela tambem barra.
   PERFORM public.guardar_foto();
-  BEGIN UPDATE public.lojas SET somrepetirminutos = 3 WHERE lojaid = 10; deu_erro := false;
+  BEGIN PERFORM public.como_dono($q$UPDATE public.lojas SET somrepetirminutos = 3 WHERE lojaid = 10$q$); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a tabela barra intervalo invalido mesmo por UPDATE direto');
 
   PERFORM public.guardar_foto();
-  BEGIN UPDATE public.lojas SET somvolume = 140 WHERE lojaid = 10; deu_erro := false;
+  BEGIN PERFORM public.como_dono($q$UPDATE public.lojas SET somvolume = 140 WHERE lojaid = 10$q$); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a tabela barra volume acima de 100');
 
@@ -11944,7 +11947,8 @@ SELECT unnest(ARRAY[
   'pegar_tarefa',
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
   'salvar_tipo_evento', 'ativar_tipo_evento',
-  'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
+  'criar_loja', 'ativar_loja']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -11952,17 +11956,14 @@ SELECT unnest(ARRAY[
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[
-  'criar_link_tv',
   'liberar_pin',
-  'parear_tv',
-  'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'vincular_jornada']), 'pendente_parte2';
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
 INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
-SELECT unnest(ARRAY['funcionarios', 'funcionarioslojas', 'jornadas', 'lojas']), 'pendente_parte2';
+SELECT unnest(ARRAY['funcionarios', 'funcionarioslojas', 'jornadas']), 'pendente_parte2';
 
 DO $$
 DECLARE sobra text;
@@ -13692,6 +13693,105 @@ BEGIN
     RAISE EXCEPTION 'desfazer_104';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_104' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 105. Usuarios gerenciais, parte 2, fatia 12: Lojas e TV (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '105. parte 2, Lojas e TV: codigo na loja; criar, ativar e trocar gestor so o master'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '10510510-5105-1051-0510-510510510501';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; lk10 integer; lk11 integer; v_gestor integer; v_resp integer;
+BEGIN
+  BEGIN
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'loj.105@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Lojas 105') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    UPDATE public.lojas SET mostrarvalorestv = false WHERE lojaid IN (10, 11);
+    -- Uma vaga livre no limite de lojas: criar loja so pode ser barrado pela
+    -- permissao (e nao pelo limite), senao a prova nao prova nada.
+    UPDATE public.contas SET limitelojas = limitelojas + 1 WHERE contaid = 1;
+    -- Um codigo de TV valido, esperando pareamento (para a loja 11 ser recusada pela permissao, e nao pelo codigo).
+    INSERT INTO public.codigostv (codigo, segredohash, expiraem) VALUES ('TV105A', 'x', now() + interval '10 minutes');
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.criar_link_tv(10, 'TV 10 (105)');
+    PERFORM public.criar_link_tv(11, 'TV 11 (105)');
+    RESET ROLE;
+    lk10 := (SELECT linktvid FROM public.linkstv WHERE nome = 'TV 10 (105)');
+    lk11 := (SELECT linktvid FROM public.linkstv WHERE nome = 'TV 11 (105)');
+    SELECT gestorid, responsavelagendamentosid INTO v_gestor, v_resp FROM public.lojas WHERE lojaid = 10;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_link_tv(10, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.revogar_link_tv(lk10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_tv_da_loja(10, '{"barra": true}'::jsonb, 60, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_som_da_loja(10, false, 10, 0); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_loja(10, 'Loja Mudada', NULL, NULL, v_gestor, v_resp); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nada na TV, no som nem nos dados da loja');
+    RESET ROLE;
+
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
+      (1, v_cargo, 'lojas.tv'), (1, v_cargo, 'lojas.tablet_som'), (1, v_cargo, 'lojas.editar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_link_tv(11, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.revogar_link_tv(lk11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.parear_tv('TV105A', 11, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_tv_da_loja(11, '{"barra": true}'::jsonb, 60, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_som_da_loja(11, false, 10, 0); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_loja(11, 'Loja Mudada', NULL, NULL, NULL, NULL); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: nada na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_tv_da_loja(10, '{"barra": true}'::jsonb, 60, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'sem "ver R$": nao liga os valores em R$ na TV');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.editar_loja(10, 'Loja A1', NULL, NULL, 110, v_resp); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_loja('Loja do gerente'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.ativar_loja(10, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.lojas SET nome = 'Direto' WHERE lojaid = 10; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'trocar o gestor, criar e desativar loja: so o master (nem direto na tabela)');
+    PERFORM public.criar_link_tv(10, 'TV nova (105)');
+    PERFORM public.revogar_link_tv(lk10);
+    PERFORM public.salvar_tv_da_loja(10, '{"barra": true, "meta": true}'::jsonb, 30, false);
+    PERFORM public.salvar_som_da_loja(10, false, 45, 5);
+    PERFORM public.editar_loja(10, 'Loja A1 (105)', 'Cidade', 'Rua', v_gestor, v_resp);
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.linkstv WHERE nome = 'TV nova (105)' AND criadopor = G)
+                          AND (SELECT revogadoem IS NOT NULL FROM public.linkstv WHERE linktvid = lk10)
+                          AND (SELECT tvsegundos = 30 AND somvolume = 45 AND NOT somtarefanova AND nome = 'Loja A1 (105)'
+                                 FROM public.lojas WHERE lojaid = 10),
+                          'e na loja 10 cria e revoga link, muda a TV, o som e os dados, de verdade');
+
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'valores.ver_rs');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.salvar_tv_da_loja(10, '{"barra": true}'::jsonb, 60, true);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT mostrarvalorestv FROM public.lojas WHERE lojaid = 10), 'com "ver R$", liga os valores na TV');
+
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.lojas SET nome = 'Direto' WHERE lojaid = 10; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.lojas (nome) VALUES ('Direta'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava direto em lojas');
+    PERFORM public.parear_tv('TV105A', 10, 'TV pareada (105)');
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.codigostv WHERE codigo = 'TV105A' AND pareadoem IS NOT NULL),
+                          'e o codigo do teste pareia de verdade (a recusa na loja 11 foi pela permissao)');
+    RAISE EXCEPTION 'desfazer_105';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_105' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

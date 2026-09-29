@@ -5289,6 +5289,7 @@ export type Database = {
       ativar_tarefa: { Args: { p_ativa: boolean; p_tarefaid: number }; Returns: undefined }
       ativar_premio: { Args: { p_ativo: boolean; p_produtoid: number }; Returns: undefined }
       ativar_conquista: { Args: { p_ativa: boolean; p_conquistaid: number }; Returns: undefined }
+      ativar_loja: { Args: { p_ativa: boolean; p_lojaid: number }; Returns: undefined }
       atribuir_tarefa: {
         Args: {
           p_dataagendamento?: string
@@ -5705,6 +5706,7 @@ export type Database = {
         Args: { p_funcionarioid: number }
         Returns: string
       }
+      criar_loja: { Args: { p_cidade?: string | null; p_endereco?: string | null; p_nome: string }; Returns: number }
       criar_link_tv: {
         Args: { p_lojaid: number; p_nome: string }
         Returns: string
@@ -5784,6 +5786,17 @@ export type Database = {
       }
       editar_conquista: {
         Args: { p_bonus: number; p_conquistaid: number; p_descricao: string; p_icone: string; p_nome: string }
+        Returns: undefined
+      }
+      editar_loja: {
+        Args: {
+          p_cidade: string | null
+          p_endereco: string | null
+          p_gestorid: number | null
+          p_lojaid: number
+          p_nome: string
+          p_responsavelagendamentosid: number | null
+        }
         Returns: undefined
       }
       editar_comunicado: {
