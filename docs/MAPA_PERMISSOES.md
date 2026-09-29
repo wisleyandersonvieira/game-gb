@@ -127,8 +127,8 @@ não estava e o sistema faz · **(só master)** = proposta de não delegar.
 | Ver metas | `metas_do_mes`, `meta_do_dia` | Metas: ver (sua) |
 |---|---|---|
 | Lançar a venda do dia | `lancar_venda_do_dia` | Metas: lançar venda (sua) |
-| Meta do mês e meta de cada dia da semana | `salvar_meta_do_mes`, escrita direta em `metasdiariasmodelos` | Metas: criar meta (sua) |
-| Meta especial (criar, apagar) | escrita direta em `metasespeciais` | Metas: criar meta especial (sua) |
+| Meta do mês e meta de cada dia da semana | `salvar_meta_do_mes`, escrita direta em `metasdiariasmodelos` | **Só o master** (decisão 5, 29/09/2026; o código saiu do catálogo) |
+| Meta especial (criar, apagar) | escrita direta em `metasespeciais` | **Só o master** (decisão 5, 29/09/2026; o código saiu do catálogo) |
 
 ### Agenda (FALTOU a tela inteira)
 | Ver agenda, conflitos | `conflitos_agendamento`, `agendamentos_sem_tarefa` | Agenda: ver (FALTOU) |
@@ -502,17 +502,19 @@ fácil); decisão de negócio não se adivinha — fica aqui.
   (a regra combinada era só para entregas).
 - Prêmios: o gerente só registra resgate para quem trabalha na loja dele, e
   nunca sem loja (o master continua podendo sem loja).
-- Feedbacks (e toda ação sobre uma PESSOA): o gerente só age sobre quem está
-  INTEIRAMENTE dentro das lojas em que ele tem a permissão; ninguém dá nem
-  anula feedback de si mesmo.
+- Pessoa em várias lojas (**decidido pelo Wisley, 29/09/2026**): a linha é o
+  TIPO da ação. Dia a dia (feedback, justificativa, registrar entrega): UMA
+  loja em comum com o gerente basta. Cadastro e acesso (desativar, criar e
+  redefinir acesso, trocar as lojas dela): TODAS as lojas dela têm de ser
+  dele. Ninguém dá nem anula feedback de si mesmo, nem mexe no próprio acesso.
 - Tarefas: tarefa sem loja nenhuma é só do master.
 - Justificativas: ninguém registra nem decide a PRÓPRIA justificativa; registrar já aceitando exige também a permissão de decidir.
 - Agenda: criar agendamento já com valor ou já pago exige também "Agenda: pagamento". Tipos de evento são catálogo da conta: só o master.
 - Comunicados: registrar ciência em nome da pessoa exige "Comunicados: publicar" com a pessoa inteira nas lojas dele, e nunca a própria ciência (ela paga pontos).
 - Onboarding: ninguém conduz o próprio; ligar documento pessoal à etapa é só do master (documento pessoal é só do master).
 - Lojas: trocar o GESTOR da loja é só do master (os outros dados da loja, com "Lojas: editar"); ligar ou desligar os valores em R$ na TV pede também "Ver valores em R$".
-- Equipe: marcar quem VALIDA numa loja é só do master; ninguém mexe no próprio cadastro, PIN ou jornada; ligar pessoas a uma jornada é tudo ou nada (uma pessoa fora das lojas dele recusa o lote inteiro); apagar jornada é só do master. Os dados da pessoa (nome, cargo, setor, telefone, folga) só mudam com ela INTEIRA nas lojas dele; as lojas dela, ele liga e desliga só as DELE.
-- Equipe: desativar/reativar pessoa, criar e redefinir acesso e trocar CPF continuam no servidor, só do master ("Equipe: desativar", "criar acesso" e "redefinir acesso" existem no catálogo, mas ainda não valem para o gerente: o servidor pergunta "é o master?").
+- Equipe: marcar quem VALIDA numa loja é só do master; ninguém mexe no próprio cadastro, PIN ou jornada; ligar pessoas a uma jornada é tudo ou nada (uma pessoa fora das lojas dele recusa o lote inteiro); apagar jornada é só do master. Os dados da pessoa (nome, cargo, setor, telefone, folga) só mudam com ela INTEIRA nas lojas dele; trocar as lojas dela, só com ela INTEIRA nas lojas dele, e só as DELE mudam.
+- Equipe: desativar/reativar pessoa, criar acesso, gerar código, redefinir acesso e emitir folhas valem para o gerente com o código no cargo e TODAS as lojas da pessoa dentro das dele (decisão 2, 29/09/2026): o servidor pergunta ao banco (`posso_na_pessoa`). Trocar CPF e marcar quem valida continuam só do master.
 
 **Parte 3 (leituras por loja), como ficou:** o gerente continua sem conta para
 as regras das tabelas (não lê nenhuma tabela direto). Cada tela da lista ganhou
@@ -523,22 +525,11 @@ conta inteira (guia, conferência do livro, rotina) não vai para o gerente. Uma
 trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
 
 **Pendentes (não adivinhadas):**
-- Equipe: soltar para o gerente "marcar quem valida" na loja dele? E desativar/criar
-  acesso (hoje só o master, no servidor): passar a perguntar ao banco "ele pode
-  na pessoa?" (a regra combinada: só se todas as lojas dela forem dele)?
-- Comunicados: um gerente que também é funcionário pode publicar um comunicado
-  com pontos para a própria loja (ele mesmo recebe) e depois dar ciência pelo
-  celular, ganhando os pontos. O teto de pontos por ciência limita o valor.
-  Bloquear, ou o teto basta?
-- Agenda, anexo: o gerente registra e remove anexo, mas o ENVIO do arquivo ao
-  Storage continua só do master. A trava das regras de acesso (seção 14) só
-  aceita a conta do master como âncora no Storage; abrir para o gerente é
-  mudar essa trava. Liberar?
-- Pessoa em várias lojas: soltar para "pelo menos uma loja em comum" nas
-  ações sobre a pessoa (feedback, justificativa)?
-- Metas: o gerente lança a venda da loja dele; se a loja bater a meta, ele
-  (se for da equipe) ganha os pontos da meta. Conflito aceitável, ou só o
-  master lança?
+- ~~Equipe: quem valida / desativar e acesso~~ **Decidido** (29/09/2026): quem valida fica com o master; desativar e acesso, só com todas as lojas da pessoa dele.
+- ~~Comunicados com pontos para si~~ **Decidido** (29/09/2026): bloqueado pela regra geral "ninguém gera pontos para si mesmo".
+- Agenda, anexo: **decidido** (29/09/2026, decisão 1): o gerente ABRE (só lê) o anexo, a foto da entrega e o recibo do resgate das lojas dele, com a permissão de ver a tela. O ENVIO do arquivo ao Storage continua só do master. Documentos pessoais e canal confidencial: nunca, para papel nenhum.
+- ~~Pessoa em várias lojas~~ **Decidido** (29/09/2026): a linha é o tipo da ação (acima).
+- ~~Metas: gerente lança a venda~~ **Decidido** (29/09/2026): aceitável; a meta e os pontos são só do master, e o master vê pelo nome quem lançou e quem corrigiu cada venda.
 
 **Achados (não mexidos):**
 - ~~A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).~~ **Resolvido** (desempate fixo, 29/09/2026).

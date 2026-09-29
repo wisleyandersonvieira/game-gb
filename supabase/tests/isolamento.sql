@@ -5036,7 +5036,10 @@ RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
     '^\(?contaid = \( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)?$',
     '^\(? ?SELECT eh_admin_geral\(\) AS eh_admin_geral\)?$',
     -- Storage: a PRIMEIRA pasta do caminho é a conta de quem pede.
-    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)::text\)?$'
+    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)::text\)?$',
+    -- Storage, só LEITURA do gerente (decisão 1, 29/09/2026): a primeira pasta
+    -- é a conta dele. Onde pode aparecer é conferido logo abaixo (lista fechada).
+    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT conta_do_gerente\(\) AS conta_do_gerente\)\)::text\)?$'
   ])
 $$;
 
@@ -5074,6 +5077,21 @@ BEGIN
     'toda policy (USING e WITH CHECK) esta presa a conta por AND, sem OR no nivel de cima ('
     || (SELECT count(*) FROM pg_policies WHERE schemaname IN ('public', 'storage')) || ' policies)'
     || coalesce(' -- FURADA: ' || liberadas, ''));
+
+  -- A ancora do gerente so vale em DUAS regras, fechadas: ler a foto da
+  -- entrega e o anexo da agenda, cada uma presa a linha do banco pela funcao
+  -- que confere a permissao de ver a tela na loja. Nunca escrita, nunca outro
+  -- bucket (documentos pessoais e canal confidencial: nunca, para papel nenhum).
+  SELECT string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', ') INTO liberadas
+    FROM pg_policies p
+   WHERE (coalesce(p.qual, '') || coalesce(p.with_check, '')) LIKE '%conta_do_gerente%'
+     AND NOT (p.schemaname = 'storage' AND p.cmd = 'SELECT' AND p.with_check IS NULL
+              AND ((p.policyname = 'entregas_sel_gerente' AND p.qual LIKE '%bucket_id = ''entregas''::text%'
+                    AND p.qual LIKE '%AND foto_de_entrega_do_gerente(name))')
+                OR (p.policyname = 'agendamentos_arq_sel_gerente' AND p.qual LIKE '%bucket_id = ''agendamentos''::text%'
+                    AND p.qual LIKE '%AND anexo_da_agenda_do_gerente(name))')));
+  PERFORM public.exigir(liberadas IS NULL,
+    'a conta do gerente so ancora a LEITURA da foto da entrega e do anexo da agenda (fora da lista: ' || coalesce(liberadas, '') || ')');
 
   -- Uma tabela sem contaid nao teria como ser isolada. A UNICA excecao sao
   -- as tabelas da PLATAFORMA, que nao pertencem a conta nenhuma e sao so do
@@ -5196,9 +5214,18 @@ BEGIN
       'painel_inicio_gerente', 'contagem_do_menu_gerente',
       'analise_de_tarefas_gerente', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa_gerente',
       'metas_do_mes_gerente',
+      'minhas_lojas', 'minhas_permissoes',
+      -- Decisao 1: so respondem sobre quem chama (conta do gerente, pode() na
+      -- loja da linha) (secao 112).
+      'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate_gerente',
+      -- Decisoes 2 e 4: so responde sobre quem chama (conta dele, pessoa da
+      -- conta dele, pode_na_pessoa e nunca o proprio) (secao 111).
+      'posso_na_pessoa',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
+      -- Decisao 5: so o master le (sou_master e a conta dele) (secao 97).
+      'historico_das_vendas',
       -- 29/09/2026 (parte 2, Tarefas): leem a conta de quem chamou e conferem
       -- pode() nas lojas (secao 98).
       'salvar_tarefa', 'ativar_tarefa', 'encerrar_atribuicoes'
@@ -10596,7 +10623,12 @@ BEGIN
       IF sit = 'conta_cancelada' THEN UPDATE public.contas SET status = 'cancelada' WHERE contaid = 1; END IF;
       IF sit = 'sem_senha' THEN UPDATE public.funcionarios SET senhahashapp = NULL WHERE funcionarioid = 8100; END IF;
       IF sit = 'sem_pin' THEN UPDATE public.funcionarios SET pinhash = NULL WHERE funcionarioid = 8100; END IF;
-      IF sit = 'nao_colaborador' THEN UPDATE public.contasusuarios SET papel = 'gerente', funcionarioid = NULL WHERE userid = v_uid; END IF;
+      IF sit = 'nao_colaborador' THEN
+        -- Um gerente de verdade (com usuario gerencial ativo): desde a parte 4,
+        -- gerente SEM usuario gerencial ativo e "desligado" no meu_acesso.
+        UPDATE public.contasusuarios SET papel = 'gerente', funcionarioid = NULL WHERE userid = v_uid;
+        INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, v_uid, 1212);
+      END IF;
 
       PERFORM set_config('teste.uid', v_uid::text, true);
       m := public.meu_acesso();
@@ -11995,7 +12027,8 @@ SELECT unnest(ARRAY[
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
   'salvar_tipo_evento', 'ativar_tipo_evento',
   'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
-  'criar_loja', 'ativar_loja', 'apagar_jornada']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'criar_loja', 'ativar_loja', 'apagar_jornada',
+  'salvar_meta_do_mes', 'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial']), 'so_master'   -- decisao 5: a meta e so do master   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -12423,9 +12456,10 @@ BEGIN
         vazou := vazou || coalesce(u.papel, 'sem papel') || ' ' || u.id || ' leu ' || n || ' em ' || t.table_name || '; ';
       END IF;
     END LOOP;
-    -- Storage: a primeira pasta e a conta.
+    -- Storage: a primeira pasta e a conta. Desde a decisao 1 (29/09/2026) o
+    -- gerente le foto e anexo da propria conta (secao 112): aqui, nada de outra.
     SET LOCAL ROLE authenticated;
-    IF u.papel = 'master' THEN
+    IF u.papel IN ('master', 'gerente') THEN
       SELECT count(*) INTO n FROM storage.objects WHERE split_part(name, '/', 1) IS DISTINCT FROM u.contaid::text;
     ELSE
       SELECT count(*) INTO n FROM storage.objects;
@@ -12951,16 +12985,16 @@ RESET ROLE;
 -- ===========================================================================
 -- 96. Usuarios gerenciais, parte 2, fatia 3: Feedbacks (29/09/2026)
 -- ===========================================================================
--- Feedback e sobre a PESSOA: o gerente so age sobre quem esta INTEIRAMENTE
--- dentro das lojas em que ele tem a permissao, e nunca sobre si mesmo.
-DO $$ BEGIN RAISE NOTICE '96. parte 2, Feedbacks: a pessoa inteira dentro das lojas dele'; END $$;
+-- Feedback e sobre a PESSOA, e e dia a dia: basta UMA loja em comum com o
+-- gerente (decisao 4 do Wisley, 29/09/2026); nunca sobre si mesmo.
+DO $$ BEGIN RAISE NOTICE '96. parte 2, Feedbacks: uma loja em comum basta, nunca o proprio'; END $$;
 
 DO $$
 DECLARE
   G constant uuid := '96969696-9696-9696-9696-969696969601';
   M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
   v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; v text;
-  fb_dentro integer; fb_meio integer; fb_proprio integer;
+  fb_dentro integer; fb_meio integer; fb_proprio integer; fb_onze integer; n2 integer;
 BEGIN
   BEGIN
     -- 9611 e o proprio gerente; 9612 so na loja 10; 9613 nas lojas 10 e 11; 9614 so na 11.
@@ -12980,6 +13014,7 @@ BEGIN
     fb_dentro  := public.registrar_feedback(9612, v_hoje - 1, 8, 'bom');
     fb_meio    := public.registrar_feedback(9613, v_hoje - 1, 8, 'bom');
     fb_proprio := public.registrar_feedback(9611, v_hoje - 1, 8, 'bom');
+    fb_onze    := public.registrar_feedback(9614, v_hoje - 1, 8, 'bom');
     RESET ROLE;
 
     PERFORM set_config('teste.uid', G::text, true);
@@ -12991,13 +13026,11 @@ BEGIN
     PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao da nem anula feedback');
     RESET ROLE;
 
-    -- 2. Com "registrar": so quem esta inteiro dentro da loja dele.
+    -- 2. Com "registrar": quem tem uma loja em comum com ele.
     INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'feedbacks.registrar');
     SET LOCAL ROLE authenticated;
     n := public.registrar_feedback(9612, v_hoje, 9, 'otimo');
-    PERFORM public.guardar_foto();
-    BEGIN PERFORM public.registrar_feedback(9613, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'com "registrar": NAO da feedback a quem tambem trabalha na loja 11 (Meire)');
+    n2 := public.registrar_feedback(9613, v_hoje, 9, 'otimo');
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.registrar_feedback(9614, v_hoje, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nem a quem so trabalha na loja 11');
@@ -13008,19 +13041,23 @@ BEGIN
     PERFORM public.exigir((SELECT registradopor = G FROM public.feedbacks WHERE feedbackid = n)
                           AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = n AND tipo = 'bonus'),
                           'e da de verdade a quem esta so na loja dele, com o bonus no livro');
+    PERFORM public.exigir((SELECT registradopor = G FROM public.feedbacks WHERE feedbackid = n2)
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = n2 AND tipo = 'bonus'),
+                          'e a quem esta na loja dele E na 11 (Meire): uma loja em comum basta, com o bonus no livro');
 
     -- 3. Anular: as mesmas bordas.
     INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'feedbacks.anular');
     SET LOCAL ROLE authenticated;
     PERFORM public.anular_feedback(fb_dentro, 'nota lancada errada');
+    PERFORM public.anular_feedback(fb_meio, 'nota lancada errada');
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.anular_feedback(fb_meio, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.anular_feedback(fb_onze, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.anular_feedback(fb_proprio, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'com "anular": nao anula o de quem tambem e da loja 11, nem o proprio');
+    PERFORM public.exigir(public.nada_mudou(), 'com "anular": nao anula o de quem so e da loja 11, nem o proprio');
     RESET ROLE;
-    PERFORM public.exigir((SELECT anuladopor = G FROM public.feedbacks WHERE feedbackid = fb_dentro)
-                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE feedbackid = fb_dentro AND tipo = 'estorno_bonus'),
-                          'e anula de verdade o de quem esta so na loja dele, com o estorno do bonus no livro');
+    PERFORM public.exigir((SELECT count(*) = 2 FROM public.feedbacks WHERE feedbackid IN (fb_dentro, fb_meio) AND anuladopor = G)
+                          AND (SELECT count(*) = 2 FROM public.movimentospontos WHERE feedbackid IN (fb_dentro, fb_meio) AND tipo = 'estorno_bonus'),
+                          'e anula de verdade o de quem esta na loja dele (so nela ou tambem na 11), com o estorno no livro');
 
     -- 4. A lista de estornos do master mostra o feedback anulado, com quem anulou.
     PERFORM set_config('teste.uid', M::text, true);
@@ -13039,13 +13076,16 @@ RESET ROLE;
 -- ===========================================================================
 -- 97. Usuarios gerenciais, parte 2, fatia 4: Metas (29/09/2026)
 -- ===========================================================================
-DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: permissao e loja no banco'; END $$;
+-- Decisao 5 do Wisley (29/09/2026): o gerente LANCA a venda da loja dele; a
+-- meta e os pontos (meta do mes, da semana, especial) sao so do master, e o
+-- master ve o nome de quem lancou e de quem corrigiu cada venda.
+DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: venda pela loja; meta so do master; quem lancou'; END $$;
 
 DO $$
 DECLARE
   G constant uuid := '97979797-9797-9797-9797-979797979701';
   M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-  v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; e11 integer;
+  v_cargo integer; v_hoje date := public.dia_em_sao_paulo(now()); n integer; e11 integer; e10 integer;
   semana jsonb := (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d, 'valormeta', 777, 'pontospremio', 7))
                      FROM generate_series(1, 7) d);
 BEGIN
@@ -13058,6 +13098,7 @@ BEGIN
     PERFORM set_config('teste.uid', M::text, true);
     SET LOCAL ROLE authenticated;
     e11 := public.criar_meta_especial(11, v_hoje + 20, 'Especial da 11', 900, 9);
+    e10 := public.criar_meta_especial(10, v_hoje + 20, 'Especial da 10', 900, 9);
     RESET ROLE;
 
     PERFORM set_config('teste.uid', G::text, true);
@@ -13071,28 +13112,59 @@ BEGIN
     PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao lanca venda, nao mexe em meta do mes, da semana nem especial');
     RESET ROLE;
 
-    -- 2. Com as permissoes: na loja 10 sim, na 11 nao.
-    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
-      (1, v_cargo, 'metas.lancar_venda'), (1, v_cargo, 'metas.criar_meta'), (1, v_cargo, 'metas.meta_especial');
+    -- 2. Os codigos de criar meta sairam do catalogo: nenhum cargo os recebe.
+    PERFORM public.guardar_foto();
+    BEGIN
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.criar_meta');
+    EXCEPTION WHEN check_violation OR foreign_key_violation THEN NULL; END;
+    BEGIN
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.meta_especial');
+    EXCEPTION WHEN check_violation OR foreign_key_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou() AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes()
+                                                              WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial')),
+                          'criar meta e meta especial nao existem mais no catalogo nem entram em cargo');
+
+    -- 3. Com TODAS as permissoes do catalogo: a venda na loja 10 sim, na 11 nao; a meta, em loja nenhuma.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) SELECT 1, v_cargo, codigo FROM public.catalogo_de_permissoes();
     SET LOCAL ROLE authenticated;
     PERFORM public.lancar_venda_do_dia(10, v_hoje, 1234);
+    PERFORM public.lancar_venda_do_dia(10, v_hoje, 1500, 'faltou uma comanda');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.lancar_venda_do_dia(11, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: NAO lanca venda na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(10, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem na loja DELE mexe na meta do mes, da semana ou especial (so o master)');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(h) FROM public.historico_das_vendas(10) h));
+    PERFORM public.exigir(public.nada_voltou(), 'o historico com nomes e a conferencia do master: o gerente nao le');
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje AND valordia = 1500 AND lancadopor = G AND atualizadopor = G),
+                          'e na loja 10 lanca e corrige a venda de verdade, gravando quem foi');
+
+    -- 4. O master: ve quem lancou e quem corrigiu, pelo nome; e mexe na meta.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT count(*) FROM public.historico_das_vendas(10) h
+                            WHERE h.dataapuracao = v_hoje AND h.quem LIKE '%gui.97@exemplo.com%' AND NOT h.foivoce
+                              AND ((h.valoranterior IS NULL AND h.valornovo = 1234)
+                                OR (h.valoranterior = 1234 AND h.valornovo = 1500 AND h.motivo = 'faltou uma comanda'))) = 2,
+                          'o master ve o lancamento e a correcao do gerente, com o nome dele e o motivo');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.historico_das_vendas(11) h WHERE h.quem LIKE '%gui.97%'),
+                          'e nada do gerente no historico da loja 11');
     PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5);
     PERFORM public.salvar_metas_da_semana(10, semana);
     n := public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9);
-    PERFORM public.guardar_foto();
-    BEGIN PERFORM public.lancar_venda_do_dia(11, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_metas_da_semana(11, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.criar_meta_especial(11, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: NADA na loja 11 (venda, meta do mes, da semana, especial, apagar)');
     PERFORM public.apagar_meta_especial(n);
     RESET ROLE;
-    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje AND valordia = 1234 AND lancadopor = G)
-                          AND EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND nomemeta = 'Meta 97')
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND nomemeta = 'Meta 97')
                           AND (SELECT count(*) FROM public.metasdiariasmodelos WHERE lojaid = 10 AND valormeta = 777) = 7
                           AND NOT EXISTS (SELECT 1 FROM public.metasespeciais WHERE metaespecialid = n),
-                          'e na loja 10 faz de verdade: lanca, salva a meta do mes e da semana, cria e apaga a especial');
+                          'e o master salva a meta do mes e da semana, cria e apaga a especial');
 
     -- 3. Nem o master grava direto nas tabelas (so pela funcao).
     PERFORM set_config('teste.uid', M::text, true);
@@ -13527,9 +13599,10 @@ DECLARE
 BEGIN
   BEGIN
     INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
-      (10212, 1, 'Alice Dez', 0), (10213, 1, 'Bruno Onze', 0), (10214, 1, 'Celia Gerente', 0), (10215, 1, 'Davi Dez e Onze', 0);
+      (10212, 1, 'Alice Dez', 0), (10213, 1, 'Bruno Onze', 0), (10214, 1, 'Celia Gerente', 0), (10215, 1, 'Davi Dez e Onze', 0),
+      (10216, 1, 'Eva Dez', 0);
     INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
-      (1, 10212, 10), (1, 10213, 11), (1, 10214, 10), (1, 10215, 10), (1, 10215, 11);
+      (1, 10212, 10), (1, 10213, 11), (1, 10214, 10), (1, 10215, 10), (1, 10215, 11), (1, 10216, 10);
     INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'com.102@exemplo.com', now());
     INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
     INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Comunicados 102') RETURNING cargoid INTO v_cargo;
@@ -13542,7 +13615,8 @@ BEGIN
     c_conta := public.publicar_comunicado('Todos', 'texto', 1, 'conta');
     c_p10   := public.publicar_comunicado('Pessoa 10', 'texto', 1, 'funcionarios', NULL, ARRAY[10212]);
     RESET ROLE;
-    s_dez  := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_l10 AND funcionarioid = 10212);
+    -- A ciencia da Alice no comunicado da conta inteira (publicado pelo master, vale 1 ponto).
+    s_dez  := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10212);
     s_eu   := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_l10 AND funcionarioid = 10214);
     s_onze := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10213);
     s_davi := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10215);
@@ -13588,14 +13662,21 @@ BEGIN
     PERFORM public.exigir(public.nada_mudou(), 'ninguem registra a PROPRIA ciencia (ela paga pontos)');
     n1 := public.publicar_comunicado('Da loja 10', 'texto', 1, 'lojas', ARRAY[10]);
     n2 := public.publicar_comunicado('Da Alice', 'texto', 1, 'funcionarios', NULL, ARRAY[10212]);
-    PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 1);
-    PERFORM public.incluir_destinatarios(c_p10, ARRAY[10214]);
+    -- Ninguem gera pontos para si: ele e destinatario do comunicado da loja 10.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente destinatario nao deixa o comunicado valendo pontos (ninguem gera pontos para si)');
+    PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 0);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.incluir_destinatarios(c_p10, ARRAY[10214]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao se inclui num comunicado com pontos (ninguem gera pontos para si)');
+    PERFORM public.incluir_destinatarios(c_p10, ARRAY[10216]);
     PERFORM public.registrar_ciencia(s_dez);
     PERFORM public.arquivar_comunicado(n2);
     RESET ROLE;
     PERFORM public.exigir((SELECT criadopor = G FROM public.documentos WHERE documentoid = n1)
                           AND (SELECT titulo = 'Loja 10 (revisto)' FROM public.documentos WHERE documentoid = c_l10)
-                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c_p10 AND funcionarioid = 10214)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c_p10 AND funcionarioid = 10216)
                           AND (SELECT statusassinatura = 'Ciente' AND registradopor = G FROM public.documentosassinaturas WHERE assinaturaid = s_dez)
                           AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE assinaturaid = s_dez AND pontos = 1)
                           AND (SELECT status = 'Arquivado' FROM public.documentos WHERE documentoid = n2),
@@ -13846,7 +13927,8 @@ RESET ROLE;
 -- 106. Usuarios gerenciais, parte 2, fatia 13: Equipe (29/09/2026)
 -- ===========================================================================
 -- As bordas: criar so nas lojas dele; dados da pessoa so com ela inteira nas
--- lojas dele; lojas, so as dele mudam; CPF de quem existe e validador, so o
+-- lojas dele; trocar as lojas e cadastro: a pessoa inteira nas lojas dele, e
+-- so as dele mudam (decisao 4, 29/09/2026); CPF de quem existe e validador, so o
 -- master; nunca o proprio cadastro. PIN e jornada: na pessoa, nunca o proprio.
 DO $$ BEGIN RAISE NOTICE '106. parte 2, Equipe: as bordas, o CPF, o PIN e a jornada'; END $$;
 
@@ -13902,6 +13984,12 @@ BEGIN
     BEGIN PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[]::integer[]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nao tira ninguem da loja 11');
     PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao poe na loja DELE quem so trabalha na 11 (trocar as lojas: a pessoa inteira nas dele)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao tira da loja DELE quem tambem trabalha na 11');
+    PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Dez', '30630630615', NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nao muda o CPF de quem ja existe (so o master)');
     PERFORM public.guardar_foto();
@@ -13925,10 +14013,14 @@ BEGIN
     -- 4. O que ele pode, de verdade.
     n := public.salvar_pessoa(NULL, 'Nova 106', '20620620609', 'Caixa', NULL, NULL, 2, ARRAY[10]);
     PERFORM public.salvar_pessoa(10612, 'Hugo Dez (novo)', '10610610600', 'Balcao', NULL, '11999990000', 3, ARRAY[10]);
-    PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]);
-    PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]);
     PERFORM public.liberar_pin(10612);
     PERFORM public.vincular_jornada(ARRAY[10612, n], j);
+    RESET ROLE;
+    -- Com a loja 11 tambem dele, Iris e Kaio ficam inteiros nas lojas dele: ai troca.
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 11);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]);
+    PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]);
     RESET ROLE;
     PERFORM public.exigir((SELECT cpf = '20620620609' AND diadefolga = 2 FROM public.funcionarios WHERE funcionarioid = n)
                           AND EXISTS (SELECT 1 FROM public.funcionarioslojas WHERE funcionarioid = n AND lojaid = 10 AND ativo)
@@ -14075,6 +14167,41 @@ BEGIN
       ('96000000-0000-0000-0000-0000000000c1'::uuid, 9603, 'C', 96031, 9601, 96011)) x(uid, loja, m, pessoa, outra, outrapessoa) LOOP
     PERFORM set_config('teste.uid', g.uid::text, true);
 
+    -- Porta de entrada (parte 4): o seletor de loja e o menu.
+    SELECT jsonb_agg(l.lojaid) INTO v FROM public.minhas_lojas() l;
+    PERFORM public.exigir(v = jsonb_build_array(g.loja),
+                          'gestor ' || g.m || ': o seletor de loja traz exatamente a loja dele (e so ela)');
+    v := public.minhas_permissoes();
+    PERFORM public.exigir(NOT (v->>'master')::boolean AND jsonb_array_length(v->'codigos') > 50
+                          AND v->'codigos' ? 'quadro.ver',
+                          'gestor ' || g.m || ': as permissoes do cargo dele chegam para o menu');
+    PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'gerente', 'gestor ' || g.m || ': o banco o reconhece como gerente');
+    IF g.m = 'A' THEN
+      -- O menu recebe SO o que o cargo tem: tira "Metas: ver" e ele some.
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'metas.ver';
+      SET LOCAL ROLE authenticated;
+      PERFORM public.exigir(NOT (public.minhas_permissoes()->'codigos' ? 'metas.ver')
+                            AND public.minhas_permissoes()->'codigos' ? 'quadro.ver',
+                            'o menu do gerente recebe so os codigos do cargo dele (sem metas.ver, sem Metas)');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'metas.ver');
+      SET LOCAL ROLE authenticated;
+    END IF;
+    IF g.m = 'A' THEN
+      -- Bloqueado pelo master: desligado na hora, sem loja e sem permissao.
+      SET LOCAL ROLE NONE;
+      UPDATE public.usuariosgerenciais SET ativo = false WHERE userid = g.uid;
+      SET LOCAL ROLE authenticated;
+      PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'desligado'
+                            AND NOT EXISTS (SELECT 1 FROM public.minhas_lojas())
+                            AND jsonb_array_length(public.minhas_permissoes()->'codigos') = 0,
+                            'gestor bloqueado: desligado, sem loja no seletor e sem permissao no menu');
+      SET LOCAL ROLE NONE;
+      UPDATE public.usuariosgerenciais SET ativo = true WHERE userid = g.uid;
+      SET LOCAL ROLE authenticated;
+    END IF;
+
     -- Painel da loja
     v := public.painel_da_loja(g.loja);
     PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
@@ -14193,6 +14320,8 @@ BEGIN
                         AND public.painel_da_loja(9602)::text LIKE '%Tarefa-B%'
                         AND public.painel_da_loja(9603)::text LIKE '%Tarefa-C%',
                         'o master da conta ve o painel das tres lojas');
+  PERFORM public.exigir((SELECT jsonb_agg(l.lojaid ORDER BY l.lojaid) FROM public.minhas_lojas() l) = '[9601, 9602, 9603]'::jsonb,
+                        'seletor do master: as tres lojas ativas da conta');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -14212,7 +14341,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente');
+     AND p.proname NOT IN ('minhas_lojas', 'minhas_permissoes', 'meu_acesso', 'painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente', 'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate', 'recibo_resgate_gerente');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).
@@ -14336,5 +14465,200 @@ BEGIN
                         AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') !~ 'dia_no_fuso\(e\.dataenvio',
                         'a fila calcula o fuso e o dia uma vez, e nao converte o horario de cada entrega');
 END $$;
+
+-- ===========================================================================
+-- 110. Ninguem gera pontos para si mesmo (29/09/2026, regra geral do Wisley)
+-- ===========================================================================
+-- Quem da pontos e pode ser pessoa da equipe: so o gerente (ligado pelo
+-- usuario gerencial). Aqui o gestor da loja A fica ligado a Ana-A.
+DO $$ BEGIN RAISE NOTICE '110. ninguem gera pontos para si mesmo'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  c integer; c0 integer;
+BEGIN
+  BEGIN
+    UPDATE public.usuariosgerenciais SET funcionarioid = 96011 WHERE userid = GA;
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    -- Nega: comunicado com pontos para ele mesmo, se incluir, ou dar pontos a um em que ele e destinatario.
+    c0 := public.publicar_comunicado('Sem pontos', 'x', 0, 'lojas', ARRAY[9601]);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.publicar_comunicado('So para mim', 'x', 1, 'funcionarios', NULL, ARRAY[96011]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_comunicado(c0, 'Sem pontos', 'x', 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao manda comunicado com pontos para si nem da pontos a um em que e destinatario');
+    -- Permite: com pontos para a loja dele, todos recebem, menos ele.
+    c := public.publicar_comunicado('Para a loja A', 'x', 1, 'lojas', ARRAY[9601]);
+    RESET ROLE;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c AND funcionarioid = 96011)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c AND funcionarioid = 96012)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c0 AND funcionarioid = 96011),
+                          'com pontos, todos da loja recebem menos quem publicou; sem pontos, ele recebe como os outros');
+    RAISE EXCEPTION 'desfazer_110';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_110' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- Conquista (e tudo o que so o master faz): o master nunca e pessoa da equipe.
+-- A garantia e do proprio banco; se um dia mudar, esta checagem avisa.
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.contasusuarios SET funcionarioid = 96011 WHERE userid = '96969696-9696-9696-9696-969696969696';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'o master nunca e pessoa da equipe: ele nao gera pontos para si (conquista so o master cria)');
+END $$;
+
+-- ===========================================================================
+-- 111. O acesso da pessoa pelo gerente (29/09/2026, decisoes 2 e 4)
+-- ===========================================================================
+-- Criar acesso, redefinir e desativar rodam no servidor, que pergunta ao banco
+-- com o login de quem pediu (posso_na_pessoa). Pode: o master, e o gerente
+-- com o codigo no cargo e TODAS as lojas da pessoa dentro das dele; nunca o
+-- proprio. A resposta negada nao diz nem a conta.
+DO $$ BEGIN RAISE NOTICE '111. o acesso da pessoa: todas as lojas dela sao dele, nunca o proprio'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  NAO constant jsonb := '{"pode": false}';
+  fora integer := (SELECT min(funcionarioid) FROM public.funcionarios WHERE contaid <> 96);
+  cod text; r jsonb;
+BEGIN
+  BEGIN
+    UPDATE public.usuariosgerenciais SET funcionarioid = 96012 WHERE userid = GA;
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    FOREACH cod IN ARRAY ARRAY['equipe.desativar', 'equipe.criar_acesso', 'equipe.redefinir_acesso'] LOOP
+      -- Pode: Ana-A, so na loja A (a dele).
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96011) = '{"pode": true, "conta": 96}',
+                            cod || ': o gerente da A pode no acesso de quem so trabalha na A');
+      -- Nega: Duo-AB (tambem na B), Bia-B, ele mesmo (Folga-A), pessoa de outra conta.
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96041) = NAO, cod || ': nao, se a pessoa tambem trabalha na B');
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96021) = NAO, cod || ': nao, se a pessoa so trabalha na B');
+      PERFORM public.exigir(public.posso_na_pessoa(cod, 96012) = NAO, cod || ': nunca no proprio acesso');
+      PERFORM public.exigir(public.posso_na_pessoa(cod, fora) = NAO, cod || ': nada de outra conta, nem a conta volta');
+    END LOOP;
+    -- Codigo fora dos tres (quem valida, CPF): nao.
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.editar', 96011) = NAO, 'so os tres codigos do acesso passam por aqui');
+    RESET ROLE;
+    -- Sem o codigo no cargo: nao.
+    DELETE FROM public.cargospermissoes WHERE codigo = 'equipe.desativar'
+       AND cargoid = (SELECT cargoid FROM public.usuariosgerenciais WHERE userid = GA);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.desativar', 96011) = NAO, 'sem "desativar" no cargo: nao');
+    RESET ROLE;
+    -- O master: qualquer pessoa da conta dele; de outra conta, nao.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.desativar', 96041) = '{"pode": true, "conta": 96}', 'o master pode em todos');
+    PERFORM public.exigir(public.posso_na_pessoa('equipe.desativar', fora) = NAO, 'o master nao pode em outra conta');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_111';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_111' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 112. Arquivos para o gerente (29/09/2026, decisao 1 do Wisley)
+-- ===========================================================================
+-- Foto da entrega, anexo da agenda e recibo do resgate: so leitura, so das
+-- lojas dele, so com a permissao de ver a tela. Sabotagem obrigatoria: o
+-- gerente da loja A NAO abre arquivo da loja B. E a metade positiva: ele ABRE
+-- o que e da A. Documentos pessoais: nunca.
+DO $$ BEGIN RAISE NOTICE '112. arquivos: o gerente da A abre os da A e nenhum da B'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  l record; premio integer; ra integer; rb integer; r jsonb; nomes text;
+BEGIN
+  BEGIN
+    -- Pontos para Ana-A e Bia-B, um premio de 1 ponto e um resgate em cada loja.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.registrar_entrega(public.atribuir_tarefa(96301, 9601, ARRAY[96011], 'Diaria'), NULL, NULL, true);
+    PERFORM public.registrar_entrega(public.atribuir_tarefa(96302, 9602, ARRAY[96021], 'Diaria'), NULL, NULL, true);
+    premio := public.salvar_premio('Brinde-96', 1);
+    ra := public.registrar_troca(96011, premio, 9601, false);
+    rb := public.registrar_troca(96021, premio, 9602, false);
+    RESET ROLE;
+    -- Uma foto numa entrega de cada loja; um arquivo solto na pasta da A (sem
+    -- entrega); um anexo em cada agendamento; um documento pessoal na A.
+    SET LOCAL session_replication_role = replica;
+    FOR l IN SELECT DISTINCT ON (e.lojaid) e.entregaid, e.lojaid, lo.nome FROM public.entregas e
+               JOIN public.lojas lo ON lo.lojaid = e.lojaid WHERE e.contaid = 96 ORDER BY e.lojaid, e.entregaid LOOP
+      UPDATE public.entregas SET pathfotoevidencia = '96/' || l.lojaid || '/foto-' || right(l.nome, 1) || '.jpg' WHERE entregaid = l.entregaid;
+      INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '96/' || l.lojaid || '/foto-' || right(l.nome, 1) || '.jpg');
+    END LOOP;
+    SET LOCAL session_replication_role = origin;
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '96/9601/solta.jpg');
+    INSERT INTO storage.objects (bucket_id, name)
+      SELECT 'agendamentos', '96/' || a.lojaid || '/' || a.agendamentoid || '/anexo-' || a.nomecliente || '.pdf'
+        FROM public.agendamentos a WHERE a.contaid = 96;
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', '96/9601/pessoal-A.pdf');
+    PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'entregas' AND name ~ '^96/960[12]/foto-[AB]\.jpg$') = 2
+                          AND (SELECT count(*) FROM storage.objects WHERE bucket_id = 'agendamentos' AND name LIKE '96/%') >= 3
+                          AND ra IS NOT NULL AND rb IS NOT NULL,
+                          'o preparo: fotos, anexos e resgates da A e da B existem');
+
+    -- O gerente da A.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    SELECT string_agg(name, ' ' ORDER BY name) INTO nomes FROM storage.objects WHERE bucket_id = 'entregas';
+    PERFORM public.exigir(nomes = '96/9601/foto-A.jpg',
+                          'foto da entrega: o gerente da A abre a da A, e nenhuma da B, da C nem arquivo solto (' || coalesce(nomes, 'nada') || ')');
+    SELECT string_agg(name, ' ' ORDER BY name) INTO nomes FROM storage.objects WHERE bucket_id = 'agendamentos';
+    PERFORM public.exigir(nomes LIKE '96/9601/%/anexo-Cliente-A.pdf' AND nomes NOT LIKE '%Cliente-B%' AND nomes NOT LIKE '%Cliente-C%',
+                          'anexo da agenda: o gerente da A abre o da A, e nenhum da B nem da C (' || coalesce(nomes, 'nada') || ')');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(name) FROM storage.objects WHERE bucket_id NOT IN ('entregas', 'agendamentos')));
+    PERFORM public.exigir(public.nada_voltou(), 'documentos pessoais (e todo outro bucket): o gerente nao abre nada');
+    r := public.recibo_resgate(ra);
+    PERFORM public.exigir(r->>'pessoa' = 'Ana-A' AND r->>'protocolo' = 'R-' || ra AND jsonb_array_length(r->'movimentos') >= 1,
+                          'recibo do resgate: o gerente da A abre o da Ana-A, com os movimentos');
+    PERFORM public.guardar_resultado(public.recibo_resgate(rb));
+    PERFORM public.exigir(public.nada_voltou(), 'recibo do resgate: o gerente da A nao abre o da Bia-B');
+    -- Nunca escrita: nem enviar nem apagar.
+    PERFORM public.guardar_foto();
+    BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '96/9601/novo.jpg'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM storage.objects WHERE bucket_id = 'entregas' AND name = '96/9601/foto-A.jpg'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM storage.objects WHERE bucket_id = 'agendamentos'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao envia, troca nem apaga arquivo');
+    RESET ROLE;
+
+    -- Sem a permissao de ver a tela: nada, nem da loja dele.
+    DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo IN ('quadro.ver', 'agenda.ver', 'premios.ver');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(name) FROM storage.objects));
+    PERFORM public.exigir(public.nada_voltou(), 'sem "Quadro: ver" e "Agenda: ver", nem a foto nem o anexo da A');
+    PERFORM public.guardar_resultado(public.recibo_resgate(ra));
+    PERFORM public.exigir(public.nada_voltou(), 'sem "Premios: ver", nem o recibo da A');
+    RESET ROLE;
+
+    -- O master: tudo da conta, como sempre.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'entregas' AND name LIKE '96/%') = 4
+                          AND public.recibo_resgate(rb)->>'pessoa' = 'Bia-B',
+                          'e o master continua abrindo tudo da conta');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_112';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_112' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

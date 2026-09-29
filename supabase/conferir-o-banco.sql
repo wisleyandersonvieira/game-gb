@@ -39,6 +39,7 @@ $$;
 WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-aceite-e-som.sql', '20260929100700'),
   ('aplicar-admin-clientes-e-redes.sql', '20260929160000'),
+  ('aplicar-arquivos-do-gerente.sql', '20260929274000'),
   ('aplicar-barra-da-fila.sql', '20260929240000'),
   ('aplicar-colaborador-pede-resgate.sql', '20260929101000'),
   ('aplicar-concluidas-e-venda-de-ontem.sql', '20260929244000'),
@@ -64,7 +65,10 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-mapa-da-jornada.sql', '20260929210000'),
   ('aplicar-mapa-intervalo-por-dia.sql', '20260929233000'),
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
+  ('aplicar-meta-so-do-master.sql', '20260929273000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
+  ('aplicar-ninguem-gera-pontos-para-si.sql', '20260929271000'),
+  ('aplicar-parte-4-porta-do-gerente.sql', '20260929270000'),
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
@@ -87,6 +91,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-3-quadro.sql', '20260929265000'),
   ('aplicar-permissoes-parte-3-relatorios.sql', '20260929267000'),
   ('aplicar-permissoes-parte-3-rh.sql', '20260929263000'),
+  ('aplicar-pessoa-pelo-tipo-da-acao.sql', '20260929272000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
   ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
@@ -432,7 +437,7 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   -- Feedbacks conferem a pessoa inteira dentro das lojas (pode_na_pessoa).
   (460, 'OPERACAO', 'versao', 'Feedbacks com permissao sobre a pessoa; anulados na lista de estornos', 'aplicar-permissoes-parte-2-feedbacks.sql',
        to_regprocedure('public.pode_na_pessoa(text, integer, integer)') IS NOT NULL
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'anular_feedback') LIKE '%pode_na_pessoa(''feedbacks.anular''%'),
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'anular_feedback') ~ 'pode(_na_pessoa)?\(''feedbacks\.anular'''),
   (470, 'OPERACAO', 'versao', 'Metas com permissao e loja no banco; metas da semana e especiais por funcao', 'aplicar-permissoes-parte-2-metas.sql',
        to_regprocedure('public.salvar_metas_da_semana(integer, jsonb)') IS NOT NULL
        AND NOT has_table_privilege('authenticated', 'public.metasespeciais', 'INSERT')
@@ -493,7 +498,17 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        to_regprocedure('public.metas_do_mes_gerente(integer, date)') IS NOT NULL
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'metas_do_mes') LIKE '%metas_do_mes_gerente%'),
   (625, 'OPERACAO', 'versao', 'Lojas do gerente calculadas uma vez por leitura', 'aplicar-lojas-do-gerente-uma-vez.sql',
-       (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu_gerente') LIKE '%(SELECT public.lojas_onde_posso(''premios.ver''))::integer[]%')
+       (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu_gerente') LIKE '%(SELECT public.lojas_onde_posso(''premios.ver''))::integer[]%'),
+  (630, 'OPERACAO', 'versao', 'Porta do gerente: seletor de loja e menu', 'aplicar-parte-4-porta-do-gerente.sql',
+       to_regprocedure('public.minhas_lojas()') IS NOT NULL AND to_regprocedure('public.minhas_permissoes()') IS NOT NULL),
+  (640, 'OPERACAO', 'versao', 'Ninguem gera pontos para si mesmo (comunicado)', 'aplicar-ninguem-gera-pontos-para-si.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'incluir_destinatarios') LIKE '%ninguém gera pontos para si%'),
+  (650, 'OPERACAO', 'versao', 'Pessoa em varias lojas: a linha e o tipo da acao', 'aplicar-pessoa-pelo-tipo-da-acao.sql',
+       to_regprocedure('public.posso_na_pessoa(text,integer)') IS NOT NULL AND (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_pessoa') LIKE '%só o dono da conta troca as lojas dela%'),
+  (660, 'OPERACAO', 'versao', 'Meta so do master; quem lancou a venda, pelo nome', 'aplicar-meta-so-do-master.sql',
+       to_regprocedure('public.historico_das_vendas(integer)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes() WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial'))),
+  (670, 'OPERACAO', 'versao', 'Arquivos do gerente: foto, anexo e recibo, so leitura e so das lojas dele', 'aplicar-arquivos-do-gerente.sql',
+       to_regprocedure('public.foto_de_entrega_do_gerente(text)') IS NOT NULL AND to_regprocedure('public.recibo_resgate_gerente(integer)') IS NOT NULL AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND policyname IN ('entregas_sel_gerente', 'agendamentos_arq_sel_gerente')) = 2)
 ),
 tudo AS (
   SELECT x.*, a.versao

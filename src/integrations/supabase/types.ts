@@ -5926,6 +5926,23 @@ export type Database = {
       }
       lojas_onde_posso: { Args: { p_codigo: string }; Returns: number[] }
       pode: { Args: { p_codigo: string; p_lojaid?: number }; Returns: boolean }
+      historico_das_vendas: {
+        Args: { p_lojaid: number }
+        Returns: {
+          alteradoem: string
+          dataapuracao: string
+          foivoce: boolean
+          historicoid: number
+          motivo: string | null
+          quem: string
+          valoranterior: number | null
+          valornovo: number
+        }[]
+      }
+      posso_na_pessoa: {
+        Args: { p_codigo: string; p_funcionarioid: number }
+        Returns: Json
+      }
       liberar_pin: { Args: { p_funcionarioid: number }; Returns: undefined }
       liberar_documento_pessoal: {
         Args: { p_documentoid: number }
@@ -6004,6 +6021,18 @@ export type Database = {
       }
       metas_do_mes: { Args: { p_lojaid: number; p_mes: string }; Returns: Json }
       meu_acesso: { Args: never; Returns: Json }
+      minhas_lojas: {
+        Args: never
+        Returns: {
+          ativa: boolean
+          cidade: string | null
+          endereco: string | null
+          lojaid: number
+          nome: string
+          responsavelagendamentosid: number | null
+        }[]
+      }
+      minhas_permissoes: { Args: never; Returns: Json }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
       minha_politica_de_uso: { Args: never; Returns: Json }
