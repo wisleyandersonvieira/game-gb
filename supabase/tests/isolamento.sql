@@ -5036,7 +5036,10 @@ RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
     '^\(?contaid = \( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)?$',
     '^\(? ?SELECT eh_admin_geral\(\) AS eh_admin_geral\)?$',
     -- Storage: a PRIMEIRA pasta do caminho é a conta de quem pede.
-    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)::text\)?$'
+    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT minha_conta(_editavel)?\(\) AS minha_conta(_editavel)?\)\)::text\)?$',
+    -- Storage, só LEITURA do gerente (decisão 1, 29/09/2026): a primeira pasta
+    -- é a conta dele. Onde pode aparecer é conferido logo abaixo (lista fechada).
+    '^\(?split_part\(name, ''/''::text, 1\) = \(\( SELECT conta_do_gerente\(\) AS conta_do_gerente\)\)::text\)?$'
   ])
 $$;
 
@@ -5074,6 +5077,21 @@ BEGIN
     'toda policy (USING e WITH CHECK) esta presa a conta por AND, sem OR no nivel de cima ('
     || (SELECT count(*) FROM pg_policies WHERE schemaname IN ('public', 'storage')) || ' policies)'
     || coalesce(' -- FURADA: ' || liberadas, ''));
+
+  -- A ancora do gerente so vale em DUAS regras, fechadas: ler a foto da
+  -- entrega e o anexo da agenda, cada uma presa a linha do banco pela funcao
+  -- que confere a permissao de ver a tela na loja. Nunca escrita, nunca outro
+  -- bucket (documentos pessoais e canal confidencial: nunca, para papel nenhum).
+  SELECT string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', ') INTO liberadas
+    FROM pg_policies p
+   WHERE (coalesce(p.qual, '') || coalesce(p.with_check, '')) LIKE '%conta_do_gerente%'
+     AND NOT (p.schemaname = 'storage' AND p.cmd = 'SELECT' AND p.with_check IS NULL
+              AND ((p.policyname = 'entregas_sel_gerente' AND p.qual LIKE '%bucket_id = ''entregas''::text%'
+                    AND p.qual LIKE '%AND foto_de_entrega_do_gerente(name))')
+                OR (p.policyname = 'agendamentos_arq_sel_gerente' AND p.qual LIKE '%bucket_id = ''agendamentos''::text%'
+                    AND p.qual LIKE '%AND anexo_da_agenda_do_gerente(name))')));
+  PERFORM public.exigir(liberadas IS NULL,
+    'a conta do gerente so ancora a LEITURA da foto da entrega e do anexo da agenda (fora da lista: ' || coalesce(liberadas, '') || ')');
 
   -- Uma tabela sem contaid nao teria como ser isolada. A UNICA excecao sao
   -- as tabelas da PLATAFORMA, que nao pertencem a conta nenhuma e sao so do
@@ -5197,6 +5215,9 @@ BEGIN
       'analise_de_tarefas_gerente', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa_gerente',
       'metas_do_mes_gerente',
       'minhas_lojas', 'minhas_permissoes',
+      -- Decisao 1: so respondem sobre quem chama (conta do gerente, pode() na
+      -- loja da linha) (secao 112).
+      'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate_gerente',
       -- Decisoes 2 e 4: so responde sobre quem chama (conta dele, pessoa da
       -- conta dele, pode_na_pessoa e nunca o proprio) (secao 111).
       'posso_na_pessoa',
@@ -12435,9 +12456,10 @@ BEGIN
         vazou := vazou || coalesce(u.papel, 'sem papel') || ' ' || u.id || ' leu ' || n || ' em ' || t.table_name || '; ';
       END IF;
     END LOOP;
-    -- Storage: a primeira pasta e a conta.
+    -- Storage: a primeira pasta e a conta. Desde a decisao 1 (29/09/2026) o
+    -- gerente le foto e anexo da propria conta (secao 112): aqui, nada de outra.
     SET LOCAL ROLE authenticated;
-    IF u.papel = 'master' THEN
+    IF u.papel IN ('master', 'gerente') THEN
       SELECT count(*) INTO n FROM storage.objects WHERE split_part(name, '/', 1) IS DISTINCT FROM u.contaid::text;
     ELSE
       SELECT count(*) INTO n FROM storage.objects;
@@ -14319,7 +14341,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('minhas_lojas', 'minhas_permissoes', 'meu_acesso', 'painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente');
+     AND p.proname NOT IN ('minhas_lojas', 'minhas_permissoes', 'meu_acesso', 'painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente', 'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate', 'recibo_resgate_gerente');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).
@@ -14542,6 +14564,98 @@ BEGIN
     RAISE EXCEPTION 'desfazer_111';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_111' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 112. Arquivos para o gerente (29/09/2026, decisao 1 do Wisley)
+-- ===========================================================================
+-- Foto da entrega, anexo da agenda e recibo do resgate: so leitura, so das
+-- lojas dele, so com a permissao de ver a tela. Sabotagem obrigatoria: o
+-- gerente da loja A NAO abre arquivo da loja B. E a metade positiva: ele ABRE
+-- o que e da A. Documentos pessoais: nunca.
+DO $$ BEGIN RAISE NOTICE '112. arquivos: o gerente da A abre os da A e nenhum da B'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  l record; premio integer; ra integer; rb integer; r jsonb; nomes text;
+BEGIN
+  BEGIN
+    -- Pontos para Ana-A e Bia-B, um premio de 1 ponto e um resgate em cada loja.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.registrar_entrega(public.atribuir_tarefa(96301, 9601, ARRAY[96011], 'Diaria'), NULL, NULL, true);
+    PERFORM public.registrar_entrega(public.atribuir_tarefa(96302, 9602, ARRAY[96021], 'Diaria'), NULL, NULL, true);
+    premio := public.salvar_premio('Brinde-96', 1);
+    ra := public.registrar_troca(96011, premio, 9601, false);
+    rb := public.registrar_troca(96021, premio, 9602, false);
+    RESET ROLE;
+    -- Uma foto numa entrega de cada loja; um arquivo solto na pasta da A (sem
+    -- entrega); um anexo em cada agendamento; um documento pessoal na A.
+    SET LOCAL session_replication_role = replica;
+    FOR l IN SELECT DISTINCT ON (e.lojaid) e.entregaid, e.lojaid, lo.nome FROM public.entregas e
+               JOIN public.lojas lo ON lo.lojaid = e.lojaid WHERE e.contaid = 96 ORDER BY e.lojaid, e.entregaid LOOP
+      UPDATE public.entregas SET pathfotoevidencia = '96/' || l.lojaid || '/foto-' || right(l.nome, 1) || '.jpg' WHERE entregaid = l.entregaid;
+      INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '96/' || l.lojaid || '/foto-' || right(l.nome, 1) || '.jpg');
+    END LOOP;
+    SET LOCAL session_replication_role = origin;
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '96/9601/solta.jpg');
+    INSERT INTO storage.objects (bucket_id, name)
+      SELECT 'agendamentos', '96/' || a.lojaid || '/' || a.agendamentoid || '/anexo-' || a.nomecliente || '.pdf'
+        FROM public.agendamentos a WHERE a.contaid = 96;
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('documentos-rh', '96/9601/pessoal-A.pdf');
+    PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'entregas' AND name ~ '^96/960[12]/foto-[AB]\.jpg$') = 2
+                          AND (SELECT count(*) FROM storage.objects WHERE bucket_id = 'agendamentos' AND name LIKE '96/%') >= 3
+                          AND ra IS NOT NULL AND rb IS NOT NULL,
+                          'o preparo: fotos, anexos e resgates da A e da B existem');
+
+    -- O gerente da A.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    SELECT string_agg(name, ' ' ORDER BY name) INTO nomes FROM storage.objects WHERE bucket_id = 'entregas';
+    PERFORM public.exigir(nomes = '96/9601/foto-A.jpg',
+                          'foto da entrega: o gerente da A abre a da A, e nenhuma da B, da C nem arquivo solto (' || coalesce(nomes, 'nada') || ')');
+    SELECT string_agg(name, ' ' ORDER BY name) INTO nomes FROM storage.objects WHERE bucket_id = 'agendamentos';
+    PERFORM public.exigir(nomes LIKE '96/9601/%/anexo-Cliente-A.pdf' AND nomes NOT LIKE '%Cliente-B%' AND nomes NOT LIKE '%Cliente-C%',
+                          'anexo da agenda: o gerente da A abre o da A, e nenhum da B nem da C (' || coalesce(nomes, 'nada') || ')');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(name) FROM storage.objects WHERE bucket_id NOT IN ('entregas', 'agendamentos')));
+    PERFORM public.exigir(public.nada_voltou(), 'documentos pessoais (e todo outro bucket): o gerente nao abre nada');
+    r := public.recibo_resgate(ra);
+    PERFORM public.exigir(r->>'pessoa' = 'Ana-A' AND r->>'protocolo' = 'R-' || ra AND jsonb_array_length(r->'movimentos') >= 1,
+                          'recibo do resgate: o gerente da A abre o da Ana-A, com os movimentos');
+    PERFORM public.guardar_resultado(public.recibo_resgate(rb));
+    PERFORM public.exigir(public.nada_voltou(), 'recibo do resgate: o gerente da A nao abre o da Bia-B');
+    -- Nunca escrita: nem enviar nem apagar.
+    PERFORM public.guardar_foto();
+    BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '96/9601/novo.jpg'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM storage.objects WHERE bucket_id = 'entregas' AND name = '96/9601/foto-A.jpg'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM storage.objects WHERE bucket_id = 'agendamentos'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao envia, troca nem apaga arquivo');
+    RESET ROLE;
+
+    -- Sem a permissao de ver a tela: nada, nem da loja dele.
+    DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo IN ('quadro.ver', 'agenda.ver', 'premios.ver');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(name) FROM storage.objects));
+    PERFORM public.exigir(public.nada_voltou(), 'sem "Quadro: ver" e "Agenda: ver", nem a foto nem o anexo da A');
+    PERFORM public.guardar_resultado(public.recibo_resgate(ra));
+    PERFORM public.exigir(public.nada_voltou(), 'sem "Premios: ver", nem o recibo da A');
+    RESET ROLE;
+
+    -- O master: tudo da conta, como sempre.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT count(*) FROM storage.objects WHERE bucket_id = 'entregas' AND name LIKE '96/%') = 4
+                          AND public.recibo_resgate(rb)->>'pessoa' = 'Bia-B',
+                          'e o master continua abrindo tudo da conta');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_112';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_112' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

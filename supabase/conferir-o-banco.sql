@@ -39,6 +39,7 @@ $$;
 WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-aceite-e-som.sql', '20260929100700'),
   ('aplicar-admin-clientes-e-redes.sql', '20260929160000'),
+  ('aplicar-arquivos-do-gerente.sql', '20260929274000'),
   ('aplicar-barra-da-fila.sql', '20260929240000'),
   ('aplicar-colaborador-pede-resgate.sql', '20260929101000'),
   ('aplicar-concluidas-e-venda-de-ontem.sql', '20260929244000'),
@@ -505,7 +506,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (650, 'OPERACAO', 'versao', 'Pessoa em varias lojas: a linha e o tipo da acao', 'aplicar-pessoa-pelo-tipo-da-acao.sql',
        to_regprocedure('public.posso_na_pessoa(text,integer)') IS NOT NULL AND (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_pessoa') LIKE '%só o dono da conta troca as lojas dela%'),
   (660, 'OPERACAO', 'versao', 'Meta so do master; quem lancou a venda, pelo nome', 'aplicar-meta-so-do-master.sql',
-       to_regprocedure('public.historico_das_vendas(integer)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes() WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial')))
+       to_regprocedure('public.historico_das_vendas(integer)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes() WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial'))),
+  (670, 'OPERACAO', 'versao', 'Arquivos do gerente: foto, anexo e recibo, so leitura e so das lojas dele', 'aplicar-arquivos-do-gerente.sql',
+       to_regprocedure('public.foto_de_entrega_do_gerente(text)') IS NOT NULL AND to_regprocedure('public.recibo_resgate_gerente(integer)') IS NOT NULL AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND policyname IN ('entregas_sel_gerente', 'agendamentos_arq_sel_gerente')) = 2)
 ),
 tudo AS (
   SELECT x.*, a.versao

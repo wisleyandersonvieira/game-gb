@@ -527,10 +527,7 @@ trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
 **Pendentes (não adivinhadas):**
 - ~~Equipe: quem valida / desativar e acesso~~ **Decidido** (29/09/2026): quem valida fica com o master; desativar e acesso, só com todas as lojas da pessoa dele.
 - ~~Comunicados com pontos para si~~ **Decidido** (29/09/2026): bloqueado pela regra geral "ninguém gera pontos para si mesmo".
-- Agenda, anexo: o gerente registra e remove anexo, mas o ENVIO do arquivo ao
-  Storage continua só do master. A trava das regras de acesso (seção 14) só
-  aceita a conta do master como âncora no Storage; abrir para o gerente é
-  mudar essa trava. Liberar?
+- Agenda, anexo: **decidido** (29/09/2026, decisão 1): o gerente ABRE (só lê) o anexo, a foto da entrega e o recibo do resgate das lojas dele, com a permissão de ver a tela. O ENVIO do arquivo ao Storage continua só do master. Documentos pessoais e canal confidencial: nunca, para papel nenhum.
 - ~~Pessoa em várias lojas~~ **Decidido** (29/09/2026): a linha é o tipo da ação (acima).
 - ~~Metas: gerente lança a venda~~ **Decidido** (29/09/2026): aceitável; a meta e os pontos são só do master, e o master vê pelo nome quem lançou e quem corrigiu cada venda.
 
