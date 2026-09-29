@@ -78,6 +78,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
   ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
   ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
+  ('aplicar-permissoes-parte-3-painel-fila.sql', '20260929264000'),
   ('aplicar-permissoes-parte-3-rh.sql', '20260929263000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
@@ -463,7 +464,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND NOT has_table_privilege('authenticated', 'public.funcionarioslojas', 'INSERT')),
   (570, 'OPERACAO', 'versao', 'Canal e documentos pessoais: so o master, provado com gerente', 'aplicar-permissoes-parte-3-rh.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'tratar_relato') LIKE '%conta_do_gestor_editavel()%'
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'liberar_documento_pessoal') LIKE '%conta_do_gestor_editavel()%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'liberar_documento_pessoal') LIKE '%conta_do_gestor_editavel()%'),
+  (580, 'OPERACAO', 'versao', 'Leituras do gerente: painel da loja e fila', 'aplicar-permissoes-parte-3-painel-fila.sql',
+       to_regprocedure('public.conta_do_gerente()') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_da_loja') LIKE '%pode(''painel.ver''%')
 ),
 tudo AS (
   SELECT x.*, a.versao

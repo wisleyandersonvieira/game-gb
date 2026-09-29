@@ -5190,6 +5190,8 @@ BEGIN
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
       'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding', 'criar_loja', 'ativar_loja', 'editar_loja', 'salvar_pessoa', 'apagar_jornada',
+      -- Parte 3: so dizem a conta de quem chama, ou leem so as lojas do gerente.
+      'conta_do_gerente',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -13956,5 +13958,165 @@ BEGIN
 END $$;
 SET teste.uid = '';
 RESET ROLE;
+
+-- ===========================================================================
+-- 107. Usuarios gerenciais, PARTE 3: leituras por loja (29/09/2026)
+-- ===========================================================================
+-- Aceite do Wisley: 3 lojas, um gestor em cada; o gestor da A nao ve NADA da
+-- B nem da C, tela por tela. Cada gestor tem TODAS as permissoes do catalogo,
+-- so na loja dele: o que separa e a loja, nao a falta de permissao.
+-- Os dados levam a marca da loja no nome (Ana-A, Tarefa-B, Item-C, Meta-A,
+-- Cliente-B...): nenhuma resposta a um gestor pode ter a marca de outra loja.
+DO $$ BEGIN RAISE NOTICE '107. parte 3: tres lojas, tres gestores, cada um so ve a sua'; END $$;
+
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+  ('96969696-9696-9696-9696-969696969696', 'master.96@exemplo.com', now()),
+  ('96000000-0000-0000-0000-0000000000a1', 'gestor.a.96@exemplo.com', now()),
+  ('96000000-0000-0000-0000-0000000000b1', 'gestor.b.96@exemplo.com', now()),
+  ('96000000-0000-0000-0000-0000000000c1', 'gestor.c.96@exemplo.com', now());
+INSERT INTO public.contas (contaid, nome, email, limitelojas, status) OVERRIDING SYSTEM VALUE
+VALUES (96, 'Empresa 96', 'e96@exemplo.com', 3, 'ativa');
+INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES
+  (96, '96969696-9696-9696-9696-969696969696', 'master'),
+  (96, '96000000-0000-0000-0000-0000000000a1', 'gerente'),
+  (96, '96000000-0000-0000-0000-0000000000b1', 'gerente'),
+  (96, '96000000-0000-0000-0000-0000000000c1', 'gerente');
+INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES
+  (9601, 96, 'Loja A'), (9602, 96, 'Loja B'), (9603, 96, 'Loja C');
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+  (96011, 96, 'Ana-A', 0), (96021, 96, 'Bia-B', 0), (96031, 96, 'Caio-C', 0);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+  (96, 96011, 9601), (96, 96021, 9602), (96, 96031, 9603);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (96101, 96, 'Tarefa-A', 5), (96102, 96, 'Tarefa-B', 5), (96103, 96, 'Tarefa-C', 5),
+  (96201, 96, 'Limpeza-A', 3), (96202, 96, 'Limpeza-B', 3), (96203, 96, 'Limpeza-C', 3),
+  (96301, 96, 'Livre-A', 2), (96302, 96, 'Livre-B', 2), (96303, 96, 'Livre-C', 2);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES
+  (96, 96101, 9601), (96, 96102, 9602), (96, 96103, 9603),
+  (96, 96201, 9601), (96, 96202, 9602), (96, 96203, 9603),
+  (96, 96301, 9601), (96, 96302, 9602), (96, 96303, 9603);
+INSERT INTO public.cargos (cargoid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES (9600, 96, 'Tudo (96)');
+INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) SELECT 96, 9600, codigo FROM public.catalogo_de_permissoes();
+INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES
+  (96, '96000000-0000-0000-0000-0000000000a1', 9600),
+  (96, '96000000-0000-0000-0000-0000000000b1', 9600),
+  (96, '96000000-0000-0000-0000-0000000000c1', 9600);
+INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES
+  (96, '96000000-0000-0000-0000-0000000000a1', 9601),
+  (96, '96000000-0000-0000-0000-0000000000b1', 9602),
+  (96, '96000000-0000-0000-0000-0000000000c1', 9603);
+SELECT public.cria_tipos_evento_padrao(96);
+
+-- O master da conta 96 monta o dia de cada loja pelas funcoes de sempre.
+SET ROLE authenticated;
+SET teste.uid = '96969696-9696-9696-9696-969696969696';
+DO $$
+DECLARE l record; a1 integer; a2 integer; v_hoje date := (public.meu_hoje()->>'hoje')::date; t integer;
+BEGIN
+  t := (SELECT tipoeventoid FROM public.tiposevento WHERE contaid = 96 ORDER BY 1 LIMIT 1);
+  FOR l IN SELECT * FROM (VALUES (9601, 'A', 96011, 96101, 96201, 96301), (9602, 'B', 96021, 96102, 96202, 96302),
+                                 (9603, 'C', 96031, 96103, 96203, 96303)) v(loja, m, pessoa, t1, t2, t3) LOOP
+    a1 := public.atribuir_tarefa(l.t1, l.loja, ARRAY[l.pessoa], 'Diaria');
+    a2 := public.atribuir_tarefa(l.t2, l.loja, ARRAY[l.pessoa], 'Diaria');
+    PERFORM public.atribuir_tarefa(l.t3, l.loja, ARRAY[]::integer[], 'Diaria', NULL, NULL, '00:01');  -- missao sem dono: "nao pegas"
+    PERFORM public.registrar_entrega(a1);                                          -- pendente no Quadro
+    PERFORM public.registrar_justificativa(a2, v_hoje, 'Motivo-' || l.m, false);    -- justificativa pendente
+    PERFORM public.abrir_solicitacao(l.loja, l.pessoa, 'Compra', NULL, 'Item-' || l.m);
+    PERFORM public.salvar_meta_do_mes(l.loja, date_trunc('month', v_hoje)::date, 'Meta-' || l.m, 1000, 10);
+    PERFORM public.lancar_venda_do_dia(l.loja, v_hoje, 100);
+    PERFORM public.criar_agendamento(l.loja, t, now() + interval '2 days', 'Cliente-' || l.m, NULL, NULL, NULL, NULL,
+                                     'Pendente', l.pessoa);
+  END LOOP;
+END $$;
+RESET ROLE;
+
+-- Cada gestor, tela por tela. "limpo(x)": a resposta nao tem marca de outra loja.
+CREATE OR REPLACE FUNCTION public.sem_marca_de_fora(p jsonb, p_minha text)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT NOT (coalesce(p::text, '') ~ ('(-|Loja )[' || replace('ABC', p_minha, '') || ']\M'))
+$$;
+GRANT EXECUTE ON FUNCTION public.sem_marca_de_fora(jsonb, text) TO authenticated;
+
+SET ROLE authenticated;
+DO $$
+DECLARE
+  g record; v jsonb; v_hoje date; v_mes date;
+BEGIN
+  SET LOCAL ROLE NONE;
+  v_hoje := public.hoje_da_conta(96); v_mes := date_trunc('month', v_hoje)::date;
+  SET LOCAL ROLE authenticated;
+  FOR g IN SELECT * FROM (VALUES
+      ('96000000-0000-0000-0000-0000000000a1'::uuid, 9601, 'A', 96011, 9602, 96021),
+      ('96000000-0000-0000-0000-0000000000b1'::uuid, 9602, 'B', 96021, 9603, 96031),
+      ('96000000-0000-0000-0000-0000000000c1'::uuid, 9603, 'C', 96031, 9601, 96011)) x(uid, loja, m, pessoa, outra, outrapessoa) LOOP
+    PERFORM set_config('teste.uid', g.uid::text, true);
+
+    -- Painel da loja
+    v := public.painel_da_loja(g.loja);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': painel da loja mostra a loja dele, e nada de fora');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado(public.painel_da_loja(g.outra)); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': painel de outra loja nao abre');
+    IF g.m = 'A' THEN
+      -- Sem "Ver R$" e sem "Agenda: ver", o painel vem sem a meta e sem a agenda.
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo IN ('valores.ver_rs', 'agenda.ver');
+      SET LOCAL ROLE authenticated;
+      v := public.painel_da_loja(g.loja);
+      PERFORM public.exigir(NOT (v ? 'meta') AND NOT (v ? 'agenda') AND v::text NOT LIKE '%Cliente-%',
+                            'sem "Ver R$" e sem "Agenda: ver", o painel nao traz a meta nem a agenda');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs'), (96, 9600, 'agenda.ver');
+      SET LOCAL ROLE authenticated;
+      v := public.painel_da_loja(g.loja);
+      PERFORM public.exigir(v ? 'meta' AND v ? 'agenda', 'e com as duas, traz');
+    END IF;
+
+    -- Fila
+    SELECT jsonb_agg(f) INTO v FROM public.fila_da_loja(g.loja) f;
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': fila da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(f) FROM public.fila_da_loja(g.outra) f));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': fila de outra loja vem vazia');
+
+  END LOOP;
+
+  -- E o master da conta ve as tres lojas (o teste enxerga as marcas quando elas existem).
+  PERFORM set_config('teste.uid', '96969696-9696-9696-9696-969696969696', true);
+  PERFORM public.exigir(public.painel_da_loja(9601)::text LIKE '%Tarefa-A%'
+                        AND public.painel_da_loja(9602)::text LIKE '%Tarefa-B%'
+                        AND public.painel_da_loja(9603)::text LIKE '%Tarefa-C%',
+                        'o master da conta ve o painel das tres lojas');
+END $$;
+RESET ROLE;
+SET teste.uid = '';
+
+-- ===========================================================================
+-- 108. Trava das leituras do gerente (parte 3)
+-- ===========================================================================
+-- Toda funcao liberada para quem esta logado que RECONHECE o gerente (chama
+-- conta_do_gerente) tem de estar na lista testada pela secao 107 (tres lojas,
+-- tres gestores). Leitura nova do gerente fora da lista reprova: ela ainda nao
+-- provou que nao mostra outra loja.
+DO $$
+DECLARE sobra text;
+BEGIN
+  RAISE NOTICE '108. trava: leitura do gerente so dentro da lista testada';
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO sobra
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
+     AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja');
+  PERFORM public.exigir(sobra IS NULL,
+    'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
+  -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO sobra
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname LIKE '%\_gerente' AND p.prosrc LIKE '%conta_do_gerente(%'
+     AND p.prosrc NOT LIKE '%public.pode(%' AND p.prosrc NOT LIKE '%public.lojas_onde_posso(%'
+     AND p.prosrc NOT LIKE '%public.pode_na_pessoa(%';
+  PERFORM public.exigir(sobra IS NULL, 'toda versao do gerente confere a permissao de ver (sem: ' || coalesce(sobra, '') || ')');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;
