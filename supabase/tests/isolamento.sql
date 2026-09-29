@@ -5196,6 +5196,7 @@ BEGIN
       'painel_inicio_gerente', 'contagem_do_menu_gerente',
       'analise_de_tarefas_gerente', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa_gerente',
       'metas_do_mes_gerente',
+      'minhas_lojas', 'minhas_permissoes',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -10596,7 +10597,12 @@ BEGIN
       IF sit = 'conta_cancelada' THEN UPDATE public.contas SET status = 'cancelada' WHERE contaid = 1; END IF;
       IF sit = 'sem_senha' THEN UPDATE public.funcionarios SET senhahashapp = NULL WHERE funcionarioid = 8100; END IF;
       IF sit = 'sem_pin' THEN UPDATE public.funcionarios SET pinhash = NULL WHERE funcionarioid = 8100; END IF;
-      IF sit = 'nao_colaborador' THEN UPDATE public.contasusuarios SET papel = 'gerente', funcionarioid = NULL WHERE userid = v_uid; END IF;
+      IF sit = 'nao_colaborador' THEN
+        -- Um gerente de verdade (com usuario gerencial ativo): desde a parte 4,
+        -- gerente SEM usuario gerencial ativo e "desligado" no meu_acesso.
+        UPDATE public.contasusuarios SET papel = 'gerente', funcionarioid = NULL WHERE userid = v_uid;
+        INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, v_uid, 1212);
+      END IF;
 
       PERFORM set_config('teste.uid', v_uid::text, true);
       m := public.meu_acesso();
@@ -14075,6 +14081,41 @@ BEGIN
       ('96000000-0000-0000-0000-0000000000c1'::uuid, 9603, 'C', 96031, 9601, 96011)) x(uid, loja, m, pessoa, outra, outrapessoa) LOOP
     PERFORM set_config('teste.uid', g.uid::text, true);
 
+    -- Porta de entrada (parte 4): o seletor de loja e o menu.
+    SELECT jsonb_agg(l.lojaid) INTO v FROM public.minhas_lojas() l;
+    PERFORM public.exigir(v = jsonb_build_array(g.loja),
+                          'gestor ' || g.m || ': o seletor de loja traz exatamente a loja dele (e so ela)');
+    v := public.minhas_permissoes();
+    PERFORM public.exigir(NOT (v->>'master')::boolean AND jsonb_array_length(v->'codigos') > 50
+                          AND v->'codigos' ? 'quadro.ver',
+                          'gestor ' || g.m || ': as permissoes do cargo dele chegam para o menu');
+    PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'gerente', 'gestor ' || g.m || ': o banco o reconhece como gerente');
+    IF g.m = 'A' THEN
+      -- O menu recebe SO o que o cargo tem: tira "Metas: ver" e ele some.
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'metas.ver';
+      SET LOCAL ROLE authenticated;
+      PERFORM public.exigir(NOT (public.minhas_permissoes()->'codigos' ? 'metas.ver')
+                            AND public.minhas_permissoes()->'codigos' ? 'quadro.ver',
+                            'o menu do gerente recebe so os codigos do cargo dele (sem metas.ver, sem Metas)');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'metas.ver');
+      SET LOCAL ROLE authenticated;
+    END IF;
+    IF g.m = 'A' THEN
+      -- Bloqueado pelo master: desligado na hora, sem loja e sem permissao.
+      SET LOCAL ROLE NONE;
+      UPDATE public.usuariosgerenciais SET ativo = false WHERE userid = g.uid;
+      SET LOCAL ROLE authenticated;
+      PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'desligado'
+                            AND NOT EXISTS (SELECT 1 FROM public.minhas_lojas())
+                            AND jsonb_array_length(public.minhas_permissoes()->'codigos') = 0,
+                            'gestor bloqueado: desligado, sem loja no seletor e sem permissao no menu');
+      SET LOCAL ROLE NONE;
+      UPDATE public.usuariosgerenciais SET ativo = true WHERE userid = g.uid;
+      SET LOCAL ROLE authenticated;
+    END IF;
+
     -- Painel da loja
     v := public.painel_da_loja(g.loja);
     PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
@@ -14193,6 +14234,8 @@ BEGIN
                         AND public.painel_da_loja(9602)::text LIKE '%Tarefa-B%'
                         AND public.painel_da_loja(9603)::text LIKE '%Tarefa-C%',
                         'o master da conta ve o painel das tres lojas');
+  PERFORM public.exigir((SELECT jsonb_agg(l.lojaid ORDER BY l.lojaid) FROM public.minhas_lojas() l) = '[9601, 9602, 9603]'::jsonb,
+                        'seletor do master: as tres lojas ativas da conta');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -14212,7 +14255,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente');
+     AND p.proname NOT IN ('minhas_lojas', 'minhas_permissoes', 'meu_acesso', 'painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).

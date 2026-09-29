@@ -6004,6 +6004,18 @@ export type Database = {
       }
       metas_do_mes: { Args: { p_lojaid: number; p_mes: string }; Returns: Json }
       meu_acesso: { Args: never; Returns: Json }
+      minhas_lojas: {
+        Args: never
+        Returns: {
+          ativa: boolean
+          cidade: string | null
+          endereco: string | null
+          lojaid: number
+          nome: string
+          responsavelagendamentosid: number | null
+        }[]
+      }
+      minhas_permissoes: { Args: never; Returns: Json }
       minha_conta: { Args: never; Returns: number }
       minha_conta_editavel: { Args: never; Returns: number }
       minha_politica_de_uso: { Args: never; Returns: Json }

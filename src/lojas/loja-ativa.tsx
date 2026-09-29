@@ -52,11 +52,9 @@ export function ProvedorLojaAtiva({ children }: { children: ReactNode }) {
     queryKey: ["lojas-ativas"],
     staleTime: ESTAVEL,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("lojas")
-        .select("lojaid, nome, cidade, endereco, ativa, responsavelagendamentosid")
-        .eq("ativa", true)
-        .order("nome");
+      // O banco devolve só as lojas de quem pergunta: as ativas da conta
+      // (master) ou as ativas em que o gerente está (parte 4).
+      const { data, error } = await supabase.rpc("minhas_lojas");
       if (error) throw error;
       return (data ?? []) as Loja[];
     },

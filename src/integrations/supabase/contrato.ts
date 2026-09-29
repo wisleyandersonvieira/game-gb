@@ -110,6 +110,8 @@ export const CONTRATO: Record<string, string[]> = {
   minha_conta: [],
   minha_politica_de_uso: [],
   minha_taxa: [],
+  minhas_lojas: [],
+  minhas_permissoes: [],
   mudar_situacao_solicitacao: ["p_observacao", "p_solicitacaoid", "p_status"],
   painel_da_loja: ["p_lojaid"],
   painel_da_tv: ["p_codigo"],

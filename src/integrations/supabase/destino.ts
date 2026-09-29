@@ -60,9 +60,9 @@ export async function meuAcesso(): Promise<Acesso> {
 export function destinoDoAcesso(a: Acesso): Destino {
   if (a.tipo === "semlogin") return "/auth";
   if (a.tipo === "admin") return "/admin";
-  // "gerente" está FECHADO até a permissão por cargo e loja existir
-  // (29/09/2026): cai em /sem-acesso, como quem não tem papel.
-  if (a.tipo === "master") return "/inicio";
+  // O gerente entra nas mesmas telas do master (parte 4, 29/09/2026): o menu
+  // mostra só o que o cargo dele deixa ver, e o banco confere tudo de novo.
+  if (a.tipo === "master" || a.tipo === "gerente") return "/inicio";
   if (a.tipo === "colaborador") {
     // Primeiro acesso: trocar a senha, escolher o PIN e dar ciencia na politica.
     return a.semsenha || a.sempin || a.politicapendente ? "/primeiro-acesso" : "/eu";
