@@ -5193,6 +5193,7 @@ BEGIN
       -- Parte 3: so dizem a conta de quem chama, ou leem so as lojas do gerente.
       'conta_do_gerente', 'quadro_validacao_gerente', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia_gerente',
       'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje_gerente',
+      'painel_inicio_gerente', 'contagem_do_menu_gerente',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -14112,6 +14113,21 @@ BEGIN
     PERFORM public.guardar_resultado(public.tarefas_de_folga_hoje(g.outra));
     PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': folgas de outra loja vem vazio');
 
+    -- Inicio e menu
+    v := public.painel_inicio(NULL);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': Inicio (todas as lojas dele) nao mostra outra loja');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado(public.painel_inicio(g.outra)); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': Inicio de outra loja nao abre');
+    SELECT jsonb_agg(t) INTO v FROM public.tarefas_nao_pegas(NULL) t;
+    PERFORM public.exigir(v::text LIKE '%Livre-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': tarefas nao pegas, so da loja dele');
+    v := public.contagem_do_menu();
+    PERFORM public.exigir((v->>'entregas')::integer = 1 AND jsonb_array_length(v->'solicitacoes') = 1
+                          AND (v->'solicitacoes'->0->>'loja')::integer = g.loja,
+                          'gestor ' || g.m || ': bolinhas do menu contam so a loja dele');
+
   END LOOP;
 
   -- E o master da conta ve as tres lojas (o teste enxerga as marcas quando elas existem).
@@ -14139,7 +14155,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente');
+     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).

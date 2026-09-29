@@ -80,6 +80,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
   ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
   ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
+  ('aplicar-permissoes-parte-3-inicio.sql', '20260929266000'),
   ('aplicar-permissoes-parte-3-painel-fila.sql', '20260929264000'),
   ('aplicar-permissoes-parte-3-quadro.sql', '20260929265000'),
   ('aplicar-permissoes-parte-3-rh.sql', '20260929263000'),
@@ -478,7 +479,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%ORDER BY x.dataenvio, x.entregaid)%'
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'lista_do_dia_gerar') LIKE '%ORDER BY c.lojaid, c.atribuicaoid%'),
   (597, 'OPERACAO', 'versao', 'Fila: fuso e dia calculados uma vez', 'aplicar-fila-fuso-uma-vez.sql',
-       (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') LIKE '%WITH ctx AS MATERIALIZED%')
+       (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') LIKE '%WITH ctx AS MATERIALIZED%'),
+  (600, 'OPERACAO', 'versao', 'Leituras do gerente: Inicio e bolinhas do menu', 'aplicar-permissoes-parte-3-inicio.sql',
+       to_regprocedure('public.painel_inicio_gerente(integer)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu') LIKE '%contagem_do_menu_gerente%')
 ),
 tudo AS (
   SELECT x.*, a.versao
