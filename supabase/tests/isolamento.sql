@@ -5194,6 +5194,7 @@ BEGIN
       'conta_do_gerente', 'quadro_validacao_gerente', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia_gerente',
       'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje_gerente',
       'painel_inicio_gerente', 'contagem_do_menu_gerente',
+      'analise_de_tarefas_gerente', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa_gerente',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -13994,6 +13995,12 @@ SELECT v.id, 96, v.nome, extract(dow FROM public.hoje_da_conta(96))::integer + 1
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
   (96, 96011, 9601), (96, 96021, 9602), (96, 96031, 9603),
   (96, 96012, 9601), (96, 96022, 9602), (96, 96032, 9603);
+-- Uma pessoa nas lojas A E B (com entrega na A): nenhum gestor ve o relatorio
+-- dela, porque ela nao esta INTEIRA nas lojas de nenhum deles.
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES (96041, 96, 'Duo-AB', 0);
+INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (96, 96041, 9601), (96, 96041, 9602);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (96401, 96, 'Extra-A', 2);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (96, 96401, 9601);
 INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
   (96101, 96, 'Tarefa-A', 5), (96102, 96, 'Tarefa-B', 5), (96103, 96, 'Tarefa-C', 5),
   (96201, 96, 'Limpeza-A', 3), (96202, 96, 'Limpeza-B', 3), (96203, 96, 'Limpeza-C', 3),
@@ -14035,8 +14042,16 @@ BEGIN
     PERFORM public.criar_agendamento(l.loja, t, now() + interval '2 days', 'Cliente-' || l.m, NULL, NULL, NULL, NULL,
                                      'Pendente', l.pessoa);
   END LOOP;
+  PERFORM public.registrar_entrega(public.atribuir_tarefa(96101, 9601, ARRAY[96041], 'Diaria'));
+  -- O Duo pega uma missao da loja A (para as "tarefas pegas" dele terem o que mostrar).
+  PERFORM public.pegar_tarefa(public.atribuir_tarefa(96401, 9601, ARRAY[]::integer[], 'Diaria', NULL, NULL, '00:01'), 96041);
 END $$;
 RESET ROLE;
+-- A tarefa do Duo existe ha 5 dias (dias passados sem entrega = pendencias dele).
+SET session_replication_role = replica;
+UPDATE public.tarefasatribuidas SET dataatribuicao = now() - interval '5 days'
+ WHERE contaid = 96 AND funcionarioid = 96041;
+SET session_replication_role = origin;
 
 -- Cada gestor, tela por tela. "limpo(x)": a resposta nao tem marca de outra loja.
 CREATE OR REPLACE FUNCTION public.sem_marca_de_fora(p jsonb, p_minha text)
@@ -14124,9 +14139,33 @@ BEGIN
     PERFORM public.exigir(v::text LIKE '%Livre-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
                           'gestor ' || g.m || ': tarefas nao pegas, so da loja dele');
     v := public.contagem_do_menu();
-    PERFORM public.exigir((v->>'entregas')::integer = 1 AND jsonb_array_length(v->'solicitacoes') = 1
+    PERFORM public.exigir((v->>'entregas')::integer = CASE g.m WHEN 'A' THEN 2 ELSE 1 END AND   -- na A, tambem a do Duo
+                           jsonb_array_length(v->'solicitacoes') = 1
                           AND (v->'solicitacoes'->0->>'loja')::integer = g.loja,
                           'gestor ' || g.m || ': bolinhas do menu contam so a loja dele');
+
+    -- Relatorios
+    v := public.analise_de_tarefas(v_hoje - 30, v_hoje);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': analise de tarefas, so a loja dele');
+    v := public.historico_da_pessoa(g.pessoa);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': historico de quem e da loja dele');
+    PERFORM public.guardar_resultado(public.historico_da_pessoa(g.outrapessoa));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': historico de pessoa de outra loja vem vazio');
+    IF g.m IN ('A', 'B') THEN
+      -- Quem esta nas lojas A e B nao e INTEIRO de nenhum dos dois gestores.
+      PERFORM public.guardar_resultado(public.historico_da_pessoa(96041));
+      PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': historico de quem tambem esta em outra loja vem vazio');
+      PERFORM public.guardar_resultado(public.pendencias_da_pessoa(96041, v_hoje - 30, v_hoje));
+      PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': pendencias de quem tambem esta em outra loja vem vazio');
+      PERFORM public.guardar_resultado((SELECT jsonb_agg(t) FROM public.tarefas_pegas_da_pessoa(96041, v_hoje - 30, v_hoje) t));
+      PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': tarefas pegas de quem tambem esta em outra loja vem vazio');
+    END IF;
+    PERFORM public.guardar_resultado(public.pendencias_da_pessoa(g.outrapessoa, v_hoje - 30, v_hoje));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': pendencias de pessoa de outra loja vem vazio');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(t) FROM public.tarefas_pegas_da_pessoa(g.outrapessoa, v_hoje - 30, v_hoje) t));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': tarefas pegas de pessoa de outra loja vem vazio');
 
   END LOOP;
 
@@ -14155,7 +14194,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente');
+     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).
