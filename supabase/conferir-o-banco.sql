@@ -78,6 +78,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
   ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
   ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
+  ('aplicar-permissoes-parte-3-rh.sql', '20260929263000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
   ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
@@ -459,7 +460,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (560, 'OPERACAO', 'versao', 'Equipe com as bordas; CPF e escrita direta fechados', 'aplicar-permissoes-parte-2-equipe.sql',
        to_regprocedure('public.salvar_pessoa(integer, text, text, text, text, text, integer, integer[], integer[])') IS NOT NULL
        AND NOT has_column_privilege('authenticated', 'public.funcionarios', 'cpf', 'UPDATE')
-       AND NOT has_table_privilege('authenticated', 'public.funcionarioslojas', 'INSERT'))
+       AND NOT has_table_privilege('authenticated', 'public.funcionarioslojas', 'INSERT')),
+  (570, 'OPERACAO', 'versao', 'Canal e documentos pessoais: so o master, provado com gerente', 'aplicar-permissoes-parte-3-rh.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'tratar_relato') LIKE '%conta_do_gestor_editavel()%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'liberar_documento_pessoal') LIKE '%conta_do_gestor_editavel()%')
 ),
 tudo AS (
   SELECT x.*, a.versao

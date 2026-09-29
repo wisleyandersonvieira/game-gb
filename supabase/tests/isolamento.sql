@@ -2195,10 +2195,19 @@ SET teste.uid = '12121212-1212-1212-1212-121212121212';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  PERFORM public.pular('gerente nao le o canal confidencial', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
+  -- Voltou (parte 3, fatia 1): o gerente de "Acesso total" nao le porque
+  -- TODA regra de leitura da tabela tem o termo "so o master" (ligado por E).
+  PERFORM public.exigir(NOT EXISTS (
+      SELECT 1 FROM pg_policies p
+       WHERE p.schemaname = 'public' AND p.tablename IN ('denunciasanonimas') AND p.cmd IN ('SELECT', 'ALL')
+         AND NOT (regexp_replace(p.qual, '\s+', ' ', 'g') !~* '\mOR\M'
+                  AND regexp_replace(p.qual, '\s+', ' ', 'g') ~ 'AND \( SELECT sou_master\(\) AS sou_master\)\)$'))
+    AND (SELECT count(*) FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename IN ('denunciasanonimas') AND p.cmd IN ('SELECT', 'ALL')) = 1,
+    'gerente nao le o canal confidencial: a regra de leitura exige o master');
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.tratar_relato(current_setting('teste.relato')::integer, 'Em análise'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.pular('gerente nao trata relato', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
+  PERFORM public.exigir(public.nada_mudou(), 'gerente (mesmo com "Acesso total") nao trata relato: so o master');
 END $$;
 
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -2923,7 +2932,16 @@ BEGIN
   BEGIN PERFORM public.desfazer_ciencia(current_setting('teste.s')::integer, 'x'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'gerente (mesmo com "Acesso total") nao desfaz ciencia: so o master');
-  PERFORM public.pular('gerente nao ve documentos pessoais', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
+  -- Voltou (parte 3, fatia 1): o gerente de "Acesso total" nao le porque
+  -- TODA regra de leitura da tabela tem o termo "so o master" (ligado por E).
+  PERFORM public.exigir(NOT EXISTS (
+      SELECT 1 FROM pg_policies p
+       WHERE p.schemaname = 'public' AND p.tablename IN ('documentospessoais', 'documentospessoaisciencia') AND p.cmd IN ('SELECT', 'ALL')
+         AND NOT (regexp_replace(p.qual, '\s+', ' ', 'g') !~* '\mOR\M'
+                  AND regexp_replace(p.qual, '\s+', ' ', 'g') ~ 'AND \( SELECT sou_master\(\) AS sou_master\)\)$'))
+    AND (SELECT count(*) FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename IN ('documentospessoais', 'documentospessoaisciencia') AND p.cmd IN ('SELECT', 'ALL')) = 2,
+    'gerente nao ve documentos pessoais: a regra de leitura exige o master');
+
 END $$;
 
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -3087,10 +3105,24 @@ SET teste.uid = '12121212-1212-1212-1212-121212121212';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
-  BEGIN PERFORM public.liberar_documento_pessoal(current_setting('teste.d3')::integer); deu_erro := false;
+  -- Voltaram (parte 3, fatia 1).
+  PERFORM public.guardar_foto();
+  PERFORM public.limpar_resultado();
+  BEGIN PERFORM public.guardar_resultado(to_jsonb(public.liberar_documento_pessoal(current_setting('teste.d3')::integer))); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.pular('gerente nao abre documento pessoal', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
-  PERFORM public.pular('gerente nao ve os arquivos nem o registro de acessos', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
+  PERFORM public.exigir(public.nada_mudou() AND public.nada_voltou(),
+                        'gerente (mesmo com "Acesso total") nao abre documento pessoal: nem o caminho volta, nem o acesso fica registrado');
+  -- Voltou (parte 3, fatia 1): o gerente de "Acesso total" nao le porque
+  -- TODA regra de leitura da tabela tem o termo "so o master" (ligado por E).
+  PERFORM public.exigir(NOT EXISTS (
+      SELECT 1 FROM pg_policies p
+       WHERE p.schemaname = 'public' AND p.tablename IN ('documentosacessos') AND p.cmd IN ('SELECT', 'ALL')
+         AND NOT (regexp_replace(p.qual, '\s+', ' ', 'g') !~* '\mOR\M'
+                  AND regexp_replace(p.qual, '\s+', ' ', 'g') ~ 'AND \( SELECT sou_master\(\) AS sou_master\)\)$'))
+    AND (SELECT count(*) FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename IN ('documentosacessos') AND p.cmd IN ('SELECT', 'ALL')) = 1,
+    'gerente nao ve o registro de acessos: a regra de leitura exige o master');
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'documento_rh_liberado') ~ '^\s*SELECT public\.sou_master\(\) AND ',
+                        'gerente nao ve os arquivos: o Storage so libera com "so o master" na frente');
 END $$;
 
 -- Onboarding
