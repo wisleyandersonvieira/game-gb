@@ -511,8 +511,13 @@ fácil); decisão de negócio não se adivinha — fica aqui.
 - Comunicados: registrar ciência em nome da pessoa exige "Comunicados: publicar" com a pessoa inteira nas lojas dele, e nunca a própria ciência (ela paga pontos).
 - Onboarding: ninguém conduz o próprio; ligar documento pessoal à etapa é só do master (documento pessoal é só do master).
 - Lojas: trocar o GESTOR da loja é só do master (os outros dados da loja, com "Lojas: editar"); ligar ou desligar os valores em R$ na TV pede também "Ver valores em R$".
+- Equipe: marcar quem VALIDA numa loja é só do master; ninguém mexe no próprio cadastro, PIN ou jornada; ligar pessoas a uma jornada é tudo ou nada (uma pessoa fora das lojas dele recusa o lote inteiro); apagar jornada é só do master. Os dados da pessoa (nome, cargo, setor, telefone, folga) só mudam com ela INTEIRA nas lojas dele; as lojas dela, ele liga e desliga só as DELE.
+- Equipe: desativar/reativar pessoa, criar e redefinir acesso e trocar CPF continuam no servidor, só do master ("Equipe: desativar", "criar acesso" e "redefinir acesso" existem no catálogo, mas ainda não valem para o gerente: o servidor pergunta "é o master?").
 
 **Pendentes (não adivinhadas):**
+- Equipe: soltar para o gerente "marcar quem valida" na loja dele? E desativar/criar
+  acesso (hoje só o master, no servidor): passar a perguntar ao banco "ele pode
+  na pessoa?" (a regra combinada: só se todas as lojas dela forem dele)?
 - Comunicados: um gerente que também é funcionário pode publicar um comunicado
   com pontos para a própria loja (ele mesmo recebe) e depois dar ciência pelo
   celular, ganhando os pontos. O teto de pontos por ciência limita o valor.

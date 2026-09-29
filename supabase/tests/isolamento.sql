@@ -156,9 +156,9 @@ SET ROLE authenticated;
 
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 SELECT public.como_dono($q$INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (10, 'Loja A1'), (11, 'Loja A2')$q$);
-INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (100, 'Ana da conta A');
+SELECT public.como_dono($q$INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (100, 'Ana da conta A')$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (1000, 'Tarefa A', 5)$q$);
-INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 10);
+SELECT public.como_dono($q$INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 10)$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (1000, 10)$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (5000, 1000, 100, 10)$q$);
 DO $$ BEGIN PERFORM public.registrar_entrega(5000); END $$;
@@ -171,9 +171,9 @@ INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '1/10/foto-a.j
 
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 SELECT public.como_dono($q$INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (20, 'Loja B1')$q$);
-INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (200, 'Bruno da conta B');
+SELECT public.como_dono($q$INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (200, 'Bruno da conta B')$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (2000, 'Tarefa B', 7)$q$);
-INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (200, 20);
+SELECT public.como_dono($q$INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (200, 20)$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (2000, 20)$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (6000, 2000, 200, 20)$q$);
 DO $$ BEGIN PERFORM public.registrar_entrega(6000); END $$;
@@ -243,18 +243,19 @@ DECLARE afetadas integer;
 BEGIN
   RAISE NOTICE '3. escrita sobre dados alheios nao tem efeito';
 
-  UPDATE public.funcionarios SET nomecompleto = 'INVADIDO' WHERE funcionarioid = 200;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'A nao altera funcionario de B');
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.funcionarios SET nomecompleto = 'INVADIDO' WHERE funcionarioid = 200; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN PERFORM public.salvar_pessoa(200, 'INVADIDO', NULL, NULL, NULL, NULL, 0, ARRAY[]::integer[]); EXCEPTION WHEN no_data_found THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'A nao altera funcionario de B (nem direto, nem pela funcao)');
 
   PERFORM public.guardar_foto();
   BEGIN UPDATE public.lojas SET nome = 'INVADIDA' WHERE lojaid = 20; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
   BEGIN PERFORM public.editar_loja(20, 'INVADIDA', NULL, NULL, NULL, NULL); EXCEPTION WHEN no_data_found THEN NULL; END;
   PERFORM public.exigir(public.nada_mudou(), 'A nao altera loja de B (nem direto, nem pela funcao)');
 
-  DELETE FROM public.funcionarios WHERE funcionarioid = 200;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 0, 'A nao apaga funcionario de B');
+  PERFORM public.guardar_foto();
+  BEGIN DELETE FROM public.funcionarios WHERE funcionarioid = 200; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'A nao apaga funcionario de B');
 
   BEGIN
     DELETE FROM public.entregas WHERE lojaid = 20;
@@ -360,7 +361,7 @@ BEGIN
   PERFORM public.guardar_foto();
   BEGIN
     -- a tarefa 1000 nao vale na Loja A2 (11)
-    INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11);
+    PERFORM public.como_dono($q$INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11)$q$);
     PERFORM public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 11)$q$);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
@@ -380,20 +381,23 @@ BEGIN
 
   PERFORM public.guardar_foto();
   BEGIN
-    DELETE FROM public.funcionarioslojas WHERE funcionarioid = 100 AND lojaid = 10;
+    -- (como dono: a escrita direta fechou; aqui se prova o RESTRICT da tabela)
+    PERFORM public.como_dono($q$DELETE FROM public.funcionarioslojas WHERE funcionarioid = 100 AND lojaid = 10$q$);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
   END;
   PERFORM public.exigir(public.nada_mudou(), 'nao apaga vinculo que ja tem historico (ON DELETE RESTRICT)');
 
-  UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 100 AND lojaid = 10;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
-  PERFORM public.exigir(afetadas = 1, 'desativar o vinculo funciona');
+  -- Pela funcao da Equipe (a escrita direta fechou na parte 2): tirar da loja.
+  PERFORM public.salvar_pessoa(100, f.nomecompleto, f.cpf, f.cargo, f.setor, f.telefonewhatsapp, f.diadefolga, ARRAY[]::integer[])
+     FROM public.funcionarios f WHERE f.funcionarioid = 100;
+  PERFORM public.exigir(NOT (SELECT ativo FROM public.funcionarioslojas WHERE funcionarioid = 100 AND lojaid = 10), 'desativar o vinculo funciona');
   PERFORM public.exigir((SELECT count(*) FROM public.tarefasatribuidas WHERE atribuicaoid = 5000) = 1,
                         'o historico de atribuicoes continua intacto');
 
-  UPDATE public.funcionarioslojas SET ativo = true WHERE funcionarioid = 100 AND lojaid = 10;
+  PERFORM public.salvar_pessoa(100, f.nomecompleto, f.cpf, f.cargo, f.setor, f.telefonewhatsapp, f.diadefolga, ARRAY[10])
+     FROM public.funcionarios f WHERE f.funcionarioid = 100;
 END $$;
 
 -- ===========================================================================
@@ -974,7 +978,7 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 -- 18. Gestor e responsavel pelos agendamentos da loja
 -- ===========================================================================
 
-INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (101, 'Sem loja');
+SELECT public.como_dono($q$INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (101, 'Sem loja')$q$);
 
 DO $$
 DECLARE deu_erro boolean;
@@ -5153,7 +5157,7 @@ BEGIN
       'estornos_da_conta',
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
-      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding', 'criar_loja', 'ativar_loja', 'editar_loja',
+      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding', 'criar_loja', 'ativar_loja', 'editar_loja', 'salvar_pessoa', 'apagar_jornada',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -5795,10 +5799,10 @@ BEGIN
   PERFORM public.definir_senha_app(1, 8100, 'pbkdf2$1$aa$bb');
   PERFORM public.definir_pin(1, 8100, repeat('7', 64), false);
 
-  -- Como AUTHENTICATED (o papel das telas): e assim que o gatilho roda de
-  -- verdade. Antes o teste fazia isto como dono do banco e escondia o defeito.
-  SET LOCAL ROLE authenticated;
-  PERFORM set_config('teste.uid', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+  -- Pelo papel do SERVIDOR (service_role), que e o caminho de verdade do
+  -- "Desativar" desde que a escrita direta fechou (parte 2, Equipe). Nunca
+  -- como dono do banco: isso escondia o defeito do gatilho.
+  SET LOCAL ROLE service_role;
   UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 8100;
   RESET ROLE;
 
@@ -5825,7 +5829,9 @@ DECLARE deu_erro boolean;
 BEGIN
   PERFORM public.guardar_foto();
   BEGIN
-    UPDATE public.funcionarios SET cpf = '39053344705' WHERE funcionarioid = 8100;
+    PERFORM public.salvar_pessoa(8100, f.nomecompleto, '39053344705', f.cargo, f.setor, f.telefonewhatsapp, f.diadefolga,
+                                 ARRAY(SELECT lojaid FROM public.funcionarioslojas WHERE funcionarioid = 8100 AND ativo))
+       FROM public.funcionarios f WHERE f.funcionarioid = 8100;
     deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'o master nao troca sozinho o CPF de quem ja entra no app');
@@ -6057,10 +6063,10 @@ DO $$ BEGIN RAISE NOTICE '45. tarefa compartilhada, pegar e revogar'; END $$;
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
-INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES
-  (9501, 'Ana Souza'), (9502, 'Bia Lima'), (9503, 'Caio Melo'), (9504, 'Davi Rocha');
-INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES
-  (9501, 10), (9502, 10), (9503, 10), (9504, 11);
+SELECT public.como_dono($q$INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES
+  (9501, 'Ana Souza'), (9502, 'Bia Lima'), (9503, 'Caio Melo'), (9504, 'Davi Rocha')$q$);
+SELECT public.como_dono($q$INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES
+  (9501, 10), (9502, 10), (9503, 10), (9504, 11)$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
   (9600, 'Limpar a vitrine', 10), (9601, 'Conferir o freezer', 6), (9602, 'Varrer a calcada', 4)$q$);
 SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (9600, 10), (9601, 10), (9602, 10)$q$);
@@ -8555,8 +8561,8 @@ BEGIN
                         'a contagem nao recebe conta nem loja: nao ha o que forjar');
 
   -- Ana passa a trabalhar tambem na segunda loja da conta.
-  INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11)
-    ON CONFLICT DO NOTHING;
+  PERFORM public.como_dono($q$INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11)
+    ON CONFLICT DO NOTHING$q$);
 
   SELECT coalesce(sum(quantos) FILTER (WHERE loja = 10 AND situacao = 'Aberta'), 0),
          coalesce(sum(quantos) FILTER (WHERE loja = 10 AND situacao = 'Em andamento'), 0),
@@ -9729,7 +9735,7 @@ BEGIN
 
   -- Jornada com gente nao se apaga nem se desativa; a mensagem diz quantos.
   PERFORM public.guardar_foto();
-  BEGIN DELETE FROM public.jornadas WHERE jornadaid = v_j; deu_erro := false;
+  BEGIN PERFORM public.apagar_jornada(v_j); deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 pessoa%'; END;
   PERFORM public.exigir(public.nada_mudou(), 'jornada com gente vinculada nao se apaga (e diz quantos)');
   PERFORM public.guardar_foto();
@@ -9787,7 +9793,10 @@ BEGIN
   BEGIN PERFORM public.salvar_jornada(v_j, 'Invadida', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'nem edita a jornada de A');
-  DELETE FROM public.jornadas WHERE jornadaid = v_j;
+  PERFORM public.guardar_foto();
+  BEGIN PERFORM public.apagar_jornada(v_j); EXCEPTION WHEN no_data_found THEN NULL; END;
+  BEGIN DELETE FROM public.jornadas WHERE jornadaid = v_j; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'nem apaga a jornada de A (nem pela funcao, nem direto)');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -9816,7 +9825,7 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
 BEGIN
   PERFORM public.vincular_jornada(ARRAY[9972], NULL);
-  DELETE FROM public.jornadas WHERE jornadaid = current_setting('teste.j73')::integer;
+  PERFORM public.apagar_jornada(current_setting('teste.j73')::integer);
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = current_setting('teste.j73')::integer),
                         'sem ninguem vinculado, a jornada se apaga (e os dias vao junto)');
 END $$;
@@ -10352,7 +10361,7 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
                                      WHERE (x->>'agendamentoid')::integer = ag),
                         'agendamento com tarefa nao aparece na lista');
-  UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 124 AND lojaid = 10;
+  PERFORM public.como_dono($q$UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 124 AND lojaid = 10$q$);
   lista := public.agendamentos_sem_tarefa(10);
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(lista) x
                                  WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'responsavel_fora'),
@@ -11948,22 +11957,20 @@ SELECT unnest(ARRAY[
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
   'salvar_tipo_evento', 'ativar_tipo_evento',
   'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
-  'criar_loja', 'ativar_loja']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'criar_loja', 'ativar_loja', 'apagar_jornada']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
   'marcar_aviso_lido']),   -- o proprio aviso de quem esta logado
   'outras'
 UNION ALL
-SELECT unnest(ARRAY[
-  'liberar_pin',
-  'vincular_jornada']), 'pendente_parte2';
+SELECT unnest(ARRAY[]::text[]), 'pendente_parte2';   -- parte 2 fechada: nenhuma pendente
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
 INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
-SELECT unnest(ARRAY['funcionarios', 'funcionarioslojas', 'jornadas']), 'pendente_parte2';
+SELECT unnest(ARRAY[]::text[]), 'pendente_parte2';   -- parte 2 fechada: nenhuma pendente
 
 DO $$
 DECLARE sobra text;
@@ -13792,6 +13799,127 @@ BEGIN
     RAISE EXCEPTION 'desfazer_105';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_105' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 106. Usuarios gerenciais, parte 2, fatia 13: Equipe (29/09/2026)
+-- ===========================================================================
+-- As bordas: criar so nas lojas dele; dados da pessoa so com ela inteira nas
+-- lojas dele; lojas, so as dele mudam; CPF de quem existe e validador, so o
+-- master; nunca o proprio cadastro. PIN e jornada: na pessoa, nunca o proprio.
+DO $$ BEGIN RAISE NOTICE '106. parte 2, Equipe: as bordas, o CPF, o PIN e a jornada'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '10610610-6106-1061-0610-610610610601';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; j integer; j2 integer; n integer;
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga, cpf) OVERRIDING SYSTEM VALUE VALUES
+      (10612, 1, 'Hugo Dez', 0, '10610610600'), (10613, 1, 'Iris Onze', 0, NULL),
+      (10614, 1, 'Joel Gerente', 0, NULL), (10615, 1, 'Kaio Dez e Onze', 0, NULL);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+      (1, 10612, 10), (1, 10613, 11), (1, 10614, 10), (1, 10615, 10), (1, 10615, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'equ.106@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Equipe 106') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid) VALUES (1, G, v_cargo, 10614);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    j  := public.salvar_jornada(NULL, 'Jornada 106', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true);
+    j2 := public.salvar_jornada(NULL, 'Jornada 106 b', '[{"dia":2,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true);
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(NULL, 'Nova', NULL, NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Mudado', '10610610600', NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.liberar_pin(10612); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.vincular_jornada(ARRAY[10612], j); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao cria, edita, libera PIN nem liga jornada');
+    RESET ROLE;
+
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
+      (1, v_cargo, 'equipe.criar'), (1, v_cargo, 'equipe.editar'), (1, v_cargo, 'equipe.liberar_pin'), (1, v_cargo, 'jornada.vincular');
+    SET LOCAL ROLE authenticated;
+    -- 2. Criar: so nas lojas dele, sem marcar quem valida.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(NULL, 'Nas duas', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_pessoa(NULL, 'Sem loja', NULL, NULL, NULL, NULL, 0, ARRAY[]::integer[]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_pessoa(NULL, 'Validadora', NULL, NULL, NULL, NULL, 0, ARRAY[10], ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao cria pessoa na loja 11, sem loja nem ja validando');
+    -- 3. Editar: as bordas.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10615, 'Kaio Mudado', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao muda os dados de quem tambem trabalha na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[]::integer[]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao tira ninguem da loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Dez', '30630630615', NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao muda o CPF de quem ja existe (so o master)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Dez', '10610610600', NULL, NULL, NULL, 0, ARRAY[10], ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao marca quem valida (so o master)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(10614, 'Joel Gerente', NULL, NULL, NULL, NULL, 3, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.liberar_pin(10614); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.vincular_jornada(ARRAY[10614], j); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'ninguem mexe no PROPRIO cadastro, PIN ou jornada');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.liberar_pin(10615); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.vincular_jornada(ARRAY[10612, 10613], j); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.vincular_jornada(ARRAY[10615], j); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'PIN e jornada: nada com quem esta fora (a jornada, tudo ou nada)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.apagar_jornada(j2); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (10613, 10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.funcionarios SET nomecompleto = 'Direto' WHERE funcionarioid = 10612; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'apagar jornada e gravar direto na equipe: nao');
+    -- 4. O que ele pode, de verdade.
+    n := public.salvar_pessoa(NULL, 'Nova 106', '20620620609', 'Caixa', NULL, NULL, 2, ARRAY[10]);
+    PERFORM public.salvar_pessoa(10612, 'Hugo Dez (novo)', '10610610600', 'Balcao', NULL, '11999990000', 3, ARRAY[10]);
+    PERFORM public.salvar_pessoa(10613, 'Iris Onze', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]);
+    PERFORM public.salvar_pessoa(10615, 'Kaio Dez e Onze', NULL, NULL, NULL, NULL, 0, ARRAY[11]);
+    PERFORM public.liberar_pin(10612);
+    PERFORM public.vincular_jornada(ARRAY[10612, n], j);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT cpf = '20620620609' AND diadefolga = 2 FROM public.funcionarios WHERE funcionarioid = n)
+                          AND EXISTS (SELECT 1 FROM public.funcionarioslojas WHERE funcionarioid = n AND lojaid = 10 AND ativo)
+                          AND (SELECT nomecompleto = 'Hugo Dez (novo)' AND diadefolga = 3 AND jornadaid = j FROM public.funcionarios WHERE funcionarioid = 10612)
+                          AND EXISTS (SELECT 1 FROM public.funcionarioslojas WHERE funcionarioid = 10613 AND lojaid = 10 AND ativo)
+                          AND EXISTS (SELECT 1 FROM public.funcionarioslojas WHERE funcionarioid = 10613 AND lojaid = 11 AND ativo)
+                          AND NOT (SELECT ativo FROM public.funcionarioslojas WHERE funcionarioid = 10615 AND lojaid = 10)
+                          AND (SELECT ativo FROM public.funcionarioslojas WHERE funcionarioid = 10615 AND lojaid = 11)
+                          AND EXISTS (SELECT 1 FROM public.pinliberacoes WHERE funcionarioid = 10612 AND liberadopor = G),
+                          'e dentro das lojas dele cria, edita, liga e desliga a loja DELE, libera PIN e liga jornada, de verdade');
+
+    -- 5. O master: tudo, pela funcao; direto na tabela, nem ele.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.funcionarios SET nomecompleto = 'Direto' WHERE funcionarioid = 10612; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.funcionarioslojas SET validador = true WHERE funcionarioid = 10612; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM public.jornadas WHERE jornadaid = j2; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava direto em funcionarios, funcionarioslojas ou jornadas');
+    PERFORM public.salvar_pessoa(10612, 'Hugo Dez (novo)', '30630630615', 'Balcao', NULL, '11999990000', 3, ARRAY[10, 11], ARRAY[11]);
+    PERFORM public.apagar_jornada(j2);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT cpf = '30630630615' FROM public.funcionarios WHERE funcionarioid = 10612)
+                          AND (SELECT validador FROM public.funcionarioslojas WHERE funcionarioid = 10612 AND lojaid = 11)
+                          AND NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = j2),
+                          'e o master troca CPF, marca quem valida e apaga jornada pela funcao');
+    RAISE EXCEPTION 'desfazer_106';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_106' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

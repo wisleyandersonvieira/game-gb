@@ -68,6 +68,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-agenda.sql', '20260929257000'),
   ('aplicar-permissoes-parte-2-comunicados.sql', '20260929258000'),
   ('aplicar-permissoes-parte-2-conquistas.sql', '20260929259000'),
+  ('aplicar-permissoes-parte-2-equipe.sql', '20260929262000'),
   ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
   ('aplicar-permissoes-parte-2-justificativas.sql', '20260929256000'),
   ('aplicar-permissoes-parte-2-lojas.sql', '20260929261000'),
@@ -454,7 +455,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (550, 'OPERACAO', 'versao', 'Lojas e TV com permissao e loja no banco', 'aplicar-permissoes-parte-2-lojas.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_tv_da_loja') LIKE '%pode(''lojas.tv''%'
        AND to_regprocedure('public.editar_loja(integer, text, text, text, integer, integer)') IS NOT NULL
-       AND NOT has_column_privilege('authenticated', 'public.lojas', 'nome', 'UPDATE'))
+       AND NOT has_column_privilege('authenticated', 'public.lojas', 'nome', 'UPDATE')),
+  (560, 'OPERACAO', 'versao', 'Equipe com as bordas; CPF e escrita direta fechados', 'aplicar-permissoes-parte-2-equipe.sql',
+       to_regprocedure('public.salvar_pessoa(integer, text, text, text, text, text, integer, integer[], integer[])') IS NOT NULL
+       AND NOT has_column_privilege('authenticated', 'public.funcionarios', 'cpf', 'UPDATE')
+       AND NOT has_table_privilege('authenticated', 'public.funcionarioslojas', 'INSERT'))
 ),
 tudo AS (
   SELECT x.*, a.versao

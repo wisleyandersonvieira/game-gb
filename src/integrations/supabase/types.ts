@@ -5258,6 +5258,7 @@ export type Database = {
         Args: { p_entregaid: number }
         Returns: undefined
       }
+      apagar_jornada: { Args: { p_jornadaid: number }; Returns: undefined }
       apagar_meta_especial: { Args: { p_metaespecialid: number }; Returns: undefined }
       aprovar_entrega: { Args: { p_entregaid: number }; Returns: number }
       arquivar_comunicado: {
@@ -6318,6 +6319,20 @@ export type Database = {
       }
       salvar_etapa_onboarding: {
         Args: { p_ativo?: boolean; p_etapaid: number | null; p_nome?: string; p_ordem?: number }
+        Returns: number
+      }
+      salvar_pessoa: {
+        Args: {
+          p_cargo: string | null
+          p_cpf: string | null
+          p_diadefolga: number
+          p_funcionarioid: number | null
+          p_lojas: number[]
+          p_nomecompleto: string
+          p_setor: string | null
+          p_telefone: string | null
+          p_validador?: number[]
+        }
         Returns: number
       }
       salvar_jornada: {

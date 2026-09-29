@@ -156,32 +156,6 @@ function Funcionarios() {
     setEditando(null);
   }
 
-  /**
-   * Acerta em quais lojas a pessoa trabalha.
-   * Sair de uma loja é desativar o vínculo, nunca apagar: o histórico de
-   * tarefas e entregas daquela loja aponta para ele.
-   */
-  async function sincronizarLojas(funcionarioid: number, escolhidas: number[], validador: number[]) {
-    if (escolhidas.length > 0) {
-      const { error } = await supabase.from("funcionarioslojas").upsert(
-        escolhidas.map((lojaid) => ({ funcionarioid, lojaid, ativo: true, validador: validador.includes(lojaid) })),
-        { onConflict: "funcionarioid,lojaid" },
-      );
-      if (error) throw error;
-    }
-
-    const desativar = supabase
-      .from("funcionarioslojas")
-      .update({ ativo: false, validador: false })
-      .eq("funcionarioid", funcionarioid);
-
-    const { error } =
-      escolhidas.length > 0
-        ? await desativar.not("lojaid", "in", `(${escolhidas.join(",")})`)
-        : await desativar;
-    if (error) throw error;
-  }
-
   const salvar = useMutation({
     mutationFn: async () => {
       const dados = {
@@ -193,24 +167,20 @@ function Funcionarios() {
         diadefolga: form.diadefolga,
       };
 
-      let funcionarioid = editando;
-      if (funcionarioid === null) {
-        const { data, error } = await supabase
-          .from("funcionarios")
-          .insert(dados)
-          .select("funcionarioid")
-          .single();
-        if (error) throw error;
-        funcionarioid = data.funcionarioid;
-      } else {
-        const { error } = await supabase
-          .from("funcionarios")
-          .update(dados)
-          .eq("funcionarioid", funcionarioid);
-        if (error) throw error;
-      }
-
-      await sincronizarLojas(funcionarioid, lojasEscolhidas, validadorEm);
+      // Uma função só grava a pessoa e as lojas dela (sair de uma loja é
+      // desativar o vínculo, nunca apagar). O banco confere as bordas.
+      const { error } = await supabase.rpc("salvar_pessoa", {
+        p_funcionarioid: editando,
+        p_nomecompleto: dados.nomecompleto,
+        p_cpf: dados.cpf,
+        p_cargo: dados.cargo,
+        p_setor: dados.setor,
+        p_telefone: dados.telefonewhatsapp,
+        p_diadefolga: dados.diadefolga,
+        p_lojas: lojasEscolhidas,
+        p_validador: validadorEm,
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
       limparFormulario();
