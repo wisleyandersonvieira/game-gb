@@ -148,6 +148,7 @@ export const CONTRATO: Record<string, string[]> = {
   revogar_link_tv: ["p_linktvid"],
   rodar_geracao_hoje: [],
   rotinas_resumo_admin: [],
+  salvar_etapa_onboarding: ["p_ativo", "p_etapaid", "p_nome", "p_ordem"],
   salvar_intervalo_do_mapa: ["p_diasemana", "p_fim", "p_funcionarioid", "p_inicio"],
   salvar_jornada: ["p_ativa", "p_dias", "p_jornadaid", "p_nome", "p_observacao", "p_pausafim", "p_pausainicio"],
   salvar_meta_do_mes: ["p_descricao", "p_lojaid", "p_mes", "p_nome", "p_pontos", "p_valor"],

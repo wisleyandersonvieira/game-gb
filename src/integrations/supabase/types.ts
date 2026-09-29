@@ -6303,6 +6303,10 @@ export type Database = {
         Args: { p_diasemana: number; p_fim: string | null; p_funcionarioid: number; p_inicio: string | null }
         Returns: undefined
       }
+      salvar_etapa_onboarding: {
+        Args: { p_ativo?: boolean; p_etapaid: number | null; p_nome?: string; p_ordem?: number }
+        Returns: number
+      }
       salvar_jornada: {
         Args: {
           p_ativa: boolean

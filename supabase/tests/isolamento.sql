@@ -3101,7 +3101,7 @@ BEGIN
   END LOOP;
   PERFORM public.exigir((SELECT statusworkflow = 'Concluído' AND concluidoem IS NOT NULL FROM public.onboardingstatus WHERE funcionarioid = 125),
                         'todas as etapas feitas: onboarding concluido');
-  UPDATE public.onboardingetapas SET ativo = false WHERE nome = 'Treinamento inicial';
+  PERFORM public.salvar_etapa_onboarding((SELECT etapaid FROM public.onboardingetapas WHERE nome = 'Treinamento inicial'), NULL, NULL, false);
   PERFORM public.exigir((SELECT count(*) FROM public.onboardingitens WHERE funcionarioid = 125) = 6,
                         'desativar uma etapa nao apaga o que ja foi marcado');
   PERFORM public.guardar_foto();
@@ -5150,7 +5150,7 @@ BEGIN
       'estornos_da_conta',
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
-      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista',
+      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -11944,7 +11944,7 @@ SELECT unnest(ARRAY[
   'pegar_tarefa',
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
   'salvar_tipo_evento', 'ativar_tipo_evento',
-  'criar_conquista', 'editar_conquista', 'ativar_conquista']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -11953,8 +11953,8 @@ SELECT unnest(ARRAY[
 UNION ALL
 SELECT unnest(ARRAY[
   'criar_link_tv',
-  'iniciar_onboarding', 'liberar_pin',
-  'marcar_etapa_onboarding', 'parear_tv',
+  'liberar_pin',
+  'parear_tv',
   'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'vincular_jornada']), 'pendente_parte2';
 
@@ -11962,8 +11962,7 @@ CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NU
 INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
-SELECT unnest(ARRAY['funcionarios', 'funcionarioslojas', 'jornadas', 'lojas',
-                    'onboardingetapas']), 'pendente_parte2';
+SELECT unnest(ARRAY['funcionarios', 'funcionarioslojas', 'jornadas', 'lojas']), 'pendente_parte2';
 
 DO $$
 DECLARE sobra text;
@@ -13608,6 +13607,91 @@ BEGIN
     RAISE EXCEPTION 'desfazer_103';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_103' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 104. Usuarios gerenciais, parte 2, fatia 11: Onboarding (29/09/2026)
+-- ===========================================================================
+-- Conduzir: "onboarding.conduzir" na pessoa inteira, nunca o proprio; ligar
+-- documento pessoal: so o master. Etapas do modelo: so o master, por funcao.
+DO $$ BEGIN RAISE NOTICE '104. parte 2, Onboarding: na pessoa, nunca o proprio, etapas so do master'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '10410410-4104-1041-0410-410410410401';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; e integer; i10 integer; i11 integer; n integer; v_doc integer;
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (10412, 1, 'Edna Dez', 0), (10413, 1, 'Fabio Onze', 0), (10414, 1, 'Gilda Gerente', 0), (10415, 1, 'Hera Dez e Onze', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+      (1, 10412, 10), (1, 10413, 11), (1, 10414, 10), (1, 10415, 10), (1, 10415, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'onb.104@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Onboarding 104') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid) VALUES (1, G, v_cargo, 10414);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    -- Um documento pessoal DA Edna: ligar a etapa a ele e so do master.
+    INSERT INTO public.documentospessoais (contaid, funcionarioid, tipodocumento, caminhoarquivo, nomearquivo)
+    VALUES (1, 10412, 'Contrato', '1/funcionarios/10412/contrato-104.pdf', 'contrato-104.pdf') RETURNING documentoid INTO v_doc;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    e := public.salvar_etapa_onboarding(NULL, 'Etapa 104');
+    PERFORM public.iniciar_onboarding(10413);
+    RESET ROLE;
+    i11 := (SELECT itemid FROM public.onboardingitens WHERE funcionarioid = 10413 AND etapaid = e);
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.iniciar_onboarding(10412); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.marcar_etapa_onboarding(i11, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao inicia nem marca etapa');
+    RESET ROLE;
+
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'onboarding.conduzir');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.marcar_etapa_onboarding(i11, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.iniciar_onboarding(10413); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.iniciar_onboarding(10415); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "conduzir": nada com pessoa da loja 11 (nem com quem esta na 10 e tambem na 11)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.iniciar_onboarding(10414); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'ninguem conduz o PROPRIO onboarding');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_etapa_onboarding(NULL, 'Do gerente'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_etapa_onboarding(e, NULL, NULL, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.onboardingetapas (nome, ordem) VALUES ('Direto', 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'etapas do modelo: so o master');
+    n := public.iniciar_onboarding(10412);
+    RESET ROLE;   -- o gerente nao le a tabela (a leitura dele e a parte 3)
+    i10 := (SELECT itemid FROM public.onboardingitens WHERE funcionarioid = 10412 AND etapaid = e);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.marcar_etapa_onboarding(i10, true, NULL, v_doc); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao liga documento pessoal a etapa (so o master)');
+    PERFORM public.marcar_etapa_onboarding(i10, true, 'feito');
+    RESET ROLE;
+    PERFORM public.exigir(n >= 1 AND (SELECT concluidoem IS NOT NULL AND concluidopor = G FROM public.onboardingitens WHERE itemid = i10),
+                          'e na pessoa da loja 10 inicia e marca etapa de verdade');
+
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.onboardingetapas SET ativo = false WHERE etapaid = e; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava etapa direto na tabela');
+    PERFORM public.salvar_etapa_onboarding(e, 'Etapa 104 (nova)', 5, false);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT nome = 'Etapa 104 (nova)' AND ordem = 5 AND NOT ativo FROM public.onboardingetapas WHERE etapaid = e),
+                          'e o master renomeia, reordena e desativa etapa pela funcao');
+    RAISE EXCEPTION 'desfazer_104';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_104' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

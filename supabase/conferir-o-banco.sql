@@ -71,6 +71,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
   ('aplicar-permissoes-parte-2-justificativas.sql', '20260929256000'),
   ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
+  ('aplicar-permissoes-parte-2-onboarding.sql', '20260929260000'),
   ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
   ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
@@ -444,7 +445,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (530, 'OPERACAO', 'versao', 'Conquistas: catalogo so do master, por funcao', 'aplicar-permissoes-parte-2-conquistas.sql',
        to_regprocedure('public.editar_conquista(integer, text, text, text, integer)') IS NOT NULL
        AND NOT has_table_privilege('authenticated', 'public.conquistas', 'UPDATE')
-       AND NOT has_column_privilege('authenticated', 'public.conquistas', 'nome', 'UPDATE'))
+       AND NOT has_column_privilege('authenticated', 'public.conquistas', 'nome', 'UPDATE')),
+  (540, 'OPERACAO', 'versao', 'Onboarding com permissao na pessoa; etapas so do master', 'aplicar-permissoes-parte-2-onboarding.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'iniciar_onboarding') LIKE '%pode_na_pessoa(''onboarding.conduzir''%'
+       AND to_regprocedure('public.salvar_etapa_onboarding(integer, text, integer, boolean)') IS NOT NULL
+       AND NOT has_column_privilege('authenticated', 'public.onboardingetapas', 'nome', 'UPDATE'))
 ),
 tudo AS (
   SELECT x.*, a.versao

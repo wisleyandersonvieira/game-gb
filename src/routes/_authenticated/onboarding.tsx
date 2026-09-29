@@ -244,16 +244,17 @@ function Etapas() {
     mutationFn: async (x: { id?: number; nome?: string; ordem?: number; ativo?: boolean }) => {
       if (x.id === undefined) {
         const ordem = Math.max(0, ...(etapas.data ?? []).map((e) => e.ordem)) + 1;
-        const { error } = await supabase.from("onboardingetapas").insert({ nome: (x.nome ?? "").trim(), ordem });
+        const { error } = await supabase.rpc("salvar_etapa_onboarding", { p_etapaid: null, p_nome: (x.nome ?? "").trim(), p_ordem: ordem });
         if (error) throw error.code === "23505" ? new Error("Já existe uma etapa com esse nome.") : error;
         return;
       }
-      const mudar: { nome?: string; ordem?: number; ativo?: boolean } = {};
-      if (x.nome !== undefined) mudar.nome = x.nome;
-      if (x.ordem !== undefined) mudar.ordem = x.ordem;
-      if (x.ativo !== undefined) mudar.ativo = x.ativo;
-      const { error } = await supabase.from("onboardingetapas").update(mudar).eq("etapaid", x.id);
-      if (error) throw error;
+      const { error } = await supabase.rpc("salvar_etapa_onboarding", {
+        p_etapaid: x.id,
+        p_nome: x.nome,
+        p_ordem: x.ordem,
+        p_ativo: x.ativo,
+      });
+      if (error) throw error.code === "23505" ? new Error("Já existe uma etapa com esse nome.") : error;
     },
     onSuccess: () => {
       setErro(null);
