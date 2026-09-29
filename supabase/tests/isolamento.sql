@@ -5191,7 +5191,8 @@ BEGIN
       -- quem chamou e exigem o master (secao 95).
       'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding', 'criar_loja', 'ativar_loja', 'editar_loja', 'salvar_pessoa', 'apagar_jornada',
       -- Parte 3: so dizem a conta de quem chama, ou leem so as lojas do gerente.
-      'conta_do_gerente',
+      'conta_do_gerente', 'quadro_validacao_gerente', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia_gerente',
+      'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje_gerente',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -13985,8 +13986,13 @@ INSERT INTO public.lojas (lojaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES
   (9601, 96, 'Loja A'), (9602, 96, 'Loja B'), (9603, 96, 'Loja C');
 INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
   (96011, 96, 'Ana-A', 0), (96021, 96, 'Bia-B', 0), (96031, 96, 'Caio-C', 0);
+-- Uma pessoa de folga HOJE em cada loja (a tarefa dela aparece em "folgas de hoje").
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE
+SELECT v.id, 96, v.nome, extract(dow FROM public.hoje_da_conta(96))::integer + 1
+  FROM (VALUES (96012, 'Folga-A'), (96022, 'Folga-B'), (96032, 'Folga-C')) v(id, nome);
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
-  (96, 96011, 9601), (96, 96021, 9602), (96, 96031, 9603);
+  (96, 96011, 9601), (96, 96021, 9602), (96, 96031, 9603),
+  (96, 96012, 9601), (96, 96022, 9602), (96, 96032, 9603);
 INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
   (96101, 96, 'Tarefa-A', 5), (96102, 96, 'Tarefa-B', 5), (96103, 96, 'Tarefa-C', 5),
   (96201, 96, 'Limpeza-A', 3), (96202, 96, 'Limpeza-B', 3), (96203, 96, 'Limpeza-C', 3),
@@ -14016,6 +14022,7 @@ BEGIN
   t := (SELECT tipoeventoid FROM public.tiposevento WHERE contaid = 96 ORDER BY 1 LIMIT 1);
   FOR l IN SELECT * FROM (VALUES (9601, 'A', 96011, 96101, 96201, 96301), (9602, 'B', 96021, 96102, 96202, 96302),
                                  (9603, 'C', 96031, 96103, 96203, 96303)) v(loja, m, pessoa, t1, t2, t3) LOOP
+    PERFORM public.atribuir_tarefa(l.t1, l.loja, ARRAY[l.pessoa + 1], 'Diaria');      -- a de quem esta de folga
     a1 := public.atribuir_tarefa(l.t1, l.loja, ARRAY[l.pessoa], 'Diaria');
     a2 := public.atribuir_tarefa(l.t2, l.loja, ARRAY[l.pessoa], 'Diaria');
     PERFORM public.atribuir_tarefa(l.t3, l.loja, ARRAY[]::integer[], 'Diaria', NULL, NULL, '00:01');  -- missao sem dono: "nao pegas"
@@ -14080,6 +14087,31 @@ BEGIN
     PERFORM public.guardar_resultado((SELECT jsonb_agg(f) FROM public.fila_da_loja(g.outra) f));
     PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': fila de outra loja vem vazia');
 
+    -- Quadro
+    v := public.quadro_validacao(g.loja);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': Quadro (validacao) da loja dele');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado(public.quadro_validacao(g.outra)); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': Quadro de outra loja nao abre');
+    SELECT jsonb_agg(a) INTO v FROM public.atribuicoes_para_entregar(g.loja) a;
+    PERFORM public.exigir(public.sem_marca_de_fora(v, g.m), 'gestor ' || g.m || ': lista para registrar entrega, so a dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(a) FROM public.atribuicoes_para_entregar(g.outra) a));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': lista de outra loja vem vazia');
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado(public.fila_de_um_dia(g.outra, v_hoje - 1)); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': fila de um dia de outra loja nao abre');
+    v := public.quem_trabalha_hoje(g.loja);
+    PERFORM public.exigir(v::text LIKE '%-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': quem trabalha hoje, so a loja dele');
+    PERFORM public.guardar_resultado(public.quem_trabalha_hoje(g.outra));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': quem trabalha em outra loja vem vazio');
+    v := public.tarefas_de_folga_hoje(g.loja);
+    PERFORM public.exigir(v::text LIKE '%Folga-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': folgas de hoje, so da loja dele');
+    PERFORM public.guardar_resultado(public.tarefas_de_folga_hoje(g.outra));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': folgas de outra loja vem vazio');
+
   END LOOP;
 
   -- E o master da conta ve as tres lojas (o teste enxerga as marcas quando elas existem).
@@ -14107,7 +14139,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja');
+     AND p.proname NOT IN ('painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).

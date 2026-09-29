@@ -79,6 +79,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
   ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
   ('aplicar-permissoes-parte-3-painel-fila.sql', '20260929264000'),
+  ('aplicar-permissoes-parte-3-quadro.sql', '20260929265000'),
   ('aplicar-permissoes-parte-3-rh.sql', '20260929263000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
@@ -467,7 +468,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'liberar_documento_pessoal') LIKE '%conta_do_gestor_editavel()%'),
   (580, 'OPERACAO', 'versao', 'Leituras do gerente: painel da loja e fila', 'aplicar-permissoes-parte-3-painel-fila.sql',
        to_regprocedure('public.conta_do_gerente()') IS NOT NULL
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_da_loja') LIKE '%pode(''painel.ver''%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_da_loja') LIKE '%pode(''painel.ver''%'),
+  (590, 'OPERACAO', 'versao', 'Leituras do gerente: Quadro', 'aplicar-permissoes-parte-3-quadro.sql',
+       to_regprocedure('public.quadro_validacao_gerente(integer, date, date, integer)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%quadro_validacao_gerente%')
 ),
 tudo AS (
   SELECT x.*, a.versao
