@@ -13533,9 +13533,10 @@ DECLARE
 BEGIN
   BEGIN
     INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
-      (10212, 1, 'Alice Dez', 0), (10213, 1, 'Bruno Onze', 0), (10214, 1, 'Celia Gerente', 0), (10215, 1, 'Davi Dez e Onze', 0);
+      (10212, 1, 'Alice Dez', 0), (10213, 1, 'Bruno Onze', 0), (10214, 1, 'Celia Gerente', 0), (10215, 1, 'Davi Dez e Onze', 0),
+      (10216, 1, 'Eva Dez', 0);
     INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
-      (1, 10212, 10), (1, 10213, 11), (1, 10214, 10), (1, 10215, 10), (1, 10215, 11);
+      (1, 10212, 10), (1, 10213, 11), (1, 10214, 10), (1, 10215, 10), (1, 10215, 11), (1, 10216, 10);
     INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'com.102@exemplo.com', now());
     INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
     INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Comunicados 102') RETURNING cargoid INTO v_cargo;
@@ -13548,7 +13549,8 @@ BEGIN
     c_conta := public.publicar_comunicado('Todos', 'texto', 1, 'conta');
     c_p10   := public.publicar_comunicado('Pessoa 10', 'texto', 1, 'funcionarios', NULL, ARRAY[10212]);
     RESET ROLE;
-    s_dez  := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_l10 AND funcionarioid = 10212);
+    -- A ciencia da Alice no comunicado da conta inteira (publicado pelo master, vale 1 ponto).
+    s_dez  := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10212);
     s_eu   := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_l10 AND funcionarioid = 10214);
     s_onze := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10213);
     s_davi := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10215);
@@ -13594,14 +13596,21 @@ BEGIN
     PERFORM public.exigir(public.nada_mudou(), 'ninguem registra a PROPRIA ciencia (ela paga pontos)');
     n1 := public.publicar_comunicado('Da loja 10', 'texto', 1, 'lojas', ARRAY[10]);
     n2 := public.publicar_comunicado('Da Alice', 'texto', 1, 'funcionarios', NULL, ARRAY[10212]);
-    PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 1);
-    PERFORM public.incluir_destinatarios(c_p10, ARRAY[10214]);
+    -- Ninguem gera pontos para si: ele e destinatario do comunicado da loja 10.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente destinatario nao deixa o comunicado valendo pontos (ninguem gera pontos para si)');
+    PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 0);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.incluir_destinatarios(c_p10, ARRAY[10214]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao se inclui num comunicado com pontos (ninguem gera pontos para si)');
+    PERFORM public.incluir_destinatarios(c_p10, ARRAY[10216]);
     PERFORM public.registrar_ciencia(s_dez);
     PERFORM public.arquivar_comunicado(n2);
     RESET ROLE;
     PERFORM public.exigir((SELECT criadopor = G FROM public.documentos WHERE documentoid = n1)
                           AND (SELECT titulo = 'Loja 10 (revisto)' FROM public.documentos WHERE documentoid = c_l10)
-                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c_p10 AND funcionarioid = 10214)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c_p10 AND funcionarioid = 10216)
                           AND (SELECT statusassinatura = 'Ciente' AND registradopor = G FROM public.documentosassinaturas WHERE assinaturaid = s_dez)
                           AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE assinaturaid = s_dez AND pontos = 1)
                           AND (SELECT status = 'Arquivado' FROM public.documentos WHERE documentoid = n2),
@@ -14378,6 +14387,55 @@ BEGIN
   PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') ~ 'WITH ctx AS MATERIALIZED'
                         AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') !~ 'dia_no_fuso\(e\.dataenvio',
                         'a fila calcula o fuso e o dia uma vez, e nao converte o horario de cada entrega');
+END $$;
+
+-- ===========================================================================
+-- 110. Ninguem gera pontos para si mesmo (29/09/2026, regra geral do Wisley)
+-- ===========================================================================
+-- Quem da pontos e pode ser pessoa da equipe: so o gerente (ligado pelo
+-- usuario gerencial). Aqui o gestor da loja A fica ligado a Ana-A.
+DO $$ BEGIN RAISE NOTICE '110. ninguem gera pontos para si mesmo'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  c integer; c0 integer;
+BEGIN
+  BEGIN
+    UPDATE public.usuariosgerenciais SET funcionarioid = 96011 WHERE userid = GA;
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    -- Nega: comunicado com pontos para ele mesmo, se incluir, ou dar pontos a um em que ele e destinatario.
+    c0 := public.publicar_comunicado('Sem pontos', 'x', 0, 'lojas', ARRAY[9601]);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.publicar_comunicado('So para mim', 'x', 1, 'funcionarios', NULL, ARRAY[96011]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_comunicado(c0, 'Sem pontos', 'x', 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao manda comunicado com pontos para si nem da pontos a um em que e destinatario');
+    -- Permite: com pontos para a loja dele, todos recebem, menos ele.
+    c := public.publicar_comunicado('Para a loja A', 'x', 1, 'lojas', ARRAY[9601]);
+    RESET ROLE;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c AND funcionarioid = 96011)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c AND funcionarioid = 96012)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c0 AND funcionarioid = 96011),
+                          'com pontos, todos da loja recebem menos quem publicou; sem pontos, ele recebe como os outros');
+    RAISE EXCEPTION 'desfazer_110';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_110' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- Conquista (e tudo o que so o master faz): o master nunca e pessoa da equipe.
+-- A garantia e do proprio banco; se um dia mudar, esta checagem avisa.
+DO $$
+DECLARE deu_erro boolean;
+BEGIN
+  PERFORM public.guardar_foto();
+  BEGIN UPDATE public.contasusuarios SET funcionarioid = 96011 WHERE userid = '96969696-9696-9696-9696-969696969696';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  PERFORM public.exigir(public.nada_mudou(), 'o master nunca e pessoa da equipe: ele nao gera pontos para si (conquista so o master cria)');
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

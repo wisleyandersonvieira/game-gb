@@ -65,6 +65,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-mapa-intervalo-por-dia.sql', '20260929233000'),
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
+  ('aplicar-ninguem-gera-pontos-para-si.sql', '20260929271000'),
   ('aplicar-parte-4-porta-do-gerente.sql', '20260929270000'),
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
@@ -496,7 +497,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (625, 'OPERACAO', 'versao', 'Lojas do gerente calculadas uma vez por leitura', 'aplicar-lojas-do-gerente-uma-vez.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu_gerente') LIKE '%(SELECT public.lojas_onde_posso(''premios.ver''))::integer[]%'),
   (630, 'OPERACAO', 'versao', 'Porta do gerente: seletor de loja e menu', 'aplicar-parte-4-porta-do-gerente.sql',
-       to_regprocedure('public.minhas_lojas()') IS NOT NULL AND to_regprocedure('public.minhas_permissoes()') IS NOT NULL)
+       to_regprocedure('public.minhas_lojas()') IS NOT NULL AND to_regprocedure('public.minhas_permissoes()') IS NOT NULL),
+  (640, 'OPERACAO', 'versao', 'Ninguem gera pontos para si mesmo (comunicado)', 'aplicar-ninguem-gera-pontos-para-si.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'incluir_destinatarios') LIKE '%ninguém gera pontos para si%')
 ),
 tudo AS (
   SELECT x.*, a.versao
