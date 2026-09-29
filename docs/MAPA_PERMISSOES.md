@@ -508,8 +508,13 @@ fácil); decisão de negócio não se adivinha — fica aqui.
 - Tarefas: tarefa sem loja nenhuma é só do master.
 - Justificativas: ninguém registra nem decide a PRÓPRIA justificativa; registrar já aceitando exige também a permissão de decidir.
 - Agenda: criar agendamento já com valor ou já pago exige também "Agenda: pagamento". Tipos de evento são catálogo da conta: só o master.
+- Comunicados: registrar ciência em nome da pessoa exige "Comunicados: publicar" com a pessoa inteira nas lojas dele, e nunca a própria ciência (ela paga pontos).
 
 **Pendentes (não adivinhadas):**
+- Comunicados: um gerente que também é funcionário pode publicar um comunicado
+  com pontos para a própria loja (ele mesmo recebe) e depois dar ciência pelo
+  celular, ganhando os pontos. O teto de pontos por ciência limita o valor.
+  Bloquear, ou o teto basta?
 - Agenda, anexo: o gerente registra e remove anexo, mas o ENVIO do arquivo ao
   Storage continua só do master. A trava das regras de acesso (seção 14) só
   aceita a conta do master como âncora no Storage; abrir para o gerente é

@@ -2906,9 +2906,12 @@ SET teste.uid = '12121212-1212-1212-1212-121212121212';
 DO $$
 DECLARE deu_erro boolean;
 BEGIN
+  -- Voltou (parte 2, Comunicados): o gerente de "Acesso total" passa pela conta
+  -- e e barrado pelo sou_master.
+  PERFORM public.guardar_foto();
   BEGIN PERFORM public.desfazer_ciencia(current_setting('teste.s')::integer, 'x'); deu_erro := false;
   EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.pular('gerente nao desfaz ciencia (so o master)', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
+  PERFORM public.exigir(public.nada_mudou(), 'gerente (mesmo com "Acesso total") nao desfaz ciencia: so o master');
   PERFORM public.pular('gerente nao ve documentos pessoais', 'gerente fechado em 29/09/2026: passaria porque o gerente nao acessa nada, e nao porque a funcao confere o master. Volta na etapa dos cargos, com um gerente de verdade');
 END $$;
 
@@ -11944,10 +11947,9 @@ SELECT unnest(ARRAY[
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[
-  'arquivar_comunicado', 'criar_conquista', 'criar_link_tv',
-  'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
+  'criar_conquista', 'criar_link_tv',
+  'iniciar_onboarding', 'liberar_pin',
   'marcar_etapa_onboarding', 'parear_tv',
-  'publicar_comunicado', 'registrar_ciencia',
   'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
   'vincular_jornada']), 'pendente_parte2';
 
@@ -13453,6 +13455,104 @@ BEGIN
     RAISE EXCEPTION 'desfazer_101';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_101' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 102. Usuarios gerenciais, parte 2, fatia 9: Comunicados (29/09/2026)
+-- ===========================================================================
+-- "publicar" dentro do alcance: conta inteira so o master; lojas, todas dele;
+-- pessoas, todas as lojas de cada uma dentro das dele. Ciencia em nome da
+-- pessoa: a mesma permissao, na pessoa, e nunca a propria.
+DO $$ BEGIN RAISE NOTICE '102. parte 2, Comunicados: alcance, ciencia e a propria'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '10210210-2102-1021-0210-210210210201';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; c_l10 integer; c_l11 integer; c_conta integer; c_p10 integer; n1 integer; n2 integer;
+  s_dez integer; s_onze integer; s_eu integer; s_davi integer;
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (10212, 1, 'Alice Dez', 0), (10213, 1, 'Bruno Onze', 0), (10214, 1, 'Celia Gerente', 0), (10215, 1, 'Davi Dez e Onze', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
+      (1, 10212, 10), (1, 10213, 11), (1, 10214, 10), (1, 10215, 10), (1, 10215, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'com.102@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Comunicados 102') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid, funcionarioid) VALUES (1, G, v_cargo, 10214);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    c_l10   := public.publicar_comunicado('Loja 10', 'texto', 1, 'lojas', ARRAY[10]);
+    c_l11   := public.publicar_comunicado('Loja 11', 'texto', 1, 'lojas', ARRAY[11]);
+    c_conta := public.publicar_comunicado('Todos', 'texto', 1, 'conta');
+    c_p10   := public.publicar_comunicado('Pessoa 10', 'texto', 1, 'funcionarios', NULL, ARRAY[10212]);
+    RESET ROLE;
+    s_dez  := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_l10 AND funcionarioid = 10212);
+    s_eu   := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_l10 AND funcionarioid = 10214);
+    s_onze := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10213);
+    s_davi := (SELECT assinaturaid FROM public.documentosassinaturas WHERE documentoid = c_conta AND funcionarioid = 10215);
+    PERFORM public.exigir(s_dez IS NOT NULL AND s_eu IS NOT NULL AND s_onze IS NOT NULL AND s_davi IS NOT NULL,
+                          'destinatarios do cenario 102 existem');
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.publicar_comunicado('Novo', 'texto', 1, 'lojas', ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_comunicado(c_l10, 'Mudado', 'texto', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.arquivar_comunicado(c_l10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.incluir_destinatarios(c_p10, ARRAY[10215]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.registrar_ciencia(s_dez); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao publica, edita, arquiva, inclui nem registra ciencia');
+    RESET ROLE;
+
+    -- 2. Com "publicar": so dentro do alcance.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'comunicados.publicar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.publicar_comunicado('Todos', 'texto', 1, 'conta'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.publicar_comunicado('Duas', 'texto', 1, 'lojas', ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.publicar_comunicado('Davi', 'texto', 1, 'funcionarios', NULL, ARRAY[10215]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "publicar": nao publica para a conta inteira, para a loja 11 nem para quem tambem esta na 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.editar_comunicado(c_l11, 'Mudado', 'texto', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_comunicado(c_conta, 'Mudado', 'texto', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.arquivar_comunicado(c_l11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.arquivar_comunicado(c_conta); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.incluir_destinatarios(c_l10, ARRAY[10213]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.incluir_destinatarios(c_conta, ARRAY[10212]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "publicar": nao edita, arquiva nem inclui fora do alcance dele');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_ciencia(s_onze); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao registra ciencia por pessoa da loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_ciencia(s_davi); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem por quem esta na loja 10 e TAMBEM na 11 (a pessoa inteira nas lojas dele)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.registrar_ciencia(s_eu); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'ninguem registra a PROPRIA ciencia (ela paga pontos)');
+    n1 := public.publicar_comunicado('Da loja 10', 'texto', 1, 'lojas', ARRAY[10]);
+    n2 := public.publicar_comunicado('Da Alice', 'texto', 1, 'funcionarios', NULL, ARRAY[10212]);
+    PERFORM public.editar_comunicado(c_l10, 'Loja 10 (revisto)', 'texto novo', 1);
+    PERFORM public.incluir_destinatarios(c_p10, ARRAY[10214]);
+    PERFORM public.registrar_ciencia(s_dez);
+    PERFORM public.arquivar_comunicado(n2);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT criadopor = G FROM public.documentos WHERE documentoid = n1)
+                          AND (SELECT titulo = 'Loja 10 (revisto)' FROM public.documentos WHERE documentoid = c_l10)
+                          AND EXISTS (SELECT 1 FROM public.documentosassinaturas WHERE documentoid = c_p10 AND funcionarioid = 10214)
+                          AND (SELECT statusassinatura = 'Ciente' AND registradopor = G FROM public.documentosassinaturas WHERE assinaturaid = s_dez)
+                          AND EXISTS (SELECT 1 FROM public.movimentospontos WHERE assinaturaid = s_dez AND pontos = 1)
+                          AND (SELECT status = 'Arquivado' FROM public.documentos WHERE documentoid = n2),
+                          'e dentro das lojas dele publica, edita, inclui, registra ciencia (com o ponto no livro) e arquiva de verdade');
+    RAISE EXCEPTION 'desfazer_102';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_102' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

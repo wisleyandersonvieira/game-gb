@@ -66,6 +66,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
   ('aplicar-permissoes-parte-2-agenda.sql', '20260929257000'),
+  ('aplicar-permissoes-parte-2-comunicados.sql', '20260929258000'),
   ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
   ('aplicar-permissoes-parte-2-justificativas.sql', '20260929256000'),
   ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
@@ -435,7 +436,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'decidir_justificativa') LIKE '%pode(''justificativas.decidir''%'),
   (510, 'OPERACAO', 'versao', 'Agenda com permissao e loja no banco', 'aplicar-permissoes-parte-2-agenda.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'alterar_pagamento_agendamento') LIKE '%pode(''agenda.pagamento''%'
-       AND to_regprocedure('public.salvar_tipo_evento(text, integer)') IS NOT NULL)
+       AND to_regprocedure('public.salvar_tipo_evento(text, integer)') IS NOT NULL),
+  (520, 'OPERACAO', 'versao', 'Comunicados com permissao e alcance no banco', 'aplicar-permissoes-parte-2-comunicados.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'publicar_comunicado') LIKE '%pode(''comunicados.publicar''%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_ciencia') LIKE '%pode_na_pessoa(''comunicados.publicar''%')
 ),
 tudo AS (
   SELECT x.*, a.versao
