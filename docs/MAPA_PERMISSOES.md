@@ -507,8 +507,13 @@ fácil); decisão de negócio não se adivinha — fica aqui.
   anula feedback de si mesmo.
 - Tarefas: tarefa sem loja nenhuma é só do master.
 - Justificativas: ninguém registra nem decide a PRÓPRIA justificativa; registrar já aceitando exige também a permissão de decidir.
+- Agenda: criar agendamento já com valor ou já pago exige também "Agenda: pagamento". Tipos de evento são catálogo da conta: só o master.
 
 **Pendentes (não adivinhadas):**
+- Agenda, anexo: o gerente registra e remove anexo, mas o ENVIO do arquivo ao
+  Storage continua só do master. A trava das regras de acesso (seção 14) só
+  aceita a conta do master como âncora no Storage; abrir para o gerente é
+  mudar essa trava. Liberar?
 - Pessoa em várias lojas: soltar para "pelo menos uma loja em comum" nas
   ações sobre a pessoa (feedback, justificativa)?
 - Metas: o gerente lança a venda da loja dele; se a loja bater a meta, ele

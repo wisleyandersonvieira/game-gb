@@ -2536,7 +2536,7 @@ UPDATE public.lojas SET responsavelagendamentosid = 110 WHERE lojaid = 10;
 
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-INSERT INTO public.tiposevento (nome) VALUES ('Aniversário');
+SELECT public.salvar_tipo_evento('Aniversário');
 
 DO $$
 DECLARE
@@ -5143,7 +5143,7 @@ BEGIN
       'estornos_da_conta',
       -- 29/09/2026 (parte 2, Premios): o catalogo de premios. Leem a conta de
       -- quem chamou e exigem o master (secao 95).
-      'salvar_premio', 'ativar_premio',
+      'salvar_premio', 'ativar_premio', 'salvar_tipo_evento', 'ativar_tipo_evento',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
@@ -11935,7 +11935,8 @@ SELECT unnest(ARRAY[
   'registrar_ciencia_documento', 'registrar_documento_pessoal', 'rodar_geracao_hoje', 'salvar_intervalo_do_mapa',
   'salvar_jornada', 'tratar_relato',
   'pegar_tarefa',
-  'alterar_configuracao', 'salvar_premio', 'ativar_premio']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'alterar_configuracao', 'salvar_premio', 'ativar_premio',
+  'salvar_tipo_evento', 'ativar_tipo_evento']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -11943,23 +11944,19 @@ SELECT unnest(ARRAY[
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[
-  'alterar_pagamento_agendamento',
-  'arquivar_comunicado', 'cancelar_agendamento',
-  'criar_agendamento', 'criar_conquista', 'criar_link_tv',
-  'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
-  'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'parear_tv',
-  'publicar_comunicado', 'reabrir_agendamento',
-  'recriar_tarefa_do_agendamento', 'registrar_anexo_agendamento', 'registrar_ciencia',
-  'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
-  'trocar_responsavel_agendamento', 'vincular_jornada']), 'pendente_parte2';
+  'arquivar_comunicado', 'criar_conquista', 'criar_link_tv',
+  'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
+  'marcar_etapa_onboarding', 'parear_tv',
+  'publicar_comunicado', 'registrar_ciencia',
+  'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
+  'vincular_jornada']), 'pendente_parte2';
 
 CREATE TEMP TABLE classificacao_tabela (nome text PRIMARY KEY, grupo text NOT NULL);
 INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
 SELECT unnest(ARRAY['conquistas', 'funcionarios', 'funcionarioslojas', 'jornadas', 'lojas',
-                    'onboardingetapas',
-                    'tiposevento']), 'pendente_parte2';
+                    'onboardingetapas']), 'pendente_parte2';
 
 DO $$
 DECLARE sobra text;
@@ -13327,6 +13324,135 @@ BEGIN
     RAISE EXCEPTION 'desfazer_100';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_100' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 101. Usuarios gerenciais, parte 2, fatia 8: Agenda (29/09/2026)
+-- ===========================================================================
+-- Cada mudanca confere o codigo NA LOJA do agendamento: editar (criar, editar,
+-- remarcar, cancelar, anexos), realizado, pagamento (R$, inclusive criar ja com
+-- valor). Tipos de evento: so o master, por funcao. O ARQUIVO no Storage
+-- continua so do master (decisao pendente); registrar/remover o anexo, "editar".
+DO $$ BEGIN RAISE NOTICE '101. parte 2, Agenda: codigo na loja, pagamento, tipos so do master'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '10110110-1101-1011-0110-110110110101';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; t integer; ag10 integer; ag11 integer; n integer; x11 integer; x10 integer;
+  d timestamptz := ((public.dia_em_sao_paulo(now()) + 6)::timestamp + time '15:00') AT TIME ZONE 'America/Sao_Paulo';
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (10112, 1, 'Yara Dez', 0), (10113, 1, 'Zeca Onze', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 10112, 10), (1, 10113, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'age.101@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Agenda 101') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    t := (SELECT tipoeventoid FROM public.tiposevento WHERE nome = 'Evento');
+    ag10 := public.criar_agendamento(10, t, d, 'Cliente Dez', NULL, NULL, NULL, NULL, 'Pendente', 10112);
+    ag11 := public.criar_agendamento(11, t, d, 'Cliente Onze', NULL, NULL, NULL, NULL, 'Pendente', 10113);
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/11/' || ag11 || '/do-master.pdf');
+    x11 := public.registrar_anexo_agendamento(ag11, '1/11/' || ag11 || '/do-master.pdf', 'do-master.pdf', 'application/pdf', 10);
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_agendamento(10, t, d, 'Novo', NULL, NULL, NULL, NULL, 'Pendente', 10112); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_agendamento(ag10, t, 'Mudado', NULL, NULL, NULL, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.remarcar_agendamento(ag10, d + interval '1 day'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.cancelar_agendamento(ag10, 'sem'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.marcar_agendamento_realizado(ag10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.alterar_pagamento_agendamento(ag10, 'Pago', 100); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/10/' || ag10 || '/sem.pdf'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao cria, edita, remarca, cancela, realiza, paga nem anexa');
+    RESET ROLE;
+
+    -- 2. Com "editar": na loja 10, sem dinheiro.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'agenda.editar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_agendamento(11, t, d, 'Na 11', NULL, NULL, NULL, NULL, 'Pendente', 10113); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_agendamento(ag11, t, 'Mudado', NULL, NULL, NULL, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.remarcar_agendamento(ag11, d + interval '1 day'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.cancelar_agendamento(ag11, 'nao e minha'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.remover_anexo_agendamento(x11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/11/' || ag11 || '/x.pdf'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "editar": nada na agenda da loja 11 (nem o anexo no Storage)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_agendamento(10, t, d, 'Com valor', NULL, NULL, NULL, 100, 'Pendente', 10112); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_agendamento(10, t, d, 'Ja pago', NULL, NULL, NULL, NULL, 'Pago', 10112); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.alterar_pagamento_agendamento(ag10, 'Sinal pago', 50); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.marcar_agendamento_realizado(ag10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), '"editar" nao mexe no pagamento (nem criando ja com valor) e nao marca realizado');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_tipo_evento('Casamento'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.ativar_tipo_evento(t, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.tiposevento (nome) VALUES ('Direto'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'tipos de evento: so o master');
+    n := public.criar_agendamento(10, t, d, 'Novo Dez', NULL, NULL, NULL, NULL, 'Pendente', 10112);
+    PERFORM public.editar_agendamento(ag10, t, 'Cliente Dez Mudado', NULL, NULL, NULL, false);
+    PERFORM public.remarcar_agendamento(ag10, d + interval '1 day');
+    PERFORM public.guardar_foto();
+    BEGIN INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/10/' || ag10 || '/do-gerente.pdf'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o arquivo no Storage continua so do master (decisao pendente), nem na loja 10');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO storage.objects (bucket_id, name) VALUES ('agendamentos', '1/10/' || ag10 || '/do-gerente.pdf');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    x10 := public.registrar_anexo_agendamento(ag10, '1/10/' || ag10 || '/do-gerente.pdf', 'do-gerente.pdf', 'application/pdf', 10);
+    PERFORM public.remover_anexo_agendamento(x10);
+    PERFORM public.cancelar_agendamento(n, 'cliente desistiu');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT nomecliente = 'Cliente Dez Mudado' AND dataevento = d + interval '1 day' FROM public.agendamentos WHERE agendamentoid = ag10)
+                          AND (SELECT statusagendamento = 'Cancelado' AND registradopor = G FROM public.agendamentos WHERE agendamentoid = n)
+                          AND (SELECT removidoem IS NOT NULL AND enviadopor = G FROM public.agendamentosanexos WHERE anexoid = x10),
+                          'e na loja 10 cria, edita, remarca, anexa, remove anexo e cancela de verdade');
+
+    -- 3. "Realizado" e "pagamento": so na loja 10.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'agenda.realizado'), (1, v_cargo, 'agenda.pagamento');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.marcar_agendamento_realizado(ag11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.alterar_pagamento_agendamento(ag11, 'Pago', 100); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_agendamento(11, t, d, 'Na 11 paga', NULL, NULL, NULL, 100, 'Pago', 10113); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "realizado" e "pagamento": nada na loja 11');
+    PERFORM public.alterar_pagamento_agendamento(ag10, 'Sinal pago', 50);
+    PERFORM public.marcar_agendamento_realizado(ag10);
+    n := public.criar_agendamento(10, t, d, 'Com sinal', NULL, NULL, NULL, 80, 'Sinal pago', 10112);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT statusagendamento = 'Realizado' AND statuspagamento = 'Sinal pago' AND valor = 50 FROM public.agendamentos WHERE agendamentoid = ag10)
+                          AND (SELECT valor = 80 FROM public.agendamentos WHERE agendamentoid = n),
+                          'e na loja 10 marca realizado, muda o pagamento e cria ja com valor, de verdade');
+
+    -- 4. Nem o master grava direto nos tipos; pela funcao, grava.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN INSERT INTO public.tiposevento (nome) VALUES ('Direto'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.tiposevento SET ativo = false WHERE tipoeventoid = t; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava tipo de evento direto na tabela');
+    n := public.salvar_tipo_evento('Casamento 101');
+    PERFORM public.salvar_tipo_evento('Casamento 101 (grande)', n);
+    PERFORM public.ativar_tipo_evento(n, false);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT nome = 'Casamento 101 (grande)' AND NOT ativo FROM public.tiposevento WHERE tipoeventoid = n),
+                          'e o master cria, renomeia e desativa tipo de evento pela funcao');
+    RAISE EXCEPTION 'desfazer_101';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_101' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

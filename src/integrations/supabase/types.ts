@@ -5301,6 +5301,10 @@ export type Database = {
         }
         Returns: number
       }
+      ativar_tipo_evento: {
+        Args: { p_ativo: boolean; p_tipoeventoid: number }
+        Returns: undefined
+      }
       atribuicoes_para_entregar: {
         Args: { p_lojaid: number }
         Returns: {
@@ -6517,6 +6521,10 @@ export type Database = {
           p_volume: number
         }
         Returns: undefined
+      }
+      salvar_tipo_evento: {
+        Args: { p_nome: string; p_tipoeventoid?: number }
+        Returns: number
       }
       salvar_tv_da_loja: {
         Args: {

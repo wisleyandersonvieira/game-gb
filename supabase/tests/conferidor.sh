@@ -53,8 +53,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "CREATE OR REPLACE FUNCTION public.registrar_justificativa(p_atribuicaoid integer, p_dia date, p_motivo text, p_aceitar boolean) RETURNS integer LANGUAGE sql AS 'SELECT 1';")"
-if echo "$s" | grep -q "|rode aplicar-permissoes-parte-2-justificativas.sql"; then
+s="$(conferir "DROP FUNCTION public.salvar_tipo_evento(text, integer);")"
+if echo "$s" | grep -q "|rode aplicar-permissoes-parte-2-agenda.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1
