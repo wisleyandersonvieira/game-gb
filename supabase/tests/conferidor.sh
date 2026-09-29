@@ -53,8 +53,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "CREATE OR REPLACE FUNCTION public.lista_do_dia_gerar(p_contaid integer, p_dia date, p_hoje date, p_recuperado boolean) RETURNS jsonb LANGUAGE sql AS 'SELECT NULL::jsonb';")"
-if echo "$s" | grep -q "|rode aplicar-desempate-nas-listas.sql"; then
+s="$(conferir "CREATE OR REPLACE FUNCTION public.fila_no_dia(p_contaid integer, p_lojaid integer, p_dia date, p_fim timestamp with time zone)  RETURNS TABLE(atribuicaoid integer, entregarid integer, titulo character varying, pontos integer, tipofrequencia character varying, aberta boolean, donoid integer, quempegou integer, quempegounome text, pegaem timestamp with time zone, situacao text, atrasada boolean, disponiveldesde timestamp with time zone, rodizio boolean, agora timestamp with time zone, feitapor text, feitaem timestamp with time zone, feitasituacao text, liberada boolean, liberaas timestamp with time zone, hoje date, fuso text) LANGUAGE sql AS 'SELECT NULL::integer, NULL::integer, NULL::varchar, NULL::integer, NULL::varchar, NULL::boolean, NULL::integer, NULL::integer, NULL::text, NULL::timestamptz, NULL::text, NULL::boolean, NULL::timestamptz, NULL::boolean, NULL::timestamptz, NULL::text, NULL::timestamptz, NULL::text, NULL::boolean, NULL::timestamptz, NULL::date, NULL::text WHERE false';")"
+if echo "$s" | grep -q "|rode aplicar-fila-fuso-uma-vez.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

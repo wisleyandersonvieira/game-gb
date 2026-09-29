@@ -14252,4 +14252,16 @@ END $$;
 SET teste.uid = '';
 RESET ROLE;
 
+-- A fila calcula o fuso e o dia UMA vez por leitura (29/09/2026). Com 90 dias
+-- de entregas, buscar o fuso ou converter o horario de cada entrega linha por
+-- linha levava o Inicio a 3 s. A trava confere a forma, para uma edicao futura
+-- nao desfazer o conserto em silencio.
+DO $$
+BEGIN
+  RAISE NOTICE '109b. a fila calcula o fuso e o dia uma vez';
+  PERFORM public.exigir((SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') ~ 'WITH ctx AS MATERIALIZED'
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') !~ 'dia_no_fuso\(e\.dataenvio',
+                        'a fila calcula o fuso e o dia uma vez, e nao converte o horario de cada entrega');
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

@@ -53,6 +53,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-etapa-1.12-parte-C.sql', '20260929100000'),
   ('aplicar-faixa-meta-do-mes.sql', '20260929241000'),
   ('aplicar-fechar-papel-gerente.sql', '20260929247000'),
+  ('aplicar-fila-fuso-uma-vez.sql', '20260929265700'),
   ('aplicar-folha-de-acesso.sql', '20260929150000'),
   ('aplicar-foto-da-fila.sql', '20260929237000'),
   ('aplicar-hoje-da-conta.sql', '20260929140000'),
@@ -475,7 +476,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%quadro_validacao_gerente%'),
   (595, 'OPERACAO', 'versao', 'Desempate fixo nas listas', 'aplicar-desempate-nas-listas.sql',
        (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%ORDER BY x.dataenvio, x.entregaid)%'
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lista_do_dia_gerar') LIKE '%ORDER BY c.lojaid, c.atribuicaoid%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lista_do_dia_gerar') LIKE '%ORDER BY c.lojaid, c.atribuicaoid%'),
+  (597, 'OPERACAO', 'versao', 'Fila: fuso e dia calculados uma vez', 'aplicar-fila-fuso-uma-vez.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') LIKE '%WITH ctx AS MATERIALIZED%')
 ),
 tudo AS (
   SELECT x.*, a.versao
