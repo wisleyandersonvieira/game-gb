@@ -69,6 +69,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
   ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
+  ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
   ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
@@ -423,7 +424,10 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (480, 'OPERACAO', 'versao', 'Tarefas com permissao e loja; catalogo com a regua do alcance, por funcao', 'aplicar-permissoes-parte-2-tarefas.sql',
        to_regprocedure('public.salvar_tarefa(text, integer, integer[], integer, text, text)') IS NOT NULL
        AND NOT has_table_privilege('authenticated', 'public.tarefasatribuidas', 'UPDATE')
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'atribuir_tarefa') LIKE '%pode(''tarefas.atribuir''%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'atribuir_tarefa') LIKE '%pode(''tarefas.atribuir''%'),
+  (490, 'OPERACAO', 'versao', 'Solicitacoes com permissao e loja no banco', 'aplicar-permissoes-parte-2-solicitacoes.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'mudar_situacao_solicitacao') LIKE '%pode(''solicitacoes.recusar''%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'abrir_solicitacao') LIKE '%pode(''solicitacoes.abrir''%')
 ),
 tudo AS (
   SELECT x.*, a.versao

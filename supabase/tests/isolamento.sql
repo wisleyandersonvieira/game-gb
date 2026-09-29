@@ -11943,11 +11943,11 @@ SELECT unnest(ARRAY[
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[
-  'abrir_solicitacao', 'alterar_pagamento_agendamento',
+  'alterar_pagamento_agendamento',
   'arquivar_comunicado', 'cancelar_agendamento',
   'criar_agendamento', 'criar_conquista', 'criar_link_tv',
   'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
-  'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'mudar_situacao_solicitacao', 'parear_tv',
+  'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'parear_tv',
   'publicar_comunicado', 'reabrir_agendamento',
   'recriar_tarefa_do_agendamento', 'registrar_anexo_agendamento', 'registrar_ciencia',
   'registrar_justificativa', 'remarcar_agendamento', 'remover_anexo_agendamento', 'revogar_link_tv', 'salvar_som_da_loja', 'salvar_tv_da_loja',
@@ -13165,6 +13165,75 @@ BEGIN
     RAISE EXCEPTION 'desfazer_98';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_98' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 99. Usuarios gerenciais, parte 2, fatia 6: Solicitacoes (29/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '99. parte 2, Solicitacoes: permissao e loja no banco'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '99999999-9999-9999-9999-999999999901';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; s10 integer; s10b integer; s11 integer; n integer;
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (9912, 1, 'Sara Dez', 0), (9913, 1, 'Tito Onze', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9912, 10), (1, 9913, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'sol.99@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Solicitacoes 99') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    s10  := public.abrir_solicitacao(10, 9912, 'Compra', 'Limpeza', 'Detergente');
+    s10b := public.abrir_solicitacao(10, 9912, 'Manutencao', NULL, 'Porta emperrada');
+    s11  := public.abrir_solicitacao(11, 9913, 'Compra', NULL, 'Copos');
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.abrir_solicitacao(10, 9912, 'Compra', NULL, 'Sabao'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.mudar_situacao_solicitacao(s10, 'Em andamento'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.mudar_situacao_solicitacao(s10, 'Recusada', 'nao precisa'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao abre, nao anda, nao recusa');
+    RESET ROLE;
+
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'solicitacoes.abrir'), (1, v_cargo, 'solicitacoes.concluir');
+    SET LOCAL ROLE authenticated;
+    n := public.abrir_solicitacao(10, 9912, 'Compra', NULL, 'Sabao');
+    PERFORM public.mudar_situacao_solicitacao(s10, 'Concluída');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.abrir_solicitacao(11, 9913, 'Compra', NULL, 'Pratos'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.mudar_situacao_solicitacao(s11, 'Em andamento'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "abrir" e "concluir": nada na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.mudar_situacao_solicitacao(s10b, 'Recusada', 'nao precisa'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), '"concluir" nao inclui recusar');
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.solicitacoesinternas WHERE solicitacaoid = n AND registradopor = G)
+                          AND (SELECT status = 'Concluída' FROM public.solicitacoesinternas WHERE solicitacaoid = s10),
+                          'e na loja 10 abre e conclui de verdade');
+
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'solicitacoes.recusar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.mudar_situacao_solicitacao(s10b, 'Recusada', 'nao precisa');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.mudar_situacao_solicitacao(s11, 'Recusada', 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "recusar": nao recusa na loja 11');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT status = 'Recusada' FROM public.solicitacoesinternas WHERE solicitacaoid = s10b),
+                          'e recusa de verdade na loja 10');
+    RAISE EXCEPTION 'desfazer_99';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_99' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';
