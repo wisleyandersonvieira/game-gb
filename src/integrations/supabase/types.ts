@@ -5258,6 +5258,8 @@ export type Database = {
         Args: { p_entregaid: number }
         Returns: undefined
       }
+      apagar_jornada: { Args: { p_jornadaid: number }; Returns: undefined }
+      apagar_meta_especial: { Args: { p_metaespecialid: number }; Returns: undefined }
       aprovar_entrega: { Args: { p_entregaid: number }; Returns: number }
       arquivar_comunicado: {
         Args: { p_documentoid: number }
@@ -5285,6 +5287,10 @@ export type Database = {
         }
         Returns: Json
       }
+      ativar_tarefa: { Args: { p_ativa: boolean; p_tarefaid: number }; Returns: undefined }
+      ativar_premio: { Args: { p_ativo: boolean; p_produtoid: number }; Returns: undefined }
+      ativar_conquista: { Args: { p_ativa: boolean; p_conquistaid: number }; Returns: undefined }
+      ativar_loja: { Args: { p_ativa: boolean; p_lojaid: number }; Returns: undefined }
       atribuir_tarefa: {
         Args: {
           p_dataagendamento?: string
@@ -5297,6 +5303,10 @@ export type Database = {
           p_valorfrequencia?: number
         }
         Returns: number
+      }
+      ativar_tipo_evento: {
+        Args: { p_ativo: boolean; p_tipoeventoid: number }
+        Returns: undefined
       }
       atribuicoes_para_entregar: {
         Args: { p_lojaid: number }
@@ -5605,6 +5615,10 @@ export type Database = {
       conta_do_bot: { Args: never; Returns: number }
       conta_do_codigo: { Args: { p_codigo: string }; Returns: number }
       cpf_valido: { Args: { p_cpf: string }; Returns: boolean }
+      criar_meta_especial: {
+        Args: { p_data: string; p_descricao: string; p_lojaid: number; p_pontospremio: number; p_valormeta: number }
+        Returns: number
+      }
       cria_configuracoes_padrao: {
         Args: { p_contaid: number }
         Returns: undefined
@@ -5693,6 +5707,7 @@ export type Database = {
         Args: { p_funcionarioid: number }
         Returns: string
       }
+      criar_loja: { Args: { p_cidade?: string | null; p_endereco?: string | null; p_nome: string }; Returns: number }
       criar_link_tv: {
         Args: { p_lojaid: number; p_nome: string }
         Returns: string
@@ -5770,6 +5785,21 @@ export type Database = {
         }
         Returns: undefined
       }
+      editar_conquista: {
+        Args: { p_bonus: number; p_conquistaid: number; p_descricao: string; p_icone: string; p_nome: string }
+        Returns: undefined
+      }
+      editar_loja: {
+        Args: {
+          p_cidade: string | null
+          p_endereco: string | null
+          p_gestorid: number | null
+          p_lojaid: number
+          p_nome: string
+          p_responsavelagendamentosid: number | null
+        }
+        Returns: undefined
+      }
       editar_comunicado: {
         Args: {
           p_conteudo: string
@@ -5815,6 +5845,7 @@ export type Database = {
         Args: { p_erro?: string; p_ids: number[] }
         Returns: undefined
       }
+      encerrar_atribuicoes: { Args: { p_ids: number[] }; Returns: undefined }
       estornos_da_conta: {
         Args: { p_lojaid?: number }
         Returns: {
@@ -6286,6 +6317,24 @@ export type Database = {
         Args: { p_diasemana: number; p_fim: string | null; p_funcionarioid: number; p_inicio: string | null }
         Returns: undefined
       }
+      salvar_etapa_onboarding: {
+        Args: { p_ativo?: boolean; p_etapaid: number | null; p_nome?: string; p_ordem?: number }
+        Returns: number
+      }
+      salvar_pessoa: {
+        Args: {
+          p_cargo: string | null
+          p_cpf: string | null
+          p_diadefolga: number
+          p_funcionarioid: number | null
+          p_lojas: number[]
+          p_nomecompleto: string
+          p_setor: string | null
+          p_telefone: string | null
+          p_validador?: number[]
+        }
+        Returns: number
+      }
       salvar_jornada: {
         Args: {
           p_ativa: boolean
@@ -6479,6 +6528,28 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
         Returns: undefined
       }
+      salvar_tarefa: {
+        Args: {
+          p_descricao?: string
+          p_lojas: number[]
+          p_pontos: number
+          p_setor?: string
+          p_tarefaid?: number
+          p_titulo: string
+        }
+        Returns: number
+      }
+      salvar_metas_da_semana: { Args: { p_linhas: Json; p_lojaid: number }; Returns: undefined }
+      salvar_premio: {
+        Args: {
+          p_custoempontos: number
+          p_descricao?: string
+          p_estoquedisponivel?: number
+          p_nome: string
+          p_produtoid?: number
+        }
+        Returns: number
+      }
       salvar_som_da_loja: {
         Args: {
           p_ligado: boolean
@@ -6487,6 +6558,10 @@ export type Database = {
           p_volume: number
         }
         Returns: undefined
+      }
+      salvar_tipo_evento: {
+        Args: { p_nome: string; p_tipoeventoid?: number }
+        Returns: number
       }
       salvar_tv_da_loja: {
         Args: {

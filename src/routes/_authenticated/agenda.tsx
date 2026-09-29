@@ -1018,7 +1018,7 @@ function Tipos() {
   const criar = useMutation({
     mutationFn: async () => {
       if (!nome.trim()) throw new Error("Dê um nome ao tipo.");
-      const { error } = await supabase.from("tiposevento").insert({ nome: nome.trim() });
+      const { error } = await supabase.rpc("salvar_tipo_evento", { p_nome: nome.trim() });
       if (error) {
         if (error.code === "23505") throw new Error("Já existe um tipo com esse nome.");
         throw error;
@@ -1032,11 +1032,14 @@ function Tipos() {
 
   const alterar = useMutation({
     mutationFn: async (x: { id: number; nome?: string; ativo?: boolean }) => {
-      const { error } = await supabase
-        .from("tiposevento")
-        .update({ ...(x.nome !== undefined ? { nome: x.nome } : {}), ...(x.ativo !== undefined ? { ativo: x.ativo } : {}) })
-        .eq("tipoeventoid", x.id);
-      if (error) throw error;
+      if (x.nome !== undefined) {
+        const { error } = await supabase.rpc("salvar_tipo_evento", { p_nome: x.nome, p_tipoeventoid: x.id });
+        if (error) throw error;
+      }
+      if (x.ativo !== undefined) {
+        const { error } = await supabase.rpc("ativar_tipo_evento", { p_tipoeventoid: x.id, p_ativo: x.ativo });
+        if (error) throw error;
+      }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tipos-evento"] }),
   });

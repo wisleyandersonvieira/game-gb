@@ -44,6 +44,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-concluidas-e-venda-de-ontem.sql', '20260929244000'),
   ('aplicar-consertos-da-revisao-c1.sql', '20260929100400'),
   ('aplicar-desempate-e-dias-sem-lancamento.sql', '20260929245000'),
+  ('aplicar-desempate-nas-listas.sql', '20260929265500'),
   ('aplicar-disponivel-uma-fonte.sql', '20260929238000'),
   ('aplicar-entrega-da-copia.sql', '20260929234000'),
   ('aplicar-entrega-do-celular.sql', '20260929235000'),
@@ -52,12 +53,14 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-etapa-1.12-parte-C.sql', '20260929100000'),
   ('aplicar-faixa-meta-do-mes.sql', '20260929241000'),
   ('aplicar-fechar-papel-gerente.sql', '20260929247000'),
+  ('aplicar-fila-fuso-uma-vez.sql', '20260929265700'),
   ('aplicar-folha-de-acesso.sql', '20260929150000'),
   ('aplicar-foto-da-fila.sql', '20260929237000'),
   ('aplicar-hoje-da-conta.sql', '20260929140000'),
   ('aplicar-hora-de-liberacao.sql', '20260929100600'),
   ('aplicar-inicio-da-fila.sql', '20260929242000'),
   ('aplicar-jornadas.sql', '20260929190000'),
+  ('aplicar-lojas-do-gerente-uma-vez.sql', '20260929268500'),
   ('aplicar-mapa-da-jornada.sql', '20260929210000'),
   ('aplicar-mapa-intervalo-por-dia.sql', '20260929233000'),
   ('aplicar-menu-e-catalogo.sql', '20260929236000'),
@@ -65,7 +68,25 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
+  ('aplicar-permissoes-parte-2-agenda.sql', '20260929257000'),
+  ('aplicar-permissoes-parte-2-comunicados.sql', '20260929258000'),
+  ('aplicar-permissoes-parte-2-conquistas.sql', '20260929259000'),
+  ('aplicar-permissoes-parte-2-equipe.sql', '20260929262000'),
+  ('aplicar-permissoes-parte-2-feedbacks.sql', '20260929252000'),
+  ('aplicar-permissoes-parte-2-justificativas.sql', '20260929256000'),
+  ('aplicar-permissoes-parte-2-lojas.sql', '20260929261000'),
+  ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
+  ('aplicar-permissoes-parte-2-onboarding.sql', '20260929260000'),
+  ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
+  ('aplicar-permissoes-parte-2-solicitacoes.sql', '20260929255000'),
+  ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
+  ('aplicar-permissoes-parte-3-inicio.sql', '20260929266000'),
+  ('aplicar-permissoes-parte-3-metas.sql', '20260929268000'),
+  ('aplicar-permissoes-parte-3-painel-fila.sql', '20260929264000'),
+  ('aplicar-permissoes-parte-3-quadro.sql', '20260929265000'),
+  ('aplicar-permissoes-parte-3-relatorios.sql', '20260929267000'),
+  ('aplicar-permissoes-parte-3-rh.sql', '20260929263000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
   ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
@@ -402,7 +423,77 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
        to_regclass('public.autores') IS NOT NULL
        AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'auth.users'::regclass AND tgname = 'stgame_login_com_atos')
        AND (SELECT prosrc FROM pg_proc WHERE proname = 'aprovar_entrega') LIKE '%pode(''quadro.aprovar''%'
-       AND to_regprocedure('public.estornos_da_conta(integer)') IS NOT NULL)
+       AND to_regprocedure('public.estornos_da_conta(integer)') IS NOT NULL),
+  -- O catálogo de prêmios por função (e a tabela fechada) e os resgates com permissão.
+  (450, 'OPERACAO', 'versao', 'Premios com permissao e loja no banco; catalogo de premios so do master, por funcao', 'aplicar-permissoes-parte-2-premios.sql',
+       to_regprocedure('public.salvar_premio(text, integer, integer, text, integer)') IS NOT NULL
+       AND NOT has_table_privilege('authenticated', 'public.produtosloja', 'INSERT')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_troca') LIKE '%pode(''premios.registrar''%'),
+  -- Feedbacks conferem a pessoa inteira dentro das lojas (pode_na_pessoa).
+  (460, 'OPERACAO', 'versao', 'Feedbacks com permissao sobre a pessoa; anulados na lista de estornos', 'aplicar-permissoes-parte-2-feedbacks.sql',
+       to_regprocedure('public.pode_na_pessoa(text, integer, integer)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'anular_feedback') LIKE '%pode_na_pessoa(''feedbacks.anular''%'),
+  (470, 'OPERACAO', 'versao', 'Metas com permissao e loja no banco; metas da semana e especiais por funcao', 'aplicar-permissoes-parte-2-metas.sql',
+       to_regprocedure('public.salvar_metas_da_semana(integer, jsonb)') IS NOT NULL
+       AND NOT has_table_privilege('authenticated', 'public.metasespeciais', 'INSERT')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lancar_venda_do_dia') LIKE '%pode(''metas.lancar_venda''%'),
+  (480, 'OPERACAO', 'versao', 'Tarefas com permissao e loja; catalogo com a regua do alcance, por funcao', 'aplicar-permissoes-parte-2-tarefas.sql',
+       to_regprocedure('public.salvar_tarefa(text, integer, integer[], integer, text, text)') IS NOT NULL
+       AND NOT has_table_privilege('authenticated', 'public.tarefasatribuidas', 'UPDATE')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'atribuir_tarefa') LIKE '%pode(''tarefas.atribuir''%'),
+  (490, 'OPERACAO', 'versao', 'Solicitacoes com permissao e loja no banco', 'aplicar-permissoes-parte-2-solicitacoes.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'mudar_situacao_solicitacao') LIKE '%pode(''solicitacoes.recusar''%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'abrir_solicitacao') LIKE '%pode(''solicitacoes.abrir''%'),
+  (500, 'OPERACAO', 'versao', 'Justificativas com permissao e loja no banco', 'aplicar-permissoes-parte-2-justificativas.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_justificativa') LIKE '%pode(''justificativas.registrar''%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'decidir_justificativa') LIKE '%pode(''justificativas.decidir''%'),
+  (510, 'OPERACAO', 'versao', 'Agenda com permissao e loja no banco', 'aplicar-permissoes-parte-2-agenda.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'alterar_pagamento_agendamento') LIKE '%pode(''agenda.pagamento''%'
+       AND to_regprocedure('public.salvar_tipo_evento(text, integer)') IS NOT NULL),
+  (520, 'OPERACAO', 'versao', 'Comunicados com permissao e alcance no banco', 'aplicar-permissoes-parte-2-comunicados.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'publicar_comunicado') LIKE '%pode(''comunicados.publicar''%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'registrar_ciencia') LIKE '%pode_na_pessoa(''comunicados.publicar''%'),
+  (530, 'OPERACAO', 'versao', 'Conquistas: catalogo so do master, por funcao', 'aplicar-permissoes-parte-2-conquistas.sql',
+       to_regprocedure('public.editar_conquista(integer, text, text, text, integer)') IS NOT NULL
+       AND NOT has_table_privilege('authenticated', 'public.conquistas', 'UPDATE')
+       AND NOT has_column_privilege('authenticated', 'public.conquistas', 'nome', 'UPDATE')),
+  (540, 'OPERACAO', 'versao', 'Onboarding com permissao na pessoa; etapas so do master', 'aplicar-permissoes-parte-2-onboarding.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'iniciar_onboarding') LIKE '%pode_na_pessoa(''onboarding.conduzir''%'
+       AND to_regprocedure('public.salvar_etapa_onboarding(integer, text, integer, boolean)') IS NOT NULL
+       AND NOT has_column_privilege('authenticated', 'public.onboardingetapas', 'nome', 'UPDATE')),
+  (550, 'OPERACAO', 'versao', 'Lojas e TV com permissao e loja no banco', 'aplicar-permissoes-parte-2-lojas.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'salvar_tv_da_loja') LIKE '%pode(''lojas.tv''%'
+       AND to_regprocedure('public.editar_loja(integer, text, text, text, integer, integer)') IS NOT NULL
+       AND NOT has_column_privilege('authenticated', 'public.lojas', 'nome', 'UPDATE')),
+  (560, 'OPERACAO', 'versao', 'Equipe com as bordas; CPF e escrita direta fechados', 'aplicar-permissoes-parte-2-equipe.sql',
+       to_regprocedure('public.salvar_pessoa(integer, text, text, text, text, text, integer, integer[], integer[])') IS NOT NULL
+       AND NOT has_column_privilege('authenticated', 'public.funcionarios', 'cpf', 'UPDATE')
+       AND NOT has_table_privilege('authenticated', 'public.funcionarioslojas', 'INSERT')),
+  (570, 'OPERACAO', 'versao', 'Canal e documentos pessoais: so o master, provado com gerente', 'aplicar-permissoes-parte-3-rh.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'tratar_relato') LIKE '%conta_do_gestor_editavel()%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'liberar_documento_pessoal') LIKE '%conta_do_gestor_editavel()%'),
+  (580, 'OPERACAO', 'versao', 'Leituras do gerente: painel da loja e fila', 'aplicar-permissoes-parte-3-painel-fila.sql',
+       to_regprocedure('public.conta_do_gerente()') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'painel_da_loja') LIKE '%pode(''painel.ver''%'),
+  (590, 'OPERACAO', 'versao', 'Leituras do gerente: Quadro', 'aplicar-permissoes-parte-3-quadro.sql',
+       to_regprocedure('public.quadro_validacao_gerente(integer, date, date, integer)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%quadro_validacao_gerente%'),
+  (595, 'OPERACAO', 'versao', 'Desempate fixo nas listas', 'aplicar-desempate-nas-listas.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'quadro_validacao') LIKE '%ORDER BY x.dataenvio, x.entregaid)%'
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lista_do_dia_gerar') LIKE '%ORDER BY c.lojaid, c.atribuicaoid%'),
+  (597, 'OPERACAO', 'versao', 'Fila: fuso e dia calculados uma vez', 'aplicar-fila-fuso-uma-vez.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'fila_no_dia') LIKE '%WITH ctx AS MATERIALIZED%'),
+  (600, 'OPERACAO', 'versao', 'Leituras do gerente: Inicio e bolinhas do menu', 'aplicar-permissoes-parte-3-inicio.sql',
+       to_regprocedure('public.painel_inicio_gerente(integer)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu') LIKE '%contagem_do_menu_gerente%'),
+  (610, 'OPERACAO', 'versao', 'Leituras do gerente: Relatorios', 'aplicar-permissoes-parte-3-relatorios.sql',
+       to_regprocedure('public.pendencias_da_pessoa_gerente(integer, date, date)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'historico_da_pessoa') LIKE '%historico_da_pessoa_gerente%'),
+  (620, 'OPERACAO', 'versao', 'Leituras do gerente: Metas', 'aplicar-permissoes-parte-3-metas.sql',
+       to_regprocedure('public.metas_do_mes_gerente(integer, date)') IS NOT NULL
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'metas_do_mes') LIKE '%metas_do_mes_gerente%'),
+  (625, 'OPERACAO', 'versao', 'Lojas do gerente calculadas uma vez por leitura', 'aplicar-lojas-do-gerente-uma-vez.sql',
+       (SELECT prosrc FROM pg_proc WHERE proname = 'contagem_do_menu_gerente') LIKE '%(SELECT public.lojas_onde_posso(''premios.ver''))::integer[]%')
 ),
 tudo AS (
   SELECT x.*, a.versao

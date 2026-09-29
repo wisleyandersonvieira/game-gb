@@ -457,9 +457,10 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
         const pontos = Number(l.pontos || 0);
         if (!(valor >= 0)) throw new Error(`Valor inválido em ${DIAS_SEMANA[i]}.`);
         if (!Number.isInteger(pontos) || pontos < 0) throw new Error(`Pontos inválidos em ${DIAS_SEMANA[i]}.`);
-        return { lojaid, diasemanaid: i + 1, nomedia: DIAS_SEMANA[i], valormeta: valor, pontospremio: pontos };
+        return { diasemanaid: i + 1, nomedia: DIAS_SEMANA[i], valormeta: valor, pontospremio: pontos };
       });
-      const { error } = await supabase.from("metasdiariasmodelos").upsert(dados, { onConflict: "lojaid,diasemanaid" });
+      // Pelo banco, que confere a permissão nesta loja (a tabela fechou em 29/09/2026).
+      const { error } = await supabase.rpc("salvar_metas_da_semana", { p_lojaid: lojaid, p_linhas: dados });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -549,12 +550,12 @@ function Especiais({ lojaid }: { lojaid: number }) {
       if (!form.descricao.trim()) throw new Error("Dê um nome (ex.: Dia das Mães).");
       if (!(valor >= 0)) throw new Error("Valor inválido.");
       if (!Number.isInteger(pontos) || pontos < 0) throw new Error("Pontos inválidos.");
-      const { error } = await supabase.from("metasespeciais").insert({
-        lojaid,
-        data: form.data,
-        descricao: form.descricao.trim(),
-        valormeta: valor,
-        pontospremio: pontos,
+      const { error } = await supabase.rpc("criar_meta_especial", {
+        p_lojaid: lojaid,
+        p_data: form.data,
+        p_descricao: form.descricao.trim(),
+        p_valormeta: valor,
+        p_pontospremio: pontos,
       });
       if (error) {
         if (error.code === "23505") throw new Error("Já existe uma meta especial nesta data.");
@@ -569,7 +570,7 @@ function Especiais({ lojaid }: { lojaid: number }) {
 
   const apagar = useMutation({
     mutationFn: async (id: number) => {
-      const { error } = await supabase.from("metasespeciais").delete().eq("metaespecialid", id);
+      const { error } = await supabase.rpc("apagar_meta_especial", { p_metaespecialid: id });
       if (error) throw error;
     },
     onSuccess: () => atualizarTudo(qc),

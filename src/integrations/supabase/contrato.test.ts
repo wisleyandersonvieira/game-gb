@@ -5,7 +5,7 @@
 // build` passou, o TypeScript passou, e o defeito só apareceu quando o Wisley
 // testou na loja.
 //
-// Este teste lê TODAS as chamadas `.rpc("nome", { p_... })` do código e
+// Este teste lê TODAS as chamadas `.rpc(<nome da função>, { p_... })` do código e
 // confere, contra as migrações, que a função existe e que cada parâmetro
 // passado existe nela. Some uma função, ou muda o nome de um parâmetro, e a
 // entrega para aqui — não na loja.

@@ -500,16 +500,15 @@ function Catalogo() {
       if (estoque !== null && (!Number.isInteger(estoque) || estoque < 0)) {
         throw new Error("Estoque precisa ser um número inteiro, 0 ou mais. Deixe em branco para ilimitado.");
       }
-      const dados = {
-        nome: form.nome.trim(),
-        descricao: form.descricao.trim() || null,
-        custoempontos: Number(form.custoempontos),
-        estoquedisponivel: estoque,
-      };
-      const { error } =
-        editando === null
-          ? await supabase.from("produtosloja").insert(dados)
-          : await supabase.from("produtosloja").update(dados).eq("produtoid", editando);
+      // Pelo banco, que confere que é o master (o catálogo vale para a conta
+      // inteira). A gravação direta na tabela fechou em 29/09/2026.
+      const { error } = await supabase.rpc("salvar_premio", {
+        p_produtoid: editando ?? undefined,
+        p_nome: form.nome.trim(),
+        p_descricao: form.descricao.trim() || undefined,
+        p_custoempontos: Number(form.custoempontos),
+        p_estoquedisponivel: estoque ?? undefined,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -520,7 +519,7 @@ function Catalogo() {
 
   const alternar = useMutation({
     mutationFn: async ({ produtoid, ativo }: { produtoid: number; ativo: boolean }) => {
-      const { error } = await supabase.from("produtosloja").update({ ativo }).eq("produtoid", produtoid);
+      const { error } = await supabase.rpc("ativar_premio", { p_produtoid: produtoid, p_ativo: ativo });
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["premios"] }),

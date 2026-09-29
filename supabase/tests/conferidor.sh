@@ -53,8 +53,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP TRIGGER stgame_login_com_atos ON auth.users;")"
-if echo "$s" | grep -q "|rode aplicar-permissoes-parte-2-quadro.sql"; then
+s="$(conferir "CREATE OR REPLACE FUNCTION public.contagem_do_menu_gerente() RETURNS jsonb LANGUAGE sql AS 'SELECT NULL::jsonb';")"
+if echo "$s" | grep -q "|rode aplicar-lojas-do-gerente-uma-vez.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

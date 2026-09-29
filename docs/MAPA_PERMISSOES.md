@@ -489,3 +489,57 @@ regra do master não abriu porta até o gerente ser reconhecido. Para cada um
 dos 8 voltar pelo motivo certo, a função dele passa a reconhecer o gerente
 (`conta_do_gestor_editavel`) na fatia da tela, e aí só a regra do master o
 barra — provado por sabotagem, como no `pegar_tarefa`.
+
+---
+
+## Parte 2 sem o Wisley: decisões tomadas pelo "mais restritivo" e pendentes
+
+Regra do Wisley para o trabalho sozinho: na dúvida, negar (soltar depois é
+fácil); decisão de negócio não se adivinha — fica aqui.
+
+**Tomadas pelo mais restritivo (revise; soltar é fácil):**
+- Prêmios: ninguém registra, entrega, cancela nem estorna o PRÓPRIO resgate
+  (a regra combinada era só para entregas).
+- Prêmios: o gerente só registra resgate para quem trabalha na loja dele, e
+  nunca sem loja (o master continua podendo sem loja).
+- Feedbacks (e toda ação sobre uma PESSOA): o gerente só age sobre quem está
+  INTEIRAMENTE dentro das lojas em que ele tem a permissão; ninguém dá nem
+  anula feedback de si mesmo.
+- Tarefas: tarefa sem loja nenhuma é só do master.
+- Justificativas: ninguém registra nem decide a PRÓPRIA justificativa; registrar já aceitando exige também a permissão de decidir.
+- Agenda: criar agendamento já com valor ou já pago exige também "Agenda: pagamento". Tipos de evento são catálogo da conta: só o master.
+- Comunicados: registrar ciência em nome da pessoa exige "Comunicados: publicar" com a pessoa inteira nas lojas dele, e nunca a própria ciência (ela paga pontos).
+- Onboarding: ninguém conduz o próprio; ligar documento pessoal à etapa é só do master (documento pessoal é só do master).
+- Lojas: trocar o GESTOR da loja é só do master (os outros dados da loja, com "Lojas: editar"); ligar ou desligar os valores em R$ na TV pede também "Ver valores em R$".
+- Equipe: marcar quem VALIDA numa loja é só do master; ninguém mexe no próprio cadastro, PIN ou jornada; ligar pessoas a uma jornada é tudo ou nada (uma pessoa fora das lojas dele recusa o lote inteiro); apagar jornada é só do master. Os dados da pessoa (nome, cargo, setor, telefone, folga) só mudam com ela INTEIRA nas lojas dele; as lojas dela, ele liga e desliga só as DELE.
+- Equipe: desativar/reativar pessoa, criar e redefinir acesso e trocar CPF continuam no servidor, só do master ("Equipe: desativar", "criar acesso" e "redefinir acesso" existem no catálogo, mas ainda não valem para o gerente: o servidor pergunta "é o master?").
+
+**Parte 3 (leituras por loja), como ficou:** o gerente continua sem conta para
+as regras das tabelas (não lê nenhuma tabela direto). Cada tela da lista ganhou
+um desvio no começo da função: o master segue pelo caminho de sempre, linha por
+linha; o gerente vai para uma versão que lê só as lojas em que ele pode VER
+aquela tela. O que tem R$ (meta, vendas) só com "Ver valores em R$"; o que é da
+conta inteira (guia, conferência do livro, rotina) não vai para o gerente. Uma
+trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
+
+**Pendentes (não adivinhadas):**
+- Equipe: soltar para o gerente "marcar quem valida" na loja dele? E desativar/criar
+  acesso (hoje só o master, no servidor): passar a perguntar ao banco "ele pode
+  na pessoa?" (a regra combinada: só se todas as lojas dela forem dele)?
+- Comunicados: um gerente que também é funcionário pode publicar um comunicado
+  com pontos para a própria loja (ele mesmo recebe) e depois dar ciência pelo
+  celular, ganhando os pontos. O teto de pontos por ciência limita o valor.
+  Bloquear, ou o teto basta?
+- Agenda, anexo: o gerente registra e remove anexo, mas o ENVIO do arquivo ao
+  Storage continua só do master. A trava das regras de acesso (seção 14) só
+  aceita a conta do master como âncora no Storage; abrir para o gerente é
+  mudar essa trava. Liberar?
+- Pessoa em várias lojas: soltar para "pelo menos uma loja em comum" nas
+  ações sobre a pessoa (feedback, justificativa)?
+- Metas: o gerente lança a venda da loja dele; se a loja bater a meta, ele
+  (se for da equipe) ganha os pontos da meta. Conflito aceitável, ou só o
+  master lança?
+
+**Achados (não mexidos):**
+- ~~A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).~~ **Resolvido** (desempate fixo, 29/09/2026).
+- ~~Quadro (validação e lista para registrar entrega): entregas gravadas no mesmo instante saem em ordem incerta (a prova da parte 3 viu a MESMA resposta em outra ordem, banco igual). Juntar com o desempate.~~ **Resolvido** (desempate fixo, 29/09/2026).

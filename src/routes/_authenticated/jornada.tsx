@@ -200,7 +200,7 @@ function ListaDeJornadas() {
         );
       }
       if (!confirm(`Apagar a jornada "${j.nome}"?`)) return;
-      const { error } = await supabase.from("jornadas").delete().eq("jornadaid", j.jornadaid);
+      const { error } = await supabase.rpc("apagar_jornada", { p_jornadaid: j.jornadaid });
       if (error) throw error;
     },
     onMutate: () => setErro(null),

@@ -5,6 +5,9 @@
 CREATE ROLE anon;
 CREATE ROLE authenticated;
 CREATE ROLE service_role;
+-- No Supabase o service_role passa por cima das regras de linha (BYPASSRLS):
+-- e o papel do servidor (convites, desativar pessoa). Imitamos isso aqui.
+ALTER ROLE service_role BYPASSRLS;
 
 -- O Supabase da, por padrao, permissao em TUDO que for criado no schema public
 -- para anon e authenticated. Imitamos isso aqui: sem esta linha, o teste nao
