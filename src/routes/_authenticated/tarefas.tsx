@@ -163,22 +163,6 @@ function Catalogo() {
     setFormAberto(false);
   }
 
-  async function sincronizarLojas(tarefaid: number, escolhidas: number[]) {
-    if (escolhidas.length > 0) {
-      const { error } = await supabase.from("tarefaslojas").upsert(
-        escolhidas.map((lojaid) => ({ tarefaid, lojaid, ativo: true })),
-        { onConflict: "tarefaid,lojaid" },
-      );
-      if (error) throw error;
-    }
-    const desativar = supabase.from("tarefaslojas").update({ ativo: false }).eq("tarefaid", tarefaid);
-    const { error } =
-      escolhidas.length > 0
-        ? await desativar.not("lojaid", "in", `(${escolhidas.join(",")})`)
-        : await desativar;
-    if (error) throw error;
-  }
-
   const salvar = useMutation({
     mutationFn: async () => {
       // Tarefa que PAGA sozinha: com pontos, só salva depois de você
@@ -200,20 +184,17 @@ function Catalogo() {
         pontos: Number(form.pontos),
         setor: form.setor.trim() || null,
       };
-      let tarefaid = editando;
-      if (tarefaid === null) {
-        const { data, error } = await supabase
-          .from("tarefas")
-          .insert(dados)
-          .select("tarefaid")
-          .single();
-        if (error) throw error;
-        tarefaid = data.tarefaid;
-      } else {
-        const { error } = await supabase.from("tarefas").update(dados).eq("tarefaid", tarefaid);
-        if (error) throw error;
-      }
-      await sincronizarLojas(tarefaid, lojasEscolhidas);
+      // Uma ida só ao banco: a tarefa e as lojas dela juntas, com a permissão
+      // conferida lá (a gravação direta nas tabelas fechou em 29/09/2026).
+      const { error } = await supabase.rpc("salvar_tarefa", {
+        p_tarefaid: editando ?? undefined,
+        p_titulo: dados.titulo,
+        p_descricao: dados.descricao ?? undefined,
+        p_pontos: dados.pontos,
+        p_setor: dados.setor ?? undefined,
+        p_lojas: lojasEscolhidas,
+      });
+      if (error) throw error;
       return true;
     },
     onSuccess: (salvou) => {
@@ -234,7 +215,7 @@ function Catalogo() {
         );
         if (!ok) return;
       }
-      const { error } = await supabase.from("tarefas").update({ ativa }).eq("tarefaid", tarefaid);
+      const { error } = await supabase.rpc("ativar_tarefa", { p_tarefaid: tarefaid, p_ativa: ativa });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -704,11 +685,9 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
 
   const encerrar = useMutation({
     mutationFn: async (ids: number[]) => {
-      // Encerrar não apaga: marca o fim da vigência, e o histórico fica.
-      const { error } = await supabase
-        .from("tarefasatribuidas")
-        .update({ datafimvigencia: hojeEmSaoPaulo() })
-        .in("atribuicaoid", ids);
+      // Encerrar não apaga: marca o fim da vigência, e o histórico fica. O
+      // dia é o da conta, dito pelo banco (antes era o relógio do aparelho).
+      const { error } = await supabase.rpc("encerrar_atribuicoes", { p_ids: ids });
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["atribuicoes", lojaid] }),

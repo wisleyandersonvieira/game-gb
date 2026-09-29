@@ -56,6 +56,24 @@ BEGIN
 END $$;
 GRANT EXECUTE ON FUNCTION public.pular(text, text) TO authenticated;
 
+-- Preparo de dado como DONO do banco, com a conta vinda do login do teste
+-- (29/09/2026): desde que as tabelas de tarefas e outras fecharam para
+-- gravacao direta de quem esta logado, os dados de teste entram por aqui. As
+-- regras da tabela (chaves, gatilhos) continuam valendo. NUNCA em negacao: como
+-- dono, a gravacao passaria por cima das regras de acesso entre contas.
+CREATE OR REPLACE FUNCTION public.como_dono(p_sql text)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v text;
+BEGIN
+  IF p_sql ~* '\mreturning\M' OR p_sql ~* '^\s*select' THEN
+    EXECUTE p_sql INTO v;
+  ELSE
+    EXECUTE p_sql;
+  END IF;
+  RETURN v;
+END $$;
+GRANT EXECUTE ON FUNCTION public.como_dono(text) TO authenticated;
+
 -- ---------------------------------------------------------------------------
 -- TESTE DE NEGACAO CONFERE O RESULTADO, NUNCA O ERRO (regra do Wisley,
 -- 29/09/2026). "Nao deu erro" e "nao aconteceu nada" sao coisas diferentes:
@@ -139,10 +157,10 @@ SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (10, 'Loja A1'), (11, 'Loja A2');
 INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (100, 'Ana da conta A');
-INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (1000, 'Tarefa A', 5);
+SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (1000, 'Tarefa A', 5)$q$);
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 10);
-INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (1000, 10);
-INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (5000, 1000, 100, 10);
+SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (1000, 10)$q$);
+SELECT public.como_dono($q$INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (5000, 1000, 100, 10)$q$);
 DO $$ BEGIN PERFORM public.registrar_entrega(5000); END $$;
 -- grupos nao aceita mais escrita direta de quem esta logado (fechada em 29/09/2026,
 -- tabela sem tela): o dado de teste entra pelo dono do banco, com a conta explicita.
@@ -154,10 +172,10 @@ INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '1/10/foto-a.j
 SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 INSERT INTO public.lojas (lojaid, nome) OVERRIDING SYSTEM VALUE VALUES (20, 'Loja B1');
 INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM VALUE VALUES (200, 'Bruno da conta B');
-INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (2000, 'Tarefa B', 7);
+SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (2000, 'Tarefa B', 7)$q$);
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (200, 20);
-INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (2000, 20);
-INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (6000, 2000, 200, 20);
+SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (2000, 20)$q$);
+SELECT public.como_dono($q$INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (6000, 2000, 200, 20)$q$);
 DO $$ BEGIN PERFORM public.registrar_entrega(6000); END $$;
 RESET ROLE;
 INSERT INTO public.grupos (grupoid, contaid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (300, 2, 'Cozinha', 20);
@@ -331,7 +349,7 @@ BEGIN
   PERFORM public.guardar_foto();
   BEGIN
     -- Ana (100) nao trabalha na Loja A2 (11)
-    INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 11);
+    PERFORM public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 11)$q$);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
@@ -342,7 +360,7 @@ BEGIN
   BEGIN
     -- a tarefa 1000 nao vale na Loja A2 (11)
     INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES (100, 11);
-    INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 11);
+    PERFORM public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid) VALUES (1000, 100, 11)$q$);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
@@ -650,7 +668,7 @@ BEGIN
   -- mais a trava especial "do sistema".
   PERFORM public.guardar_foto();
   BEGIN
-    DELETE FROM public.tarefas WHERE sistema = 'feedback_diario';
+    PERFORM public.como_dono($q$DELETE FROM public.tarefas WHERE sistema = 'feedback_diario'$q$);
     deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN
     deu_erro := true;
@@ -658,7 +676,7 @@ BEGIN
   PERFORM public.exigir(public.nada_mudou(), 'tarefa do sistema se apaga como qualquer outra (ligada a loja, o banco segura)');
 
   -- Mas pode ser editada.
-  UPDATE public.tarefas SET titulo = 'Feedback do dia' WHERE sistema = 'feedback_diario';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET titulo = 'Feedback do dia' WHERE sistema = 'feedback_diario'$q$);
   PERFORM public.exigir(
     (SELECT titulo FROM public.tarefas WHERE sistema = 'feedback_diario') = 'Feedback do dia',
     'tarefa do sistema pode ter o titulo editado');
@@ -666,8 +684,8 @@ BEGIN
   -- 28/09/2026: as 4 de bonus tambem se atribuem a mao, como qualquer outra.
   -- (Desfeito logo em seguida, para nao mexer nas contas dos testes abaixo.)
   BEGIN
-    INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid)
-    SELECT tarefaid, 100, 10 FROM public.tarefas WHERE sistema = 'feedback_diario';
+    PERFORM public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid)
+    SELECT tarefaid, 100, 10 FROM public.tarefas WHERE sistema = 'feedback_diario'$q$);
     deu_erro := false;
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'desfaz';
   EXCEPTION WHEN restrict_violation THEN
@@ -677,8 +695,8 @@ BEGIN
   PERFORM public.exigir(NOT deu_erro, 'tarefa de bonus agora se atribui a mao, como qualquer outra');
 
   -- As 2 de modelo continuam podendo virar atribuicao (pelos fluxos delas).
-  INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
-  SELECT tarefaid, 100, 10, 'Unica' FROM public.tarefas WHERE sistema = 'guardar_mercadoria';
+  PERFORM public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+  SELECT tarefaid, 100, 10, 'Unica' FROM public.tarefas WHERE sistema = 'guardar_mercadoria'$q$);
   PERFORM public.exigir(true, 'tarefa de modelo pode virar atribuicao');
 END $$;
 
@@ -693,7 +711,7 @@ BEGIN
       JOIN public.tarefas t ON t.tarefaid = tl.tarefaid
      WHERE t.sistema IS NOT NULL AND tl.lojaid = nova) = 6,
     'loja nova ja nasce com as 6 tarefas do sistema');
-  DELETE FROM public.tarefaslojas WHERE lojaid = nova;
+  PERFORM public.como_dono(format($q$DELETE FROM public.tarefaslojas WHERE lojaid = %L$q$, nova));
   DELETE FROM public.lojas WHERE lojaid = nova;
   UPDATE public.lojas SET ativa = true WHERE lojaid = 11;
 END $$;
@@ -704,8 +722,11 @@ DECLARE afetadas integer;
 BEGIN
   PERFORM public.exigir((SELECT count(*) FROM public.tarefas WHERE tarefaid = 2000) = 0,
                         'A nao ve a tarefa de B');
-  UPDATE public.tarefas SET titulo = 'INVADIDA' WHERE tarefaid = 2000;
-  GET DIAGNOSTICS afetadas = ROW_COUNT;
+  -- Desde 29/09/2026 a tabela nem aceita escrita direta: recusa = nada alterado.
+  BEGIN
+    UPDATE public.tarefas SET titulo = 'INVADIDA' WHERE tarefaid = 2000;
+    GET DIAGNOSTICS afetadas = ROW_COUNT;
+  EXCEPTION WHEN insufficient_privilege THEN afetadas := 0; END;
   PERFORM public.exigir(afetadas = 0, 'A nao altera a tarefa de B');
   PERFORM public.exigir((SELECT count(*) FROM public.tarefaslojas WHERE tarefaid = 2000) = 0,
                         'A nao ve em quais lojas a tarefa de B vale');
@@ -859,8 +880,8 @@ DECLARE deu_erro boolean; atr integer; e1 integer; e2 integer;
 BEGIN
   RAISE NOTICE '17b. sem entrega duplicada no mesmo dia';
 
-  INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
-  VALUES (1000, 100, 10, 'Diaria') RETURNING atribuicaoid INTO atr;
+  atr := public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+  VALUES (1000, 100, 10, 'Diaria') RETURNING atribuicaoid$q$)::integer;
 
   e1 := public.registrar_entrega(atr, 'Feito', NULL, false);
   PERFORM public.guardar_foto();
@@ -1171,10 +1192,10 @@ BEGIN
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'com saldo negativo (-3) nao se resgata nada');
 
-  INSERT INTO public.tarefas (titulo, pontos) VALUES ('Tarefa grande', 30) RETURNING tarefaid INTO t;
-  INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (t, 10);
-  INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
-       VALUES (t, 100, 10, 'Diaria') RETURNING atribuicaoid INTO atr;
+  t := public.como_dono($q$INSERT INTO public.tarefas (titulo, pontos) VALUES ('Tarefa grande', 30) RETURNING tarefaid$q$)::integer;
+  PERFORM public.como_dono(format($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (%L, 10)$q$, t));
+  atr := public.como_dono(format($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+       VALUES (%L, 100, 10, 'Diaria') RETURNING atribuicaoid$q$, t))::integer;
   PERFORM public.registrar_entrega(atr, NULL, NULL, true);
   SELECT saldopontos INTO saldo FROM public.funcionarios WHERE funcionarioid = 100;
   PERFORM public.exigir(saldo = 27, 'aprovar 30 pontos leva o saldo de -3 a 27');
@@ -2347,7 +2368,11 @@ BEGIN
     FROM public.movimentospontos mv JOIN public.metaspremiacoes p USING (premiacaoid)
    WHERE p.apuracaoid = a2 AND p.estornadoem IS NULL AND mv.tipo = 'bonus' AND mv.pontos = 50;
   PERFORM public.exigir(quem = '120,121,122', 'a meta especial paga os pontos dela (50) a quem trabalhou naquele dia (' || coalesce(quem, '-') || ')');
-  RESET ROLE;   -- preparo do dado (a tabela nao aceita escrita direta de quem esta logado)
+  -- Preparo do dado como dono do banco (a tabela nao aceita escrita direta de
+  -- quem esta logado). SET LOCAL ROLE NONE vale so ate o fim deste bloco; um
+  -- RESET ROLE aqui mudaria o papel da SESSAO e os blocos seguintes rodariam
+  -- com poder demais (erro achado em 29/09/2026).
+  SET LOCAL ROLE NONE;
   UPDATE public.metasespeciais SET valormeta = 9000 WHERE lojaid = 11 AND data = anteontem;
   SET LOCAL ROLE authenticated;
   PERFORM public.lancar_venda_do_dia(11, anteontem, 5300, 'Mais uma venda');
@@ -2576,13 +2601,15 @@ BEGIN
   PERFORM public.exigir(public.nada_mudou(), 'o novo responsavel tambem precisa trabalhar na loja');
 
   PERFORM public.guardar_foto();
-  BEGIN UPDATE public.tarefasatribuidas SET datafimvigencia = hoje WHERE agendamentoid = ag; deu_erro := false;
+  -- Pelo caminho da tela (encerrar_atribuicoes), onde o gatilho da agenda vale.
+  BEGIN PERFORM public.encerrar_atribuicoes(ARRAY(SELECT atribuicaoid FROM public.tarefasatribuidas WHERE agendamentoid = ag));
+        deu_erro := false;
   EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a tarefa do agendamento nao se mexe por fora da agenda');
   -- 28/09/2026: "Atender agendamento" virou tarefa comum e se atribui a mao;
   -- o que continua so pela Agenda e a atribuicao PRESA a um agendamento.
-  BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
-        VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica');
+  BEGIN PERFORM public.como_dono($q$INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia)
+        VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica')$q$);
         deu_erro := false;
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'desfaz';
   EXCEPTION WHEN restrict_violation THEN deu_erro := true;
@@ -2592,7 +2619,8 @@ BEGIN
   BEGIN INSERT INTO public.tarefasatribuidas (tarefaid, funcionarioid, lojaid, tipofrequencia, agendamentoid)
         VALUES ((SELECT tarefaid FROM public.tarefas WHERE sistema = 'modelo_agendamento'), 110, 10, 'Unica', ag);
         deu_erro := false;
-  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  -- Desde 29/09/2026 quem esta logado nem grava na tabela (insufficient_privilege).
+  EXCEPTION WHEN restrict_violation OR insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'ninguem cria na mao uma atribuicao presa a um agendamento');
 
   PERFORM public.alterar_pagamento_agendamento(ag, 'Pago', 150);
@@ -5109,7 +5137,7 @@ BEGIN
       'pode', 'lojas_onde_posso',
       -- Ajudante do PROPRIO teste (nao existe no banco de verdade): a foto do
       -- banco inteiro para as negacoes conferirem o resultado.
-      'foto_do_banco',
+      'foto_do_banco', 'como_dono',
       -- 29/09/2026: a lista de estornos. Le a conta de quem chamou e exige o
       -- master (secao 94).
       'estornos_da_conta',
@@ -5118,7 +5146,10 @@ BEGIN
       'salvar_premio', 'ativar_premio',
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
-      'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial'
+      'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
+      -- 29/09/2026 (parte 2, Tarefas): leem a conta de quem chamou e conferem
+      -- pode() nas lojas (secao 98).
+      'salvar_tarefa', 'ativar_tarefa', 'encerrar_atribuicoes'
     );
   PERFORM public.exigir(liberadas IS NULL,
     'nenhuma funcao com poder total fica executavel por quem nao confere o chamador'
@@ -6020,9 +6051,9 @@ INSERT INTO public.funcionarios (funcionarioid, nomecompleto) OVERRIDING SYSTEM 
   (9501, 'Ana Souza'), (9502, 'Bia Lima'), (9503, 'Caio Melo'), (9504, 'Davi Rocha');
 INSERT INTO public.funcionarioslojas (funcionarioid, lojaid) VALUES
   (9501, 10), (9502, 10), (9503, 10), (9504, 11);
-INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
-  (9600, 'Limpar a vitrine', 10), (9601, 'Conferir o freezer', 6), (9602, 'Varrer a calcada', 4);
-INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (9600, 10), (9601, 10), (9602, 10);
+SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (9600, 'Limpar a vitrine', 10), (9601, 'Conferir o freezer', 6), (9602, 'Varrer a calcada', 4)$q$);
+SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VALUES (9600, 10), (9601, 10), (9602, 10)$q$);
 
 -- Atribuir a VARIAS: uma tarefa so, sem dono, com lista de quem pode pegar.
 DO $$
@@ -6493,7 +6524,7 @@ END $$;
 -- pelo gestor sai da fila e agora tambem e recusada no pegar e no entregar.
 DO $$
 BEGIN
-  UPDATE public.tarefas SET ativa = false WHERE contaid = 1 AND tarefaid = 9601;
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = false WHERE contaid = 1 AND tarefaid = 9601$q$);
 END $$;
 
 RESET ROLE;
@@ -6514,7 +6545,7 @@ END $$;
 
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$ BEGIN UPDATE public.tarefas SET ativa = true WHERE contaid = 1 AND tarefaid = 9601; END $$;
+DO $$ BEGIN PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = true WHERE contaid = 1 AND tarefaid = 9601$q$); END $$;
 
 -- (5) PEQUENO: depois de revogado, a missao volta a ser anunciada no grupo.
 DO $$
@@ -7667,9 +7698,9 @@ DO $$ BEGIN RAISE NOTICE '58. hora de liberacao da tarefa'; END $$;
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
-INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
-VALUES (9840, 1, 'Limpar buffet', 8) ON CONFLICT DO NOTHING;
-INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9840, 10) ON CONFLICT DO NOTHING;
+SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+VALUES (9840, 1, 'Limpar buffet', 8) ON CONFLICT DO NOTHING$q$);
+SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9840, 10) ON CONFLICT DO NOTHING$q$);
 
 DO $$
 DECLARE
@@ -7799,9 +7830,9 @@ DO $$ BEGIN RAISE NOTICE '59. ninguem entrega sem aceitar antes'; END $$;
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
-INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
-VALUES (9850, 1, 'Tarefa de dono unico', 7) ON CONFLICT DO NOTHING;
-INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9850, 10) ON CONFLICT DO NOTHING;
+SELECT public.como_dono($q$INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE
+VALUES (9850, 1, 'Tarefa de dono unico', 7) ON CONFLICT DO NOTHING$q$);
+SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 9850, 10) ON CONFLICT DO NOTHING$q$);
 
 DO $$
 DECLARE v_atr integer;
@@ -10041,14 +10072,14 @@ DECLARE
   ag integer; doc integer; avisos integer; deu_erro boolean;
 BEGIN
   -- Renomear: a rotina continua achando pelo codigo.
-  UPDATE public.tarefas SET titulo = 'Atender cliente da agenda', pontos = 15 WHERE tarefaid = modelo;
+  PERFORM public.como_dono(format($q$UPDATE public.tarefas SET titulo = 'Atender cliente da agenda', pontos = 15 WHERE tarefaid = %L$q$, modelo));
   ag := public.criar_agendamento(10, t, d1, 'Cliente Renomeada');
   PERFORM public.exigir((SELECT tarefaid FROM public.tarefasatribuidas WHERE agendamentoid = ag) = modelo,
                         'renomeada, "Atender agendamento" continua sendo criada pela agenda (achada pelo codigo)');
 
   -- Desativada: o agendamento nasce sem a tarefa, e fica o aviso.
   SELECT count(*) INTO avisos FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa';
-  UPDATE public.tarefas SET ativa = false WHERE tarefaid = modelo;
+  PERFORM public.como_dono(format($q$UPDATE public.tarefas SET ativa = false WHERE tarefaid = %L$q$, modelo));
   ag := public.criar_agendamento(10, t, d1, 'Cliente Sem Tarefa');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag),
                         'com a tarefa desativada, o agendamento nasce sem ela');
@@ -10056,14 +10087,14 @@ BEGIN
                         AND EXISTS (SELECT 1 FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa'
                                      AND texto LIKE 'Agenda: o agendamento de Cliente Sem Tarefa%'),
                         'e isso nao fica em silencio: vira aviso para o dono');
-  UPDATE public.tarefas SET ativa = true, titulo = 'Atender agendamento', pontos = 10 WHERE tarefaid = modelo;
+  PERFORM public.como_dono(format($q$UPDATE public.tarefas SET ativa = true, titulo = 'Atender agendamento', pontos = 10 WHERE tarefaid = %L$q$, modelo));
 
   -- Comunicado: o padrao de pontos vem da "Leitura de comunicado", pelo codigo.
-  UPDATE public.tarefas SET titulo = 'Li o aviso', pontos = 6 WHERE sistema = 'leitura';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET titulo = 'Li o aviso', pontos = 6 WHERE sistema = 'leitura'$q$);
   doc := public.publicar_comunicado('Teste 76 a', 'Texto', NULL, 'funcionarios', NULL, ARRAY[110]);
   PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 6,
                         'renomeada, a leitura continua dando o padrao de pontos (achada pelo codigo)');
-  UPDATE public.tarefas SET ativa = false WHERE sistema = 'leitura';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = false WHERE sistema = 'leitura'$q$);
   SELECT count(*) INTO avisos FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa';
   doc := public.publicar_comunicado('Teste 76 b', 'Texto', NULL, 'funcionarios', NULL, ARRAY[110]);
   PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 0
@@ -10073,16 +10104,17 @@ BEGIN
   PERFORM public.exigir((SELECT pontosporciencia FROM public.documentos WHERE documentoid = doc) = 4
                         AND (SELECT count(*) FROM public.avisossistema WHERE tipo = 'rotina_sem_tarefa') = avisos + 1,
                         'com os pontos escritos no comunicado, a tarefa nem e procurada (sem aviso)');
-  UPDATE public.tarefas SET ativa = true, titulo = 'Leitura de comunicado', pontos = 3 WHERE sistema = 'leitura';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = true, titulo = 'Leitura de comunicado', pontos = 3 WHERE sistema = 'leitura'$q$);
 
   -- O codigo interno nao muda e o navegador nao inventa codigo.
   PERFORM public.guardar_foto();
   BEGIN UPDATE public.tarefas SET sistema = NULL WHERE sistema = 'leitura'; deu_erro := false;
-  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  -- Desde 29/09/2026 quem esta logado nem grava na tabela (insufficient_privilege).
+  EXCEPTION WHEN restrict_violation OR insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'o codigo interno da tarefa nao muda');
   PERFORM public.guardar_foto();
   BEGIN INSERT INTO public.tarefas (titulo, pontos, sistema) VALUES ('Falsa', 1, 'nota_fiscal'); deu_erro := false;
-  EXCEPTION WHEN restrict_violation THEN deu_erro := true; END;
+  EXCEPTION WHEN restrict_violation OR insufficient_privilege THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'tarefa nova nao recebe codigo interno pelo navegador');
 END $$;
 
@@ -10093,7 +10125,7 @@ DO $$
 DECLARE pp integer; pl integer; doc integer; casos integer := 0; dif integer := 0;
 BEGIN
   FOREACH pl IN ARRAY ARRAY[0, 3, 9] LOOP
-    UPDATE public.tarefas SET pontos = pl WHERE sistema = 'leitura';
+    PERFORM public.como_dono(format($q$UPDATE public.tarefas SET pontos = %L WHERE sistema = 'leitura'$q$, pl));
     FOR pp IN SELECT x FROM unnest(ARRAY[NULL, 0, 4, 12]::integer[]) x LOOP
       doc := public.publicar_comunicado('Prova 76', 'Texto', pp, 'funcionarios', NULL, ARRAY[110]);
       casos := casos + 1;
@@ -10102,7 +10134,7 @@ BEGIN
       END IF;
     END LOOP;
   END LOOP;
-  UPDATE public.tarefas SET pontos = 3 WHERE sistema = 'leitura';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET pontos = 3 WHERE sistema = 'leitura'$q$);
   RAISE NOTICE '   padrao dos comunicados: % casos comparados, % diferencas', casos, dif;
   PERFORM public.exigir(casos = 12 AND dif = 0, 'com a leitura ativa, o padrao de pontos e exatamente o de antes');
 END $$;
@@ -10200,11 +10232,16 @@ BEGIN
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'editar comunicado tambem respeita o teto');
   PERFORM public.guardar_foto();
-  BEGIN UPDATE public.tarefas SET pontos = 60 WHERE sistema = 'leitura'; deu_erro := false;
+  -- Pelo caminho da tela (salvar_tarefa), onde o gatilho do teto vale.
+  BEGIN PERFORM public.salvar_tarefa(t.titulo, 60,
+                                     (SELECT array_agg(lojaid) FROM public.tarefaslojas WHERE tarefaid = t.tarefaid AND ativo),
+                                     t.tarefaid, t.descricao, t.setor)
+          FROM public.tarefas t WHERE t.sistema = 'leitura';
+        deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a tarefa Leitura de comunicado tambem respeita o teto');
-  UPDATE public.tarefas SET titulo = 'Leitura renomeada' WHERE sistema = 'leitura';
-  UPDATE public.tarefas SET titulo = 'Leitura de comunicado' WHERE sistema = 'leitura';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET titulo = 'Leitura renomeada' WHERE sistema = 'leitura'$q$);
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET titulo = 'Leitura de comunicado' WHERE sistema = 'leitura'$q$);
   PERFORM public.exigir(true, 'mudar so o nome da leitura nao esbarra no teto');
 
   -- O master muda o teto; o que ja foi lancado nao muda.
@@ -10321,7 +10358,7 @@ BEGIN
                         'trocado o responsavel, a tarefa vai para ele e sai da lista');
 
   -- Nasce sem a tarefa (modelo desativada); remarcar recria.
-  UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento'$q$);
   ag := public.criar_agendamento(10, t, d1, 'Cliente 77 sem');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
                                  WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'sem_tarefa'),
@@ -10330,22 +10367,22 @@ BEGIN
   BEGIN PERFORM public.recriar_tarefa_do_agendamento(ag); deu_erro := false;
   EXCEPTION WHEN check_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'recriar com a tarefa desativada pede para reativa-la');
-  UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento'$q$);
   PERFORM public.remarcar_agendamento(ag, d1 + interval '1 hour');
   PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag AND datafimvigencia IS NULL),
                         'remarcar recria a tarefa que faltava');
 
   -- Tarefa desativada DEPOIS de marcado.
-  UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento'$q$);
   PERFORM public.exigir(EXISTS (SELECT 1 FROM jsonb_array_elements(public.agendamentos_sem_tarefa(10)) x
                                  WHERE (x->>'agendamentoid')::integer = ag AND x->>'motivo' = 'tarefa_desativada'),
                         'tarefa desativada depois de marcado: aparece na lista');
-  UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento'$q$);
 
   -- Criado sem tarefa; so o botao recria.
-  UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = false WHERE sistema = 'modelo_agendamento'$q$);
   ag := public.criar_agendamento(10, t, d1, 'Cliente 77 botao');
-  UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento';
+  PERFORM public.como_dono($q$UPDATE public.tarefas SET ativa = true WHERE sistema = 'modelo_agendamento'$q$);
   deu_erro := NOT public.recriar_tarefa_do_agendamento(ag);
   PERFORM public.exigir(NOT deu_erro AND EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE agendamentoid = ag),
                         'o botao "Recriar tarefa" recria');
@@ -11906,8 +11943,8 @@ SELECT unnest(ARRAY[
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[
-  'abrir_solicitacao', 'alterar_hora_da_atribuicao', 'alterar_pagamento_agendamento',
-  'arquivar_comunicado', 'atribuir_tarefa', 'cancelar_agendamento',
+  'abrir_solicitacao', 'alterar_pagamento_agendamento',
+  'arquivar_comunicado', 'cancelar_agendamento',
   'criar_agendamento', 'criar_conquista', 'criar_link_tv',
   'decidir_justificativa', 'editar_agendamento', 'editar_comunicado', 'incluir_destinatarios', 'iniciar_onboarding', 'liberar_pin',
   'marcar_agendamento_realizado', 'marcar_etapa_onboarding', 'mudar_situacao_solicitacao', 'parear_tv',
@@ -11921,8 +11958,8 @@ INSERT INTO classificacao_tabela (nome, grupo)
 SELECT unnest(ARRAY['contas', 'contasusuarios', 'redes']), 'admin_geral'
 UNION ALL
 SELECT unnest(ARRAY['conquistas', 'funcionarios', 'funcionarioslojas', 'jornadas', 'lojas',
-                    'onboardingetapas', 'tarefas', 'tarefasatribuidas',
-                    'tarefaslojas', 'tiposevento']), 'pendente_parte2';
+                    'onboardingetapas',
+                    'tiposevento']), 'pendente_parte2';
 
 DO $$
 DECLARE sobra text;
@@ -11932,7 +11969,7 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.provolatile = 'v'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('exigir', 'pular', 'guardar_foto', 'nada_mudou', 'guardar_resultado', 'limpar_resultado', 'nada_voltou', 'foto_do_banco')  -- ajudantes deste teste
+     AND p.proname NOT IN ('exigir', 'pular', 'guardar_foto', 'nada_mudou', 'guardar_resultado', 'limpar_resultado', 'nada_voltou', 'foto_do_banco', 'como_dono')  -- ajudantes deste teste
      AND p.prosrc !~ 'public\.pode(_na_pessoa)?\('   -- pode(loja) ou pode_na_pessoa(pessoa)
      AND p.proname NOT IN (SELECT nome FROM classificacao_escrita);
   PERFORM public.exigir(sobra IS NULL,
@@ -13019,6 +13056,115 @@ BEGIN
     RAISE EXCEPTION 'desfazer_97';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_97' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 98. Usuarios gerenciais, parte 2, fatia 5: Tarefas (29/09/2026)
+-- ===========================================================================
+-- Atribuir, mudar a hora e encerrar: na loja. O catalogo: a regua do alcance
+-- (todas as lojas da tarefa, antes e depois, dentro das dele).
+DO $$ BEGIN RAISE NOTICE '98. parte 2, Tarefas: loja e regua do alcance'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '98989898-9898-9898-9898-989898989801';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_cargo integer; t10 integer; t_duas integer; t_minha integer; a10 integer; a11 integer; n integer;
+BEGIN
+  BEGIN
+    INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
+      (9812, 1, 'Tais Dez', 0), (9813, 1, 'Ugo Onze', 0);
+    INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 9812, 10), (1, 9813, 11);
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'gil.98@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Tarefas 98') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+    -- O master cria: uma tarefa da loja 10, uma das lojas 10 e 11, e atribui.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    t10    := public.salvar_tarefa('Varrer 98', 5, ARRAY[10]);
+    t_duas := public.salvar_tarefa('Contar caixa 98', 5, ARRAY[10, 11]);
+    a10 := public.atribuir_tarefa(t10, 10, ARRAY[9812], 'Diaria');
+    a11 := public.atribuir_tarefa(t_duas, 11, ARRAY[9813], 'Diaria');
+    RESET ROLE;
+
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem permissao nenhuma: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.atribuir_tarefa(t10, 10, ARRAY[9812], 'Diaria'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.alterar_hora_da_atribuicao(a10, '10:00'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.encerrar_atribuicoes(ARRAY[a10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_tarefa('Nova 98', 1, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.ativar_tarefa(t10, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente SEM permissao: nao atribui, nao muda hora, nao encerra, nao mexe no catalogo');
+    RESET ROLE;
+
+    -- 2. Atribuir e mudar a hora: loja 10 sim, 11 nao.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'tarefas.atribuir');
+    SET LOCAL ROLE authenticated;
+    n := public.atribuir_tarefa(t10, 10, ARRAY[9812], 'Diaria');
+    PERFORM public.alterar_hora_da_atribuicao(a10, '10:00');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.atribuir_tarefa(t_duas, 11, ARRAY[9813], 'Diaria'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.alterar_hora_da_atribuicao(a11, '10:00'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "atribuir": nao atribui nem muda a hora na loja 11');
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas WHERE atribuicaoid = n AND lojaid = 10)
+                          AND (SELECT disponivelapartir = '10:00' FROM public.tarefasatribuidas WHERE atribuicaoid = a10),
+                          'e na loja 10 atribui e muda a hora de verdade');
+
+    -- 3. Encerrar: tudo ou nada.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'tarefas.encerrar_atribuicao');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.encerrar_atribuicoes(ARRAY[n, a11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "encerrar": pedir a da loja 10 junto com a da 11 nao encerra nenhuma');
+    PERFORM public.encerrar_atribuicoes(ARRAY[n]);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT datafimvigencia = public.hoje_da_conta(1) FROM public.tarefasatribuidas WHERE atribuicaoid = n),
+                          'e encerra a da loja 10, com o dia da conta');
+
+    -- 4. O catalogo: a regua do alcance.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'tarefas.catalogo');
+    SET LOCAL ROLE authenticated;
+    t_minha := public.salvar_tarefa('Minha 98', 2, ARRAY[10]);
+    PERFORM public.salvar_tarefa('Minha 98 editada', 3, ARRAY[10], t_minha);
+    PERFORM public.ativar_tarefa(t_minha, false);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_tarefa('Das duas', 1, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "catalogo": nao cria tarefa que valha tambem na loja 11');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_tarefa('Sem loja', 1, ARRAY[]::integer[]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem tarefa sem loja nenhuma (so o master)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_tarefa('Contar caixa 98 (mudada)', 5, ARRAY[10], t_duas); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.ativar_tarefa(t_duas, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nao edita nem desativa tarefa que vale tambem na loja 11 (nem o titulo)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_tarefa('Minha 98 editada', 3, ARRAY[10, 11], t_minha); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem estende a propria tarefa para a loja 11');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT titulo = 'Minha 98 editada' AND pontos = 3 AND NOT ativa FROM public.tarefas WHERE tarefaid = t_minha)
+                          AND (SELECT array_agg(lojaid) FROM public.tarefaslojas WHERE tarefaid = t_minha AND ativo) = ARRAY[10],
+                          'e cria, edita e desativa de verdade tarefa que vale so na loja dele');
+
+    -- 5. Nem o master grava direto nas tres tabelas.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN INSERT INTO public.tarefas (titulo, pontos) VALUES ('direto', 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.tarefaslojas SET ativo = false WHERE tarefaid = t10; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.tarefasatribuidas SET datafimvigencia = current_date WHERE atribuicaoid = a10; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava tarefa, loja da tarefa ou atribuicao direto na tabela');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_98';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_98' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

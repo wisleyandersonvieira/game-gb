@@ -69,6 +69,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-permissoes-parte-2-metas.sql', '20260929253000'),
   ('aplicar-permissoes-parte-2-premios.sql', '20260929251000'),
   ('aplicar-permissoes-parte-2-quadro.sql', '20260929250000'),
+  ('aplicar-permissoes-parte-2-tarefas.sql', '20260929254000'),
   ('aplicar-pin-do-tablet-numa-ida.sql', '20260929130000'),
   ('aplicar-primeiro-acesso-e-tv.sql', '20260929180000'),
   ('aplicar-quadro-e-intervalo.sql', '20260929200000'),
@@ -418,7 +419,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (470, 'OPERACAO', 'versao', 'Metas com permissao e loja no banco; metas da semana e especiais por funcao', 'aplicar-permissoes-parte-2-metas.sql',
        to_regprocedure('public.salvar_metas_da_semana(integer, jsonb)') IS NOT NULL
        AND NOT has_table_privilege('authenticated', 'public.metasespeciais', 'INSERT')
-       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lancar_venda_do_dia') LIKE '%pode(''metas.lancar_venda''%')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'lancar_venda_do_dia') LIKE '%pode(''metas.lancar_venda''%'),
+  (480, 'OPERACAO', 'versao', 'Tarefas com permissao e loja; catalogo com a regua do alcance, por funcao', 'aplicar-permissoes-parte-2-tarefas.sql',
+       to_regprocedure('public.salvar_tarefa(text, integer, integer[], integer, text, text)') IS NOT NULL
+       AND NOT has_table_privilege('authenticated', 'public.tarefasatribuidas', 'UPDATE')
+       AND (SELECT prosrc FROM pg_proc WHERE proname = 'atribuir_tarefa') LIKE '%pode(''tarefas.atribuir''%')
 ),
 tudo AS (
   SELECT x.*, a.versao

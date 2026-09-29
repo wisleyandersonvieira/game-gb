@@ -489,3 +489,30 @@ regra do master não abriu porta até o gerente ser reconhecido. Para cada um
 dos 8 voltar pelo motivo certo, a função dele passa a reconhecer o gerente
 (`conta_do_gestor_editavel`) na fatia da tela, e aí só a regra do master o
 barra — provado por sabotagem, como no `pegar_tarefa`.
+
+---
+
+## Parte 2 sem o Wisley: decisões tomadas pelo "mais restritivo" e pendentes
+
+Regra do Wisley para o trabalho sozinho: na dúvida, negar (soltar depois é
+fácil); decisão de negócio não se adivinha — fica aqui.
+
+**Tomadas pelo mais restritivo (revise; soltar é fácil):**
+- Prêmios: ninguém registra, entrega, cancela nem estorna o PRÓPRIO resgate
+  (a regra combinada era só para entregas).
+- Prêmios: o gerente só registra resgate para quem trabalha na loja dele, e
+  nunca sem loja (o master continua podendo sem loja).
+- Feedbacks (e toda ação sobre uma PESSOA): o gerente só age sobre quem está
+  INTEIRAMENTE dentro das lojas em que ele tem a permissão; ninguém dá nem
+  anula feedback de si mesmo.
+- Tarefas: tarefa sem loja nenhuma é só do master.
+
+**Pendentes (não adivinhadas):**
+- Pessoa em várias lojas: soltar para "pelo menos uma loja em comum" nas
+  ações sobre a pessoa (feedback, justificativa)?
+- Metas: o gerente lança a venda da loja dele; se a loja bater a meta, ele
+  (se for da equipe) ganha os pontos da meta. Conflito aceitável, ou só o
+  master lança?
+
+**Achados (não mexidos):**
+- A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).

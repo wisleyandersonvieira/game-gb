@@ -5286,6 +5286,7 @@ export type Database = {
         }
         Returns: Json
       }
+      ativar_tarefa: { Args: { p_ativa: boolean; p_tarefaid: number }; Returns: undefined }
       ativar_premio: { Args: { p_ativo: boolean; p_produtoid: number }; Returns: undefined }
       atribuir_tarefa: {
         Args: {
@@ -5821,6 +5822,7 @@ export type Database = {
         Args: { p_erro?: string; p_ids: number[] }
         Returns: undefined
       }
+      encerrar_atribuicoes: { Args: { p_ids: number[] }; Returns: undefined }
       estornos_da_conta: {
         Args: { p_lojaid?: number }
         Returns: {
@@ -6484,6 +6486,17 @@ export type Database = {
       eu_cancelar_resgate: {
         Args: { p_contaid: number; p_funcionarioid: number; p_resgateid: number }
         Returns: undefined
+      }
+      salvar_tarefa: {
+        Args: {
+          p_descricao?: string
+          p_lojas: number[]
+          p_pontos: number
+          p_setor?: string
+          p_tarefaid?: number
+          p_titulo: string
+        }
+        Returns: number
       }
       salvar_metas_da_semana: { Args: { p_linhas: Json; p_lojaid: number }; Returns: undefined }
       salvar_premio: {
