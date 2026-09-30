@@ -23,6 +23,8 @@ falhou=0
 
 # Quantas conferencias o arquivo tem (uma por linha com "'aplicar-...sql'" na lista).
 esperadas=$(grep -cE "^\s*\(\s*[0-9]+,\s*'[^']*',\s*'[^']*',\s*'[^']*',\s*'aplicar-" "$RAIZ/supabase/conferir-o-banco.sql")
+# Mais a linha que confere TODAS as migrações, item a item (30/09/2026).
+esperadas=$((esperadas + 1))
 
 # 1. Banco completo: o conferidor RODA inteiro (sem erro) e nenhuma linha da FALTA.
 #    "Nenhuma FALTA" sozinho nao prova nada: um conferidor quebrado tambem nao
@@ -53,10 +55,21 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "ALTER TABLE public.entregas DROP COLUMN registradopor CASCADE;")"
-if echo "$s" | grep -q "|rode aplicar-valor-e-entrega-sem-foto.sql"; then
+s="$(conferir "ALTER TABLE public.entregas DROP COLUMN fotoaguardaremocaoem;")"
+if echo "$s" | grep -q "|rode aplicar-conserto-das-fotos.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1
+fi
+# 4. O caso do erro no ar (30/09/2026): a migração 20260929231000 na primeira
+#    versão, sem a coluna entregas.fotoaguardaremocaoem. A amostra da linha 260
+#    não percebia; a conferência item a item tem de acusar a migração pelo nome
+#    e NÃO mandar rodar arquivo nenhum.
+s="$(conferir "ALTER TABLE public.entregas DROP COLUMN fotoaguardaremocaoem;")"
+if echo "$s" | grep "FALTA|TODAS|migracao|20260929231000_fotos_de_verdade_e_saude: " | grep -q "coluna entregas.fotoaguardaremocaoem (não existe)" \
+   && echo "$s" | grep "20260929231000" | grep -q "NÃO rode mais nada: mande-a para o Claude"; then
+  echo "    ok  coluna que falta (o erro de 30/09): acusa a migração 20260929231000 e manda chamar o Claude"
+else
+  echo "    FALHOU: sem a coluna fotoaguardaremocaoem, o conferidor nao acusou a migracao 20260929231000:"; echo "$s" | grep "FALTA" | head -3; falhou=1
 fi
 exit $falhou

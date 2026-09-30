@@ -6406,10 +6406,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      marcar_senha_trocada: {
-        Args: { p_contaid: number; p_funcionarioid: number }
-        Returns: undefined
-      }
       meta_do_dia: {
         Args: { p_dia: string; p_lojaid: number }
         Returns: {

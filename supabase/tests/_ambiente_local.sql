@@ -19,7 +19,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authen
 CREATE SCHEMA auth;
 CREATE TABLE auth.users (
   id uuid PRIMARY KEY,
-  email text,
+  -- Como no Supabase real: character varying(255), nao text. Faz diferenca na
+  -- impressao digital do conferidor: o Postgres escreve a condicao de um
+  -- gatilho sobre o e-mail com "::text" quando a coluna e varchar (30/09/2026,
+  -- o gatilho stgame_autor apareceu "diferente" no banco do Wisley por isso).
+  email character varying(255),
   email_confirmed_at timestamptz,
   -- Como no Supabase real: a ficha do tablet mostra o ultimo uso.
   last_sign_in_at timestamptz,

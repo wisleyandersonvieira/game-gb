@@ -5658,7 +5658,6 @@ BEGIN
     'public.criar_acesso_colaborador(integer, integer, uuid, text, uuid)',
     'public.definir_pin(integer, integer, text, boolean)',
     'public.redefinir_acesso(integer, integer, text, uuid)',
-    'public.marcar_senha_trocada(integer, integer)',
     'public.tentativa_abrir(integer, text, text, text)',
     'public.tentativa_fechar(bigint, boolean)',
     'public.politica_pendente(integer, integer)',
@@ -15418,5 +15417,22 @@ BEGIN
 END $$;
 SET teste.uid = '';
 RESET ROLE;
+
+-- ===========================================================================
+-- 115. O conserto do banco no ar (30/09/2026): a coluna das fotos existe, e a
+--      funcao morta marcar_senha_trocada (a coluna dela saiu em 27/09) nao
+--      volta. O que faltava no banco no ar so aparecia quando a funcao rodava;
+--      supabase/tests/colunas-das-funcoes.sh le todas elas (plpgsql_check).
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '115. conserto do banco no ar: coluna das fotos, funcao morta'; END $$;
+DO $$
+BEGIN
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM information_schema.columns
+                                 WHERE table_schema = 'public' AND table_name = 'entregas' AND column_name = 'fotoaguardaremocaoem'),
+                        'a coluna entregas.fotoaguardaremocaoem existe');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                                     WHERE n.nspname = 'public' AND p.proname = 'marcar_senha_trocada'),
+                        'a funcao morta marcar_senha_trocada nao existe mais');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;
