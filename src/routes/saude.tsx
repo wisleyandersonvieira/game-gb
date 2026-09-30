@@ -6,7 +6,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { diagnostico, type SaudeDasRotinas } from "@/servidor/acesso";
+import { diagnostico, type SaudeDasRotinas, type SituacaoDosBuckets } from "@/servidor/acesso";
 import { Logo } from "@/ui/Logo";
 import { VERSAO, versaoEmTexto } from "@/ui/versao";
 import { dataHoraBr } from "@/rh/datas";
@@ -128,6 +128,8 @@ function Saude() {
             />
           </ul>
 
+          <Buckets b={d.data.buckets} />
+
           {d.data.rotinas && <Rotinas r={d.data.rotinas} />}
 
           {d.data.assinaturas.length > 0 && (
@@ -155,7 +157,8 @@ function Saude() {
             </div>
           )}
 
-          {d.data.temChave && d.data.temPepper && d.data.temSite && d.data.contaDeSenha && d.data.banco === "ok" && (
+          {d.data.temChave && d.data.temPepper && d.data.temSite && d.data.contaDeSenha && d.data.banco === "ok" &&
+            !d.data.buckets.erro && d.data.buckets.lista.every((b) => !b.publico && (b.existe || !b.esperado)) && (
             <p className="rounded-lg border border-sucesso bg-card p-3 text-sm">
               Tudo certo: o sistema está pronto para uso.
             </p>
@@ -168,6 +171,33 @@ function Saude() {
 
 /** "2026-09-27" → "27/09/2026" (o dia já vem do banco; nada de fuso aqui). */
 const diaBr = (dia: string) => dia.split("-").reverse().join("/");
+
+/**
+ * Os buckets do Storage (01/10/2026): cada um tem de existir e ser PRIVADO.
+ * Público = qualquer link que vazou uma vez abre para sempre, sem login.
+ */
+function Buckets({ b }: { b: SituacaoDosBuckets }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Arquivos guardados (buckets do Storage)</p>
+      <ul className="space-y-2">
+        {b.erro && <Linha ok={false} titulo="Não deu para conferir os buckets" ajuda={b.erro} />}
+        {b.lista.map((x) => (
+          <Linha
+            key={x.id}
+            ok={!x.publico && (x.existe || !x.esperado)}
+            titulo={`${x.para} ("${x.id}"): ${!x.existe ? "FALTA" : x.publico ? "PÚBLICO" : "privado"}`}
+            ajuda={
+              x.publico
+                ? `Qualquer pessoa com o link de um arquivo deste bucket abre sem login, para sempre. Corrija JÁ: Supabase → Storage → "${x.id}" → Edit bucket → desligue "Public bucket" → Save.`
+                : `O bucket "${x.id}" não existe: o envio desses arquivos falha. Chame o Claude.`
+            }
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /** "há 3 horas", "há 2 dias" (a partir do instante que veio do banco). */
 function ha(instante: string | null | undefined): string {
