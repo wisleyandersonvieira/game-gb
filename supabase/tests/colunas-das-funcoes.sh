@@ -64,7 +64,7 @@ SELECT DISTINCT a.nome || ': ' || r.message
  WHERE r.level = 'error'
    -- O que é do próprio Supabase (cofre de segredos, agendador, chamadas web)
    -- não existe no Postgres de teste: não é erro nosso.
-   AND r.message !~ '"(vault\.[a-z_]+|cron\.[a-z_]+|net)"'
+   AND r.message !~ '"((vault|cron|net)\.[a-z_]+|net)"'
    -- Gatilho de VÁRIAS tabelas (escolhe o campo pelo nome da tabela, ex.
    -- autor_mudou): o campo que falta numa tabela é do ramo de outra.
    AND NOT (a.tabelas > 1 AND r.message ~ '^record "(new|old)" has no field')

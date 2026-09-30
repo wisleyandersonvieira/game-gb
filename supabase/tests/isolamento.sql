@@ -5100,7 +5100,7 @@ BEGIN
   SELECT string_agg(t.table_name, ', ') INTO liberadas
   FROM information_schema.tables t
   WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-    AND t.table_name NOT IN ('redes')
+    AND t.table_name NOT IN ('redes', 'chamadasdoservidor')
     AND NOT EXISTS (
       SELECT 1 FROM information_schema.columns c
       WHERE c.table_schema = 'public' AND c.table_name = t.table_name
@@ -5110,11 +5110,13 @@ BEGIN
   -- As tabelas da plataforma: RLS ligada, e TODA policy delas e so do admin.
   SELECT string_agg(tablename || '.' || policyname, ', ') INTO liberadas
   FROM pg_policies
-  WHERE schemaname = 'public' AND tablename IN ('redes')
+  WHERE schemaname = 'public' AND tablename IN ('redes', 'chamadasdoservidor')
     AND (coalesce(qual, '') || coalesce(with_check, '') NOT LIKE '%eh_admin_geral%'
          OR coalesce(qual, '') || coalesce(with_check, '') LIKE '%minha_conta%');
-  PERFORM public.exigir(liberadas IS NULL AND (SELECT count(*) FROM pg_policies WHERE tablename = 'redes') > 0,
-                        'tabela da plataforma (redes): so o admin geral, em toda policy');
+  PERFORM public.exigir(liberadas IS NULL
+                        AND (SELECT count(*) FROM pg_policies WHERE tablename = 'redes') > 0
+                        AND (SELECT count(*) FROM pg_policies WHERE tablename = 'chamadasdoservidor') > 0,
+                        'tabela da plataforma (redes, chamadasdoservidor): so o admin geral, em toda policy');
 
   -- Toda tabela de nivel loja tem lojaid amarrado a mesma conta.
   SELECT string_agg(conrelid::regclass::text, ', ') INTO liberadas
@@ -15433,6 +15435,163 @@ BEGIN
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                                      WHERE n.nspname = 'public' AND p.proname = 'marcar_senha_trocada'),
                         'a funcao morta marcar_senha_trocada nao existe mais');
+END $$;
+
+-- ===========================================================================
+-- 116. O que ninguem conferia (30/09/2026): a chamada do apagamento fica
+--      registrada (inclusive a que NAO chamou), a resposta e copiada antes de
+--      o pg_net jogar fora, e a /saude conta no PROPRIO Storage. Aqui o cofre,
+--      o pg_net e o agendador sao imitados (nao existem no Postgres de teste)
+--      e tudo e desfeito no fim.
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '116. o que ninguem conferia: chamada do apagamento, resposta, Storage, agendamentos'; END $$;
+
+DO $$
+DECLARE
+  s jsonb; j jsonb; d jsonb; n integer; v_ent integer; v_ent2 integer; v_ent3 integer; v_lj integer;
+BEGIN
+  BEGIN
+    -- Ninguem de fora le a tabela nova nem chama a funcao interna.
+    PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.chamadasdoservidor', 'SELECT')
+                          AND NOT has_table_privilege('anon', 'public.chamadasdoservidor', 'SELECT')
+                          AND NOT has_function_privilege('authenticated', 'public.registrar_respostas_do_servidor()', 'EXECUTE')
+                          AND NOT has_function_privilege('authenticated', 'public.saude_das_rotinas()', 'EXECUTE'),
+                          'as chamadas do servidor e a saude das rotinas nao sao lidas pelo navegador');
+
+    -- Uma entrega vencida na fila de apagamento (conta 1).
+    SELECT e.entregaid, e.lojaid INTO v_ent, v_lj FROM public.entregas e WHERE e.contaid = 1 ORDER BY e.entregaid LIMIT 1;
+    PERFORM public.exigir(v_ent IS NOT NULL, 'ha uma entrega na conta 1 para o teste');
+    DELETE FROM public.fotosexpurgo;
+    DELETE FROM public.chamadasdoservidor;
+    INSERT INTO public.fotosexpurgo (contaid, entregaid, caminho) VALUES (1, v_ent, '1/' || v_lj || '/t116-na-fila.jpg');
+
+    -- 1. Sem cofre nem pg_net: NAO chama, e fica registrado por que.
+    PERFORM public.fotos_expurgo_disparar();
+    SELECT to_jsonb(c) INTO j FROM public.chamadasdoservidor c ORDER BY chamadaid DESC LIMIT 1;
+    PERFORM public.exigir(j IS NOT NULL AND j->>'requestid' IS NULL AND j->>'erro' LIKE 'não chamou%',
+                          'sem cofre/pg_net: a tentativa fica registrada com o motivo (antes, voltava calada)');
+
+    -- Imitacoes do Supabase: cofre, pg_net (grava a chamada) e o agendador.
+    CREATE SCHEMA vault;
+    CREATE TABLE vault.decrypted_secrets (name text, decrypted_secret text);
+    CREATE SCHEMA net;
+    CREATE TABLE net.chamadas (id bigserial PRIMARY KEY, url text, headers jsonb, espera integer);
+    CREATE TABLE net._http_response (id bigint, status_code integer, content text, error_msg text, created timestamptz DEFAULT now());
+    CREATE FUNCTION net.http_post(url text, body jsonb, headers jsonb, timeout_milliseconds integer) RETURNS bigint
+      LANGUAGE sql AS $f$ INSERT INTO net.chamadas (url, headers, espera) VALUES (url, headers, timeout_milliseconds) RETURNING id $f$;
+    CREATE SCHEMA cron;
+    CREATE TABLE cron.job (jobid integer, jobname text, command text, active boolean);
+    CREATE TABLE cron.job_run_details (jobid integer, start_time timestamptz, end_time timestamptz, status text);
+
+    -- 2. Com cofre mas sem o segredo: nao chama, e diz qual falta.
+    INSERT INTO vault.decrypted_secrets VALUES ('stgame_funcoes_url', 'https://exemplo.supabase.co/functions/v1');
+    PERFORM public.fotos_expurgo_disparar();
+    SELECT to_jsonb(c) INTO j FROM public.chamadasdoservidor c ORDER BY chamadaid DESC LIMIT 1;
+    PERFORM public.exigir((SELECT count(*) FROM net.chamadas) = 0 AND j->>'erro' LIKE '%stgame_expurgo_segredo%'
+                          AND j->>'erro' NOT LIKE '%stgame_funcoes_url%',
+                          'sem o segredo: nao chama, e o registro diz qual segredo falta');
+
+    -- 3. Com os dois: chama a funcao certa, com o segredo no cabecalho, e o
+    --    pedido fica registrado com o numero que o pg_net devolveu.
+    INSERT INTO vault.decrypted_secrets VALUES ('stgame_expurgo_segredo', 'segredo-de-teste-1234567');
+    PERFORM public.fotos_expurgo_disparar();
+    PERFORM public.exigir((SELECT count(*) = 1 AND min(url) = 'https://exemplo.supabase.co/functions/v1/expurgo-fotos'
+                                  AND min(headers->>'x-expurgo-segredo') = 'segredo-de-teste-1234567' AND min(espera) = 400000
+                             FROM net.chamadas),
+                          'com os segredos: chama expurgo-fotos, com o segredo, esperando 400 s');
+    SELECT to_jsonb(c) INTO j FROM public.chamadasdoservidor c ORDER BY chamadaid DESC LIMIT 1;
+    PERFORM public.exigir((j->>'requestid')::bigint = (SELECT max(id) FROM net.chamadas) AND j->>'respondidaem' IS NULL,
+                          'o pedido fica registrado com o numero do pg_net, esperando a resposta');
+
+    -- 4. A resposta e copiada pelo despachante: 200 com o numero de apagados.
+    INSERT INTO net._http_response (id, status_code, content) SELECT max(id), 200, '{"apagados":37}' FROM net.chamadas;
+    PERFORM public.rotinas_despachar();
+    SELECT to_jsonb(c) INTO j FROM public.chamadasdoservidor c ORDER BY chamadaid DESC LIMIT 1;
+    PERFORM public.exigir((j->>'status')::integer = 200 AND (j->>'apagados')::integer = 37 AND j->>'erro' IS NULL,
+                          'o despachante copia a resposta: 200, apagou 37');
+    -- ... e 401 (a senha do cofre e a da funcao diferentes) vira erro legivel.
+    PERFORM public.fotos_expurgo_disparar();
+    INSERT INTO net._http_response (id, status_code, content) SELECT max(id), 401, 'nao autorizado' FROM net.chamadas;
+    PERFORM public.registrar_respostas_do_servidor();
+    SELECT public.saude_das_rotinas() INTO s;
+    PERFORM public.exigir((s#>>'{apagamento,ultimachamada,status}')::integer = 401
+                          AND s#>>'{apagamento,ultimachamada,erro}' = 'nao autorizado'
+                          AND s#>>'{apagamento,ultimosucesso}' IS NOT NULL,
+                          'a saude mostra a ultima chamada (401) e quando funcionou pela ultima vez');
+    -- ... e pedido sem resposta ha mais de 7 horas nao fica esperando para sempre.
+    UPDATE public.chamadasdoservidor SET pedidaem = now() - interval '8 hours', respondidaem = NULL, status = NULL
+     WHERE chamadaid = (SELECT max(chamadaid) FROM public.chamadasdoservidor);
+    DELETE FROM net._http_response WHERE status_code = 401;
+    PERFORM public.registrar_respostas_do_servidor();
+    PERFORM public.exigir((SELECT erro LIKE 'sem resposta registrada%' FROM public.chamadasdoservidor ORDER BY chamadaid DESC LIMIT 1),
+                          'sem resposta em 7 horas: registrado como sem resposta');
+
+    -- 5. A fila: na fila, presas, apagadas nas ultimas 24 h.
+    SELECT e.entregaid INTO v_ent2 FROM public.entregas e WHERE e.contaid = 1 AND e.entregaid > v_ent ORDER BY e.entregaid LIMIT 1;
+    SELECT e.entregaid INTO v_ent3 FROM public.entregas e WHERE e.contaid = 1 AND e.entregaid > v_ent2 ORDER BY e.entregaid LIMIT 1;
+    INSERT INTO public.fotosexpurgo (contaid, entregaid, caminho, tentativas) VALUES (1, v_ent2, '1/' || v_lj || '/t116-presa.jpg', 5);
+    INSERT INTO public.fotosexpurgo (contaid, entregaid, caminho, removidoem) VALUES (1, v_ent3, '1/' || v_lj || '/t116-apagada.jpg', now() - interval '1 hour');
+    SELECT public.saude_das_rotinas() INTO s;
+    PERFORM public.exigir((s#>>'{apagamento,nafila}')::integer = 1 AND (s#>>'{apagamento,presas}')::integer = 1
+                          AND (s#>>'{apagamento,apagadas24h}')::integer = 1
+                          AND s#>'{apagamento,amostraapagadas}' = jsonb_build_array('1/' || v_lj || '/t116-apagada.jpg'),
+                          'a fila: 1 esperando, 1 presa, 1 apagada em 24 h, e a amostra para o servidor conferir');
+
+    -- 6. CONTADO NO STORAGE: a apagada que continua la aparece; a vencida sem
+    --    dono aparece; a que serve a uma entrega no prazo nao e vencida.
+    INSERT INTO storage.buckets (id, name, public) VALUES ('entregas', 'entregas', false) ON CONFLICT DO NOTHING;
+    DELETE FROM storage.objects WHERE bucket_id = 'entregas';
+    INSERT INTO storage.objects (bucket_id, name, created_at) VALUES
+      ('entregas', '1/' || v_lj || '/t116-apagada.jpg', now() - interval '400 days'),   -- dada como apagada, continua
+      ('entregas', '1/' || v_lj || '/t116-sem-dono.jpg', now() - interval '400 days'),  -- nenhuma entrega usa
+      ('entregas', '1/' || v_lj || '/t116-novo-sem-dono.jpg', now());                   -- sem dono, mas no prazo
+    SELECT public.saude_das_rotinas() INTO s;
+    PERFORM public.exigir((s#>>'{storage,arquivos}')::integer = 3
+                          AND (s#>>'{storage,apagadosquecontinuam}')::integer = 1
+                          AND (s#>>'{storage,vencidos}')::integer = 2
+                          AND (s#>>'{storage,semdono}')::integer = 2,
+                          'no Storage: 1 dada como apagada que continua, 2 vencidas, 2 sem dono');
+    DELETE FROM storage.objects WHERE name LIKE '%t116-apagada%';
+    SELECT public.saude_das_rotinas() INTO s;
+    PERFORM public.exigir((s#>>'{storage,apagadosquecontinuam}')::integer = 0 AND (s#>>'{storage,vencidos}')::integer = 1,
+                          'o arquivo saiu do Storage: some da conta');
+    -- Arquivo que ainda serve a uma entrega DENTRO do prazo nao e vencido,
+    -- mesmo enviado ha muito tempo (a foto da copia).
+    UPDATE public.entregas SET pathfotoevidencia = '1/' || v_lj || '/t116-sem-dono.jpg', dataenvio = now() WHERE entregaid = v_ent2;
+    SELECT public.saude_das_rotinas() INTO s;
+    PERFORM public.exigir((s#>>'{storage,vencidos}')::integer = 0 AND (s#>>'{storage,semdono}')::integer = 1,
+                          'o arquivo que serve a uma entrega no prazo nao e vencido nem sem dono');
+
+    -- 7. Os agendamentos: o que rodou agora esta em dia; o parado ha 1 hora
+    --    esta atrasado; o que nao existe aparece; comando errado aparece.
+    INSERT INTO cron.job VALUES (1, 'gamegb-rotinas', 'SELECT public.rotinas_despachar()', true),
+                                (2, 'stgame-codigos-vencidos', 'SELECT public.outra_coisa()', true);
+    INSERT INTO cron.job_run_details VALUES (1, now() - interval '2 minutes', now() - interval '2 minutes', 'succeeded'),
+                                            (2, now() - interval '1 hour', now() - interval '1 hour', 'succeeded');
+    SELECT public.saude_das_rotinas() INTO s;
+    SELECT jsonb_object_agg(x->>'nome', x) INTO d FROM jsonb_array_elements(s->'jobs') x;
+    PERFORM public.exigir((d#>>'{gamegb-rotinas,atrasado}')::boolean = false AND (d#>>'{gamegb-rotinas,comandocerto}')::boolean
+                          AND (d#>>'{stgame-codigos-vencidos,atrasado}')::boolean AND NOT (d#>>'{stgame-codigos-vencidos,comandocerto}')::boolean
+                          AND NOT (d#>>'{stgame-telegram-fila,existe}')::boolean AND (d#>>'{stgame-telegram-fila,atrasado}')::boolean,
+                          'agendamentos: em dia, atrasado ha 1 hora com comando errado, e o que nao existe');
+
+    -- 8. As rotinas diarias: a conta ativa sem rodar ha 2 dias esta atrasada;
+    --    a que rodou com erro aparece.
+    UPDATE public.contas SET criadoem = now() - interval '10 days' WHERE contaid IN (1, 2);
+    DELETE FROM public.rotinasexecucoes WHERE contaid IN (1, 2) AND rotina = 'limpeza';
+    INSERT INTO public.rotinasexecucoes (contaid, rotina, referencia, origem, iniciadoem, terminadoem, resultado)
+    VALUES (1, 'limpeza', public.hoje_da_conta(1), 'agendada', now() - interval '1 hour', now(), 'ok'),
+           (2, 'limpeza', public.hoje_da_conta(1), 'agendada', now() - interval '2 days', now(), 'erro');
+    SELECT public.saude_das_rotinas() INTO s;
+    SELECT x INTO d FROM jsonb_array_elements(s->'diarias') x WHERE x->>'rotina' = 'limpeza';
+    PERFORM public.exigir((d->>'atrasadas')::integer >= 1 AND (d->>'comerro')::integer >= 1
+                          AND (d->>'ultima')::timestamptz > now() - interval '2 hours',
+                          'rotina diaria: a ultima vez, a conta atrasada e a conta com erro');
+
+    RAISE EXCEPTION 'desfazer_116';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_116' THEN RAISE; END IF;
+  END;
 END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

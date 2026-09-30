@@ -86,6 +86,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `codigosantigos` | conta | codigo | contas |
 | `anexosadmin` | conta (ou rede) | anexoid | contas / redes |
 | `redes` | **plataforma** (sem conta) | redeid | — |
+| `chamadasdoservidor` | **plataforma** (sem conta) | chamadaid | — |
 | `jornadas` | conta | jornadaid | — |
 | `jornadasdias` | conta | (jornadaid, diasemana) | jornadas |
 | `intervalosdomapa` | conta | (contaid, funcionarioid) | funcionarios |
@@ -1386,6 +1387,17 @@ Redes de franquia. Não tem `contaid`: reúne clientes, não pertence a nenhum. 
 | logocaminho | text | logotipo no bucket privado `logos-redes` (PNG/JPG/WEBP, até 512 KB). Só o servidor grava |
 
 Rede com cliente ligado não se apaga (o banco diz quantos são).
+
+## chamadasdoservidor (30/09/2026) — tabela da PLATAFORMA
+Cada vez que o banco chamou (ou **tentou** chamar) uma função do servidor, e o que ela respondeu. Hoje só `expurgo-fotos` (o apagamento das fotos vencidas). Não tem `contaid`: uma chamada apaga fotos de todas as contas. Ninguém lê pelo navegador; a /saude lê pela chave de servidor. Guarda 90 dias.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| chamadaid | integer | ID automático |
+| funcao | text | `expurgo-fotos` |
+| requestid | bigint | o número do pedido no `pg_net`; **vazio = não chamou** (o motivo fica em `erro`: falta segredo, cofre ou pg_net desligado) |
+| pedidaem | timestamptz | quando |
+| respondidaem, status, apagados, erro | | a resposta, copiada do `net._http_response` pelo despachante (a cada 5 minutos) antes de o `pg_net` jogar fora (ele guarda 6 horas). 200 = apagou `apagados`; 401 = segredo do cofre diferente do da função; 404 = função não publicada. Sem resposta em 7 horas: registrado como "sem resposta" |
 
 ## anexosadmin (27/09/2026)
 Contratos da administração, de um cliente **ou** de uma rede. **Documento sigiloso**: o arquivo fica no bucket privado `administracao`, sem regra de acesso para ninguém (só o servidor, depois de conferir que é o admin geral); o link de abertura vale 5 minutos. PDF ou imagem, até 10 MB. Guarda quem subiu e quando.
