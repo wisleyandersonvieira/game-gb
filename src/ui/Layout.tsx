@@ -229,8 +229,8 @@ export function Layout({
     queryFn: async () => {
       // O NOME FANTASIA é o que aparece no produto; a razão social fica para
       // contrato e cobrança.
-      const { data } = await supabase.from("contas").select("nomefantasia").limit(1).maybeSingle();
-      return data?.nomefantasia ?? "";
+      const { data } = await supabase.rpc("nome_da_conta");
+      return typeof data === "string" ? data : "";
     },
   });
 

@@ -5218,6 +5218,21 @@ BEGIN
       -- Decisao 1: so respondem sobre quem chama (conta do gerente, pode() na
       -- loja da linha) (secao 112).
       'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate_gerente',
+      -- Parte 4, fatia 2: master pela conta dele, gerente pelas lojas (secao 107).
+      'pessoas_para', 'premios_do_catalogo', 'minha_taxa_gerente', 'listar_trocas_gerente', 'extrato_pontos_gerente',
+      'ranking_pontos_gerente', 'ranking_mensal_gerente', 'fechamento_valendo_gerente', 'meses_fechados', 'ranking_do_fechamento',
+      'pessoas_da_loja', 'feedbacks_do_periodo', 'justificativas_da_tela', 'justificaveis_gerente', 'solicitacoes_da_loja',
+      'historico_das_solicitacoes',
+      'tarefas_da_loja', 'teto_de_pontos_por_ciencia', 'metas_da_semana', 'metas_especiais_da_loja', 'catalogo_de_tarefas_gerente',
+      'atribuicoes_da_loja_gerente',
+      'tipos_de_evento', 'agendamentos_da_loja', 'anexos_do_agendamento', 'historico_do_agendamento', 'agendamentos_sem_tarefa_gerente',
+      'conflitos_agendamento_gerente',
+      'conquistas_do_catalogo', 'conquistas_ganhas', 'conquistas_da_pessoa', 'pessoas_inteiras_para',
+      'comunicados_da_tela', 'ciencias_da_tela', 'lojas_para', 'pontos_da_leitura', 'fora_do_comunicado_gerente', 'recibo_ciencia_gerente',
+      'etapas_de_onboarding', 'onboarding_status_da_tela', 'onboarding_itens_da_tela',
+      'equipe_da_tela', 'vinculos_da_tela', 'jornadas_da_conta', 'situacao_dos_acessos_gerente', 'travas_do_pin_gerente',
+      'nome_da_conta', 'conta_da_gestao', 'lojas_da_gestao', 'links_de_tv', 'som_da_loja', 'vinculos_para', 'jornadas_da_tela',
+      'dias_das_jornadas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana', 'codigo_da_empresa',
       -- Decisoes 2 e 4: so responde sobre quem chama (conta dele, pessoa da
       -- conta dele, pode_na_pessoa e nunca o proprio) (secao 111).
       'posso_na_pessoa',
@@ -14098,6 +14113,14 @@ INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM
   (96101, 96, 'Tarefa-A', 5), (96102, 96, 'Tarefa-B', 5), (96103, 96, 'Tarefa-C', 5),
   (96201, 96, 'Limpeza-A', 3), (96202, 96, 'Limpeza-B', 3), (96203, 96, 'Limpeza-C', 3),
   (96301, 96, 'Livre-A', 2), (96302, 96, 'Livre-B', 2), (96303, 96, 'Livre-C', 2);
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
+  (96501, 96, 'Justificar-A', 1), (96502, 96, 'Justificar-B', 1), (96503, 96, 'Justificar-C', 1);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (96, 96501, 9601), (96, 96502, 9602), (96, 96503, 9603);
+-- Uma tarefa que vale nas lojas A e B (o catalogo do gestor A mostra so a loja A dela).
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES (96701, 96, 'Dupla AB', 1);
+INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (96, 96701, 9601), (96, 96701, 9602);
+-- A tarefa de rotina da ciencia (os pontos padrao de um comunicado).
+INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos, sistema) OVERRIDING SYSTEM VALUE VALUES (96601, 96, 'Leitura de comunicado', 3, 'leitura');
 INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES
   (96, 96101, 9601), (96, 96102, 9602), (96, 96103, 9603),
   (96, 96201, 9601), (96, 96202, 9602), (96, 96203, 9603),
@@ -14118,7 +14141,7 @@ SELECT public.cria_tipos_evento_padrao(96);
 SET ROLE authenticated;
 SET teste.uid = '96969696-9696-9696-9696-969696969696';
 DO $$
-DECLARE l record; a1 integer; a2 integer; v_hoje date := (public.meu_hoje()->>'hoje')::date; t integer;
+DECLARE l record; a1 integer; a2 integer; v_hoje date := (public.meu_hoje()->>'hoje')::date; t integer; p integer;
 BEGIN
   t := (SELECT tipoeventoid FROM public.tiposevento WHERE contaid = 96 ORDER BY 1 LIMIT 1);
   FOR l IN SELECT * FROM (VALUES (9601, 'A', 96011, 96101, 96201, 96301), (9602, 'B', 96021, 96102, 96202, 96302),
@@ -14136,10 +14159,100 @@ BEGIN
                                      'Pendente', l.pessoa);
   END LOOP;
   PERFORM public.registrar_entrega(public.atribuir_tarefa(96101, 9601, ARRAY[96041], 'Diaria'));
+  -- Parte 4, fatia 2: uma entrega aprovada (pontos e ranking) e um resgate
+  -- pendente em cada loja; e um resgate SEM loja da Ana-A (so o master ve).
+  p := public.salvar_premio('Premio-96', 1);
+  FOR l IN SELECT * FROM (VALUES (9601, 96011, 96301), (9602, 96021, 96302), (9603, 96031, 96303)) v(loja, pessoa, t3) LOOP
+    PERFORM public.registrar_entrega(public.atribuir_tarefa(l.t3, l.loja, ARRAY[l.pessoa], 'Diaria'), NULL, NULL, true);
+    PERFORM public.registrar_troca(l.pessoa, p, l.loja, false);
+  END LOOP;
+  PERFORM public.registrar_troca(96011, p, NULL, false);
+  -- Parte 4, fatia 3: um feedback de ontem para cada pessoa (e o Duo), uma
+  -- tarefa que ainda da para justificar hoje, e a solicitacao em andamento.
+  FOR l IN SELECT * FROM (VALUES (9601, 'A', 96011, 96501), (9602, 'B', 96021, 96502), (9603, 'C', 96031, 96503)) v(loja, m, pessoa, tj) LOOP
+    PERFORM public.registrar_feedback(l.pessoa, v_hoje - 1, 8, 'Feedback-' || l.m);
+    PERFORM public.atribuir_tarefa(l.tj, l.loja, ARRAY[l.pessoa], 'Diaria');
+    PERFORM public.mudar_situacao_solicitacao((SELECT solicitacaoid FROM public.solicitacoesinternas WHERE contaid = 96 AND lojaid = l.loja),
+                                              'Em andamento', 'Andamento-' || l.m);
+  END LOOP;
+  PERFORM public.registrar_feedback(96041, v_hoje - 1, 8, 'Feedback-Duo');
+  -- Parte 4, fatia 7: um comunicado por loja, um para a conta inteira, um
+  -- para pessoas de DUAS lojas (A e B: nao e de nenhum dos dois gestores), e
+  -- a ciencia da Ana-A no da loja A.
+  FOR l IN SELECT * FROM (VALUES (9601, 'A'), (9602, 'B'), (9603, 'C')) v(loja, m) LOOP
+    PERFORM public.publicar_comunicado('Comunicado-' || l.m, 'Texto-' || l.m, 0, 'lojas', ARRAY[l.loja]);
+  END LOOP;
+  PERFORM public.publicar_comunicado('Comunicado da conta', 'Para todos', 0, 'conta');
+  PERFORM public.publicar_comunicado('Comunicado misto', 'Para duas lojas', 0, 'funcionarios', NULL, ARRAY[96011, 96021]);
+  PERFORM public.registrar_ciencia((SELECT s.assinaturaid FROM public.documentosassinaturas s
+                                      JOIN public.documentos d ON d.documentoid = s.documentoid
+                                     WHERE d.contaid = 96 AND d.titulo = 'Comunicado-A' AND s.funcionarioid = 96011));
+  -- Parte 4, fatia 8: uma etapa de onboarding, iniciado para cada pessoa e o Duo.
+  PERFORM public.salvar_etapa_onboarding(NULL, 'Etapa-96', 1, true);
+  PERFORM public.iniciar_onboarding(f) FROM unnest(ARRAY[96011, 96021, 96031, 96041]) f;
+  -- Parte 4, fatia 4: a meta de cada dia da semana e uma meta especial por loja.
+  FOR l IN SELECT * FROM (VALUES (9601, 'A'), (9602, 'B'), (9603, 'C')) v(loja, m) LOOP
+    PERFORM public.salvar_metas_da_semana(l.loja, (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d,
+                                                   'valormeta', 500, 'pontospremio', 1)) FROM generate_series(1, 7) d));
+    PERFORM public.criar_meta_especial(l.loja, v_hoje + 10, 'Especial-' || l.m, 900, 2);
+  END LOOP;
   -- O Duo pega uma missao da loja A (para as "tarefas pegas" dele terem o que mostrar).
   PERFORM public.pegar_tarefa(public.atribuir_tarefa(96401, 9601, ARRAY[]::integer[], 'Diaria', NULL, NULL, '00:01'), 96041);
 END $$;
 RESET ROLE;
+-- Parte 4, fatia 2: a taxa de conversao e um mes FECHADO (o anterior), com o
+-- ranking congelado de cada loja e o da conta inteira (so o master ve).
+UPDATE public.configuracoes SET valor = '0,5' WHERE contaid = 96 AND chave = 'TAXA_CONVERSAO_PONTO_REAL';
+-- Parte 4, fatia 7: a pessoa de folga de cada loja entrou depois do comunicado
+-- da conta (ainda nao recebeu: e quem "falta dar ciencia").
+SET session_replication_role = replica;
+DELETE FROM public.documentosassinaturas s USING public.documentos d
+ WHERE d.documentoid = s.documentoid AND d.contaid = 96 AND d.titulo = 'Comunicado da conta'
+   AND s.funcionarioid IN (96012, 96022, 96032);
+SET session_replication_role = origin;
+-- Parte 4, fatia 9: CPF da Ana-A e do Duo, uma trava de PIN por pessoa e
+-- uma jornada na conta.
+SET session_replication_role = replica;
+UPDATE public.funcionarios SET cpf = '11144477735' WHERE funcionarioid = 96011;
+UPDATE public.funcionarios SET cpf = '52998224725' WHERE funcionarioid = 96041;
+INSERT INTO public.travaspin (contaid, funcionarioid, erros, ultimoerro)
+  SELECT 96, p, 1, now() FROM unnest(ARRAY[96011, 96021, 96031, 96041]) p;
+INSERT INTO public.jornadas (jornadaid, contaid, nome, ativa) OVERRIDING SYSTEM VALUE VALUES (9601, 96, 'Jornada-96', true);
+-- Parte 4, fatia 10: os horarios da jornada e um link de TV por loja.
+INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
+  SELECT 96, 9601, d, '08:00', '17:00' FROM generate_series(1, 7) d;
+INSERT INTO public.linkstv (contaid, lojaid, nome, tokenhash)
+  SELECT 96, l, 'TV-' || m, encode(sha256(('tv-teste-' || l)::bytea), 'hex')
+    FROM (VALUES (9601, 'A'), (9602, 'B'), (9603, 'C')) v(l, m);
+SET session_replication_role = origin;
+-- Parte 4, fatia 6: uma conquista ganha por cada pessoa (e o Duo).
+INSERT INTO public.conquistas (conquistaid, contaid, nome, descricao, criteriotipo, criteriovalor, pontosbonus, ativa) OVERRIDING SYSTEM VALUE
+  VALUES (9601, 96, 'Conquista-96', 'x', 'total_tarefas_aprovadas', 1000, 0, true);
+SET session_replication_role = replica;
+INSERT INTO public.conquistasfuncionarios (contaid, funcionarioid, conquistaid, dataconquista, pontosbonus)
+  SELECT 96, p, 9601, now() - interval '1 day', 0 FROM unnest(ARRAY[96011, 96021, 96031, 96041]) p;
+SET session_replication_role = origin;
+-- Parte 4, fatia 5: o valor (R$) e um anexo em cada agendamento.
+SET session_replication_role = replica;
+UPDATE public.agendamentos SET valor = 150 WHERE contaid = 96;
+SET session_replication_role = origin;
+INSERT INTO public.agendamentosanexos (contaid, lojaid, agendamentoid, caminho, nomearquivo, tipoarquivo, tamanho)
+  SELECT a.contaid, a.lojaid, a.agendamentoid, a.contaid || '/' || a.lojaid || '/' || a.agendamentoid || '/x.pdf',
+         'Anexo-' || right(a.nomecliente, 1) || '.pdf', 'application/pdf', 10
+    FROM public.agendamentos a WHERE a.contaid = 96;
+INSERT INTO public.configuracoes (contaid, chave, valor)
+  SELECT 96, 'TAXA_CONVERSAO_PONTO_REAL', '0,5'
+   WHERE NOT EXISTS (SELECT 1 FROM public.configuracoes WHERE contaid = 96 AND chave = 'TAXA_CONVERSAO_PONTO_REAL');
+INSERT INTO public.fechamentosmensais (fechamentoid, contaid, ano, mes, versao, situacao, origem) OVERRIDING SYSTEM VALUE
+  SELECT 9601, 96, extract(year FROM m)::integer, extract(month FROM m)::integer, 1, 'definitivo', 'rotina'
+    FROM (SELECT date_trunc('month', public.hoje_da_conta(96)) - interval '1 month' AS m) x;
+INSERT INTO public.historicoranking (contaid, fechamentoid, ano, mes, posicao, funcionarioid, nomefuncionario, pontosganhos,
+                                     pontospossiveis, percentualdesempenho, lojaid, pontosregulares, confiabilidade, esforco, nota)
+  SELECT 96, 9601, f.ano, f.mes, 1, v.pessoa, v.nome, 10, 10, 100, v.loja, 10, 100, 100, 10
+    FROM public.fechamentosmensais f,
+         (VALUES (96011, 'Ana-A', 9601), (96021, 'Bia-B', 9602), (96031, 'Caio-C', 9603), (96021, 'Bia-B', NULL::integer)) v(pessoa, nome, loja)
+   WHERE f.fechamentoid = 9601;
+
 -- A tarefa do Duo existe ha 5 dias (dias passados sem entrega = pendencias dele).
 SET session_replication_role = replica;
 UPDATE public.tarefasatribuidas SET dataatribuicao = now() - interval '5 days'
@@ -14156,7 +14269,7 @@ GRANT EXECUTE ON FUNCTION public.sem_marca_de_fora(jsonb, text) TO authenticated
 SET ROLE authenticated;
 DO $$
 DECLARE
-  g record; v jsonb; v_hoje date; v_mes date;
+  g record; v jsonb; v_hoje date; v_mes date; n integer;
 BEGIN
   SET LOCAL ROLE NONE;
   v_hoje := public.hoje_da_conta(96); v_mes := date_trunc('month', v_hoje)::date;
@@ -14295,6 +14408,316 @@ BEGIN
     PERFORM public.guardar_resultado((SELECT jsonb_agg(t) FROM public.tarefas_pegas_da_pessoa(g.outrapessoa, v_hoje - 30, v_hoje) t));
     PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': tarefas pegas de pessoa de outra loja vem vazio');
 
+    -- Premios, Extrato e Ranking (parte 4, fatia 2)
+    SELECT jsonb_agg(p) INTO v FROM public.pessoas_para('premios.ver') p;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': pessoas da tela de Premios, as da loja dele e nenhuma de fora');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.premios_do_catalogo() WHERE nome = 'Premio-96'),
+                          'gestor ' || g.m || ': o catalogo de premios (da conta) chega');
+    PERFORM public.exigir(public.minha_taxa() = 0.5, 'gestor ' || g.m || ': a taxa de conversao chega');
+    v := public.listar_trocas(100);
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m)
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE x->>'loja' IS NULL),
+                          'gestor ' || g.m || ': resgates da loja dele, nenhum de fora e nenhum sem loja');
+    v := public.extrato_pontos(g.pessoa, v_hoje - 30, v_hoje);
+    PERFORM public.exigir(jsonb_array_length(v->'movimentos') >= 2 AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': extrato de quem e da loja dele, com os movimentos');
+    PERFORM public.guardar_resultado(public.extrato_pontos(g.outrapessoa, v_hoje - 30, v_hoje));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': extrato de pessoa de outra loja vem vazio');
+    SELECT jsonb_agg(r) INTO v FROM public.ranking_pontos(v_mes, v_hoje, g.loja) r;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': ranking de pontos da loja dele');
+    SELECT jsonb_agg(r) INTO v FROM public.ranking_pontos(v_mes, v_hoje) r;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': ranking de "todas as lojas" soma so as dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(r) FROM public.ranking_pontos(v_mes, v_hoje, g.outra) r));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': ranking de outra loja vem vazio');
+    SELECT jsonb_agg(r) INTO v FROM public.ranking_mensal(extract(year FROM v_mes - 1)::integer, extract(month FROM v_mes - 1)::integer, g.loja) r;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': nota do mes fechado, a da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(r) FROM public.ranking_mensal(extract(year FROM v_mes - 1)::integer, extract(month FROM v_mes - 1)::integer) r));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': nota do mes da conta inteira nao vem');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(r) FROM public.ranking_mensal(extract(year FROM v_mes)::integer, extract(month FROM v_mes)::integer) r));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': nota do mes ABERTO da conta inteira nao vem');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(r) FROM public.ranking_mensal(extract(year FROM v_mes - 1)::integer, extract(month FROM v_mes - 1)::integer, g.outra) r));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': nota do mes de outra loja nao vem');
+    PERFORM public.exigir(public.fechamento_valendo(extract(year FROM v_mes - 1)::integer, extract(month FROM v_mes - 1)::integer) = 9601
+                          AND EXISTS (SELECT 1 FROM public.meses_fechados() WHERE fechamentoid = 9601),
+                          'gestor ' || g.m || ': o mes fechado aparece na lista');
+    SELECT jsonb_agg(r) INTO v FROM public.ranking_do_fechamento(9601, g.loja) r;
+    PERFORM public.exigir(v::text LIKE '%-' || g.m || '"%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': ranking congelado da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(r) FROM public.ranking_do_fechamento(9601, NULL) r));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': ranking congelado da conta inteira nao vem');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(r) FROM public.ranking_do_fechamento(9601, g.outra) r));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': ranking congelado de outra loja nao vem');
+    IF g.m IN ('A', 'B') THEN
+      PERFORM public.guardar_resultado(public.extrato_pontos(96041, v_hoje - 30, v_hoje));
+      PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': extrato de quem tambem esta em outra loja vem vazio');
+    END IF;
+
+    -- Feedbacks, Justificativas e Solicitacoes (parte 4, fatia 3)
+    SELECT jsonb_agg(f) INTO v FROM public.feedbacks_do_periodo(v_hoje - 30, v_hoje) f;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m)
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa)),
+                          'gestor ' || g.m || ': feedbacks de quem e da loja dele, nenhum de fora');
+    IF g.m IN ('A', 'B') THEN
+      PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', 96041)),
+                            'gestor ' || g.m || ': e o do Duo (uma loja em comum basta para ver feedback)');
+    END IF;
+    SELECT jsonb_agg(p) INTO v FROM public.pessoas_para('feedbacks.ver') p;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': pessoas da tela de Feedbacks, so as dele');
+    SELECT jsonb_agg(j) INTO v FROM public.justificativas_da_tela() j;
+    PERFORM public.exigir(v::text LIKE '%Motivo-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': justificativas da loja dele, nenhuma de fora');
+    v := public.justificaveis(g.pessoa, v_hoje);
+    PERFORM public.exigir(v::text LIKE '%Justificar-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': o que da para justificar hoje, na loja dele');
+    PERFORM public.exigir(public.justificaveis(g.outrapessoa, v_hoje) = '[]'::jsonb,
+                          'gestor ' || g.m || ': nada para justificar de pessoa de outra loja');
+    SELECT jsonb_agg(s) INTO v FROM public.solicitacoes_da_loja(g.loja) s;
+    PERFORM public.exigir(v::text LIKE '%Item-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': solicitacoes da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(s) FROM public.solicitacoes_da_loja(g.outra) s));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': solicitacoes de outra loja vem vazio');
+    SELECT jsonb_agg(h) INTO v FROM public.historico_das_solicitacoes(g.loja) h;
+    PERFORM public.exigir(v::text LIKE '%Andamento-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': historico das solicitacoes da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(h) FROM public.historico_das_solicitacoes(g.outra) h));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': historico de solicitacoes de outra loja vem vazio');
+    SELECT jsonb_agg(p) INTO v FROM public.pessoas_da_loja(g.loja, 'solicitacoes.abrir') p;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': pessoas da loja dele no formulario');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(p) FROM public.pessoas_da_loja(g.outra, 'solicitacoes.abrir') p));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': pessoas de outra loja nao vem');
+
+    -- Tarefas e Metas (parte 4, fatia 4)
+    SELECT jsonb_agg(x) INTO v FROM public.tarefas_da_loja(g.loja) x;
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': tarefas da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.tarefas_da_loja(g.outra) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': tarefas de outra loja nao vem');
+    v := public.catalogo_de_tarefas(NULL, true, NULL, 50, 0);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m)
+                          AND (g.m = 'C' OR v::text LIKE '%Dupla AB%')
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'tarefas') x, jsonb_array_elements(x->'lojas') lo
+                                           WHERE lo::integer <> g.loja),
+                          'gestor ' || g.m || ': catalogo de tarefas, so as que valem na loja dele e so a loja dele na lista');
+    PERFORM public.exigir(jsonb_array_length(public.catalogo_de_tarefas(g.outra, true, NULL, 50, 0)->'tarefas') = 0,
+                          'gestor ' || g.m || ': catalogo filtrado por outra loja vem vazio');
+    v := public.atribuicoes_da_loja(g.loja, true, NULL, NULL, NULL, NULL, false, 50, 0);
+    PERFORM public.exigir(v::text LIKE '%Tarefa-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': atribuicoes da loja dele');
+    PERFORM public.exigir(jsonb_array_length(public.atribuicoes_da_loja(g.outra, true, NULL, NULL, NULL, NULL, false, 50, 0)->'linhas') = 0,
+                          'gestor ' || g.m || ': atribuicoes de outra loja vem vazias');
+    PERFORM public.exigir(public.teto_de_pontos_por_ciencia() IS NOT NULL, 'gestor ' || g.m || ': o teto de pontos por ciencia chega');
+    PERFORM public.exigir((SELECT count(*) FROM public.metas_da_semana(g.loja)) = 7,
+                          'gestor ' || g.m || ': a meta de cada dia da semana da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.metas_da_semana(g.outra) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': meta da semana de outra loja nao vem');
+    SELECT jsonb_agg(x) INTO v FROM public.metas_especiais_da_loja(g.loja) x;
+    PERFORM public.exigir(v::text LIKE '%Especial-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': metas especiais da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.metas_especiais_da_loja(g.outra) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': metas especiais de outra loja nao vem');
+    IF g.m = 'A' THEN
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'valores.ver_rs';
+      SET LOCAL ROLE authenticated;
+      PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.metas_da_semana(g.loja) x)
+                                       || coalesce((SELECT jsonb_agg(x) FROM public.metas_especiais_da_loja(g.loja) x), '[]'::jsonb));
+      PERFORM public.exigir(public.nada_voltou(), 'sem "Ver valores em R$": nem a meta da semana nem as especiais');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs');
+      SET LOCAL ROLE authenticated;
+    END IF;
+
+    -- Agenda (parte 4, fatia 5)
+    SELECT jsonb_agg(x) INTO v FROM public.agendamentos_da_loja(g.loja) x;
+    PERFORM public.exigir(v::text LIKE '%Cliente-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m)
+                          AND (v->0->>'valor')::numeric = 150,
+                          'gestor ' || g.m || ': agenda da loja dele, com o valor');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.agendamentos_da_loja(g.outra) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': agenda de outra loja nao vem');
+    SELECT jsonb_agg(x) INTO v FROM public.anexos_do_agendamento((SELECT min(agendamentoid) FROM public.agendamentos_da_loja(g.loja))) x;
+    PERFORM public.exigir(v::text LIKE '%Anexo-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': anexos do agendamento da loja dele');
+    SELECT jsonb_agg(x) INTO v FROM public.historico_do_agendamento((SELECT min(agendamentoid) FROM public.agendamentos_da_loja(g.loja))) x;
+    PERFORM public.exigir(jsonb_array_length(v) >= 1, 'gestor ' || g.m || ': historico do agendamento da loja dele');
+    SET LOCAL ROLE NONE;
+    SELECT min(agendamentoid) INTO n FROM public.agendamentos WHERE contaid = 96 AND lojaid = g.outra;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.anexos_do_agendamento(n) x)
+                                     || coalesce((SELECT jsonb_agg(x) FROM public.historico_do_agendamento(n) x), '[]'::jsonb));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': anexos e historico de agendamento de outra loja nao vem');
+    v := public.agendamentos_sem_tarefa(g.loja);
+    PERFORM public.exigir(v::text LIKE '%Cliente-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': agendamentos sem tarefa da loja dele');
+    PERFORM public.exigir(public.agendamentos_sem_tarefa(g.outra) = '[]'::jsonb, 'gestor ' || g.m || ': sem tarefa de outra loja nao vem');
+    PERFORM public.exigir(jsonb_array_length(public.conflitos_agendamento(g.loja, now() + interval '2 days')) >= 1
+                          AND public.conflitos_agendamento(g.outra, now() + interval '2 days') = '[]'::jsonb,
+                          'gestor ' || g.m || ': horario apertado so na loja dele');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tipos_de_evento()), 'gestor ' || g.m || ': os tipos de evento chegam');
+    IF g.m = 'A' THEN
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'valores.ver_rs';
+      SET LOCAL ROLE authenticated;
+      PERFORM public.exigir((SELECT bool_and(valor IS NULL) FROM public.agendamentos_da_loja(g.loja))
+                            AND EXISTS (SELECT 1 FROM public.agendamentos_da_loja(g.loja)),
+                            'sem "Ver valores em R$": a agenda chega, sem o valor');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs');
+      SET LOCAL ROLE authenticated;
+    END IF;
+
+    -- Conquistas (parte 4, fatia 6)
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistas_do_catalogo() WHERE nome = 'Conquista-96'),
+                          'gestor ' || g.m || ': o catalogo de conquistas chega');
+    SELECT jsonb_agg(x) INTO v FROM public.conquistas_ganhas() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa)),
+                          'gestor ' || g.m || ': conquistas ganhas por quem e da loja dele, nenhuma de fora');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.conquistas_da_pessoa(g.pessoa)),
+                          'gestor ' || g.m || ': as conquistas de quem e da loja dele, no relatorio');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.conquistas_da_pessoa(g.outrapessoa) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': conquistas de pessoa de outra loja nao vem');
+    SELECT jsonb_agg(x) INTO v FROM public.pessoas_inteiras_para('relatorios.ver') x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m)
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', 96041)),
+                          'gestor ' || g.m || ': o relatorio lista quem e inteiro da loja dele (o Duo, nao)');
+    IF g.m IN ('A', 'B') THEN
+      PERFORM public.exigir((SELECT count(*) FROM public.conquistas_ganhas() WHERE funcionarioid = 96041) = 1,
+                            'gestor ' || g.m || ': a conquista do Duo aparece na lista (uma loja em comum)');
+      PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.conquistas_da_pessoa(96041) x));
+      PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': mas o relatorio do Duo (tambem em outra loja) nao abre');
+    END IF;
+
+    -- Comunicados (parte 4, fatia 7)
+    SELECT jsonb_agg(x) INTO v FROM public.comunicados_da_tela() x;
+    PERFORM public.exigir(v::text LIKE '%Comunicado-' || g.m || '%' AND v::text LIKE '%Comunicado da conta%'
+                          AND v::text NOT LIKE '%Comunicado misto%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': comunicados da loja dele e o da conta; nenhum de fora, nem o de pessoas de duas lojas');
+    SELECT jsonb_agg(x) INTO v FROM public.ciencias_da_tela() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa)),
+                          'gestor ' || g.m || ': ciencias de quem e da loja dele, nenhuma de fora');
+    v := public.fora_do_comunicado((SELECT documentoid FROM public.comunicados_da_tela() WHERE titulo = 'Comunicado da conta'));
+    PERFORM public.exigir(v::text LIKE '%-' || g.m || '"%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': quem falta dar ciencia no comunicado da conta, so da loja dele');
+    SET LOCAL ROLE NONE;
+    SELECT documentoid INTO n FROM public.documentos WHERE contaid = 96 AND titulo = 'Comunicado-' || CASE g.m WHEN 'A' THEN 'B' WHEN 'B' THEN 'C' ELSE 'A' END;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.fora_do_comunicado(n) = '[]'::jsonb, 'gestor ' || g.m || ': quem falta no comunicado de outra loja nao vem');
+    SET LOCAL ROLE NONE;
+    SELECT s.assinaturaid INTO n FROM public.documentosassinaturas s JOIN public.documentos d ON d.documentoid = s.documentoid
+     WHERE d.contaid = 96 AND d.titulo = 'Comunicado-A' AND s.funcionarioid = 96011;
+    SET LOCAL ROLE authenticated;
+    IF g.m = 'A' THEN
+      PERFORM public.exigir(public.recibo_ciencia(n)->>'pessoa' = 'Ana-A', 'gestor A: o recibo de ciencia da Ana-A');
+    ELSE
+      PERFORM public.guardar_resultado(public.recibo_ciencia(n));
+      PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': o recibo de ciencia de outra loja nao vem');
+    END IF;
+    SELECT jsonb_agg(x) INTO v FROM public.lojas_para('comunicados.publicar') x;
+    PERFORM public.exigir(v = jsonb_build_array(jsonb_build_object('lojaid', g.loja, 'nome', 'Loja ' || g.m, 'ativa', true)),
+                          'gestor ' || g.m || ': no formulario, so a loja dele');
+    PERFORM public.exigir(public.pontos_da_leitura() IS NOT NULL, 'gestor ' || g.m || ': os pontos padrao da ciencia chegam');
+
+    -- Onboarding (parte 4, fatia 8)
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.etapas_de_onboarding() WHERE nome = 'Etapa-96'),
+                          'gestor ' || g.m || ': as etapas do onboarding chegam');
+    SELECT jsonb_agg(x) INTO v FROM public.onboarding_status_da_tela() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', 96041)),
+                          'gestor ' || g.m || ': onboarding de quem e inteiro da loja dele (nem de fora, nem o Duo)');
+    SELECT jsonb_agg(x) INTO v FROM public.onboarding_itens_da_tela() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa))
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE x->>'documentoid' IS NOT NULL),
+                          'gestor ' || g.m || ': etapas de quem e da loja dele, sem documento pessoal');
+
+    -- Equipe (parte 4, fatia 9)
+    SELECT jsonb_agg(x) INTO v FROM public.equipe_da_tela() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa)) AND public.sem_marca_de_fora(v, g.m)
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa)),
+                          'gestor ' || g.m || ': equipe da loja dele, ninguem de fora');
+    IF g.m = 'A' THEN
+      PERFORM public.exigir(v @> '[{"funcionarioid": 96011, "cpf": "11144477735"}]'::jsonb
+                            AND v @> '[{"funcionarioid": 96041}]'::jsonb
+                            AND NOT v @> '[{"funcionarioid": 96041, "cpf": "52998224725"}]'::jsonb,
+                            'gestor A: o CPF de quem e inteiro dele vem; o do Duo (tambem na B), nao');
+    END IF;
+    SELECT jsonb_agg(x) INTO v FROM public.vinculos_da_tela() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa, 'lojaid', g.loja))
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE (x->>'lojaid')::integer <> g.loja),
+                          'gestor ' || g.m || ': so os vinculos com a loja dele (nao diz em que outra loja alguem esta)');
+    SELECT jsonb_agg(x) INTO v FROM public.situacao_dos_acessos() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', 96041)),
+                          'gestor ' || g.m || ': situacao do acesso de quem e inteiro dele');
+    SELECT jsonb_agg(x) INTO v FROM public.travas_do_pin() x;
+    PERFORM public.exigir(v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', g.outrapessoa))
+                          AND NOT v @> jsonb_build_array(jsonb_build_object('funcionarioid', 96041)),
+                          'gestor ' || g.m || ': travas do PIN de quem e inteiro dele');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.jornadas_da_conta() WHERE nome = 'Jornada-96'),
+                          'gestor ' || g.m || ': as jornadas da conta chegam');
+
+    -- Lojas, Jornada e o topo (parte 4, fatia 10)
+    PERFORM public.exigir(public.nome_da_conta() IS NOT NULL, 'gestor ' || g.m || ': o nome da conta chega ao topo');
+    PERFORM public.exigir((SELECT count(*) = 1 AND bool_and(email IS NULL AND limitelojas IS NULL) FROM public.conta_da_gestao()),
+                          'gestor ' || g.m || ': da conta, so o nome (sem e-mail nem limite de lojas)');
+    PERFORM public.exigir((SELECT jsonb_agg(lojaid) FROM public.lojas_da_gestao()) = jsonb_build_array(g.loja),
+                          'gestor ' || g.m || ': na tela de Lojas, so a loja dele');
+    v := public.resumo_das_lojas();
+    PERFORM public.exigir(jsonb_array_length(v) = 1 AND (v->0->>'lojaid')::integer = g.loja,
+                          'gestor ' || g.m || ': resumo so da loja dele');
+    SELECT jsonb_agg(x) INTO v FROM public.links_de_tv() x;
+    PERFORM public.exigir(v::text LIKE '%TV-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': links de TV da loja dele');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.som_da_loja(g.loja)), 'gestor ' || g.m || ': o som do tablet da loja dele');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.som_da_loja(g.outra) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': o som do tablet de outra loja nao vem');
+    v := public.mapa_da_jornada(g.loja);
+    PERFORM public.exigir(v->>'loja' = 'Loja ' || g.m AND v->'pessoas' @> jsonb_build_array(jsonb_build_object('funcionarioid', g.pessoa))
+                          AND public.sem_marca_de_fora(v, g.m),
+                          'gestor ' || g.m || ': mapa da jornada da loja dele');
+    v := public.mapa_da_jornada(g.outra);
+    PERFORM public.exigir(v->>'loja' IS NULL AND v->'pessoas' = '[]'::jsonb, 'gestor ' || g.m || ': mapa de outra loja vem vazio');
+    PERFORM public.exigir(public.mapa_da_semana(g.outra)->>'loja' IS NULL
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.mapa_da_semana(g.outra)->'dias') d
+                                           WHERE jsonb_array_length(d->'pessoas') > 0),
+                          'gestor ' || g.m || ': mapa da semana de outra loja vem vazio');
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.jornadas_da_tela() WHERE nome = 'Jornada-96')
+                          AND (SELECT count(*) FROM public.dias_das_jornadas() WHERE jornadaid = 9601) = 7,
+                          'gestor ' || g.m || ': as jornadas e os horarios chegam');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.vinculos_para('jornada.ver') WHERE lojaid <> g.loja)
+                          AND EXISTS (SELECT 1 FROM public.vinculos_para('jornada.ver') WHERE funcionarioid = g.pessoa),
+                          'gestor ' || g.m || ': vinculos so com a loja dele');
+    -- O codigo da empresa e o filtro de R$ (parte 4, fatia 11)
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.codigo_da_empresa() WHERE codigo IS NOT NULL),
+                          'gestor ' || g.m || ': o codigo da empresa chega (para o tablet e a folha de acesso)');
+    IF g.m = 'A' THEN
+      SET LOCAL ROLE NONE;
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'valores.ver_rs';
+      SET LOCAL ROLE authenticated;
+      PERFORM public.exigir(public.minha_taxa() IS NULL AND public.extrato_pontos(g.pessoa, v_hoje - 30, v_hoje)->>'taxa' IS NULL
+                            AND jsonb_array_length(public.extrato_pontos(g.pessoa, v_hoje - 30, v_hoje)->'movimentos') >= 2,
+                            'sem "Ver valores em R$": o extrato chega, sem a taxa de pontos para reais');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs');
+      DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo IN ('lojas.tablet_acesso', 'equipe.criar_acesso');
+      SET LOCAL ROLE authenticated;
+      PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.codigo_da_empresa() x));
+      PERFORM public.exigir(public.nada_voltou(), 'sem acesso do tablet nem criar acesso, o codigo da empresa nao vem');
+      SET LOCAL ROLE NONE;
+      INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'lojas.tablet_acesso'), (96, 9600, 'equipe.criar_acesso');
+      SET LOCAL ROLE authenticated;
+    END IF;
+
     -- Metas
     v := public.metas_do_mes(g.loja, v_mes);
     PERFORM public.exigir(v::text LIKE '%Meta-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m),
@@ -14322,6 +14745,47 @@ BEGIN
                         'o master da conta ve o painel das tres lojas');
   PERFORM public.exigir((SELECT jsonb_agg(l.lojaid ORDER BY l.lojaid) FROM public.minhas_lojas() l) = '[9601, 9602, 9603]'::jsonb,
                         'seletor do master: as tres lojas ativas da conta');
+  -- Parte 4, fatia 2: o master continua vendo tudo da conta.
+  PERFORM public.exigir((SELECT count(*) FROM public.pessoas_para('premios.ver')) = (SELECT count(*) FROM public.funcionarios WHERE contaid = 96)
+                        AND EXISTS (SELECT 1 FROM jsonb_array_elements(public.listar_trocas(100)) x WHERE x->>'loja' IS NULL)
+                        AND EXISTS (SELECT 1 FROM public.ranking_do_fechamento(9601, NULL))
+                        AND (SELECT count(*) FROM public.ranking_pontos(date_trunc('month', (public.meu_hoje()->>'hoje')::date)::date, (public.meu_hoje()->>'hoje')::date)) >= 3,
+                        'o master ve todas as pessoas, o resgate sem loja, o ranking da conta e o das tres lojas');
+  PERFORM public.exigir((SELECT count(*) FROM public.feedbacks_do_periodo((public.meu_hoje()->>'hoje')::date - 30, (public.meu_hoje()->>'hoje')::date)) = 4
+                        AND (SELECT count(*) FROM public.justificativas_da_tela()) >= 3
+                        AND (SELECT count(*) FROM public.solicitacoes_da_loja(9602)) >= 1,
+                        'o master ve todos os feedbacks, justificativas e solicitacoes da conta');
+  PERFORM public.exigir((SELECT count(*) FROM public.metas_da_semana(9603)) = 7
+                        AND EXISTS (SELECT 1 FROM public.metas_especiais_da_loja(9602))
+                        AND jsonb_array_length(public.catalogo_de_tarefas(NULL, true, NULL, 50, 0)->'tarefas') >= 9,
+                        'o master ve as metas e o catalogo de todas as lojas');
+  PERFORM public.exigir((SELECT count(*) FROM public.agendamentos_da_loja(9601)) >= 1 AND (SELECT count(*) FROM public.agendamentos_da_loja(9603)) >= 1
+                        AND (SELECT bool_and(valor = 150) FROM public.agendamentos_da_loja(9602)),
+                        'o master ve a agenda de todas as lojas, com o valor');
+  PERFORM public.exigir((SELECT count(*) FROM public.conquistas_ganhas() WHERE conquistaid = 9601) = 4
+                        AND EXISTS (SELECT 1 FROM public.conquistas_da_pessoa(96041))
+                        AND EXISTS (SELECT 1 FROM public.pessoas_inteiras_para('relatorios.ver') WHERE funcionarioid = 96041),
+                        'o master ve todas as conquistas e o relatorio de qualquer pessoa');
+  PERFORM public.exigir((SELECT count(*) FROM public.comunicados_da_tela() WHERE titulo LIKE 'Comunicado%') = 5
+                        AND (SELECT count(*) FROM public.lojas_para('comunicados.publicar')) = 3
+                        AND public.recibo_ciencia((SELECT s.assinaturaid FROM public.ciencias_da_tela() s WHERE s.statusassinatura = 'Ciente' LIMIT 1)) IS NOT NULL,
+                        'o master ve todos os comunicados, as tres lojas e o recibo');
+  PERFORM public.exigir((SELECT count(*) FROM public.onboarding_status_da_tela() WHERE funcionarioid IN (96011, 96021, 96031, 96041)) = 4
+                        AND EXISTS (SELECT 1 FROM public.onboarding_itens_da_tela() WHERE funcionarioid = 96041),
+                        'o master ve o onboarding de todos');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.equipe_da_tela() WHERE funcionarioid = 96041 AND cpf = '52998224725')
+                        AND (SELECT count(DISTINCT lojaid) FROM public.vinculos_da_tela() WHERE lojaid IN (9601, 9602, 9603)) = 3
+                        AND (SELECT count(*) FROM public.travas_do_pin() WHERE funcionarioid IN (96011, 96021, 96031, 96041)) = 4,
+                        'o master ve a equipe inteira, com CPF, todos os vinculos e todas as travas');
+  PERFORM public.exigir((SELECT count(*) FROM public.lojas_da_gestao()) >= 3
+                        AND (SELECT email IS NOT NULL FROM public.conta_da_gestao())
+                        AND (SELECT count(*) FROM public.links_de_tv()) = 3
+                        AND public.mapa_da_jornada(9602)->>'loja' = 'Loja B',
+                        'o master ve as lojas, o cadastro da conta, todos os links e todos os mapas');
+  -- Quem nao e master nem gerente nao recebe lista de pessoas.
+  PERFORM set_config('teste.uid', '10100000-0000-0000-0000-000000000002', true);   -- o colaborador da secao do app
+  PERFORM public.guardar_resultado((SELECT jsonb_agg(p) FROM public.pessoas_para('premios.ver') p));
+  PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'colaborador' AND public.nada_voltou(), 'o colaborador nao recebe a lista de pessoas');
 END $$;
 RESET ROLE;
 SET teste.uid = '';
@@ -14341,7 +14805,34 @@ BEGIN
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosrc LIKE '%conta_do_gerente(%'
      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     AND p.proname NOT IN ('minhas_lojas', 'minhas_permissoes', 'meu_acesso', 'painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente', 'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate', 'recibo_resgate_gerente');
+     AND p.proname NOT IN ('minhas_lojas', 'minhas_permissoes', 'meu_acesso', 'painel_da_loja', 'fila_da_loja', 'quadro_validacao', 'quadro_validacao_gerente', 'atribuicoes_para_entregar', 'atribuicoes_para_entregar_gerente', 'fila_de_um_dia', 'fila_de_um_dia_gerente', 'alcance_da_fila', 'tarefas_de_folga_hoje', 'tarefas_de_folga_hoje_gerente', 'quem_trabalha_hoje', 'quem_trabalha_hoje_gerente', 'painel_inicio', 'painel_inicio_gerente', 'tarefas_nao_pegas', 'contagem_do_menu', 'contagem_do_menu_gerente', 'analise_de_tarefas', 'analise_de_tarefas_gerente', 'historico_da_pessoa', 'historico_da_pessoa_gerente', 'pendencias_da_pessoa', 'pendencias_da_pessoa_gerente', 'tarefas_pegas_da_pessoa', 'metas_do_mes', 'metas_do_mes_gerente', 'foto_de_entrega_do_gerente', 'anexo_da_agenda_do_gerente', 'recibo_resgate', 'recibo_resgate_gerente',
+                              -- parte 4, fatia 2
+                              'pessoas_para', 'premios_do_catalogo', 'minha_taxa', 'minha_taxa_gerente', 'listar_trocas', 'listar_trocas_gerente',
+                              'extrato_pontos', 'extrato_pontos_gerente', 'ranking_pontos', 'ranking_pontos_gerente', 'ranking_mensal',
+                              'ranking_mensal_gerente', 'fechamento_valendo', 'fechamento_valendo_gerente', 'meses_fechados', 'ranking_do_fechamento',
+                              -- parte 4, fatia 3
+                              'pessoas_da_loja', 'feedbacks_do_periodo', 'justificativas_da_tela', 'justificaveis', 'justificaveis_gerente',
+                              'solicitacoes_da_loja', 'historico_das_solicitacoes',
+                              -- parte 4, fatia 4
+                              'tarefas_da_loja', 'teto_de_pontos_por_ciencia', 'metas_da_semana', 'metas_especiais_da_loja',
+                              'catalogo_de_tarefas', 'catalogo_de_tarefas_gerente', 'atribuicoes_da_loja', 'atribuicoes_da_loja_gerente',
+                              -- parte 4, fatia 5
+                              'tipos_de_evento', 'agendamentos_da_loja', 'anexos_do_agendamento', 'historico_do_agendamento',
+                              'agendamentos_sem_tarefa', 'agendamentos_sem_tarefa_gerente', 'conflitos_agendamento', 'conflitos_agendamento_gerente',
+                              -- parte 4, fatia 6
+                              'conquistas_do_catalogo', 'conquistas_ganhas', 'conquistas_da_pessoa', 'pessoas_inteiras_para',
+                              -- parte 4, fatia 7
+                              'comunicados_da_tela', 'ciencias_da_tela', 'lojas_para', 'pontos_da_leitura', 'fora_do_comunicado',
+                              'fora_do_comunicado_gerente', 'recibo_ciencia', 'recibo_ciencia_gerente',
+                              -- parte 4, fatia 8
+                              'etapas_de_onboarding', 'onboarding_status_da_tela', 'onboarding_itens_da_tela',
+                              -- parte 4, fatia 9
+                              'equipe_da_tela', 'vinculos_da_tela', 'jornadas_da_conta', 'situacao_dos_acessos', 'situacao_dos_acessos_gerente',
+                              'travas_do_pin', 'travas_do_pin_gerente',
+                              -- parte 4, fatia 10
+                              'nome_da_conta', 'conta_da_gestao', 'lojas_da_gestao', 'links_de_tv', 'som_da_loja', 'vinculos_para',
+                              'jornadas_da_tela', 'dias_das_jornadas', 'resumo_das_lojas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana',
+                              'codigo_da_empresa');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).

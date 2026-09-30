@@ -91,13 +91,10 @@ function usePessoas() {
     queryKey: ["pessoas-saldo"],
     ...DINHEIRO,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto, saldopontos")
-        .eq("ativo", true)
-        .order("nomecompleto");
+      // Só quem a pessoa logada pode ver nesta tela (o master: todos).
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "premios.ver" });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []).filter((p) => p.ativo);
     },
   });
 }
@@ -107,10 +104,7 @@ function usePremios() {
     queryKey: ["premios"],
     staleTime: CADASTRO,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("produtosloja")
-        .select("produtoid, nome, descricao, custoempontos, estoquedisponivel, ativo, sistema")
-        .order("custoempontos");
+      const { data, error } = await supabase.rpc("premios_do_catalogo");
       if (error) throw error;
       return data ?? [];
     },

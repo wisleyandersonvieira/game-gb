@@ -42,12 +42,7 @@ export function MesesFechados({ lojaid, master }: { lojaid: number | null; maste
   const fechamentos = useQuery({
     queryKey: ["fechamentos"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("fechamentosmensais")
-        .select("fechamentoid, ano, mes, versao, situacao, origem, motivo, fechadoem, definitivoem, substituidoem")
-        .order("ano", { ascending: false })
-        .order("mes", { ascending: false })
-        .order("versao", { ascending: false });
+      const { data, error } = await supabase.rpc("meses_fechados");
       if (error) throw error;
       return (data ?? []) as Fechamento[];
     },
@@ -65,13 +60,11 @@ export function MesesFechados({ lojaid, master }: { lojaid: number | null; maste
     queryKey: ["fechamento-linhas", escolhido, lojaid],
     enabled: escolhido !== null,
     queryFn: async () => {
-      let q = supabase
-        .from("historicoranking")
-        .select("historicoid, posicao, nomefuncionario, nota, confiabilidade, esforco, pontosganhos, pontospossiveis")
-        .eq("fechamentoid", escolhido as number)
-        .order("posicao");
-      q = lojaid === null ? q.is("lojaid", null) : q.eq("lojaid", lojaid);
-      const { data, error } = await q;
+      // O master: a da loja ou a da conta inteira; o gerente: só a da loja dele.
+      const { data, error } = await supabase.rpc("ranking_do_fechamento", {
+        p_fechamentoid: escolhido as number,
+        p_lojaid: lojaid as number,
+      });
       if (error) throw error;
       return (data ?? []) as Linha[];
     },

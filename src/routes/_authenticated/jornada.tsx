@@ -77,11 +77,12 @@ function ListaDeJornadas() {
     queryKey: ["jornadas"],
     queryFn: async () => {
       const [j, d, f, fl, l] = await Promise.all([
-        supabase.from("jornadas").select("jornadaid, nome, pausainicio, pausafim, observacao, ativa").order("nome"),
-        supabase.from("jornadasdias").select("jornadaid, diasemana, entrada, saida"),
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto, ativo, jornadaid").eq("ativo", true),
-        supabase.from("funcionarioslojas").select("funcionarioid, lojaid, ativo"),
-        supabase.from("lojas").select("lojaid, nome"),
+        // O gerente: o catálogo da conta (só leitura) e as pessoas e lojas dele.
+        supabase.rpc("jornadas_da_tela"),
+        supabase.rpc("dias_das_jornadas"),
+        supabase.rpc("pessoas_para", { p_codigo: "jornada.ver" }),
+        supabase.rpc("vinculos_para", { p_codigo: "jornada.ver" }),
+        supabase.rpc("lojas_para", { p_codigo: "jornada.ver" }),
       ]);
       for (const r of [j, d, f, fl, l]) if (r.error) throw r.error;
       const nomeLoja = new Map((l.data ?? []).map((x) => [x.lojaid, x.nome]));

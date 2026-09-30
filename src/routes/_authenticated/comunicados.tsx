@@ -43,7 +43,8 @@ function usePessoas() {
   return useQuery({
     queryKey: ["pessoas-comunicado"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("funcionarios").select("funcionarioid, nomecompleto, ativo").order("nomecompleto");
+      // Só quem a pessoa logada pode ver nesta tela (o master: todos).
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "comunicados.ver" });
       if (error) throw error;
       return data ?? [];
     },
@@ -54,7 +55,8 @@ function useLojas() {
   return useQuery({
     queryKey: ["lojas-comunicado"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("lojas").select("lojaid, nome, ativa").order("nome");
+      // As lojas para onde a pessoa logada pode publicar (o master: todas).
+      const { data, error } = await supabase.rpc("lojas_para", { p_codigo: "comunicados.publicar" });
       if (error) throw error;
       return data ?? [];
     },
@@ -68,11 +70,7 @@ function Comunicados() {
   const comunicados = useQuery({
     queryKey: ["comunicados"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("documentos")
-        .select("documentoid, titulo, conteudo, pontosporciencia, datacriacao, status, alvo, primeiracienciaem")
-        .order("datacriacao", { ascending: false })
-        .limit(300);
+      const { data, error } = await supabase.rpc("comunicados_da_tela");
       if (error) throw error;
       return (data ?? []) as Comunicado[];
     },
@@ -81,9 +79,7 @@ function Comunicados() {
   const ciencias = useQuery({
     queryKey: ["ciencias"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("documentosassinaturas")
-        .select("assinaturaid, documentoid, funcionarioid, statusassinatura, dataciencia, origem, pontospagos, motivodesfazer");
+      const { data, error } = await supabase.rpc("ciencias_da_tela");
       if (error) throw error;
       return (data ?? []) as Ciencia[];
     },
@@ -166,8 +162,8 @@ function Novo({ aoPublicar }: { aoPublicar: (id: number) => void }) {
   const padrao = useQuery({
     queryKey: ["pontos-leitura"],
     queryFn: async () => {
-      const { data } = await supabase.from("tarefas").select("pontos").eq("sistema", "leitura").eq("ativa", true).maybeSingle();
-      return data?.pontos ?? 0;
+      const { data } = await supabase.rpc("pontos_da_leitura");
+      return typeof data === "number" ? data : 0;
     },
   });
   const [f, setF] = useState({ titulo: "", conteudo: "", pontos: "" });

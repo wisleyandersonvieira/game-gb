@@ -57,10 +57,8 @@ function Extrato() {
     queryKey: ["pessoas-extrato"],
     staleTime: CADASTRO,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto, ativo")
-        .order("nomecompleto");
+      // Só quem a pessoa logada pode ver nesta tela (o master: todos).
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "extrato.ver" });
       if (error) throw error;
       return data ?? [];
     },

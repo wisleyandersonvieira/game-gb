@@ -38,22 +38,19 @@ function Gestao() {
   const conta = useQuery({
     queryKey: ["minha-conta"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contas")
-        .select("contaid, nome, nomefantasia, email, telefone, cidade, limitelojas, status")
-        .single();
+      // O gerente recebe só o nome da conta; o cadastro (e-mail, limite...) é do master.
+      const { data, error } = await supabase.rpc("conta_da_gestao");
       if (error) throw error;
-      return data;
+      const linha = (data ?? [])[0];
+      if (!linha) throw new Error("Conta não encontrada.");
+      return linha;
     },
   });
 
   const lojas = useQuery({
     queryKey: ["lojas-todas"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("lojas")
-        .select("lojaid, nome, cidade, endereco, ativa, gestorid, responsavelagendamentosid, mostrarvalorestv, tvblocos, tvsegundos")
-        .order("nome");
+      const { data, error } = await supabase.rpc("lojas_da_gestao");
       if (error) throw error;
       return data ?? [];
     },
@@ -63,7 +60,7 @@ function Gestao() {
   const nomes = useQuery({
     queryKey: ["nomes-funcionarios"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("funcionarios").select("funcionarioid, nomecompleto");
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "lojas.ver" });
       if (error) throw error;
       return new Map((data ?? []).map((f) => [f.funcionarioid, f.nomecompleto]));
     },
@@ -75,21 +72,9 @@ function Gestao() {
     queryKey: ["pessoas-da-loja", editando],
     enabled: editando !== null,
     queryFn: async () => {
-      const { data: vinculos, error } = await supabase
-        .from("funcionarioslojas")
-        .select("funcionarioid")
-        .eq("lojaid", editando!)
-        .eq("ativo", true);
+      const { data, error } = await supabase.rpc("pessoas_da_loja", { p_lojaid: editando!, p_codigo: "lojas.editar" });
       if (error) throw error;
-      const ids = (vinculos ?? []).map((v) => v.funcionarioid);
-      if (ids.length === 0) return [];
-      const { data, error: erroNomes } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto")
-        .in("funcionarioid", ids)
-        .order("nomecompleto");
-      if (erroNomes) throw erroNomes;
-      return data ?? [];
+      return (data ?? []).map((p) => ({ funcionarioid: p.funcionarioid, nomecompleto: p.nomecompleto }));
     },
   });
 
@@ -529,9 +514,9 @@ function AcessoDasLojas({ suspensa }: { suspensa: boolean }) {
     queryKey: ["codigo-da-empresa"],
     staleTime: ESTAVEL,
     queryFn: async () => {
-      const { data, error } = await supabase.from("contas").select("codigo, nomefantasia").single();
+      const { data, error } = await supabase.rpc("codigo_da_empresa");
       if (error) throw error;
-      return data;
+      return (data ?? [])[0] ?? null;
     },
   });
 
@@ -926,10 +911,7 @@ function LinksDeTv({ suspensa }: { suspensa: boolean }) {
     queryKey: ["links-tv"],
     refetchInterval: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("linkstv")
-        .select("linktvid, lojaid, nome, criadoem, revogadoem, ultimouso")
-        .order("criadoem", { ascending: false });
+      const { data, error } = await supabase.rpc("links_de_tv");
       if (error) throw error;
       return data ?? [];
     },

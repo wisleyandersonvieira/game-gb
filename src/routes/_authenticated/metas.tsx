@@ -6,6 +6,7 @@ import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pagina } from "@/ui/Pagina";
 import { CADASTRO, DINHEIRO } from "@/ui/prazos";
+import { useMinhasPermissoes } from "@/ui/permissoes";
 
 export const Route = createFileRoute("/_authenticated/metas")({
   component: Metas,
@@ -78,7 +79,23 @@ function useResumo(lojaid: number, mes: string) {
 
 function Metas() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
-  const [aba, setAba] = useState<"lancar" | "mes" | "semana" | "especiais" | "historico">("lancar");
+  const [escolhida, setAba] = useState<"lancar" | "mes" | "semana" | "especiais" | "historico">("lancar");
+  // A meta e os pontos são só do master (decisão 5, 29/09/2026): o gerente vê
+  // "Lançar venda" (se o cargo deixa) e a meta do mês só para consultar.
+  const permissoes = useMinhasPermissoes();
+  const master = permissoes.data?.master === true;
+  const abas = (
+    [
+      ["lancar", "Lançar venda"],
+      ["mes", "Meta do mês"],
+      ["semana", "Por dia da semana"],
+      ["especiais", "Metas especiais"],
+      ["historico", "Histórico"],
+    ] as const
+  ).filter(([id]) =>
+    master || (id === "lancar" ? permissoes.data?.codigos.includes("metas.lancar_venda") === true : id === "mes"),
+  );
+  const aba = abas.some(([id]) => id === escolhida) ? escolhida : (abas[0]?.[0] ?? "mes");
 
   return (
     <Pagina titulo={<>Metas {loja ? `· ${loja.nome}` : ""}</>}>
@@ -89,15 +106,7 @@ function Metas() {
       ) : (
         <>
           <div className="flex flex-wrap gap-x-2 border-b border-border">
-            {(
-              [
-                ["lancar", "Lançar venda"],
-                ["mes", "Meta do mês"],
-                ["semana", "Por dia da semana"],
-                ["especiais", "Metas especiais"],
-                ["historico", "Histórico"],
-              ] as const
-            ).map(([id, rotulo]) => (
+            {abas.map(([id, rotulo]) => (
               <button
                 key={id}
                 onClick={() => setAba(id)}
@@ -110,7 +119,7 @@ function Metas() {
             ))}
           </div>
           {aba === "lancar" && <Lancar lojaid={lojaAtiva} />}
-          {aba === "mes" && <MetaDoMes lojaid={lojaAtiva} />}
+          {aba === "mes" && <MetaDoMes lojaid={lojaAtiva} somenteLeitura={!master} />}
           {aba === "semana" && <PorDiaDaSemana lojaid={lojaAtiva} />}
           {aba === "especiais" && <Especiais lojaid={lojaAtiva} />}
           {aba === "historico" && <Historico lojaid={lojaAtiva} />}
@@ -310,7 +319,7 @@ function Cartao({ titulo, valor, destaque }: { titulo: string; valor: string; de
 /* Meta do mês                                                         */
 /* ------------------------------------------------------------------ */
 
-function MetaDoMes({ lojaid }: { lojaid: number }) {
+function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somenteLeitura?: boolean }) {
   const qc = useQueryClient();
   const [mes, setMes] = useState(hoje().slice(0, 7));
   const resumo = useResumo(lojaid, mes);
@@ -362,7 +371,7 @@ function MetaDoMes({ lojaid }: { lojaid: number }) {
         Mês
         <input type="month" value={mes} min={minimo} onChange={(e) => setMes(e.target.value)} className={campo} />
       </label>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <fieldset disabled={somenteLeitura} className="grid gap-3 sm:grid-cols-3">
         <input
           placeholder={`Nome (ex.: Meta de ${mes.slice(5, 7)}/${mes.slice(0, 4)})`}
           value={form.nome}
@@ -391,7 +400,7 @@ function MetaDoMes({ lojaid }: { lojaid: number }) {
           />
           pontos
         </label>
-      </div>
+      </fieldset>
       {r && (
         <p className="text-sm text-muted-foreground">
           A soma das metas diárias deste mês dá <strong className="text-foreground">{reais(r.somametas)}</strong>
@@ -405,13 +414,17 @@ function MetaDoMes({ lojaid }: { lojaid: number }) {
         Batendo a meta do mês, cada pessoa ligada à loja e ativa naquele momento ganha os pontos do prêmio, uma vez só.
         Se uma correção fizer o mês deixar de bater, o prêmio é estornado. 0 pontos = meta sem prêmio.
       </p>
-      <button
-        type="submit"
-        disabled={salvar.isPending}
-        className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-      >
-        {r?.mes ? "Salvar alterações" : "Cadastrar meta do mês"}
-      </button>
+      {somenteLeitura ? (
+        <p className="text-sm text-muted-foreground">A meta do mês e o prêmio são definidos pelo dono da conta.</p>
+      ) : (
+        <button
+          type="submit"
+          disabled={salvar.isPending}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+        >
+          {r?.mes ? "Salvar alterações" : "Cadastrar meta do mês"}
+        </button>
+      )}
       {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {salvar.isError && <p className="text-sm text-destructive">{(salvar.error as Error).message}</p>}
     </form>
@@ -431,10 +444,7 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
     queryKey: ["metas-modelos", lojaid],
     staleTime: CADASTRO,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("metasdiariasmodelos")
-        .select("diasemanaid, valormeta, pontospremio")
-        .eq("lojaid", lojaid);
+      const { data, error } = await supabase.rpc("metas_da_semana", { p_lojaid: lojaid });
       if (error) throw error;
       return data ?? [];
     },
@@ -531,12 +541,7 @@ function Especiais({ lojaid }: { lojaid: number }) {
   const especiais = useQuery({
     queryKey: ["metas-especiais", lojaid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("metasespeciais")
-        .select("metaespecialid, data, descricao, valormeta, pontospremio")
-        .eq("lojaid", lojaid)
-        .order("data", { ascending: false })
-        .limit(100);
+      const { data, error } = await supabase.rpc("metas_especiais_da_loja", { p_lojaid: lojaid });
       if (error) throw error;
       return data ?? [];
     },

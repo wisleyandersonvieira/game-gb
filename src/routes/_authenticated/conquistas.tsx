@@ -80,10 +80,7 @@ function useConquistas() {
   return useQuery({
     queryKey: ["conquistas"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("conquistas")
-        .select("conquistaid, nome, descricao, icone, criteriotipo, criteriovalor, criteriodias, pontosbonus, ativa, contardesde, criadoem")
-        .order("criadoem");
+      const { data, error } = await supabase.rpc("conquistas_do_catalogo");
       if (error) throw error;
       return data ?? [];
     },
@@ -448,17 +445,14 @@ function Ganhadores() {
   const ganhadores = useQuery({
     queryKey: ["ganhadores"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("conquistasfuncionarios")
-        .select("conquistafuncionarioid, funcionarioid, conquistaid, dataconquista, pontosbonus")
-        .order("dataconquista", { ascending: false })
-        .limit(200);
+      // Só de quem a pessoa logada pode ver (o master: todos).
+      const { data, error } = await supabase.rpc("conquistas_ganhas");
       if (error) throw error;
       const linhas = data ?? [];
       if (linhas.length === 0) return [];
       const [{ data: pessoas }, { data: conquistas }] = await Promise.all([
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto"),
-        supabase.from("conquistas").select("conquistaid, nome, icone"),
+        supabase.rpc("pessoas_para", { p_codigo: "conquistas.ver" }),
+        supabase.rpc("conquistas_do_catalogo"),
       ]);
       const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
       const conquista = new Map((conquistas ?? []).map((c) => [c.conquistaid, c]));

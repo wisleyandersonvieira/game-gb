@@ -26,7 +26,18 @@ function Ranking() {
 
   const hoje = hojeEmSaoPaulo();
   const de = periodo === "dia" ? hoje : `${hoje.slice(0, 7)}-01`;
-  const lojaFiltro = alcance === "loja" ? lojaAtiva : null;
+  const master = useQuery({
+    queryKey: ["sou-master"],
+    staleTime: CADASTRO,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("sou_master");
+      if (error) throw error;
+      return data === true;
+    },
+  });
+  // "Todas as lojas" é só do master: o gerente vê o ranking loja por loja
+  // (o banco também só entrega as lojas dele).
+  const lojaFiltro = alcance === "loja" || master.data !== true ? lojaAtiva : null;
 
   const ranking = useQuery({
     // Dinheiro/pontos: melhor esperar do que mostrar valor velho.
@@ -41,16 +52,6 @@ function Ranking() {
       });
       if (error) throw error;
       return data ?? [];
-    },
-  });
-
-  const master = useQuery({
-    queryKey: ["sou-master"],
-    staleTime: CADASTRO,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("sou_master");
-      if (error) throw error;
-      return data === true;
     },
   });
 
@@ -92,14 +93,16 @@ function Ranking() {
             Meses fechados
           </button>
         </div>
-        <div className="flex gap-1 rounded-lg border border-border p-1">
-          <button className={botao(alcance === "loja")} onClick={() => setAlcance("loja")}>
-            {loja?.nome ?? "Loja"}
-          </button>
-          <button className={botao(alcance === "conta")} onClick={() => setAlcance("conta")}>
-            Todas as lojas
-          </button>
-        </div>
+        {master.data === true && (
+          <div className="flex gap-1 rounded-lg border border-border p-1">
+            <button className={botao(alcance === "loja")} onClick={() => setAlcance("loja")}>
+              {loja?.nome ?? "Loja"}
+            </button>
+            <button className={botao(alcance === "conta")} onClick={() => setAlcance("conta")}>
+              Todas as lojas
+            </button>
+          </div>
+        )}
       </div>
 
       {periodo === "fechados" ? (

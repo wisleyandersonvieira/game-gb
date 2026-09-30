@@ -32,10 +32,8 @@ function usePessoas() {
   return useQuery({
     queryKey: ["pessoas-feedback"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto, ativo")
-        .order("nomecompleto");
+      // Só quem a pessoa logada pode ver nesta tela (o master: todos).
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "feedbacks.ver" });
       if (error) throw error;
       return data ?? [];
     },
@@ -203,16 +201,11 @@ function Lista() {
     queryKey: ["feedbacks", funcionarioid, de, ate],
     enabled: de !== "" && ate !== "",
     queryFn: async () => {
-      let q = supabase
-        .from("feedbacks")
-        .select("feedbackid, funcionarioid, datafeedback, notadia, comentario, origem, pontosbonus, anuladoem, motivoanulacao")
-        .gte("datafeedback", de)
-        .lte("datafeedback", ate)
-        .order("datafeedback", { ascending: false })
-        .order("feedbackid", { ascending: false })
-        .limit(500);
-      if (funcionarioid !== "") q = q.eq("funcionarioid", funcionarioid);
-      const { data, error } = await q;
+      const { data, error } = await supabase.rpc("feedbacks_do_periodo", {
+        p_de: de,
+        p_ate: ate,
+        p_funcionarioid: funcionarioid === "" ? undefined : funcionarioid,
+      });
       if (error) throw error;
       return (data ?? []) as Feedback[];
     },

@@ -123,10 +123,8 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
     queryKey: ["pessoas-relatorio"],
     staleTime: CADASTRO,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto, ativo, saldopontos, pontostotal")
-        .order("nomecompleto");
+      // Quem o relatório pode abrir (o gerente: quem está inteiro nas lojas dele).
+      const { data, error } = await supabase.rpc("pessoas_inteiras_para", { p_codigo: "relatorios.ver" });
       if (error) throw error;
       return data ?? [];
     },
@@ -185,12 +183,8 @@ function PorPessoa({ de, ate }: { de: string; ate: string }) {
       // A lista de conquistas da pessoa e o catálogo de conquistas não
       // dependem um do outro: vão juntos.
       const [{ data, error }, { data: nomes }] = await Promise.all([
-        supabase
-          .from("conquistasfuncionarios")
-          .select("conquistafuncionarioid, conquistaid, dataconquista, pontosbonus")
-          .eq("funcionarioid", Number(funcionarioid))
-          .order("dataconquista", { ascending: false }),
-        supabase.from("conquistas").select("conquistaid, nome, icone"),
+        supabase.rpc("conquistas_da_pessoa", { p_funcionarioid: Number(funcionarioid) }),
+        supabase.rpc("conquistas_do_catalogo"),
       ]);
       if (error) throw error;
       const porId = new Map((nomes ?? []).map((c) => [c.conquistaid, c]));
