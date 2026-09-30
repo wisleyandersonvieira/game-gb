@@ -1404,6 +1404,7 @@ export type Database = {
           pontosganhos: number | null
           semhorafoto: boolean
           recusadopor: string | null
+          registradopor: string | null
           statusvalidacao: string
           tarefaid: number
           validadorfuncionarioid: number | null
@@ -1436,6 +1437,7 @@ export type Database = {
           pontosganhos?: number | null
           semhorafoto?: boolean
           recusadopor?: string | null
+          registradopor?: string | null
           statusvalidacao?: string
           tarefaid: number
           validadorfuncionarioid?: number | null
@@ -1468,6 +1470,7 @@ export type Database = {
           pontosganhos?: number | null
           semhorafoto?: boolean
           recusadopor?: string | null
+          registradopor?: string | null
           statusvalidacao?: string
           tarefaid?: number
           validadorfuncionarioid?: number | null

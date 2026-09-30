@@ -73,3 +73,12 @@ export function filtrarMenu(menu: GrupoMenu[], p: MinhasPermissoes | undefined):
 export function filtrarBarra(itens: ItemMenu[], p: MinhasPermissoes | undefined): ItemMenu[] {
   return itens.filter((i) => podeVerTela(p, i.to));
 }
+
+/**
+ * Pode ver (e, pela regra geral, gravar) valores em R$? Só para esconder o
+ * campo: quem decide, loja por loja, é o banco (pode('valores.ver_rs', loja)).
+ */
+export function usePodeVerValores(): boolean {
+  const p = useMinhasPermissoes().data;
+  return p?.master === true || (p?.codigos.includes("valores.ver_rs") ?? false);
+}

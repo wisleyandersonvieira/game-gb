@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { usePodeVerValores } from "@/ui/permissoes";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { pdfReciboResgate } from "@/rh/pdf";
 import { Pontos } from "@/ui/Pontos";
@@ -140,6 +141,8 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
   const pessoas = usePessoas();
   const premios = usePremios();
   const taxa = useTaxa();
+  // Quem não pode ver um valor não pode gravá-lo: sem "Ver valores em R$", nada de abate em comanda.
+  const veValores = usePodeVerValores();
 
   const [funcionarioid, setFuncionarioid] = useState<number | "">("");
   const [tipo, setTipo] = useState<"premio" | "comanda">("premio");
@@ -227,10 +230,12 @@ function RegistrarResgate({ aoRegistrar }: { aoRegistrar: () => void }) {
           <input type="radio" checked={tipo === "premio"} onChange={() => setTipo("premio")} />
           Prêmio do catálogo
         </label>
-        <label className="flex items-center gap-2">
-          <input type="radio" checked={tipo === "comanda"} onChange={() => setTipo("comanda")} />
-          Abate na comanda
-        </label>
+        {veValores && (
+          <label className="flex items-center gap-2">
+            <input type="radio" checked={tipo === "comanda"} onChange={() => setTipo("comanda")} />
+            Abate na comanda
+          </label>
+        )}
       </div>
 
       {tipo === "premio" ? (

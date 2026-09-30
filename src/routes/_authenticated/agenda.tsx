@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMinhasPermissoes } from "@/ui/permissoes";
+import { useMinhasPermissoes, usePodeVerValores } from "@/ui/permissoes";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { validarArquivo } from "@/rh/arquivos";
 import { Pagina } from "@/ui/Pagina";
@@ -263,6 +263,7 @@ function Novo({
   aoCriar: () => void;
 }) {
   const qc = useQueryClient();
+  const veValores = usePodeVerValores();
   const tipos = useTipos();
   const pessoas = usePessoasDaLoja(lojaid);
   const [f, setF] = useState({ ...VAZIO, data: hoje(), responsavel: (responsavelPadrao ?? "") as number | "" });
@@ -354,18 +355,23 @@ function Novo({
           <input type="checkbox" checked={f.whatsapp} onChange={(e) => setF({ ...f, whatsapp: e.target.checked })} />
           Aceita receber WhatsApp
         </label>
-        <select value={f.pagamento} onChange={(e) => setF({ ...f, pagamento: e.target.value })} className={campo}>
-          {PAGAMENTOS.map((p) => (
-            <option key={p}>{p}</option>
-          ))}
-        </select>
-        <input
-          placeholder="Valor combinado R$ (opcional)"
-          inputMode="decimal"
-          value={f.valor}
-          onChange={(e) => setF({ ...f, valor: e.target.value })}
-          className={campo}
-        />
+        {/* Quem não pode ver um valor não pode gravá-lo. */}
+        {veValores && (
+          <>
+            <select value={f.pagamento} onChange={(e) => setF({ ...f, pagamento: e.target.value })} className={campo}>
+              {PAGAMENTOS.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
+            </select>
+            <input
+              placeholder="Valor combinado R$ (opcional)"
+              inputMode="decimal"
+              value={f.valor}
+              onChange={(e) => setF({ ...f, valor: e.target.value })}
+              className={campo}
+            />
+          </>
+        )}
         <select
           required
           value={f.responsavel}
@@ -630,6 +636,7 @@ function Calendario({
 
 function Detalhe({ a, pessoas }: { a: Agendamento; pessoas: { funcionarioid: number; nome: string }[] }) {
   const qc = useQueryClient();
+  const veValores = usePodeVerValores();
   const tipos = useTipos();
   const [aviso, setAviso] = useState<{ texto: string; grave: boolean } | null>(null);
   const [editando, setEditando] = useState<null | "dados" | "remarcar">(null);
@@ -710,7 +717,7 @@ function Detalhe({ a, pessoas }: { a: Agendamento; pessoas: { funcionarioid: num
             </select>
           </>
         )}
-        {a.statusagendamento !== "Cancelado" && (
+        {a.statusagendamento !== "Cancelado" && veValores && (
           <select
             value={a.statuspagamento}
             onChange={(e) => {
