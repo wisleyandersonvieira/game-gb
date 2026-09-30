@@ -5013,6 +5013,39 @@ export type Database = {
           },
         ]
       }
+      chamadasdoservidor: {
+        Row: {
+          apagados: number | null
+          chamadaid: number
+          erro: string | null
+          funcao: string
+          pedidaem: string
+          requestid: number | null
+          respondidaem: string | null
+          status: number | null
+        }
+        Insert: {
+          apagados?: number | null
+          chamadaid?: number
+          erro?: string | null
+          funcao: string
+          pedidaem?: string
+          requestid?: number | null
+          respondidaem?: string | null
+          status?: number | null
+        }
+        Update: {
+          apagados?: number | null
+          chamadaid?: number
+          erro?: string | null
+          funcao?: string
+          pedidaem?: string
+          requestid?: number | null
+          respondidaem?: string | null
+          status?: number | null
+        }
+        Relationships: []
+      }
       permissoeshistorico: {
         Row: {
           acao: string

@@ -23,7 +23,7 @@ Estão em três lugares diferentes. O nome muda de lugar para lugar: repare nas 
 | `stgame_expurgo_segredo` | sim | Senha com que o banco chama a função que apaga as fotos vencidas. | **igual** ao `STGAME_EXPURGO_SEGREDO` do item 3 |
 | `stgame_fila_segredo` | só com o Telegram (Etapa 1.13) | Senha com que o banco chama a fila de mensagens. | **igual** ao `TELEGRAM_FILA_SEGREDO` do item 3 |
 
-A /saude avisa quando um deles **não existe**. Ela **não consegue** saber se o par do item 3 está igual: isso se confere chamando a função (o passo a passo está no registro de 28/09/2026 do plano).
+A /saude avisa quando um deles **não existe**, e desde 30/09/2026 mostra a **resposta** da última chamada à função: 401 = o par do item 3 não está igual; 404 = a função não está publicada.
 
 ## 3. Supabase → Edge Functions → Secrets (as funções do servidor)
 
@@ -32,6 +32,34 @@ A /saude avisa quando um deles **não existe**. Ela **não consegue** saber se o
 | `STGAME_EXPURGO_SEGREDO` | sim | O mesmo valor do `stgame_expurgo_segredo` do cofre. Mínimo 16 caracteres: com menos, a função recusa tudo. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | automáticos | O Supabase já coloca. Não cadastrar. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_FILA_SEGREDO` | só com o Telegram (Etapa 1.13) | O bot. `TELEGRAM_FILA_SEGREDO` é o par do `stgame_fila_segredo` do cofre. |
+
+## Passo a passo: o apagamento das fotos (30/09/2026)
+
+**Nenhum valor passa pelo chat nem pelo seu teclado:** a senha é sorteada dentro do próprio banco e copiada uma única vez, do resultado do SQL Editor para o campo do segredo da função.
+
+1. **Extensões.** Supabase → Database → Extensions: `pg_net`, `pg_cron` e `supabase_vault` ligadas (a /saude diz se falta alguma).
+2. **O que já existe no cofre** (mostra só o nome e o tamanho, nunca o valor). SQL Editor → New query:
+   ```sql
+   select name, length(decrypted_secret) as tamanho, created_at
+     from vault.decrypted_secrets where name like 'stgame_%';
+   ```
+   Se `stgame_funcoes_url` ou `stgame_expurgo_segredo` já aparecer, **pare e chame o Claude** (o passo 3 daria erro de nome repetido, e o valor antigo pode estar errado).
+3. **Criar os dois segredos do cofre** (a senha é sorteada aqui, 64 caracteres):
+   ```sql
+   select vault.create_secret('https://asgdynxdcdnjglgyyaek.supabase.co/functions/v1',
+                              'stgame_funcoes_url', 'Endereço das Edge Functions do STGame');
+   select vault.create_secret(replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''),
+                              'stgame_expurgo_segredo', 'Senha com que o banco chama a função expurgo-fotos');
+   ```
+   (O endereço não é segredo: é o do projeto, o mesmo que o site usa.)
+4. **Ler a senha UMA vez** para copiá-la para a função:
+   ```sql
+   select decrypted_secret from vault.decrypted_secrets where name = 'stgame_expurgo_segredo';
+   ```
+   Copie o valor (64 caracteres, sem espaço). Não cole em nenhum outro lugar além do passo 5 (e, se quiser, do seu gerenciador de senhas).
+5. **O segredo da função:** Supabase → Edge Functions → Secrets → Add new secret. Name: `STGAME_EXPURGO_SEGREDO` (maiúsculas). Value: o que você copiou. Save. Depois, feche a aba do SQL Editor com o resultado.
+6. **A função está publicada?** Supabase → Edge Functions → Functions: tem de aparecer `expurgo-fotos`. Se **não** aparecer, pare e chame o Claude: publicar a função é um passo à parte (ela precisa ir com "Verify JWT" desligado).
+7. **Disparar e conferir:** no SQL Editor, `select public.fotos_expurgo_disparar();` (uma chamada apaga até 5.000 fotos). Espere 5 minutos e abra a /saude: a linha "Última chamada à função que apaga" tem de dizer **respondeu OK: apagou N**. 401 = o segredo do passo 5 não é igual ao do cofre (refaça o 4 e o 5); 404 = a função não está publicada (passo 6).
 
 ## 4. O que não é segredo, mas também é obrigatório
 

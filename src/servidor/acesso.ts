@@ -1234,13 +1234,73 @@ export type SaudeDasRotinas = {
   pgnet: boolean;
   segredos: Record<string, boolean>;
   agendador: boolean;
-  jobs: { nome: string; existe: boolean; ativo: boolean; ultimaexecucao: string | null; ultimostatus: string | null }[];
+  jobs: {
+    nome: string;
+    existe: boolean;
+    ativo: boolean;
+    ultimaexecucao: string | null;
+    ultimostatus: string | null;
+    /** O comando agendado é o que o sistema espera (30/09/2026). */
+    comandocerto?: boolean;
+    intervalosegundos?: number;
+    /** Sem rodar há mais de 3 intervalos (no mínimo 15 minutos), ou nunca rodou. */
+    atrasado?: boolean;
+  }[];
+  /** Cada rotina diária: última vez e em quantas contas está atrasada ou com erro. */
+  diarias?: { rotina: string; ultima: string | null; contas: number; atrasadas: number; comerro: number }[];
+  /** A fila de apagamento e a última chamada à função que apaga (só admin geral / chave). */
+  apagamento?: {
+    nafila: number;
+    presas: number;
+    maisantiga: string | null;
+    apagadas24h: number;
+    apagadas7d: number;
+    ultimachamada: {
+      pedidaem: string;
+      chamou: boolean;
+      respondidaem: string | null;
+      status: number | null;
+      apagados: number | null;
+      erro: string | null;
+    } | null;
+    ultimosucesso: string | null;
+  } | null;
+  /** Contado no próprio Storage (só admin geral / chave). */
+  storage?: {
+    arquivos: number;
+    vencidos: number;
+    vencidomaisantigo: string | null;
+    apagadosquecontinuam: number;
+    semdono: number;
+    semdonomaisantigo: string | null;
+  } | null;
+  /** Amostra de apagadas conferida pelo servidor no Storage, uma a uma. */
+  amostra?: { conferidas: number; encontradas: number; erro: string | null } | null;
   /** null = só o admin geral vê o total de todas as contas. */
   mensagensfalhadas: number | null;
   fotos: { vencidas: number; diasdeatraso: number; presas: number } | null;
   /** Dias sem foto da fila do Quadro (29/09/2026), todas as contas somadas. */
   fila: { dias: number; contas: number; ultimo: string | null } | null;
 };
+
+/**
+ * Pergunta ao PRÓPRIO Storage (não ao banco) se cada arquivo dado como apagado
+ * sumiu mesmo: pede um link de 60 s; "não encontrado" = saiu (30/09/2026).
+ * Não é rodar a rotina de novo: é conferir o resultado dela por fora.
+ */
+async function conferirNoStorage(
+  admin: { storage: { from: (b: string) => { createSignedUrl: (p: string, s: number) => Promise<{ error: { message: string } | null }> } } },
+  caminhos: string[],
+): Promise<NonNullable<SaudeDasRotinas["amostra"]>> {
+  let encontradas = 0;
+  let erro: string | null = null;
+  for (const caminho of caminhos) {
+    const { error } = await admin.storage.from("entregas").createSignedUrl(caminho, 60);
+    if (!error) encontradas++;
+    else if (!/not.?found|n[ãa]o encontrad/i.test(error.message)) erro = error.message;
+  }
+  return { conferidas: caminhos.length, encontradas, erro };
+}
 
 /** O tipo de acesso de quem mandou o token ("master", "admin"...), ou null. */
 async function tipoPeloToken(token?: string): Promise<string | null> {
@@ -1333,9 +1393,20 @@ export const diagnostico = createServerFn({ method: "GET" })
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: r, error } = await supabaseAdmin.rpc("saude_das_rotinas");
       if (!error && r) {
-        const bruto = r as unknown as SaudeDasRotinas;
+        // O caminho dos arquivos NUNCA vai para o navegador: só o servidor usa,
+        // para perguntar ao Storage se eles sumiram (30/09/2026).
+        const { apagamento: ap, ...resto } = r as unknown as SaudeDasRotinas & {
+          apagamento?: (NonNullable<SaudeDasRotinas["apagamento"]> & { amostraapagadas?: string[] }) | null;
+        };
+        const caminhos = ap?.amostraapagadas ?? [];
+        const apagamento = ap ? (({ amostraapagadas: _fora, ...a }) => a)(ap) : null;
         const verTudo = tipo === "admin" || porChave;
-        rotinas = verTudo ? bruto : { ...bruto, mensagensfalhadas: null, fotos: null, fila: null };
+        let amostra: SaudeDasRotinas["amostra"] = null;
+        if (verTudo && caminhos.length > 0) amostra = await conferirNoStorage(supabaseAdmin, caminhos);
+        const bruto: SaudeDasRotinas = { ...resto, apagamento, amostra };
+        rotinas = verTudo
+          ? bruto
+          : { ...bruto, mensagensfalhadas: null, fotos: null, fila: null, apagamento: null, storage: null, amostra: null };
       }
     } catch {
       rotinas = null;

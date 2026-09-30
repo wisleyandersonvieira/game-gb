@@ -166,23 +166,58 @@ function Saude() {
   );
 }
 
-/** Uma hora sem rodar já é sinal de agendamento parado (ele roda a cada 5 minutos). */
-const PARADO_DEPOIS_DE_MS = 60 * 60 * 1000;
-
 /** "2026-09-27" → "27/09/2026" (o dia já vem do banco; nada de fuso aqui). */
 const diaBr = (dia: string) => dia.split("-").reverse().join("/");
 
+/** "há 3 horas", "há 2 dias" (a partir do instante que veio do banco). */
+function ha(instante: string | null | undefined): string {
+  if (!instante) return "nunca";
+  const min = Math.max(0, Math.round((Date.now() - Date.parse(instante)) / 60000));
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `há ${h} h`;
+  return `há ${Math.round(h / 24)} dias`;
+}
+
+const NOME_DO_AGENDAMENTO: Record<string, string> = {
+  "gamegb-rotinas": "Rotinas do sistema (lista do dia, fechamento, fotos), a cada 5 minutos",
+  "stgame-codigos-vencidos": "Limpeza dos códigos de acesso vencidos, a cada 5 minutos",
+  "stgame-telegram-fila": "Fila de mensagens do Telegram, a cada 15 segundos (só importa com o bot ligado)",
+};
+const NOME_DA_ROTINA: Record<string, string> = {
+  lista_do_dia: "Lista de tarefas do dia",
+  foto_da_fila: "Foto da fila do dia (o que o Quadro mostra dos dias passados)",
+  conferencia_livro: "Conferência do saldo de pontos",
+  limpeza: "Limpeza dos registros antigos",
+  expurgo_fotos: "Fotos vencidas: pôr na fila de apagamento",
+};
+
+/** O que a resposta da função que apaga as fotos quer dizer. */
+function respostaDoApagamento(c: NonNullable<NonNullable<SaudeDasRotinas["apagamento"]>["ultimachamada"]>): string {
+  if (!c.chamou) return c.erro ?? "não chamou";
+  if (!c.respondidaem) return "chamada feita, esperando a resposta";
+  if (c.status === 200) return `respondeu OK: apagou ${c.apagados ?? 0} arquivo(s)`;
+  if (c.status === 401) return "respondeu 401: a senha do cofre (stgame_expurgo_segredo) e a da função (STGAME_EXPURGO_SEGREDO) não são iguais";
+  if (c.status === 404) return "respondeu 404: a função expurgo-fotos não está publicada no Supabase";
+  if (c.status) return `respondeu ${c.status}: ${c.erro ?? "erro"}`;
+  return c.erro ?? "sem resposta";
+}
+
 /**
- * O que as rotinas automáticas precisam para rodar (29/09/2026). Diz só SE
- * cada segredo existe, nunca o valor. Os números somados de todas as contas
- * (mensagens e fotos) só vêm para o admin geral ou com a chave.
+ * O que as rotinas automáticas precisam para rodar, e se elas RODARAM e
+ * FUNCIONARAM (29 e 30/09/2026). Diz só SE cada segredo existe, nunca o valor.
+ * Os números somados de todas as contas (fila, Storage) só vêm para o admin
+ * geral ou com a chave.
  */
 function Rotinas({ r }: { r: SaudeDasRotinas }) {
-  const rotinas = r.jobs.find((j) => j.nome === "gamegb-rotinas");
-  const fila = r.jobs.find((j) => j.nome === "stgame-telegram-fila");
-  const rodouAgora = (j?: SaudeDasRotinas["jobs"][number]) =>
-    !!j?.ultimaexecucao && Date.now() - Date.parse(j.ultimaexecucao) < PARADO_DEPOIS_DE_MS && j.ultimostatus !== "failed";
   const segredo = (nome: string) => r.segredos[nome] === true;
+  const ap = r.apagamento;
+  const st = r.storage;
+  // Parada = tem o que apagar, a mais antiga espera há mais de 1 dia e nada
+  // saiu nas últimas 24 horas.
+  const filaParada =
+    !!ap && ap.nafila + ap.presas > 0 && ap.apagadas24h === 0 && !!ap.maisantiga &&
+    Date.now() - Date.parse(ap.maisantiga) > 24 * 60 * 60 * 1000;
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">Rotinas automáticas</p>
@@ -192,41 +227,44 @@ function Rotinas({ r }: { r: SaudeDasRotinas }) {
           titulo="Cofre de segredos e chamadas do banco (Vault e pg_net)"
           ajuda="Sem eles, nenhuma foto vencida é apagada e nenhuma mensagem sai. Ligue as extensões Vault e pg_net no Supabase."
         />
-        <Linha
-          ok={segredo("stgame_funcoes_url") && segredo("stgame_expurgo_segredo")}
-          titulo="Segredos do apagamento de fotos no cofre"
-          ajuda="Faltam stgame_funcoes_url e/ou stgame_expurgo_segredo no Vault. Sem eles, as fotos vencidas não são apagadas."
-        />
-        <Linha
-          ok={r.agendador && !!rotinas?.existe && !!rotinas?.ativo && rodouAgora(rotinas)}
-          titulo="Agendamento automático das rotinas (lista do dia, fechamento, fotos)"
-          ajuda={
-            !r.agendador
-              ? "A extensão pg_cron não está ligada: nenhuma rotina roda sozinha."
-              : !rotinas?.existe
-                ? 'O agendamento "gamegb-rotinas" não existe. Aplique as migrações.'
-                : !rotinas.ativo
-                  ? 'O agendamento "gamegb-rotinas" está desligado.'
-                  : `A última execução foi ${rotinas.ultimaexecucao ? dataHoraBr(rotinas.ultimaexecucao) : "nunca"}${rotinas.ultimostatus === "failed" ? ", com erro" : ""}: ele deveria rodar a cada 5 minutos.`
-          }
-        />
-        <Linha
-          ok={segredo("stgame_fila_segredo") && !!fila?.existe && !!fila?.ativo}
-          titulo="Fila de mensagens do Telegram (só importa com o bot ligado)"
-          ajuda="Falta o segredo stgame_fila_segredo no Vault ou o agendamento stgame-telegram-fila. Resolver antes de ligar o Telegram (Etapa 1.13)."
-        />
+        {["stgame_funcoes_url", "stgame_expurgo_segredo"].map((nome) => (
+          <Linha
+            key={nome}
+            ok={segredo(nome)}
+            titulo={`Segredo ${nome} no cofre: ${segredo(nome) ? "existe" : "FALTA"}`}
+            ajuda="Sem ele, as fotos vencidas não são apagadas. O passo a passo está em docs/SEGREDOS.md."
+          />
+        ))}
+        {!r.agendador && (
+          <Linha ok={false} titulo="Agendador (pg_cron)" ajuda="A extensão pg_cron não está ligada: nenhuma rotina roda sozinha." />
+        )}
+        {r.jobs.map((j) => {
+          const telegram = j.nome === "stgame-telegram-fila";
+          const ok = j.existe && j.ativo && j.comandocerto !== false && !j.atrasado && j.ultimostatus !== "failed";
+          return (
+            <Linha
+              key={j.nome}
+              ok={ok || (telegram && !segredo("stgame_fila_segredo"))}
+              titulo={`${NOME_DO_AGENDAMENTO[j.nome] ?? j.nome}: ${
+                !j.existe ? "NÃO EXISTE" : !j.ativo ? "DESLIGADO" : `rodou ${ha(j.ultimaexecucao)}${j.atrasado ? " — ATRASADO" : ""}`
+              }`}
+              ajuda={
+                !j.existe
+                  ? `O agendamento "${j.nome}" não existe. Aplique as migrações.`
+                  : !j.ativo
+                    ? `O agendamento "${j.nome}" está desligado.`
+                    : j.comandocerto === false
+                      ? `O agendamento "${j.nome}" roda um comando diferente do que o sistema espera.`
+                      : `Última execução: ${j.ultimaexecucao ? dataHoraBr(j.ultimaexecucao) : "nunca"}${j.ultimostatus === "failed" ? ", com erro" : ""}.`
+              }
+            />
+          );
+        })}
         {r.mensagensfalhadas !== null && (
           <Linha
             ok={r.mensagensfalhadas === 0}
             titulo={`Mensagens que falharam nas últimas 24 horas: ${r.mensagensfalhadas}`}
             ajuda="Mensagens que o Telegram recusou até desistir. Todas as contas somadas."
-          />
-        )}
-        {r.fotos && (
-          <Linha
-            ok={r.fotos.vencidas === 0 || r.fotos.diasdeatraso <= 2}
-            titulo={`Fotos vencidas ainda guardadas: ${r.fotos.vencidas}`}
-            ajuda={`A mais antiga passou do prazo há ${r.fotos.diasdeatraso} dia(s)${r.fotos.presas > 0 ? `; ${r.fotos.presas} com a remoção falhando` : ""}. A política de uso promete que elas são apagadas. Todas as contas somadas.`}
           />
         )}
         {r.fila && (
@@ -236,7 +274,80 @@ function Rotinas({ r }: { r: SaudeDasRotinas }) {
             ajuda={`A rotina da madrugada não tirou a foto da fila desses dias até as 03:00${r.fila.ultimo ? ` (o mais recente: ${diaBr(r.fila.ultimo)})` : ""}. No Quadro, eles aparecem como "não registrado". ${r.fila.contas} conta(s) afetada(s).`}
           />
         )}
+        {(r.diarias ?? []).map((d) => (
+          <Linha
+            key={d.rotina}
+            ok={d.atrasadas === 0 && d.comerro === 0}
+            titulo={`${NOME_DA_ROTINA[d.rotina] ?? d.rotina}: rodou ${ha(d.ultima)}${
+              d.atrasadas > 0 ? ` — ATRASADA em ${d.atrasadas} de ${d.contas} conta(s)` : ""
+            }${d.comerro > 0 ? ` — COM ERRO em ${d.comerro} conta(s)` : ""}`}
+            ajuda="Roda uma vez por dia, depois das 03:00, em cada conta. Atrasada = mais de 30 horas sem rodar."
+          />
+        ))}
       </ul>
+
+      {ap && (
+        <>
+          <p className="pt-2 text-sm font-medium">Apagamento das fotos vencidas</p>
+          <ul className="space-y-2">
+            {r.fotos && (
+              <Linha
+                ok={r.fotos.vencidas === 0 || r.fotos.diasdeatraso <= 2}
+                titulo={`Fotos vencidas que o sistema ainda não deu como apagadas: ${r.fotos.vencidas}`}
+                ajuda={`A mais antiga passou do prazo há ${r.fotos.diasdeatraso} dia(s)${r.fotos.presas > 0 ? `; ${r.fotos.presas} com a remoção falhando` : ""}. Todas as contas somadas.`}
+              />
+            )}
+            <Linha
+              ok={!filaParada && ap.presas === 0}
+              titulo={
+                ap.nafila + ap.presas === 0
+                  ? "Fila de apagamento: vazia"
+                  : `Fila de apagamento: ${ap.nafila} esperando${ap.presas > 0 ? `, ${ap.presas} presas` : ""} — a mais antiga ${ha(ap.maisantiga)}${filaParada ? " — PARADA" : ""}`
+              }
+              ajuda={`Apagadas nas últimas 24 horas: ${ap.apagadas24h}; nos últimos 7 dias: ${ap.apagadas7d}. "Presas" = a remoção falhou 5 vezes e o sistema desistiu delas. Parada = nada saiu em 24 horas.`}
+            />
+            <Linha
+              ok={!!ap.ultimachamada && ap.ultimachamada.status === 200}
+              titulo={
+                ap.ultimachamada
+                  ? `Última chamada à função que apaga: ${dataHoraBr(ap.ultimachamada.pedidaem)} — ${respostaDoApagamento(ap.ultimachamada)}`
+                  : "A função que apaga ainda não foi chamada"
+              }
+              ajuda={`Última vez que funcionou: ${ap.ultimosucesso ? dataHoraBr(ap.ultimosucesso) : "nunca"}.`}
+            />
+          </ul>
+        </>
+      )}
+
+      {st && (
+        <>
+          <p className="pt-2 text-sm font-medium">Contado no próprio Storage (onde as fotos ficam)</p>
+          <ul className="space-y-2">
+            <Linha
+              ok={st.vencidos === 0}
+              titulo={`Fotos vencidas ainda guardadas no Storage: ${st.vencidos}`}
+              ajuda={`A mais antiga foi enviada em ${st.vencidomaisantigo ? dataHoraBr(st.vencidomaisantigo) : "—"}. Esta conta é feita no Storage, não no que o sistema acha que apagou. A política de uso promete que elas são apagadas.`}
+            />
+            <Linha
+              ok={st.apagadosquecontinuam === 0}
+              titulo={`Dadas como apagadas, mas ainda no Storage: ${st.apagadosquecontinuam}`}
+              ajuda="O sistema registrou que apagou e o arquivo continua lá. Tem de ser zero: chame o Claude."
+            />
+            {r.amostra && (
+              <Linha
+                ok={r.amostra.encontradas === 0 && !r.amostra.erro}
+                titulo={`Conferência uma a uma: ${r.amostra.conferidas} das últimas apagadas procuradas no Storage — ${r.amostra.encontradas} encontradas`}
+                ajuda={r.amostra.erro ? `O Storage respondeu com erro: ${r.amostra.erro}` : "Tem de ser zero encontradas: o arquivo apagado não pode mais existir."}
+              />
+            )}
+            <Linha
+              ok={st.semdono === 0}
+              titulo={`Arquivos no Storage que nenhuma entrega usa: ${st.semdono}`}
+              ajuda={`Nunca serão apagados pela rotina (o mais antigo é de ${st.semdonomaisantigo ? dataHoraBr(st.semdonomaisantigo) : "—"}). Em geral, foto enviada de uma entrega que não chegou a ser registrada.`}
+            />
+          </ul>
+        </>
+      )}
     </div>
   );
 }
