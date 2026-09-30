@@ -82,6 +82,11 @@ jobs:
         run: echo "conferido em src/routes/_authenticated/configuracoes.test.ts"
       - name: Nenhuma coluna apagada voltou numa migração posterior
         run: bash supabase/tests/colunas-apagadas.sh
+      - name: Toda coluna e tabela que as funções do banco usam existe
+        # O Postgres só confere isso quando a função RODA (30/09/2026: o
+        # Quadro do master quebrou no ar). Aplica as migrações num Postgres
+        # descartável e lê todas as funções com o plpgsql_check.
+        run: bash supabase/tests/colunas-das-funcoes.sh
       - name: PBKDF2 dentro do limite da hospedagem
         run: |
           # A Cloudflare (hospedagem do Lovable) recusa PBKDF2 acima de 100.000
