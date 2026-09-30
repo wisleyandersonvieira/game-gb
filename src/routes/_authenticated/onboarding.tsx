@@ -26,7 +26,7 @@ function useEtapas() {
   return useQuery({
     queryKey: ["onboarding-etapas"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("onboardingetapas").select("etapaid, nome, ordem, ativo").order("ordem").order("nome");
+      const { data, error } = await supabase.rpc("etapas_de_onboarding");
       if (error) throw error;
       return (data ?? []) as Etapa[];
     },
@@ -72,9 +72,10 @@ function Pessoas() {
     queryKey: ["onboarding"],
     queryFn: async () => {
       const [{ data: pessoas, error }, { data: status }, { data: itens }] = await Promise.all([
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto, ativo").order("nomecompleto"),
-        supabase.from("onboardingstatus").select("funcionarioid, statusworkflow, iniciadoem, concluidoem"),
-        supabase.from("onboardingitens").select("itemid, funcionarioid, etapaid, concluidoem, observacao, documentoid"),
+        // O gerente: só quem está inteiro nas lojas dele (como para conduzir).
+        supabase.rpc("pessoas_inteiras_para", { p_codigo: "onboarding.ver" }),
+        supabase.rpc("onboarding_status_da_tela"),
+        supabase.rpc("onboarding_itens_da_tela"),
       ]);
       if (error) throw error;
       return {

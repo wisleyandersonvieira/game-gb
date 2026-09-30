@@ -22,6 +22,7 @@ import {
   Target,
   Trophy,
   UserPlus,
+  UserCog,
   Users,
   Wrench,
   type LucideIcon, Network, Clock, Undo2 } from "lucide-react";
@@ -76,6 +77,7 @@ export const MENU_MASTER: GrupoMenu[] = [
     itens: [
       { to: "/gestao", label: "Lojas e links da TV", icone: Store },
       { to: "/configuracoes", label: "Configurações", icone: Settings },
+      { to: "/usuarios", label: "Usuários e cargos", icone: UserCog },
       { to: "/perfil", label: "Meu perfil", icone: CircleUser },
       // Só aparece para o dono da conta (este menu é o do master). Serve para
       // chegar em /medir SEM recarregar a página, senão a medição se perde.

@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useMinhasPermissoes } from "@/ui/permissoes";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { FolgaDeHoje } from "@/painel/FolgaDeHoje";
 import { FilaDoDia } from "@/painel/FilaDoDia";
@@ -137,6 +138,7 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
   const qc = useQueryClient();
   const [atribuicaoid, setAtribuicaoid] = useState<number | "">("");
   const [observacao, setObservacao] = useState("");
+  const souMaster = useMinhasPermissoes().data?.master === true;
   const [foto, setFoto] = useState<File | null>(null);
   const [jaAprovada, setJaAprovada] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
@@ -240,6 +242,8 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
           ))}
         </select>
 
+        {/* Enviar foto é só do dono da conta (o gerente vê as fotos, decisão 1). */}
+        {souMaster && (
         <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
           Foto (opcional):
           <input
@@ -249,6 +253,7 @@ function RegistrarEntrega({ lojaid }: { lojaid: number }) {
             className="min-w-0 max-w-full text-sm"
           />
         </label>
+        )}
 
         <input
           placeholder="Observação (opcional)"

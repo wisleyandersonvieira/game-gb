@@ -44,6 +44,7 @@ import { Route as AuthenticatedRankingRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedRelatoriosRouteImport } from './routes/_authenticated/relatorios'
 import { Route as AuthenticatedSolicitacoesRouteImport } from './routes/_authenticated/solicitacoes'
 import { Route as AuthenticatedTarefasRouteImport } from './routes/_authenticated/tarefas'
+import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticated/usuarios'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminPerfilRouteImport } from './routes/admin/perfil'
 import { Route as AdminRedesRouteImport } from './routes/admin/redes'
@@ -238,6 +239,11 @@ const AuthenticatedTarefasRoute = AuthenticatedTarefasRouteImport.update({
   path: '/tarefas',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedUsuariosRoute = AuthenticatedUsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -329,6 +335,7 @@ export interface FileRoutesByFullPath {
   '/relatorios': typeof AuthenticatedRelatoriosRoute
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
+  '/usuarios': typeof AuthenticatedUsuariosRoute
   '/admin/perfil': typeof AdminPerfilRoute
   '/admin/redes': typeof AdminRedesRoute
   '/e/$codigo': typeof ECodigoRoute
@@ -374,6 +381,7 @@ export interface FileRoutesByTo {
   '/relatorios': typeof AuthenticatedRelatoriosRoute
   '/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/tarefas': typeof AuthenticatedTarefasRoute
+  '/usuarios': typeof AuthenticatedUsuariosRoute
   '/admin/perfil': typeof AdminPerfilRoute
   '/admin/redes': typeof AdminRedesRoute
   '/e/$codigo': typeof ECodigoRoute
@@ -423,6 +431,7 @@ export interface FileRoutesById {
   '/_authenticated/relatorios': typeof AuthenticatedRelatoriosRoute
   '/_authenticated/solicitacoes': typeof AuthenticatedSolicitacoesRoute
   '/_authenticated/tarefas': typeof AuthenticatedTarefasRoute
+  '/_authenticated/usuarios': typeof AuthenticatedUsuariosRoute
   '/admin/perfil': typeof AdminPerfilRoute
   '/admin/redes': typeof AdminRedesRoute
   '/e/$codigo': typeof ECodigoRoute
@@ -472,6 +481,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/solicitacoes'
     | '/tarefas'
+    | '/usuarios'
     | '/admin/perfil'
     | '/admin/redes'
     | '/e/$codigo'
@@ -517,6 +527,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/solicitacoes'
     | '/tarefas'
+    | '/usuarios'
     | '/admin/perfil'
     | '/admin/redes'
     | '/e/$codigo'
@@ -565,6 +576,7 @@ export interface FileRouteTypes {
     | '/_authenticated/relatorios'
     | '/_authenticated/solicitacoes'
     | '/_authenticated/tarefas'
+    | '/_authenticated/usuarios'
     | '/admin/perfil'
     | '/admin/redes'
     | '/e/$codigo'
@@ -842,6 +854,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTarefasRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/usuarios': {
+      id: '/_authenticated/usuarios'
+      path: '/usuarios'
+      fullPath: '/usuarios'
+      preLoaderRoute: typeof AuthenticatedUsuariosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
@@ -947,6 +966,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRelatoriosRoute: typeof AuthenticatedRelatoriosRoute
   AuthenticatedSolicitacoesRoute: typeof AuthenticatedSolicitacoesRoute
   AuthenticatedTarefasRoute: typeof AuthenticatedTarefasRoute
+  AuthenticatedUsuariosRoute: typeof AuthenticatedUsuariosRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -974,6 +994,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRelatoriosRoute: AuthenticatedRelatoriosRoute,
   AuthenticatedSolicitacoesRoute: AuthenticatedSolicitacoesRoute,
   AuthenticatedTarefasRoute: AuthenticatedTarefasRoute,
+  AuthenticatedUsuariosRoute: AuthenticatedUsuariosRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

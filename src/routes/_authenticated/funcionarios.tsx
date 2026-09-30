@@ -117,13 +117,10 @@ function Funcionarios() {
       // As duas não dependem uma da outra: vão juntas. Em fila, eram duas
       // idas ao servidor a cada abertura da tela (medido em 24/09/2026).
       const [{ data: pessoas, error }, { data: vinculos, error: erroVinculos }] = await Promise.all([
-        supabase
-          .from("funcionarios")
-          .select(
-            "funcionarioid, nomecompleto, cpf, cargo, setor, telefonewhatsapp, diadefolga, saldopontos, ativo, jornadaid",
-          )
-          .order("nomecompleto"),
-        supabase.from("funcionarioslojas").select("funcionarioid, lojaid, ativo, validador"),
+        // O gerente: quem tem uma loja em comum com ele (CPF e telefone, só de
+        // quem está inteiro nas lojas dele), e só as lojas dele de cada um.
+        supabase.rpc("equipe_da_tela"),
+        supabase.rpc("vinculos_da_tela"),
       ]);
       if (error) throw error;
       if (erroVinculos) throw erroVinculos;
@@ -193,7 +190,7 @@ function Funcionarios() {
   const jornadas = useQuery({
     queryKey: ["jornadas-para-vincular"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("jornadas").select("jornadaid, nome, ativa");
+      const { data, error } = await supabase.rpc("jornadas_da_conta");
       if (error) throw error;
       return data ?? [];
     },

@@ -53,13 +53,11 @@ export function ConfigurarTablet({
   const atual = useQuery({
     queryKey: ["som-da-loja", lojaid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("lojas")
-        .select("somtarefanova, somvolume, somrepetirminutos")
-        .eq("lojaid", lojaid)
-        .single();
+      const { data, error } = await supabase.rpc("som_da_loja", { p_lojaid: lojaid });
       if (error) throw error;
-      return data;
+      const linha = (data ?? [])[0];
+      if (!linha) throw new Error("Esta loja não está liberada para você.");
+      return linha;
     },
   });
 

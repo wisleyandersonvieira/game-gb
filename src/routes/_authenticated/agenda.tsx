@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useMinhasPermissoes } from "@/ui/permissoes";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { validarArquivo } from "@/rh/arquivos";
 import { Pagina } from "@/ui/Pagina";
@@ -96,7 +97,7 @@ function useTipos() {
   return useQuery({
     queryKey: ["tipos-evento"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("tiposevento").select("tipoeventoid, nome, ativo").order("nome");
+      const { data, error } = await supabase.rpc("tipos_de_evento");
       if (error) throw error;
       return data ?? [];
     },
@@ -107,14 +108,11 @@ function usePessoasDaLoja(lojaid: number) {
   return useQuery({
     queryKey: ["pessoas-da-loja-agenda", lojaid],
     queryFn: async () => {
-      const [{ data: vinculos, error }, { data: gente }] = await Promise.all([
-        supabase.from("funcionarioslojas").select("funcionarioid").eq("lojaid", lojaid).eq("ativo", true),
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto, ativo"),
-      ]);
+      // Quem trabalha na loja (o banco confere se a pessoa logada vê a Agenda aqui).
+      const { data, error } = await supabase.rpc("pessoas_da_loja", { p_lojaid: lojaid, p_codigo: "agenda.ver" });
       if (error) throw error;
-      const daLoja = new Set((vinculos ?? []).map((v) => v.funcionarioid));
-      return (gente ?? [])
-        .filter((p) => p.ativo && daLoja.has(p.funcionarioid))
+      return (data ?? [])
+        .filter((p) => p.ativo)
         .map((p) => ({ funcionarioid: p.funcionarioid, nome: p.nomecompleto }))
         .sort((a, b) => a.nome.localeCompare(b.nome));
     },
@@ -421,23 +419,17 @@ function Lista({ lojaid }: { lojaid: number }) {
   const agenda = useQuery({
     queryKey: ["agenda", lojaid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("agendamentos")
-        .select(
-          "agendamentoid, contaid, lojaid, nomecliente, cpfcliente, telefonecliente, tipoevento, tipoeventoid, dataevento, statusagendamento, statuspagamento, valor, funcionarioid, observacoes, aceitawhatsapp, motivocancelamento",
-        )
-        .eq("lojaid", lojaid)
-        .order("dataevento")
-        .limit(500);
+      // O valor (R$) só vem para quem pode ver valores nesta loja.
+      const { data, error } = await supabase.rpc("agendamentos_da_loja", { p_lojaid: lojaid });
       if (error) throw error;
-      return (data ?? []) as Agendamento[];
+      return (data ?? []) as unknown as Agendamento[];
     },
   });
 
   const nomes = useQuery({
     queryKey: ["nomes-funcionarios"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("funcionarios").select("funcionarioid, nomecompleto");
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "agenda.ver" });
       if (error) throw error;
       return new Map((data ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
     },
@@ -866,17 +858,13 @@ function Anexos({ a }: { a: Agendamento }) {
   const anexos = useQuery({
     queryKey: ["agenda-anexos", a.agendamentoid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("agendamentosanexos")
-        .select("anexoid, caminho, nomearquivo, tamanho, enviadoem")
-        .eq("agendamentoid", a.agendamentoid)
-        .is("removidoem", null)
-        .order("enviadoem");
+      const { data, error } = await supabase.rpc("anexos_do_agendamento", { p_agendamentoid: a.agendamentoid });
       if (error) throw error;
       return data ?? [];
     },
   });
 
+  const souMaster = useMinhasPermissoes().data?.master === true;
   const enviar = useMutation({
     mutationFn: async (arquivo: File) => {
       const tipo = await validarArquivo(arquivo);
@@ -942,7 +930,8 @@ function Anexos({ a }: { a: Agendamento }) {
           </span>
         </div>
       ))}
-      {a.statusagendamento !== "Cancelado" && (
+      {/* Enviar arquivo é só do dono da conta (o gerente abre, decisão 1). */}
+      {a.statusagendamento !== "Cancelado" && souMaster && (
         <label className="block w-fit cursor-pointer rounded-md border border-dashed border-border px-3 py-1.5 text-sm text-muted-foreground">
           {enviar.isPending ? "Enviando..." : "+ Anexar (PDF, JPG ou PNG, até 10 MB)"}
           <input
@@ -980,11 +969,7 @@ function Historico({ agendamentoid }: { agendamentoid: number }) {
   const historico = useQuery({
     queryKey: ["agenda-historico", agendamentoid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("agendamentoshistorico")
-        .select("historicoid, acao, valoranterior, valornovo, motivo, alteradoem")
-        .eq("agendamentoid", agendamentoid)
-        .order("historicoid");
+      const { data, error } = await supabase.rpc("historico_do_agendamento", { p_agendamentoid: agendamentoid });
       if (error) throw error;
       return data ?? [];
     },

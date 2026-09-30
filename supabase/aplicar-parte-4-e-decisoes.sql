@@ -5,6 +5,10 @@
 -- Se der erro, NADA é aplicado: me mande a mensagem.
 -- Pode rodar duas vezes sem problema.
 --
+-- CLASSIFICAÇÃO: ACRESCENTA (marcada em 30/09/2026, já aplicada: o site
+-- anterior continuava funcionando com o banco novo; nenhuma função que ele
+-- chamava sumiu nem mudou de formato).
+--
 -- ATENÇÃO: o banco precisa já ter as partes 2 e 3
 -- (aplicar-permissoes-partes-2-e-3.sql), aplicadas em 29/09.
 -- Aplique ESTE ARQUIVO ANTES de publicar a versão nova.

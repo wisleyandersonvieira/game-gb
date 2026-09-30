@@ -33,6 +33,7 @@ export const CODIGO_DA_TELA: Record<string, string | "master" | "todos"> = {
   "/canal-confidencial": "master",
   "/gestao": "lojas.ver",
   "/configuracoes": "master",
+  "/usuarios": "master",
   "/perfil": "todos",
   "/medir": "master",
 };

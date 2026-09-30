@@ -142,14 +142,11 @@ function Abrir({ lojaid }: { lojaid: number }) {
   const pessoas = useQuery({
     queryKey: ["pessoas-da-loja-solicitacao", lojaid],
     queryFn: async () => {
-      const [{ data: vinculos, error }, { data: gente }] = await Promise.all([
-        supabase.from("funcionarioslojas").select("funcionarioid").eq("lojaid", lojaid).eq("ativo", true),
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto, ativo"),
-      ]);
+      // Quem trabalha na loja (o banco confere se a pessoa logada pode abrir aqui).
+      const { data, error } = await supabase.rpc("pessoas_da_loja", { p_lojaid: lojaid, p_codigo: "solicitacoes.abrir" });
       if (error) throw error;
-      const daLoja = new Set((vinculos ?? []).map((v) => v.funcionarioid));
-      return (gente ?? [])
-        .filter((p) => p.ativo && daLoja.has(p.funcionarioid))
+      return (data ?? [])
+        .filter((p) => p.ativo)
         .map((p) => ({ funcionarioid: p.funcionarioid, nome: p.nomecompleto }))
         .sort((a, b) => a.nome.localeCompare(b.nome));
     },
@@ -302,24 +299,16 @@ function Lista({ lojaid }: { lojaid: number }) {
   const dados = useQuery({
     queryKey: ["solicitacoes", lojaid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("solicitacoesinternas")
-        .select("solicitacaoid, tipo, categoria, descricao, quantidade, unidade, status, motivorecusa, datasolicitacao, funcionarioid, observacao")
-        .eq("lojaid", lojaid)
-        .order("datasolicitacao", { ascending: false })
-        .limit(300);
-      if (error) throw error;
-      const [{ data: pessoas }, { data: historico }] = await Promise.all([
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto"),
-        supabase
-          .from("solicitacoeshistorico")
-          .select("historicoid, solicitacaoid, statusanterior, statusnovo, observacao, alteradoem")
-          .eq("lojaid", lojaid)
-          .order("historicoid"),
+      const [{ data, error }, { data: historico, error: erroH }] = await Promise.all([
+        supabase.rpc("solicitacoes_da_loja", { p_lojaid: lojaid }),
+        supabase.rpc("historico_das_solicitacoes", { p_lojaid: lojaid }),
       ]);
+      if (error) throw error;
+      if (erroH) throw erroH;
+      const lista = data ?? [];
       return {
-        lista: (data ?? []) as Solicitacao[],
-        nome: new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto])),
+        lista: lista as unknown as Solicitacao[],
+        nome: new Map(lista.map((p) => [p.funcionarioid, p.nomecompleto ?? ""])),
         historico: (historico ?? []) as Mudanca[],
       };
     },

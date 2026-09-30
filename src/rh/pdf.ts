@@ -25,8 +25,8 @@ export async function usuarioAtual() {
 
 /** Nome (fantasia) da conta de quem está logado: é o que vai nos PDFs da equipe. */
 export async function nomeDaConta() {
-  const { data } = await supabase.from("contas").select("nomefantasia").limit(1).maybeSingle();
-  return data?.nomefantasia ?? "";
+  const { data } = await supabase.rpc("nome_da_conta");
+  return typeof data === "string" ? data : "";
 }
 
 class Documento {

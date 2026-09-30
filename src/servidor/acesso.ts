@@ -421,7 +421,8 @@ export const definirSenhaDeGestor = createServerFn({ method: "POST" })
     const { data: acessoAtual, error: erroAcesso } = await supabase.rpc("meu_acesso");
     if (erroAcesso) throw new Error("Não foi possível confirmar quem é você.");
     const tipo = (acessoAtual as { tipo?: string } | null)?.tipo;
-    if (tipo !== "master" && tipo !== "admin") {
+    // O gerente também cria a senha pelo link do convite (parte 5).
+    if (tipo !== "master" && tipo !== "admin" && tipo !== "gerente") {
       throw new Error("Esta tela é do gestor.");
     }
 

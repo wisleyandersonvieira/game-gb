@@ -40,30 +40,14 @@ function useJustificativas() {
   return useQuery({
     queryKey: ["justificativas"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("justificativas")
-        .select("justificativaid, atribuicaoid, funcionarioid, lojaid, dia, motivo, status, origem, motivorecusa")
-        .order("dia", { ascending: false })
-        .order("justificativaid", { ascending: false })
-        .limit(300);
+      // O banco devolve só as das lojas que a pessoa logada vê, já com os nomes.
+      const { data, error } = await supabase.rpc("justificativas_da_tela");
       if (error) throw error;
-      const linhas = data ?? [];
-      if (linhas.length === 0) return [] as Linha[];
-      const [{ data: pessoas }, { data: atribuicoes }, { data: tarefas }, { data: lojas }] = await Promise.all([
-        supabase.from("funcionarios").select("funcionarioid, nomecompleto"),
-        supabase.from("tarefasatribuidas").select("atribuicaoid, tarefaid").in("atribuicaoid", linhas.map((l) => l.atribuicaoid)),
-        supabase.from("tarefas").select("tarefaid, titulo"),
-        supabase.from("lojas").select("lojaid, nome"),
-      ]);
-      const nome = new Map((pessoas ?? []).map((p) => [p.funcionarioid, p.nomecompleto]));
-      const titulo = new Map((tarefas ?? []).map((t) => [t.tarefaid, t.titulo]));
-      const tarefaDa = new Map((atribuicoes ?? []).map((a) => [a.atribuicaoid, titulo.get(a.tarefaid) ?? "—"]));
-      const loja = new Map((lojas ?? []).map((l) => [l.lojaid, l.nome]));
-      return linhas.map((l) => ({
+      return (data ?? []).map((l) => ({
         ...l,
-        pessoa: nome.get(l.funcionarioid) ?? "—",
-        tarefa: tarefaDa.get(l.atribuicaoid) ?? "—",
-        loja: loja.get(l.lojaid) ?? "—",
+        pessoa: l.pessoa ?? "—",
+        tarefa: l.tarefa ?? "—",
+        loja: l.loja ?? "—",
       })) as Linha[];
     },
   });
@@ -204,13 +188,9 @@ function Nova() {
   const pessoas = useQuery({
     queryKey: ["pessoas-justificativa"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("funcionarios")
-        .select("funcionarioid, nomecompleto")
-        .eq("ativo", true)
-        .order("nomecompleto");
+      const { data, error } = await supabase.rpc("pessoas_para", { p_codigo: "justificativas.registrar" });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []).filter((p) => p.ativo);
     },
   });
 

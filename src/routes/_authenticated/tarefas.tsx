@@ -233,8 +233,8 @@ function Catalogo() {
     queryKey: ["teto-pontos-ciencia"],
     enabled: !!rotinaEmEdicao?.pagaSemValidacao,
     queryFn: async () => {
-      const { data } = await supabase.from("configuracoes").select("valor").eq("chave", "MAX_PONTOS_CIENCIA").maybeSingle();
-      return data?.valor ? Number(data.valor) : 50;
+      const { data } = await supabase.rpc("teto_de_pontos_por_ciencia");
+      return typeof data === "number" ? data : 50;
     },
   });
   const tetoDaConta = teto.data ?? null;
@@ -550,16 +550,10 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
   const opcoesTarefas = useQuery({
     queryKey: ["tarefas-da-loja", lojaid],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("tarefaslojas")
-        .select("tarefas!inner(tarefaid, titulo, pontos, ativa)")
-        .eq("lojaid", lojaid)
-        .eq("ativo", true);
+      // O banco confere se a pessoa logada vê Tarefas nesta loja.
+      const { data, error } = await supabase.rpc("tarefas_da_loja", { p_lojaid: lojaid });
       if (error) throw error;
-      type Tarefa = { tarefaid: number; titulo: string; pontos: number; ativa: boolean };
-      const tarefas = (data ?? [])
-        .map((v) => (v as unknown as { tarefas: Tarefa }).tarefas)
-        .filter((t): t is Tarefa => !!t);
+      const tarefas = [...(data ?? [])];
       tarefas.sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR"));
       return tarefas;
     },
@@ -573,18 +567,11 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
       // (buscar os vínculos, esperar, buscar as pessoas). O "!inner" e o
       // filtro funcionarios.ativo mantêm exatamente a mesma regra de antes:
       // vínculo ativo NESTA loja E pessoa ativa.
-      const { data, error } = await supabase
-        .from("funcionarioslojas")
-        .select("funcionarios!inner(funcionarioid, nomecompleto)")
-        .eq("lojaid", lojaid)
-        .eq("ativo", true)
-        .eq("funcionarios.ativo", true);
+      // A mesma regra de antes: vínculo ativo NESTA loja E pessoa ativa. O
+      // banco confere se a pessoa logada pode atribuir nesta loja.
+      const { data, error } = await supabase.rpc("pessoas_da_loja", { p_lojaid: lojaid, p_codigo: "tarefas.atribuir" });
       if (error) throw error;
-
-      type Pessoa = { funcionarioid: number; nomecompleto: string };
-      const pessoas = (data ?? [])
-        .map((v) => (v as unknown as { funcionarios: Pessoa }).funcionarios)
-        .filter((p): p is Pessoa => !!p);
+      const pessoas = (data ?? []).filter((p) => p.ativo).map((p) => ({ funcionarioid: p.funcionarioid, nomecompleto: p.nomecompleto }));
       pessoas.sort((a, b) => a.nomecompleto.localeCompare(b.nomecompleto, "pt-BR"));
       return pessoas;
     },

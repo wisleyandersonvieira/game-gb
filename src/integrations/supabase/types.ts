@@ -5939,6 +5939,407 @@ export type Database = {
           valornovo: number
         }[]
       }
+      pessoas_para: {
+        Args: { p_codigo: string }
+        Returns: {
+          ativo: boolean
+          funcionarioid: number
+          jornadaid: number | null
+          nomecompleto: string
+          pontostotal: number | null
+          saldopontos: number
+        }[]
+      }
+      premios_do_catalogo: {
+        Args: never
+        Returns: {
+          ativo: boolean
+          custoempontos: number
+          descricao: string | null
+          estoquedisponivel: number | null
+          nome: string
+          produtoid: number
+          sistema: string | null
+        }[]
+      }
+      meses_fechados: {
+        Args: never
+        Returns: {
+          ano: number
+          definitivoem: string | null
+          fechadoem: string
+          fechamentoid: number
+          mes: number
+          motivo: string | null
+          origem: string
+          situacao: string
+          substituidoem: string | null
+          versao: number
+        }[]
+      }
+      ranking_do_fechamento: {
+        Args: { p_fechamentoid: number; p_lojaid: number }
+        Returns: {
+          confiabilidade: number
+          esforco: number
+          historicoid: number
+          nomefuncionario: string
+          nota: number
+          pontosganhos: number
+          pontospossiveis: number
+          posicao: number
+        }[]
+      }
+      pessoas_da_loja: {
+        Args: { p_codigo: string; p_lojaid: number }
+        Returns: { ativo: boolean; funcionarioid: number; nomecompleto: string }[]
+      }
+      feedbacks_do_periodo: {
+        Args: { p_ate: string; p_de: string; p_funcionarioid?: number }
+        Returns: {
+          anuladoem: string | null
+          comentario: string | null
+          datafeedback: string
+          feedbackid: number
+          funcionarioid: number
+          motivoanulacao: string | null
+          notadia: number
+          origem: string
+          pontosbonus: number | null
+        }[]
+      }
+      justificativas_da_tela: {
+        Args: never
+        Returns: {
+          atribuicaoid: number
+          dia: string
+          funcionarioid: number
+          justificativaid: number
+          loja: string | null
+          lojaid: number
+          motivo: string
+          motivorecusa: string | null
+          origem: string
+          pessoa: string | null
+          status: string
+          tarefa: string | null
+        }[]
+      }
+      solicitacoes_da_loja: {
+        Args: { p_lojaid: number }
+        Returns: {
+          categoria: string | null
+          datasolicitacao: string
+          descricao: string
+          funcionarioid: number
+          motivorecusa: string | null
+          nomecompleto: string | null
+          observacao: string | null
+          quantidade: number | null
+          solicitacaoid: number
+          status: string
+          tipo: string
+          unidade: string | null
+        }[]
+      }
+      historico_das_solicitacoes: {
+        Args: { p_lojaid: number }
+        Returns: {
+          alteradoem: string
+          historicoid: number
+          observacao: string | null
+          solicitacaoid: number
+          statusanterior: string | null
+          statusnovo: string
+        }[]
+      }
+      tarefas_da_loja: {
+        Args: { p_lojaid: number }
+        Returns: { ativa: boolean; pontos: number; tarefaid: number; titulo: string }[]
+      }
+      teto_de_pontos_por_ciencia: { Args: never; Returns: number }
+      metas_da_semana: {
+        Args: { p_lojaid: number }
+        Returns: { diasemanaid: number; pontospremio: number; valormeta: number }[]
+      }
+      metas_especiais_da_loja: {
+        Args: { p_lojaid: number }
+        Returns: {
+          data: string
+          descricao: string
+          metaespecialid: number
+          pontospremio: number
+          valormeta: number
+        }[]
+      }
+      tipos_de_evento: {
+        Args: never
+        Returns: { ativo: boolean; nome: string; tipoeventoid: number }[]
+      }
+      agendamentos_da_loja: {
+        Args: { p_lojaid: number }
+        Returns: {
+          aceitawhatsapp: boolean
+          agendamentoid: number
+          contaid: number
+          cpfcliente: string | null
+          dataevento: string
+          funcionarioid: number
+          lojaid: number
+          motivocancelamento: string | null
+          nomecliente: string
+          observacoes: string | null
+          statusagendamento: string
+          statuspagamento: string
+          telefonecliente: string | null
+          tipoevento: string
+          tipoeventoid: number | null
+          valor: number | null
+        }[]
+      }
+      anexos_do_agendamento: {
+        Args: { p_agendamentoid: number }
+        Returns: { anexoid: number; caminho: string; enviadoem: string; nomearquivo: string; tamanho: number }[]
+      }
+      historico_do_agendamento: {
+        Args: { p_agendamentoid: number }
+        Returns: {
+          acao: string
+          alteradoem: string
+          historicoid: number
+          motivo: string | null
+          valoranterior: string | null
+          valornovo: string | null
+        }[]
+      }
+      conquistas_do_catalogo: {
+        Args: never
+        Returns: {
+          ativa: boolean
+          conquistaid: number
+          contardesde: string | null
+          criadoem: string
+          criteriodias: number | null
+          criteriotipo: string
+          criteriovalor: number
+          descricao: string | null
+          icone: string | null
+          nome: string
+          pontosbonus: number
+        }[]
+      }
+      conquistas_ganhas: {
+        Args: never
+        Returns: { conquistafuncionarioid: number; conquistaid: number; dataconquista: string; funcionarioid: number; pontosbonus: number }[]
+      }
+      conquistas_da_pessoa: {
+        Args: { p_funcionarioid: number }
+        Returns: { conquistafuncionarioid: number; conquistaid: number; dataconquista: string; pontosbonus: number }[]
+      }
+      pessoas_inteiras_para: {
+        Args: { p_codigo: string }
+        Returns: { ativo: boolean; funcionarioid: number; nomecompleto: string; pontostotal: number | null; saldopontos: number }[]
+      }
+      comunicados_da_tela: {
+        Args: never
+        Returns: {
+          alvo: string
+          conteudo: string
+          datacriacao: string
+          documentoid: number
+          pontosporciencia: number
+          primeiracienciaem: string | null
+          status: string
+          titulo: string
+        }[]
+      }
+      ciencias_da_tela: {
+        Args: never
+        Returns: {
+          assinaturaid: number
+          dataciencia: string | null
+          documentoid: number
+          funcionarioid: number
+          motivodesfazer: string | null
+          origem: string | null
+          pontospagos: number | null
+          statusassinatura: string
+        }[]
+      }
+      lojas_para: {
+        Args: { p_codigo: string }
+        Returns: { ativa: boolean; lojaid: number; nome: string }[]
+      }
+      pontos_da_leitura: { Args: never; Returns: number }
+      etapas_de_onboarding: {
+        Args: never
+        Returns: { ativo: boolean; etapaid: number; nome: string; ordem: number }[]
+      }
+      onboarding_status_da_tela: {
+        Args: never
+        Returns: { concluidoem: string | null; funcionarioid: number; iniciadoem: string | null; statusworkflow: string }[]
+      }
+      onboarding_itens_da_tela: {
+        Args: never
+        Returns: {
+          concluidoem: string | null
+          documentoid: number | null
+          etapaid: number
+          funcionarioid: number
+          itemid: number
+          observacao: string | null
+        }[]
+      }
+      equipe_da_tela: {
+        Args: never
+        Returns: {
+          ativo: boolean
+          cargo: string | null
+          cpf: string | null
+          diadefolga: number
+          funcionarioid: number
+          jornadaid: number | null
+          nomecompleto: string
+          saldopontos: number
+          setor: string | null
+          telefonewhatsapp: string | null
+        }[]
+      }
+      vinculos_da_tela: {
+        Args: never
+        Returns: { ativo: boolean; funcionarioid: number; lojaid: number; validador: boolean }[]
+      }
+      jornadas_da_conta: {
+        Args: never
+        Returns: { ativa: boolean; jornadaid: number; nome: string }[]
+      }
+      nome_da_conta: { Args: never; Returns: string }
+      conta_da_gestao: {
+        Args: never
+        Returns: {
+          cidade: string | null
+          contaid: number
+          email: string | null
+          limitelojas: number | null
+          nome: string
+          nomefantasia: string | null
+          status: string | null
+          telefone: string | null
+        }[]
+      }
+      lojas_da_gestao: {
+        Args: never
+        Returns: {
+          ativa: boolean
+          cidade: string | null
+          endereco: string | null
+          gestorid: number | null
+          lojaid: number
+          mostrarvalorestv: boolean
+          nome: string
+          responsavelagendamentosid: number | null
+          tvblocos: Json
+          tvsegundos: number
+        }[]
+      }
+      links_de_tv: {
+        Args: never
+        Returns: {
+          criadoem: string
+          linktvid: number
+          lojaid: number
+          nome: string
+          revogadoem: string | null
+          ultimouso: string | null
+        }[]
+      }
+      som_da_loja: {
+        Args: { p_lojaid: number }
+        Returns: { somrepetirminutos: number; somtarefanova: boolean; somvolume: number }[]
+      }
+      vinculos_para: {
+        Args: { p_codigo: string }
+        Returns: { ativo: boolean; funcionarioid: number; lojaid: number }[]
+      }
+      jornadas_da_tela: {
+        Args: never
+        Returns: {
+          ativa: boolean
+          jornadaid: number
+          nome: string
+          observacao: string | null
+          pausafim: string | null
+          pausainicio: string | null
+        }[]
+      }
+      dias_das_jornadas: {
+        Args: never
+        Returns: { diasemana: number; entrada: string; jornadaid: number; saida: string }[]
+      }
+      codigo_da_empresa: {
+        Args: never
+        Returns: { codigo: string | null; nomefantasia: string | null }[]
+      }
+      cargos_da_conta: {
+        Args: never
+        Returns: { cargoid: number; codigos: string[]; criadoem: string; nome: string; usuarios: number }[]
+      }
+      salvar_cargo: { Args: { p_cargoid: number; p_codigos: string[]; p_nome: string }; Returns: number }
+      duplicar_cargo: { Args: { p_cargoid: number; p_nome: string }; Returns: number }
+      apagar_cargo: { Args: { p_cargoid: number }; Returns: undefined }
+      criar_cargo_acesso_total: { Args: { p_nome?: string }; Returns: number }
+      permissoes_sem_cargo: { Args: never; Returns: { codigo: string; nome: string; tela: string }[] }
+      usuarios_gerenciais: {
+        Args: never
+        Returns: {
+          ativo: boolean
+          cargo: string
+          cargoid: number
+          convitependente: boolean
+          criadoem: string
+          email: string | null
+          funcionarioid: number | null
+          lojas: number[]
+          nome: string | null
+          pessoa: string | null
+          ultimoacesso: string | null
+          userid: string
+        }[]
+      }
+      preparar_convite_gerente: {
+        Args: { p_cargoid: number; p_email: string; p_funcionarioid?: number | null; p_lojas: number[]; p_nome: string }
+        Returns: number
+      }
+      registrar_gerente_convidado: {
+        Args: {
+          p_cargoid: number
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojas: number[]
+          p_nome: string
+          p_quem: string
+          p_userid: string
+        }
+        Returns: undefined
+      }
+      editar_usuario_gerencial: {
+        Args: { p_cargoid: number; p_funcionarioid?: number | null; p_lojas: number[]; p_nome: string; p_userid: string }
+        Returns: undefined
+      }
+      ativar_usuario_gerencial: { Args: { p_ativo: boolean; p_userid: string }; Returns: undefined }
+      email_do_gerente: { Args: { p_userid: string }; Returns: string }
+      historico_de_permissoes: {
+        Args: { p_limite?: number }
+        Returns: {
+          acao: string
+          antes: Json | null
+          depois: Json | null
+          em: string
+          historicoid: number
+          quem: string
+          tabela: string
+        }[]
+      }
       posso_na_pessoa: {
         Args: { p_codigo: string; p_funcionarioid: number }
         Returns: Json

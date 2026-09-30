@@ -68,7 +68,9 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-meta-so-do-master.sql', '20260929273000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
   ('aplicar-ninguem-gera-pontos-para-si.sql', '20260929271000'),
+  ('aplicar-parte-4-leituras.sql', '20260929286000'),
   ('aplicar-parte-4-porta-do-gerente.sql', '20260929270000'),
+  ('aplicar-parte-5-usuarios-e-cargos.sql', '20260929287000'),
   ('aplicar-pedido-no-tablet.sql', '20260929100900'),
   ('aplicar-permissoes-parte-1-ajustes.sql', '20260929249000'),
   ('aplicar-permissoes-parte-1-base.sql', '20260929248000'),
@@ -407,7 +409,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (410, 'OPERACAO', 'versao', 'papel gerente fechado (sem conta e sem login ate existir cargo)', 'aplicar-fechar-papel-gerente.sql',
        NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public'
-                      AND p.proname IN ('minha_conta', 'minha_conta_editavel', 'acesso_por_email')
+                      -- acesso_por_email: a parte 5 (30/09/2026) abre a entrada ao gerente
+                      -- ATIVO de propósito; quem confere isso é a linha 690.
+                      AND p.proname IN ('minha_conta', 'minha_conta_editavel')
                       AND p.prosrc LIKE '%gerente%')),
   -- Comportamento: o catálogo responde, pode() de quem não tem login é "não",
   -- e a escrita direta numa tabela sem tela foi fechada.
@@ -508,7 +512,11 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (660, 'OPERACAO', 'versao', 'Meta so do master; quem lancou a venda, pelo nome', 'aplicar-meta-so-do-master.sql',
        to_regprocedure('public.historico_das_vendas(integer)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.catalogo_de_permissoes() WHERE codigo IN ('metas.criar_meta', 'metas.meta_especial'))),
   (670, 'OPERACAO', 'versao', 'Arquivos do gerente: foto, anexo e recibo, so leitura e so das lojas dele', 'aplicar-arquivos-do-gerente.sql',
-       to_regprocedure('public.foto_de_entrega_do_gerente(text)') IS NOT NULL AND to_regprocedure('public.recibo_resgate_gerente(integer)') IS NOT NULL AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND policyname IN ('entregas_sel_gerente', 'agendamentos_arq_sel_gerente')) = 2)
+       to_regprocedure('public.foto_de_entrega_do_gerente(text)') IS NOT NULL AND to_regprocedure('public.recibo_resgate_gerente(integer)') IS NOT NULL AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND policyname IN ('entregas_sel_gerente', 'agendamentos_arq_sel_gerente')) = 2),
+  (680, 'OPERACAO', 'versao', 'Parte 4: as telas leem pelo banco (gerente), e a fila nao cresce com os dias', 'aplicar-parte-4-leituras.sql',
+       to_regprocedure('public.pessoas_para(text)') IS NOT NULL AND to_regprocedure('public.codigo_da_empresa()') IS NOT NULL AND to_regprocedure('public.comunicados_do_gerente_ids()') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'entregas_atribuicao_envio_idx')),
+  (690, 'OPERACAO', 'versao', 'Parte 5: usuarios e cargos (so o master), convite e historico', 'aplicar-parte-5-usuarios-e-cargos.sql',
+       to_regprocedure('public.salvar_cargo(integer, text, text[])') IS NOT NULL AND to_regprocedure('public.registrar_gerente_convidado(integer, uuid, text, integer, integer[], integer, uuid)') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'usuariosgerenciais' AND column_name = 'nome'))
 ),
 tudo AS (
   SELECT x.*, a.versao
