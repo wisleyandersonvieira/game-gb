@@ -88,6 +88,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `redes` | **plataforma** (sem conta) | redeid | — |
 | `chamadasdoservidor` | **plataforma** (sem conta) | chamadaid | — |
 | `jornadas` | conta | jornadaid | — |
+| `jornadaslojas` | loja | (contaid, jornadaid, lojaid) | jornadas, lojas |
 | `jornadasdias` | conta | (jornadaid, diasemana) | jornadas |
 | `intervalosdomapa` | conta | (contaid, funcionarioid) | funcionarios |
 | `senhasgestor` | conta (vazia no admin geral) | userid |  |
@@ -1403,6 +1404,18 @@ Cada vez que o banco chamou (ou **tentou** chamar) uma função do servidor, e o
 Contratos da administração, de um cliente **ou** de uma rede. **Documento sigiloso**: o arquivo fica no bucket privado `administracao`, sem regra de acesso para ninguém (só o servidor, depois de conferir que é o admin geral); o link de abertura vale 5 minutos. PDF ou imagem, até 10 MB. Guarda quem subiu e quando.
 
 **Remover (27/09/2026):** o arquivo sai de verdade do armazenamento (cliente errado, ou exclusão pedida pelo cliente — LGPD). Fica o registro: `removidoem` / `removidopor`, tipo, tamanho e datas; o **nome do arquivo sai junto** (ele pode carregar o nome de outra empresa ou de uma pessoa). Rede com anexo ativo não se apaga; apagada a rede, o registro dos anexos dela (já removidos) vai junto.
+
+## jornadaslojas (30/09/2026)
+Em que lojas cada jornada vale, como `tarefaslojas`. Grava só pela `salvar_jornada` (ninguém escreve direto). Regras garantidas pelo banco, por qualquer caminho:
+- pessoa só se vincula (`funcionarios.jornadaid`) a jornada com **uma loja em comum** (gatilho `funcionarios_jornada_na_loja`); e ela não sai da única loja em comum ficando em outras (`funcionarioslojas_jornada_na_loja`); sair de todas (saída da empresa) passa;
+- loja com gente dela vinculada não sai da jornada (`jornadaslojas_loja_com_gente`); a mensagem diz quantas pessoas e de qual loja.
+As jornadas que existiam em 30/09/2026 ganharam **todas as lojas da conta** (ativas ou não). Loja criada depois não entra sozinha: o master a marca.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| contaid | integer | conta |
+| jornadaid | integer | FK (contaid, jornadaid) → jornadas; apagar a jornada leva as lojas junto |
+| lojaid | integer | FK (contaid, lojaid) → lojas |
 
 ## jornadas e jornadasdias (27/09/2026)
 Horários de **expediente** com nome ("Balcão manhã"), para o sistema saber **quando enviar tarefas e avisos**. **Não é controle de jornada** (CLAUDE.md): não há total de horas, carga semanal, banco de horas, marcação de entrada e saída, nem comparação entre previsto e feito.

@@ -41,6 +41,8 @@ type Resposta = {
   hoje: string;
   loja: string | null;
   pessoas: PessoaDoMapa[];
+  /** Quem vê pode marcar o intervalo e exportar nesta loja (30/09/2026). */
+  podemapa?: boolean;
 };
 
 /** O que o clique pediu: a pessoa, e (se foi numa célula) a hora e se ali já é intervalo. */
@@ -50,7 +52,18 @@ type Pedido = { pessoa: PessoaDoMapa; hora?: number; ehIntervalo?: boolean };
 const minusculo = (dia: string) => dia.charAt(0).toLowerCase() + dia.slice(1);
 
 export function MapaDaJornada() {
-  const { lojas, lojaAtiva } = useLojaAtiva();
+  const { lojaAtiva } = useLojaAtiva();
+  // O seletor: só as lojas em que quem vê enxerga a Jornada (o gerente, as
+  // dele; o master, todas). Quem decide é o banco, em cada consulta.
+  const lojasDaJornada = useQuery({
+    queryKey: ["lojas-para", "jornada.ver"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("lojas_para", { p_codigo: "jornada.ver" });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const lojas = lojasDaJornada.data ?? [];
   const [lojaEscolhida, setLojaEscolhida] = useState<number | null>(null);
   // Vazio = o dia da semana de hoje (quem decide é o banco, na mesma consulta).
   const [dia, setDia] = useState<number | null>(null);
@@ -59,7 +72,8 @@ export function MapaDaJornada() {
   const [modoExportar, setModoExportar] = useState<"dia" | "semana">("dia");
   const [exportando, setExportando] = useState(false);
   const [erroExportar, setErroExportar] = useState<string | null>(null);
-  const lojaid = lojaEscolhida ?? lojaAtiva;
+  const lojaid =
+    lojaEscolhida ?? (lojas.some((l) => l.lojaid === lojaAtiva) ? lojaAtiva : (lojas[0]?.lojaid ?? null));
 
   const consulta = useQuery({
     queryKey: ["mapa-jornada", lojaid, dia],
@@ -114,8 +128,15 @@ export function MapaDaJornada() {
     }
   }
 
+  const podeMapa = consulta.data?.podemapa === true;
+  const SEM_MAPA = "Marcar o intervalo e exportar o Mapa não está liberado para o seu cargo nesta loja.";
+
   function aoClicarNaCelula(l: LinhaDoMapa, c: Celula | null, hora: number | null) {
     setAvisoDoClique(null);
+    if (!podeMapa) {
+      setAvisoDoClique(SEM_MAPA);
+      return;
+    }
     if (!l.celulas || c === null || hora === null) {
       setAvisoDoClique(`${l.pessoa.nome}: ${l.aviso ?? "sem expediente"} na ${minusculo(nomeDoDia)}. Não há intervalo para marcar.`);
       return;
@@ -163,7 +184,8 @@ export function MapaDaJornada() {
         </label>
         <button
           onClick={exportar}
-          disabled={!consulta.data || exportando}
+          disabled={!consulta.data || exportando || !podeMapa}
+          title={podeMapa ? undefined : SEM_MAPA}
           className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-60"
         >
           {exportando ? "Gerando PDF..." : "Exportar (PDF)"}
@@ -197,8 +219,8 @@ export function MapaDaJornada() {
             linhas={mapa.linhas}
             totais={mapa.totais}
             aoClicarNaLinha={(p) => {
-              setAvisoDoClique(null);
-              setPedido({ pessoa: p });
+              setAvisoDoClique(podeMapa ? null : SEM_MAPA);
+              if (podeMapa) setPedido({ pessoa: p });
             }}
             aoClicarNaCelula={aoClicarNaCelula}
           />

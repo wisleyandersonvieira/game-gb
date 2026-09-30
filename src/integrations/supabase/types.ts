@@ -2394,6 +2394,27 @@ export type Database = {
         }
         Relationships: []
       }
+      jornadaslojas: {
+        Row: { contaid: number; jornadaid: number; lojaid: number }
+        Insert: { contaid?: number; jornadaid: number; lojaid: number }
+        Update: { contaid?: number; jornadaid?: number; lojaid?: number }
+        Relationships: [
+          {
+            foreignKeyName: "jornadaslojas_jornada_fk"
+            columns: ["contaid", "jornadaid"]
+            isOneToOne: false
+            referencedRelation: "jornadas"
+            referencedColumns: ["contaid", "jornadaid"]
+          },
+          {
+            foreignKeyName: "jornadaslojas_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
       jornadas: {
         Row: {
           ativa: boolean
@@ -6306,7 +6327,14 @@ export type Database = {
           observacao: string | null
           pausafim: string | null
           pausainicio: string | null
+          lojas: number[]
+          outraslojas: number
+          editavel: boolean
         }[]
+      }
+      jornadas_que_servem: {
+        Args: { p_funcionarios: number[] }
+        Returns: { jornadaid: number; nome: string }[]
       }
       dias_das_jornadas: {
         Args: never
@@ -6806,6 +6834,7 @@ export type Database = {
           p_observacao: string | null
           p_pausafim: string | null
           p_pausainicio: string | null
+          p_lojas?: number[] | null
         }
         Returns: number
       }

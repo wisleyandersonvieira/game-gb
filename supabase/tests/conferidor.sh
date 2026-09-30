@@ -55,8 +55,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP FUNCTION public.registrar_respostas_do_servidor();")"
-if echo "$s" | grep -q "|rode aplicar-rotinas-conferidas.sql"; then
+s="$(conferir "DROP FUNCTION public.jornadas_que_servem(integer[]);")"
+if echo "$s" | grep -q "|rode aplicar-jornada-por-loja.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1
@@ -71,5 +71,41 @@ if echo "$s" | grep "FALTA|TODAS|migracao|20260929231000_fotos_de_verdade_e_saud
   echo "    ok  coluna que falta (o erro de 30/09): acusa a migração 20260929231000 e manda chamar o Claude"
 else
   echo "    FALHOU: sem a coluna fotoaguardaremocaoem, o conferidor nao acusou a migracao 20260929231000:"; echo "$s" | grep "FALTA" | head -3; falhou=1
+fi
+# 5. O banco do Wisley no dia da entrega (30/09/2026): TUDO menos a entrega
+#    mais nova. Foi o que ele rodou, e o conferidor nem abriu (uma linha nova
+#    lia uma tabela que ainda nao existia). Aqui ele tem de rodar inteiro, mandar
+#    rodar o arquivo novo e nao acusar mais nada.
+novo=$(grep -oE "^\s*\('aplicar-[^']+\.sql', '[0-9]{14}'\)" "$RAIZ/supabase/conferir-o-banco.sql" | sed -E "s/.*'(aplicar-[^']+)', '([0-9]+)'.*/\2 \1/" | sort | tail -1)
+versao_nova=${novo%% *}; arquivo_novo=${novo#* }
+# O corte: tudo ATE a entrega anterior (o arquivo novo pode trazer varias
+# migracoes; a primeira versao deste teste so tirava a ultima e passava com a
+# linha quebrada — sabotagem que passou, 30/09/2026).
+versao_anterior=$(grep -oE "^\s*\('aplicar-[^']+\.sql', '[0-9]{14}'\)" "$RAIZ/supabase/conferir-o-banco.sql" | sed -E "s/.*'([0-9]+)'.*/\1/" | sort -u | tail -2 | head -1)
+C5="gamegb-conferidor-antes"
+docker rm -f -v "$C5" >/dev/null 2>&1
+docker run -d --name "$C5" --tmpfs /var/lib/postgresql/data -e POSTGRES_PASSWORD=teste postgres:17 >/dev/null
+for _ in $(seq 1 60); do
+  sleep 1
+  prontos=$(docker logs "$C5" 2>&1 | grep -c "ready to accept connections" || true)
+  if [ "$prontos" -ge 2 ] && docker exec "$C5" psql -U postgres -qtAc "select 1" >/dev/null 2>&1; then break; fi
+done
+rodar5() { docker cp "$1" "$C5:/x.sql" >/dev/null; docker exec "$C5" psql -U postgres -q -v ON_ERROR_STOP=1 -f /x.sql >/dev/null 2>&1; }
+rodar5 "$RAIZ/supabase/tests/_ambiente_local.sql"
+for m in "$RAIZ"/supabase/migrations/*.sql; do
+  b=$(basename "$m"); [[ ! "${b:0:14}" > "$versao_anterior" ]] && rodar5 "$m"
+done
+docker cp "$RAIZ/supabase/conferir-o-banco.sql" "$C5:/conferidor.sql" >/dev/null
+s="$(docker exec "$C5" psql -U postgres -qtA -F '|' -f /conferidor.sql 2>&1)"
+docker rm -f -v "$C5" >/dev/null 2>&1
+outras=$(echo "$s" | grep "FALTA" | grep -v "|rode $arquivo_novo\$" | grep -v "|TODAS|" || true)
+if echo "$s" | grep -q "ERROR"; then
+  echo "    FALHOU: sem a entrega mais nova ($arquivo_novo), o conferidor nem roda:"; echo "$s" | grep "ERROR" | head -3; falhou=1
+elif ! echo "$s" | grep -q "|rode $arquivo_novo"; then
+  echo "    FALHOU: sem a entrega mais nova, o conferidor nao manda rodar $arquivo_novo"; falhou=1
+elif [ -n "$outras" ]; then
+  echo "    FALHOU: sem a entrega mais nova, o conferidor acusa outra coisa:"; echo "$outras" | head -3; falhou=1
+else
+  echo "    ok  banco sem a entrega mais nova: roda inteiro e manda rodar $arquivo_novo"
 fi
 exit $falhou
