@@ -53,8 +53,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP FUNCTION public.salvar_cargo(integer, text, text[]) CASCADE;")"
-if echo "$s" | grep -q "|rode aplicar-parte-5-usuarios-e-cargos.sql"; then
+s="$(conferir "ALTER TABLE public.entregas DROP COLUMN registradopor CASCADE;")"
+if echo "$s" | grep -q "|rode aplicar-valor-e-entrega-sem-foto.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

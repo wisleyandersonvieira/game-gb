@@ -13162,8 +13162,11 @@ BEGIN
     BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nem na loja DELE mexe na meta do mes, da semana ou especial (so o master)');
-    PERFORM public.guardar_resultado((SELECT jsonb_agg(h) FROM public.historico_das_vendas(10) h));
-    PERFORM public.exigir(public.nada_voltou(), 'o historico com nomes e a conferencia do master: o gerente nao le');
+    -- Decisao 3 do Wisley (30/09/2026): o gerente ve o historico das lojas dele (e quem lanca).
+    PERFORM public.exigir((SELECT count(*) FROM public.historico_das_vendas(10) h WHERE h.foivoce) >= 2,
+                          'o gerente le o historico das vendas da loja dele (com o que ele lancou)');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(h) FROM public.historico_das_vendas(11) h));
+    PERFORM public.exigir(public.nada_voltou(), 'e nao le o de outra loja');
     RESET ROLE;
     PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje AND valordia = 1500 AND lancadopor = G AND atualizadopor = G),
                           'e na loja 10 lanca e corrige a venda de verdade, gravando quem foi');
@@ -13575,6 +13578,15 @@ BEGIN
     BEGIN PERFORM public.alterar_pagamento_agendamento(ag11, 'Pago', 100); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.criar_agendamento(11, t, d, 'Na 11 paga', NULL, NULL, NULL, 100, 'Pago', 10113); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'com "realizado" e "pagamento": nada na loja 11');
+    -- Quem nao pode ver um valor nao pode grava-lo (30/09/2026): sem "Ver
+    -- valores em R$", nem o pagamento nem o agendamento com valor, na loja 10.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.alterar_pagamento_agendamento(ag10, 'Sinal pago', 50); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_agendamento(10, t, d, 'Com sinal', NULL, NULL, NULL, 80, 'Sinal pago', 10112); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "pagamento" mas sem "Ver valores em R$": nao grava valor nem pagamento');
+    RESET ROLE;
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'valores.ver_rs');
+    SET LOCAL ROLE authenticated;
     PERFORM public.alterar_pagamento_agendamento(ag10, 'Sinal pago', 50);
     PERFORM public.marcar_agendamento_realizado(ag10);
     n := public.criar_agendamento(10, t, d, 'Com sinal', NULL, NULL, NULL, 80, 'Sinal pago', 10112);
@@ -14839,7 +14851,7 @@ BEGIN
                               -- parte 4, fatia 10
                               'nome_da_conta', 'conta_da_gestao', 'lojas_da_gestao', 'links_de_tv', 'som_da_loja', 'vinculos_para',
                               'jornadas_da_tela', 'dias_das_jornadas', 'resumo_das_lojas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana',
-                              'codigo_da_empresa');
+                              'codigo_da_empresa', 'historico_das_vendas');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).
@@ -15299,6 +15311,109 @@ BEGIN
     RAISE EXCEPTION 'desfazer_113';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_113' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 114. Quem nao pode ver um valor nao pode grava-lo; a entrega sem foto do
+--      gerente a vista do master; o historico das vendas do gerente (30/09/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '114. valores em R$, entrega sem foto do gerente, historico das vendas'; END $$;
+
+-- A trava: toda funcao liberada que recebe valor em R$ (parametro numeric
+-- p_valor...) confere "Ver valores em R$" ou e so do master (lista fechada).
+DO $$
+DECLARE sobra text;
+BEGIN
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO sobra
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     AND EXISTS (SELECT 1 FROM unnest(p.proargnames, p.proargtypes::oid[]) a(nome, tipo)
+                  WHERE a.nome LIKE 'p\_valor%' AND a.tipo = 'numeric'::regtype)
+     AND p.prosrc NOT LIKE '%valores.ver_rs%'
+     AND p.proname NOT IN ('salvar_meta_do_mes', 'criar_meta_especial',   -- so do master (decisao 5)
+                           'reais');                                     -- so escreve o numero como texto
+  PERFORM public.exigir(sobra IS NULL,
+    'toda funcao que grava valor em R$ confere "Ver valores em R$" (sem: ' || coalesce(sobra, '') || ')');
+END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  v_hoje date; ag integer; atr integer; atrm integer; tev integer; v jsonb; email_ga text;
+BEGIN
+  BEGIN
+    v_hoje := public.hoje_da_conta(96);
+    SELECT email INTO email_ga FROM auth.users WHERE id = GA;
+    SELECT min(agendamentoid) INTO ag FROM public.agendamentos WHERE contaid = 96 AND lojaid = 9601;
+    SELECT atribuicaoid INTO atr FROM public.tarefasatribuidas WHERE contaid = 96 AND tarefaid = 96501 AND funcionarioid = 96011;
+    SELECT tipoeventoid INTO tev FROM public.tiposevento WHERE contaid = 96 ORDER BY 1 LIMIT 1;
+    -- O abate em comanda configurado na conta, e a Folga-A com pontos (para o
+    -- abate poder passar, se a regra falhasse).
+    PERFORM public.cria_produtos_do_sistema(96);
+    -- A Folga-A ganha pontos (para o abate em comanda poder passar, se a regra falhasse).
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.registrar_entrega(public.atribuir_tarefa(96301, 9601, ARRAY[96012], 'Diaria'), NULL, NULL, true);
+    RESET ROLE;
+    DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'valores.ver_rs';
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    -- 1. Sem "Ver valores em R$": nenhum dos quatro grava.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.alterar_pagamento_agendamento(ag, 'Pago', 300); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_agendamento(9601, tev, now() + interval '5 days', 'Cliente-A2', NULL, NULL, NULL, 99, 'Pendente', 96011); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.lancar_venda_do_dia(9601, v_hoje, 777, 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.registrar_troca_por_valor(96012, 1, 9601, false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'sem "Ver valores em R$": nao grava pagamento, agendamento com valor, venda nem abate em comanda');
+    -- mas o agendamento SEM valor ele cria (a regra e so sobre o valor)
+    PERFORM public.criar_agendamento(9601, tev, now() + interval '5 days', 'Cliente-A3', NULL, NULL, NULL, NULL, 'Pendente', 96011);
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.agendamentos WHERE contaid = 96 AND nomecliente = 'Cliente-A3' AND valor IS NULL),
+                          'e o agendamento sem valor ele cria');
+    -- 2. Com a permissao: grava.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.alterar_pagamento_agendamento(ag, 'Pago', 300);
+    PERFORM public.lancar_venda_do_dia(9601, v_hoje, 777, 'conferido');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT valor = 300 AND statuspagamento = 'Pago' FROM public.agendamentos WHERE agendamentoid = ag)
+                          AND EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE contaid = 96 AND lojaid = 9601 AND dataapuracao = v_hoje AND valordia = 777),
+                          'com "Ver valores em R$", grava o pagamento e a venda');
+
+    -- 3. O historico das vendas: o gerente ve o da loja dele (as duas metades).
+    SET LOCAL ROLE authenticated;
+    SELECT jsonb_agg(x) INTO v FROM public.historico_das_vendas(9601) x;
+    PERFORM public.exigir(jsonb_array_length(v) >= 2 AND v::text LIKE '%conferido%',
+                          'gestor A: o historico das vendas da loja dele (o lancamento do master e a correcao dele)');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.historico_das_vendas(9602) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor A: o historico das vendas de outra loja nao vem');
+    RESET ROLE;
+    DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo = 'valores.ver_rs';
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.historico_das_vendas(9601) x));
+    PERFORM public.exigir(public.nada_voltou(), 'sem "Ver valores em R$", nem o historico das vendas da loja dele');
+    RESET ROLE;
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (96, 9600, 'valores.ver_rs');
+
+    -- 4. A entrega registrada pelo gerente SEM foto aparece para o master; a do master, nao.
+    SET LOCAL ROLE authenticated;
+    PERFORM public.registrar_entrega(atr);
+    RESET ROLE;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    atrm := public.atribuir_tarefa(96201, 9601, ARRAY[96012], 'Diaria');
+    PERFORM public.registrar_entrega(atrm);
+    SELECT jsonb_agg(x) INTO v FROM public.estornos_da_conta(9601) x WHERE x.tipo = 'entrega sem foto';
+    PERFORM public.exigir(jsonb_array_length(v) = 1 AND v->0->>'pessoa' = 'Ana-A' AND v->0->>'quem' LIKE '%' || email_ga || '%',
+                          'o master ve a entrega sem foto que o gerente registrou, com o nome dele; a que o master registrou, nao');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_114';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_114' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

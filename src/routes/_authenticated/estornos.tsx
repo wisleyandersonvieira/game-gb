@@ -31,6 +31,9 @@ const ROTULO: Record<string, string> = {
   "resgate cancelado": "Resgate cancelado",
   "resgate estornado": "Resgate estornado",
   "feedback anulado": "Feedback anulado",
+  // Não é estorno: é a entrega que um GERENTE registrou sem foto (30/09/2026),
+  // à vista do master para ele conferir.
+  "entrega sem foto": "Entrega sem foto (registrada por gerente)",
 };
 /** Entrega estornada tira pontos; resgate desfeito devolve. */
 const sinal = (p: number) => (p > 0 ? `+${p}` : `${p}`);

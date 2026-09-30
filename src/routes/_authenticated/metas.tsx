@@ -81,7 +81,8 @@ function Metas() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
   const [escolhida, setAba] = useState<"lancar" | "mes" | "semana" | "especiais" | "historico">("lancar");
   // A meta e os pontos são só do master (decisão 5, 29/09/2026): o gerente vê
-  // "Lançar venda" (se o cargo deixa) e a meta do mês só para consultar.
+  // "Lançar venda" (se o cargo deixa), a meta do mês só para consultar e o
+  // histórico das vendas.
   const permissoes = useMinhasPermissoes();
   const master = permissoes.data?.master === true;
   const abas = (
@@ -92,9 +93,16 @@ function Metas() {
       ["especiais", "Metas especiais"],
       ["historico", "Histórico"],
     ] as const
-  ).filter(([id]) =>
-    master || (id === "lancar" ? permissoes.data?.codigos.includes("metas.lancar_venda") === true : id === "mes"),
-  );
+  ).filter(([id]) => {
+    if (master) return true;
+    const codigos = permissoes.data?.codigos ?? [];
+    // Quem não pode ver um valor não pode gravá-lo: lançar pede também "Ver valores em R$".
+    const veValores = codigos.includes("valores.ver_rs");
+    if (id === "lancar") return codigos.includes("metas.lancar_venda") && veValores;
+    // O histórico das vendas das lojas dele (decisão 3, 30/09/2026): é ele quem lança.
+    if (id === "historico") return veValores;
+    return id === "mes";
+  });
   const aba = abas.some(([id]) => id === escolhida) ? escolhida : (abas[0]?.[0] ?? "mes");
 
   return (

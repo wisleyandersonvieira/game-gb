@@ -106,7 +106,8 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-teto-fotos-e-agenda.sql', '20260929232000'),
   ('aplicar-trava-do-pin-por-pessoa.sql', '20260929246000'),
   ('aplicar-tv-configuravel.sql', '20260929101100'),
-  ('aplicar-tv-por-codigo.sql', '20260929100500')
+  ('aplicar-tv-por-codigo.sql', '20260929100500'),
+  ('aplicar-valor-e-entrega-sem-foto.sql', '20260929288000')
 ),
 esperado(ordem, parte, tipo, nome, arquivo) AS (VALUES
   -- Parte A
@@ -516,7 +517,9 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
   (680, 'OPERACAO', 'versao', 'Parte 4: as telas leem pelo banco (gerente), e a fila nao cresce com os dias', 'aplicar-parte-4-leituras.sql',
        to_regprocedure('public.pessoas_para(text)') IS NOT NULL AND to_regprocedure('public.codigo_da_empresa()') IS NOT NULL AND to_regprocedure('public.comunicados_do_gerente_ids()') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'entregas_atribuicao_envio_idx')),
   (690, 'OPERACAO', 'versao', 'Parte 5: usuarios e cargos (so o master), convite e historico', 'aplicar-parte-5-usuarios-e-cargos.sql',
-       to_regprocedure('public.salvar_cargo(integer, text, text[])') IS NOT NULL AND to_regprocedure('public.registrar_gerente_convidado(integer, uuid, text, integer, integer[], integer, uuid)') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'usuariosgerenciais' AND column_name = 'nome'))
+       to_regprocedure('public.salvar_cargo(integer, text, text[])') IS NOT NULL AND to_regprocedure('public.registrar_gerente_convidado(integer, uuid, text, integer, integer[], integer, uuid)') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'usuariosgerenciais' AND column_name = 'nome')),
+  (700, 'OPERACAO', 'versao', 'Quem nao ve valor nao grava; entrega sem foto do gerente na lista do master', 'aplicar-valor-e-entrega-sem-foto.sql',
+       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'entregas' AND column_name = 'registradopor') AND (SELECT prosrc FROM pg_proc WHERE proname = 'lancar_venda_do_dia') LIKE '%valores.ver_rs%')
 ),
 tudo AS (
   SELECT x.*, a.versao
