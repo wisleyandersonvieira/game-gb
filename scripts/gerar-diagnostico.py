@@ -60,7 +60,7 @@ SELECT 'policy', p.schemaname || '.' || p.tablename || '.' || p.policyname,
  WHERE p.schemaname = 'public'
     OR (p.schemaname = 'storage' AND p.tablename = 'objects')
 UNION ALL
-SELECT 'gatilho', n.nspname || '.' || c.relname || '.' || t.tgname, md5(pg_get_triggerdef(t.oid))
+SELECT 'gatilho', n.nspname || '.' || c.relname || '.' || t.tgname, md5(pg_get_triggerdef(t.oid) || t.tgenabled::text)
   FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
  WHERE NOT t.tgisinternal
    AND (n.nspname = 'public' OR t.tgname LIKE 'stgame%')
@@ -91,7 +91,7 @@ def psql_arquivo(caminho):
 
 
 def impressao():
-    r = sh('docker', 'exec', '-i', C, 'psql', '-U', 'postgres', '-qtAF', '\t', entrada=IMPRESSAO)
+    r = sh('docker', 'exec', '-i', C, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-qtAF', '\t', entrada=IMPRESSAO)
     # 12 letras da marca bastam (e o arquivo fica menor para colar no SQL Editor).
     return {tuple(l.split('\t')[:2]): l.split('\t')[2][:12] for l in r.stdout.splitlines() if l}
 
@@ -137,6 +137,8 @@ def gerar():
                 dona[k] = mig
                 historico.setdefault((k[0], k[1], marca), mig)
         anterior = imp
+    if len(final) < 1000:
+        sys.exit(f"a impressão digital final tem só {len(final)} itens: algo deu errado")
     fim = sorted((dona[k], k[0], k[1], m) for k, m in final.items() if antes.get(k) != m)
     velhas = sorted((t, c, m, mig) for (t, c, m), mig in historico.items() if final.get((t, c)) != m)
     migracoes = [m for m, _ in passos]
