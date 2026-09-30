@@ -95,7 +95,10 @@ Commit **não** é publicação: o Lovable publica do GitHub, e commit que não 
 
 A mensagem final de **toda** entrega diz, sempre, nesta ordem:
 1. **`enviado ao GitHub: <commit>`** — enviado, não só commitado. Confira com `git status -sb` que não sobrou nada em `ahead`. **E as verificações do GitHub desse commit estão VERDES** (`gh run list --commit <commit>` / `gh run watch`), não só as locais: de 25 a 29/09/2026 a `main` ficou 51 rodadas vermelha (um `bun.lock` com um pacote que já tinha saído do `package.json`, e um comentário que a verificação lia como chamada), inclusive a versão no ar, e ninguém olhou — o "passou" era só local, com `node_modules` já instalado. Antes de enviar, rode os passos do `.github/workflows/verificacao.yml` numa cópia limpa do commit (sem `node_modules`), não só a suíte local.
-2. **Quantas migrações** tem o arquivo de aplicar, e qual é o nome dele.
+2. **Quantas migrações** tem o arquivo de aplicar, qual é o nome dele, e a **CLASSIFICAÇÃO** (regra do Wisley, 29/09/2026), que vai também no cabeçalho do arquivo, na linha `-- CLASSIFICAÇÃO: ACRESCENTA` ou `-- CLASSIFICAÇÃO: TIRA`:
+   - **ACRESCENTA:** o site que está no ar continua funcionando com o banco novo (só cria, ou muda sem tirar nada que a versão no ar usa). Ordem: **aplica o SQL primeiro, confere, e só então faz o merge**. Fazer o merge antes quebra o site novo até o SQL entrar (29/09/2026: o merge do PR #2 foi antes do SQL e o site novo ficou pedindo funções que ainda não existiam).
+   - **TIRA:** apaga ou muda algo que a versão no ar usa. Aplica e publica **juntos, com as lojas fechadas**.
+   Quem classifica é o Claude, olhando o que o site no ar chama; nunca deixe para o Wisley deduzir. `src/ui/classificacao.test.ts` reprova arquivo de aplicar novo sem a linha.
 3. **O que o Wisley precisa fazer, na ordem** (aplicar o SQL → publicar → conferir).
 
 Ele confere em `/saude` se a **versão no ar** é esse commit antes de testar qualquer coisa. A `/saude` mostra o commit e a hora do build, sem precisar de login.
