@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Pagina } from "@/ui/Pagina";
 import { DIAS, resumoDaJornada } from "@/jornada/resumo";
 import { MapaDaJornada } from "@/jornada/MapaDaJornada";
+import { useMinhasPermissoes } from "@/ui/permissoes";
 
 export const Route = createFileRoute("/_authenticated/jornada")({
   component: Jornadas,
@@ -29,6 +30,8 @@ const FORM_VAZIO = {
   pausafim: "",
   observacao: "",
   ativa: true,
+  // As lojas em que a jornada vale (30/09/2026).
+  lojas: [] as number[],
 };
 // A ordem da tela começa na segunda; o banco guarda 1 = domingo ... 7 = sábado.
 const ORDEM_NA_TELA = [2, 3, 4, 5, 6, 7, 1];
@@ -72,6 +75,19 @@ function ListaDeJornadas() {
   const [editando, setEditando] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [vendoPessoas, setVendoPessoas] = useState<number | null>(null);
+  // Criar jornada: o master, ou o gerente com "Jornada: criar, editar e apagar"
+  // em alguma loja. Só esconde o botão: quem decide é o banco.
+  const permissoes = useMinhasPermissoes().data;
+  const podeCriar = permissoes?.master === true || (permissoes?.codigos.includes("jornada.editar") ?? false);
+  // As lojas que dá para marcar: o master, todas; o gerente, as dele.
+  const lojasParaMarcar = useQuery({
+    queryKey: ["lojas-para", "jornada.editar"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("lojas_para", { p_codigo: "jornada.editar" });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
   const dados = useQuery({
     queryKey: ["jornadas"],
@@ -93,6 +109,7 @@ function ListaDeJornadas() {
       }
       return (j.data ?? []).map((jo) => ({
         ...jo,
+        nomesDasLojas: (jo.lojas ?? []).map((id) => nomeLoja.get(id) ?? "").filter(Boolean),
         dias: (d.data ?? []).filter((x) => x.jornadaid === jo.jornadaid),
         // Só os colaboradores ATIVOS contam (e aparecem na janela).
         pessoas: (f.data ?? [])
@@ -109,7 +126,7 @@ function ListaDeJornadas() {
   const emEdicao = lista.find((j) => j.jornadaid === editando);
 
   function limpar() {
-    setForm({ ...FORM_VAZIO, dias: SEMANA_VAZIA() });
+    setForm({ ...FORM_VAZIO, dias: SEMANA_VAZIA(), lojas: [] });
     setEditando(null);
     setErro(null);
     setFormAberto(false);
@@ -131,6 +148,7 @@ function ListaDeJornadas() {
       pausafim: j.pausafim?.slice(0, 5) ?? "",
       observacao: j.observacao ?? "",
       ativa: j.ativa,
+      lojas: [...(j.lojas ?? [])],
     });
     setEditando(j.jornadaid);
     setErro(null);
@@ -162,6 +180,7 @@ function ListaDeJornadas() {
       if (form.temPausa && (!form.pausainicio || !form.pausafim)) {
         throw new Error("Preencha o começo e o fim do intervalo (ou desmarque o intervalo).");
       }
+      if (form.lojas.length === 0) throw new Error("Marque pelo menos uma loja em que a jornada vale.");
       const vinculadas = emEdicao?.pessoas.length ?? 0;
       if (editando !== null && vinculadas > 0) {
         const ok = confirm(
@@ -177,6 +196,7 @@ function ListaDeJornadas() {
         p_pausafim: form.temPausa ? form.pausafim : null,
         p_observacao: form.observacao || null,
         p_ativa: form.ativa,
+        p_lojas: form.lojas,
       });
       if (error) throw error;
       return true;
@@ -213,9 +233,14 @@ function ListaDeJornadas() {
 
   return (
     <div className="space-y-4">
-      {!formAberto && (
+      {!formAberto && podeCriar && (
         <button
-          onClick={() => setFormAberto(true)}
+          onClick={() => {
+            // Uma loja só: já vem marcada.
+            const unica = lojasParaMarcar.data?.length === 1 ? [lojasParaMarcar.data[0].lojaid] : [];
+            setForm({ ...FORM_VAZIO, dias: SEMANA_VAZIA(), lojas: unica });
+            setFormAberto(true);
+          }}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
         >
           Criar jornada
@@ -246,6 +271,33 @@ function ListaDeJornadas() {
             onChange={(e) => setForm({ ...form, nome: e.target.value })}
             className={`${campo} w-full`}
           />
+
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <p className="text-sm font-medium">Lojas em que esta jornada vale</p>
+            <p className="text-xs text-muted-foreground">
+              Só quem trabalha numa destas lojas pode ser vinculado à jornada. Loja com gente vinculada não sai da
+              jornada.
+            </p>
+            <div className="flex flex-wrap gap-3 text-sm">
+              {(lojasParaMarcar.data ?? []).map((l) => (
+                <label key={l.lojaid} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={form.lojas.includes(l.lojaid)}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        lojas: e.target.checked
+                          ? [...form.lojas, l.lojaid]
+                          : form.lojas.filter((x) => x !== l.lojaid),
+                      })
+                    }
+                  />
+                  {l.nome}
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -404,6 +456,11 @@ function ListaDeJornadas() {
                 })}
               </p>
               {j.observacao && <p className="text-xs text-muted-foreground">{j.observacao}</p>}
+              <p className="text-xs text-muted-foreground">
+                Vale em: {j.nomesDasLojas.join(", ") || "nenhuma loja sua"}
+                {j.outraslojas > 0 &&
+                  ` e em mais ${j.outraslojas} ${j.outraslojas === 1 ? "loja que não é sua" : "lojas que não são suas"}`}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -414,12 +471,17 @@ function ListaDeJornadas() {
               >
                 {j.pessoas.length} {j.pessoas.length === 1 ? "pessoa" : "pessoas"}
               </button>
-              <button onClick={() => editar(j)} className="rounded-md border border-border px-3 py-1 text-sm">
-                Editar
-              </button>
-              <button onClick={() => apagar.mutate(j)} className="rounded-md border border-border px-3 py-1 text-sm">
-                Apagar
-              </button>
+              {/* Só quem pode mexer nela (o banco confere de novo). */}
+              {j.editavel && (
+                <>
+                  <button onClick={() => editar(j)} className="rounded-md border border-border px-3 py-1 text-sm">
+                    Editar
+                  </button>
+                  <button onClick={() => apagar.mutate(j)} className="rounded-md border border-border px-3 py-1 text-sm">
+                    Apagar
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ))}

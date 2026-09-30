@@ -196,10 +196,28 @@ function Funcionarios() {
     },
   });
   const nomeDaJornada = (id: number | null) => jornadas.data?.find((j) => j.jornadaid === id)?.nome;
-  const jornadasAtivas = (jornadas.data ?? []).filter((j) => j.ativa).map((j) => ({ id: j.jornadaid, nome: j.nome }));
+
+  // Para vincular, só as jornadas ATIVAS que valem numa loja de CADA pessoa
+  // escolhida (30/09/2026). Quem decide é o banco (e ele recusa por fora).
+  const idsParaJornada = vinculandoJornada !== null ? [vinculandoJornada] : [...selecionados].sort((a, b) => a - b);
+  const jornadasQueServem = useQuery({
+    queryKey: ["jornadas-que-servem", idsParaJornada],
+    enabled: idsParaJornada.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("jornadas_que_servem", { p_funcionarios: idsParaJornada });
+      if (error) throw error;
+      return (data ?? []).map((j) => ({ id: j.jornadaid, nome: j.nome }));
+    },
+  });
+  const jornadasAtivas = jornadasQueServem.data ?? [];
 
   // Vincular uma ou várias pessoas a uma jornada (null = sem jornada).
   const vincularJornada = useMutation({
+    // A recusa aparece: na linha da pessoa, ou no bloco das marcadas.
+    onError: (e, { ids }) =>
+      ids.length === 1 && vinculandoJornada !== null
+        ? setErroDoAcesso({ funcionarioid: ids[0], texto: (e as Error).message })
+        : setErroDoLote((e as Error).message),
     mutationFn: async ({ ids, jornadaid }: { ids: number[]; jornadaid: number | null }) => {
       if (ids.length === 0) throw new Error("Marque pelo menos uma pessoa.");
       const { error } = await supabase.rpc("vincular_jornada", { p_funcionarios: ids, p_jornadaid: jornadaid });

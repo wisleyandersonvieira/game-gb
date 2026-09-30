@@ -84,14 +84,15 @@ não estava e o sistema faz · **(só master)** = proposta de não delegar.
 | **Liberar PIN do tablet** | `liberar_pin`, `travas_do_pin` | Equipe: liberar PIN (FALTOU) |
 | Convite do Telegram da pessoa | `criar_convite_telegram` | fica para a Etapa 1.13 (hoje só master) |
 | Marcar "validador" da loja (aprova pelo Telegram) | coluna `validador` em `funcionarioslojas` | fica para a Etapa 1.13 (é uma permissão paralela, do Telegram) |
-| Vincular jornada à pessoa | `vincular_jornada` | Jornada: criar e editar (sua) |
+| Vincular jornada à pessoa | `vincular_jornada` | Jornada: ligar pessoa a uma jornada (`jornada.vincular`), só jornada com loja em comum com a pessoa |
 
 ### Jornada
 | Ver jornadas | leitura | Jornada: ver (sua) |
 |---|---|---|
-| Criar, editar, apagar jornada; vincular pessoas | `salvar_jornada`, `vincular_jornada`, escrita direta em `jornadas` (apagar) | Jornada: criar e editar (sua) |
-| Intervalo do mapa (planejamento) | `salvar_intervalo_do_mapa` | Jornada: criar e editar (sua) |
-| Ver o Mapa e exportar PDF | `mapa_da_jornada`, `mapa_da_semana` | Jornada: mapa e exportar (sua) |
+| Criar, editar, apagar jornada (30/09/2026) | `salvar_jornada`, `apagar_jornada` | Jornada: criar, editar e apagar (`jornada.editar`): só jornada cujo alcance cabe INTEIRO nas lojas dele (nem o nome, nem um horário de jornada que vale também fora); marcar só lojas dele; apagar só sem ninguém vinculado |
+| Intervalo do mapa (planejamento) | `salvar_intervalo_do_mapa` | Jornada: mapa e exportar (`jornada.mapa`), de quem tem uma loja em comum com ele; nunca o próprio |
+| Ver o Mapa | `mapa_da_jornada`, `mapa_da_semana` | Jornada: ver (sua) |
+| Exportar o PDF do Mapa | na tela (o PDF é montado com o que o banco já mostrou) | Jornada: mapa e exportar; o mapa diz `podemapa` loja a loja |
 
 ### Feedbacks (FALTOU a tela inteira)
 | Ver feedbacks | leitura | Feedbacks: ver (FALTOU) |

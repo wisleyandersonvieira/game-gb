@@ -39,6 +39,11 @@ BEGIN
     INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
     SELECT v_conta, v_j, d, p_entrada, v_saida FROM generate_series(1, 7) d;
   END IF;
+  -- Desde 30/09/2026 a jornada vale em lojas: a de teste vale em todas as da
+  -- conta (como as que ja existiam na migracao).
+  INSERT INTO public.jornadaslojas (contaid, jornadaid, lojaid)
+  SELECT v_conta, v_j, l.lojaid FROM public.lojas l WHERE l.contaid = v_conta
+  ON CONFLICT DO NOTHING;
   UPDATE public.funcionarios SET jornadaid = v_j WHERE funcionarioid = p_funcionarioid;
 END;
 $$;
@@ -4533,10 +4538,12 @@ OVERRIDING SYSTEM VALUE VALUES
   (7512, 1, 'Sandra Sem Horario', 0),
   (7513, 1, 'Fabio Folga', (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1)),
   (7610, 2, 'Bruno de B',    0);
-SELECT public.teste_horario(7510, '08:00', '17:00'), public.teste_horario(7511, '18:00', '02:00'),
-       public.teste_horario(7513, '08:00', '17:00'), public.teste_horario(7610, '08:00', '17:00');
+-- As lojas antes da jornada: desde 30/09/2026 a jornada so se liga a quem
+-- tem uma loja em comum com ela.
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
   (1, 7510, 10), (1, 7510, 11), (1, 7511, 10), (1, 7512, 10), (1, 7513, 10), (2, 7610, 20);
+SELECT public.teste_horario(7510, '08:00', '17:00'), public.teste_horario(7511, '18:00', '02:00'),
+       public.teste_horario(7513, '08:00', '17:00'), public.teste_horario(7610, '08:00', '17:00');
 INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
   (7710, 1, 'Conferir freezer', 5), (7711, 1, 'Trocar sabor', 5), (7712, 1, 'Lavar calhas', 8),
   (7713, 1, 'Missao do estoque', 20), (7714, 1, 'Tarefa do Nelson', 4), (7715, 2, 'Tarefa do Bruno', 6);
@@ -5186,9 +5193,10 @@ BEGIN
       -- recusam quem nao e o admin geral (provado na secao 70).
       'sugerir_codigo_empresa', 'codigo_empresa_disponivel', 'resumo_admin_das_contas', 'redes_admin',
       'anexos_admin',
-      -- 27/09/2026: jornadas. Leem a conta de quem chamou
-      -- (exige_master_editavel) e so mexem na conta dele (secao 73).
-      'salvar_jornada', 'vincular_jornada',
+      -- 27/09/2026: jornadas. Leem a conta de quem chamou (o master, ou o
+      -- gerente com pode() em cada loja da jornada) e so mexem na conta dele
+      -- (secoes 73 e 117). jornadas_que_servem: so a conta de quem chamou.
+      'salvar_jornada', 'vincular_jornada', 'jornadas_que_servem',
       -- 27/09/2026: intervalo do mapa. Le a conta de quem chamou
       -- (exige_master_editavel) e so grava pessoa dela (secao 75).
       'salvar_intervalo_do_mapa',
@@ -9895,7 +9903,7 @@ BEGIN
   BEGIN UPDATE public.funcionarios SET jornadaid = current_setting('teste.j73')::integer WHERE funcionarioid = 200; deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a chave composta impede pessoa de uma conta na jornada de outra');
-  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.salvar_jornada(integer, text, jsonb, time, time, text, boolean)', 'EXECUTE')
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.salvar_jornada(integer, text, jsonb, time, time, text, boolean, integer[])', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.vincular_jornada(integer[], integer)', 'EXECUTE'),
                         'o visitante sem login nao mexe em jornada');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
@@ -9930,6 +9938,9 @@ INSERT INTO public.jornadas (jornadaid, contaid, nome, pausainicio, pausafim) OV
 INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
 SELECT 1, 7401, d, '08:00'::time, '17:00'::time FROM generate_series(1, 7) d
 UNION ALL SELECT 1, 7402, d, '22:00'::time, '06:00'::time FROM generate_series(1, 7) d;
+-- Desde 30/09/2026 a jornada vale em lojas: estas, em todas as da conta 1.
+INSERT INTO public.jornadaslojas (contaid, jornadaid, lojaid)
+SELECT 1, j, l.lojaid FROM unnest(ARRAY[7401, 7402]) j, public.lojas l WHERE l.contaid = 1;
 
 DO $$
 DECLARE v jsonb; h date := public.hoje_da_conta(1);
@@ -10032,9 +10043,12 @@ END $$;
 
 -- Uma pessoa de teste na loja 10, turno da noite (jornada 7402 da secao 74),
 -- folga na terca (3).
-INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cargo, jornadaid, diadefolga)
-  OVERRIDING SYSTEM VALUE VALUES (7551, 1, 'Mapa Noturno', 'Atendente', 7402, 3);
+-- (A loja antes da jornada: desde 30/09/2026 a jornada so se liga a quem tem
+-- uma loja em comum com ela.)
+INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cargo, diadefolga)
+  OVERRIDING SYSTEM VALUE VALUES (7551, 1, 'Mapa Noturno', 'Atendente', 3);
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 7551, 10);
+UPDATE public.funcionarios SET jornadaid = 7402 WHERE funcionarioid = 7551;
 
 -- A prova de que o intervalo do mapa nao muda nada: a decisao do bot a cada
 -- 15 minutos, por 9 dias, para uma pessoa de dia (jornada 7401, que tem
@@ -12041,13 +12055,13 @@ SELECT unnest(ARRAY[
   'arquivar_documento_pessoal', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'criar_convite_telegram',
   'definir_rotina_mensagem', 'desfazer_ciencia', 'desligar_telegram', 'excluir_documento_por_engano',
   'liberar_documento_pessoal', 'preparar_envio_documento', 'publicar_politica_de_uso', 'refazer_fechamento',
-  'registrar_ciencia_documento', 'registrar_documento_pessoal', 'rodar_geracao_hoje', 'salvar_intervalo_do_mapa',
-  'salvar_jornada', 'tratar_relato',
+  'registrar_ciencia_documento', 'registrar_documento_pessoal', 'rodar_geracao_hoje',
+  'tratar_relato',
   'pegar_tarefa',
   'alterar_configuracao', 'salvar_premio', 'ativar_premio',
   'salvar_tipo_evento', 'ativar_tipo_evento',
   'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
-  'criar_loja', 'ativar_loja', 'apagar_jornada',
+  'criar_loja', 'ativar_loja',
   'salvar_meta_do_mes', 'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
   -- Parte 5: Usuarios e cargos, nunca delegavel.
   'salvar_cargo', 'duplicar_cargo', 'apagar_cargo', 'criar_cargo_acesso_total', 'editar_usuario_gerencial',
@@ -14238,6 +14252,7 @@ UPDATE public.funcionarios SET cpf = '52998224725' WHERE funcionarioid = 96041;
 INSERT INTO public.travaspin (contaid, funcionarioid, erros, ultimoerro)
   SELECT 96, p, 1, now() FROM unnest(ARRAY[96011, 96021, 96031, 96041]) p;
 INSERT INTO public.jornadas (jornadaid, contaid, nome, ativa) OVERRIDING SYSTEM VALUE VALUES (9601, 96, 'Jornada-96', true);
+INSERT INTO public.jornadaslojas (contaid, jornadaid, lojaid) VALUES (96, 9601, 9601), (96, 9601, 9602), (96, 9601, 9603);
 -- Parte 4, fatia 10: os horarios da jornada e um link de TV por loja.
 INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
   SELECT 96, 9601, d, '08:00', '17:00' FROM generate_series(1, 7) d;
@@ -14851,7 +14866,7 @@ BEGIN
                               'travas_do_pin', 'travas_do_pin_gerente',
                               -- parte 4, fatia 10
                               'nome_da_conta', 'conta_da_gestao', 'lojas_da_gestao', 'links_de_tv', 'som_da_loja', 'vinculos_para',
-                              'jornadas_da_tela', 'dias_das_jornadas', 'resumo_das_lojas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana',
+                              'jornadas_da_tela', 'dias_das_jornadas', 'jornadas_que_servem', 'resumo_das_lojas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana',
                               'codigo_da_empresa', 'historico_das_vendas');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
@@ -15593,5 +15608,211 @@ BEGIN
     IF SQLERRM <> 'desfazer_116' THEN RAISE; END IF;
   END;
 END $$;
+
+-- ===========================================================================
+-- 117. Jornada por loja e a recusa que diz o motivo (30/09/2026)
+--      Conta 96: lojas A, B e C; o gestor A tem todas as permissoes, so na A.
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '117. jornada por loja, o gerente na jornada e no mapa, e a recusa que diz o motivo'; END $$;
+
+DO $$
+DECLARE
+  M  constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  GB constant uuid := '96000000-0000-0000-0000-0000000000b1';
+  dias constant jsonb := '[{"dia":2,"entrada":"08:00","saida":"12:00"}]';
+  jA integer; jB integer; jAB integer; jT integer; jG integer; n integer; msg text; v jsonb;
+BEGIN
+  BEGIN
+    -- A recusa: nenhuma funcao responde mais "no momento" (a frase de antes).
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+                                       WHERE ns.nspname = 'public' AND p.prosrc LIKE '%não pode alterar dados no momento%'),
+                          'nenhuma funcao responde "Sua conta nao pode alterar dados no momento" (a recusa diz o motivo)');
+
+    -- O master monta: J-A (loja A), J-B (B), J-AB (A e B) e J-todas (sem
+    -- lojas: a chamada de antes, que o site no ar faz, vale para todas).
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    jA  := public.salvar_jornada(NULL, 'J-A', dias, NULL, NULL, NULL, true, ARRAY[9601]);
+    jB  := public.salvar_jornada(NULL, 'J-B', dias, NULL, NULL, NULL, true, ARRAY[9602]);
+    jAB := public.salvar_jornada(NULL, 'J-AB', dias, NULL, NULL, NULL, true, ARRAY[9601, 9602]);
+    jT  := public.salvar_jornada(NULL, 'J-todas', dias, NULL, NULL, NULL, true);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT array_agg(lojaid ORDER BY lojaid) FROM public.jornadaslojas WHERE jornadaid = jT) = ARRAY[9601, 9602, 9603]
+                          AND (SELECT array_agg(lojaid ORDER BY lojaid) FROM public.jornadaslojas WHERE jornadaid = jAB) = ARRAY[9601, 9602],
+                          'o master cria com as lojas que marcou; sem lojas (a chamada do site no ar), todas');
+
+    -- 1. As mensagens de recusa dizem o motivo de verdade.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.refazer_fechamento(2026, 8, 'teste da recusa'); msg := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN msg := SQLERRM; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg = 'Esta ação não está liberada para o seu cargo.',
+                          'gerente ativo numa acao so do master: nada muda e a mensagem diz que e do cargo');
+    RESET ROLE;
+    UPDATE public.usuariosgerenciais SET ativo = false WHERE userid = GA;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.refazer_fechamento(2026, 8, 'teste da recusa'); msg := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN msg := SQLERRM; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg LIKE 'Seu acesso de gerente está desativado%',
+                          'gerente desativado: nada muda e a mensagem diz que o acesso esta desativado');
+    RESET ROLE;
+    UPDATE public.usuariosgerenciais SET ativo = true WHERE userid = GA;
+    UPDATE public.contas SET status = 'suspensa' WHERE contaid = 96;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_premio('Premio suspenso', 1); msg := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN msg := SQLERRM; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg LIKE 'A conta está suspensa:%',
+                          'conta suspensa: nada muda e a mensagem diz que a conta esta suspensa');
+    RESET ROLE;
+    UPDATE public.contas SET status = 'ativa' WHERE contaid = 96;
+
+    -- 2. O gerente na jornada: so a que cabe INTEIRA nas lojas dele.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_jornada(jAB, 'J-AB mudada', dias, NULL, NULL, NULL, true); msg := NULL;
+    EXCEPTION WHEN insufficient_privilege THEN msg := SQLERRM; END;
+    BEGIN PERFORM public.salvar_jornada(jT, 'J-todas', '[{"dia":3,"entrada":"09:00","saida":"13:00"}]', NULL, NULL, NULL, true);
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg LIKE 'Esta jornada vale também para lojas que não são suas%',
+                          'gestor A nao edita jornada que vale tambem na B (nem o nome, nem um horario)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_jornada(jA, 'J-A', dias, NULL, NULL, NULL, true, ARRAY[9601, 9602]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(NULL, 'Nova B', dias, NULL, NULL, NULL, true, ARRAY[9602]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(NULL, 'Sem lojas', dias, NULL, NULL, NULL, true); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.apagar_jornada(jAB); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gestor A nao marca a loja B, nao cria sem lojas e nao apaga jornada que vale na B');
+    -- ... e dentro da loja dele edita e cria, de verdade.
+    PERFORM public.salvar_jornada(jA, 'J-A (gestor)', '[{"dia":4,"entrada":"10:00","saida":"14:00"}]', NULL, NULL, NULL, true);
+    jG := public.salvar_jornada(NULL, 'J-gestor', dias, NULL, NULL, NULL, true, ARRAY[9601]);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT nome = 'J-A (gestor)' FROM public.jornadas WHERE jornadaid = jA)
+                          AND (SELECT entrada = '10:00' FROM public.jornadasdias WHERE jornadaid = jA AND diasemana = 4)
+                          AND (SELECT array_agg(lojaid) FROM public.jornadaslojas WHERE jornadaid = jA) = ARRAY[9601]
+                          AND (SELECT array_agg(lojaid) FROM public.jornadaslojas WHERE jornadaid = jG) = ARRAY[9601],
+                          'gestor A edita a jornada da loja dele (as lojas ficam) e cria jornada na loja dele');
+
+    -- 3. O que o gestor A le: as jornadas que valem na A; da B e da C, so quantas.
+    SET LOCAL ROLE authenticated;
+    SELECT jsonb_object_agg(x.nome, jsonb_build_object('lojas', x.lojas, 'outras', x.outraslojas, 'editavel', x.editavel))
+      INTO v FROM public.jornadas_da_tela() x WHERE x.nome LIKE 'J-%';
+    PERFORM public.exigir(v ? 'J-A (gestor)' AND v ? 'J-AB' AND v ? 'J-todas' AND v ? 'J-gestor' AND NOT v ? 'J-B'
+                          AND v#>'{J-AB,lojas}' = '[9601]' AND (v#>>'{J-AB,outras}')::integer = 1 AND NOT (v#>>'{J-AB,editavel}')::boolean
+                          AND (v#>>'{J-todas,outras}')::integer = 2 AND (v#>>'{J-A (gestor),editavel}')::boolean,
+                          'gestor A ve as jornadas da A (a da B nao), das outras lojas so quantas, e so edita a que cabe na A');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(d) FROM public.dias_das_jornadas() d WHERE d.jornadaid = jB));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor A nao le os horarios da jornada que so vale na B');
+    SELECT jsonb_agg(x.nome ORDER BY x.nome COLLATE "C") INTO v FROM public.jornadas_que_servem(ARRAY[96011]) x WHERE x.nome LIKE 'J-%';
+    PERFORM public.exigir(v = '["J-A (gestor)", "J-AB", "J-gestor", "J-todas"]'::jsonb,
+                          'para vincular a Ana (loja A): so as jornadas com a loja A');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.jornadas_que_servem(ARRAY[96021]) x));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor A nao pergunta por gente so da B');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', GB::text, true);
+    SET LOCAL ROLE authenticated;
+    SELECT jsonb_agg(x.nome ORDER BY x.nome COLLATE "C") INTO v FROM public.jornadas_que_servem(ARRAY[96021]) x WHERE x.nome LIKE 'J-%';
+    PERFORM public.exigir(v = '["J-AB", "J-B", "J-todas"]'::jsonb, 'e o gestor B ve as da loja dele para a Bia');
+    RESET ROLE;
+
+    -- 4. Vinculo: so com loja em comum, por qualquer caminho.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.vincular_jornada(ARRAY[96011], jB); msg := NULL; EXCEPTION WHEN check_violation THEN msg := SQLERRM; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg LIKE '%não vale para nenhuma loja de: Ana-A%',
+                          'gestor A nao liga a Ana (loja A) a jornada que so vale na B');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.vincular_jornada(ARRAY[96011], jB); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master liga a Ana a jornada sem loja em comum');
+    RESET ROLE;
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.funcionarios SET jornadaid = jB WHERE funcionarioid = 96011; EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem direto na tabela: o banco recusa a jornada sem loja em comum');
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.vincular_jornada(ARRAY[96011], jA);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT jornadaid = jA FROM public.funcionarios WHERE funcionarioid = 96011),
+                          'gestor A liga a Ana a jornada da loja A, de verdade');
+
+    -- 5. Tirar loja da jornada com gente daquela loja vinculada: nao.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.vincular_jornada(ARRAY[96011], jAB);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_jornada(jAB, 'J-AB', dias, NULL, NULL, NULL, true, ARRAY[9602]); msg := NULL;
+    EXCEPTION WHEN check_violation THEN msg := SQLERRM; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg LIKE '%Loja A (1 pessoa)%',
+                          'nao tira a loja A da jornada com a Ana (da A) vinculada; a mensagem diz quantas e de qual loja');
+    RESET ROLE;
+    PERFORM public.guardar_foto();
+    BEGIN DELETE FROM public.jornadaslojas WHERE jornadaid = jAB AND lojaid = 9601; EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem direto na tabela sai a loja com gente vinculada');
+    -- A pessoa tambem nao sai da unica loja em comum ficando em outra.
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_pessoa(96011, 'Ana-A', NULL, NULL, NULL, NULL, 0, ARRAY[9603]); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'a Ana nao vai so para a loja C ficando na jornada que nao vale la');
+    -- Loja sem ninguem vinculado sai.
+    PERFORM public.salvar_jornada(jAB, 'J-AB', dias, NULL, NULL, NULL, true, ARRAY[9601]);
+    RESET ROLE;
+    PERFORM public.exigir((SELECT array_agg(lojaid) FROM public.jornadaslojas WHERE jornadaid = jAB) = ARRAY[9601],
+                          'a loja B (sem ninguem da B na jornada) sai');
+
+    -- 6. Apagar: o gestor so apaga a jornada da loja dele sem ninguem vinculado.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.vincular_jornada(ARRAY[96012], jG);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.apagar_jornada(jG); msg := NULL; EXCEPTION WHEN foreign_key_violation THEN msg := SQLERRM; END;
+    PERFORM public.exigir(public.nada_mudou() AND msg LIKE '%1 pessoa(s) vinculada(s)%',
+                          'gestor A nao apaga a jornada da loja dele com gente vinculada');
+    PERFORM public.vincular_jornada(ARRAY[96012], NULL);
+    PERFORM public.apagar_jornada(jG);
+    RESET ROLE;
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = jG),
+                          'e sem ninguem vinculado ele apaga, de verdade');
+
+    -- 7. O Mapa: o intervalo de quem tem loja em comum com ele; nunca o proprio.
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((public.mapa_da_jornada(9601)->>'podemapa')::boolean, 'no Mapa da loja A, o gestor A pode marcar e exportar');
+    PERFORM public.salvar_intervalo_do_mapa(96011, 2, '12:00', '13:00');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_intervalo_do_mapa(96021, 2, '12:00', '13:00'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gestor A nao marca o intervalo da Bia (so da B)');
+    RESET ROLE;
+    UPDATE public.usuariosgerenciais SET funcionarioid = 96012 WHERE userid = GA;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_intervalo_do_mapa(96012, 2, '12:00', '13:00'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gestor A nao marca o proprio intervalo');
+    RESET ROLE;
+    DELETE FROM public.cargospermissoes WHERE cargoid = 9600 AND codigo IN ('jornada.mapa', 'jornada.editar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(NOT (public.mapa_da_jornada(9601)->>'podemapa')::boolean, 'sem "Mapa e exportar", o mapa diz que nao pode');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_intervalo_do_mapa(96011, 3, '12:00', '13:00'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(NULL, 'Sem permissao', dias, NULL, NULL, NULL, true, ARRAY[9601]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(jA, 'J-A sem permissao', dias, NULL, NULL, NULL, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'sem as permissoes: nao marca intervalo, nao cria nem edita jornada');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT inicio = '12:00' FROM public.intervalosdomapa WHERE funcionarioid = 96011 AND diasemana = 2),
+                          'e o intervalo da Ana ficou gravado, de verdade');
+
+    RAISE EXCEPTION 'desfazer_117';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_117' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;
