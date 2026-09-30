@@ -1302,6 +1302,35 @@ async function conferirNoStorage(
   return { conferidas: caminhos.length, encontradas, erro };
 }
 
+/** Os buckets que o sistema usa (todos PRIVADOS). */
+export const BUCKETS_ESPERADOS: { id: string; para: string }[] = [
+  { id: "entregas", para: "Fotos das entregas" },
+  { id: "agendamentos", para: "Anexos da agenda" },
+  { id: "documentos-rh", para: "Documentos pessoais (RH)" },
+  { id: "administracao", para: "Contratos da administração" },
+  { id: "logos-redes", para: "Logotipos das redes" },
+  { id: "notas-fiscais", para: "Notas fiscais (Fase 2, ainda sem uso)" },
+  { id: "layout-loja", para: "Layout da loja (Fase 2, ainda sem uso)" },
+];
+export type SituacaoDosBuckets = {
+  lista: { id: string; para: string; existe: boolean; publico: boolean; esperado: boolean }[];
+  erro: string | null;
+};
+/** Cada bucket esperado (existe? público?) e qualquer outro que exista. */
+export function situacaoDosBuckets(reais: { id: string; public: boolean }[]): SituacaoDosBuckets {
+  const porId = new Map(reais.map((b) => [b.id, b]));
+  const esperados = BUCKETS_ESPERADOS.map((e) => ({
+    ...e,
+    existe: porId.has(e.id),
+    publico: porId.get(e.id)?.public === true,
+    esperado: true,
+  }));
+  const outros = reais
+    .filter((b) => !BUCKETS_ESPERADOS.some((e) => e.id === b.id))
+    .map((b) => ({ id: b.id, para: "Não é do sistema", existe: true, publico: b.public === true, esperado: false }));
+  return { lista: [...esperados, ...outros], erro: null };
+}
+
 /** O tipo de acesso de quem mandou o token ("master", "admin"...), ou null. */
 async function tipoPeloToken(token?: string): Promise<string | null> {
   if (!token) return null;
@@ -1413,5 +1442,19 @@ export const diagnostico = createServerFn({ method: "GET" })
     }
   }
 
-  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando, assinaturas, rotinas };
+  // Os buckets do Storage (01/10/2026): cada um tem de existir e ser PRIVADO.
+  // Público = qualquer link que vazou uma vez abre para sempre, e a retenção
+  // das fotos vira enfeite. Pergunta ao próprio Storage, pela chave de servidor.
+  let buckets: SituacaoDosBuckets = { lista: [], erro: "sem a chave de servidor" };
+  if (temChave) {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: b, error } = await supabaseAdmin.storage.listBuckets();
+      buckets = error ? { lista: [], erro: error.message } : situacaoDosBuckets(b ?? []);
+    } catch (e) {
+      buckets = { lista: [], erro: (e as Error).message };
+    }
+  }
+
+  return { detalhe: true as const, temPepper, temChave, temSite, contaDeSenha, erroDaConta, banco, faltando, assinaturas, rotinas, buckets };
 });

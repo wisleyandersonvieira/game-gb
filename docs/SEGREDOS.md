@@ -66,3 +66,28 @@ A /saude avisa quando um deles **não existe**, e desde 30/09/2026 mostra a **re
 - **Extensões ligadas no Supabase** (Database → Extensions): `pg_cron`, `pg_net` e `supabase_vault`.
 - **Agendamento `gamegb-rotinas`** (a cada 5 minutos), que a migração cria. A /saude avisa se faltar ou parar.
 - **Edge Function `expurgo-fotos` publicada.** Se não estiver, a chamada de teste responde 404.
+- **Os 7 buckets do Storage existem e são PRIVADOS** (`entregas`, `agendamentos`, `documentos-rh`, `administracao`, `logos-redes`, `notas-fiscais`, `layout-loja`). A /saude confere e a faixa do /admin avisa (01/10/2026). Bucket público: qualquer link que vazou abre sem login, para sempre.
+
+## 5. Conferência mensal, na mão (sem token nenhum) — 01/10/2026
+
+O que o banco não enxerga e a /saude não confere. Uma vez por mês, no painel do Supabase:
+
+**Authentication → URL Configuration**
+- [ ] *Site URL* = o endereço do site (o mesmo do `SITE_URL`). Errado: o convite e a troca de senha levam a lugar errado.
+- [ ] *Redirect URLs* contém `<endereço do site>/definir-senha`. Sem ele: o link do convite e o de "esqueci a senha" não abrem a página certa.
+
+**Authentication → Sign In / Providers → Email**
+- [ ] *Allow new users to sign up*: o site NÃO usa cadastro aberto (todo login é criado pelo servidor). Se estiver ligado, avise o Claude antes de desligar.
+- [ ] *Email OTP Expiration* = 86400 (24 horas, o máximo; decisão do convite de 30/09/2026).
+
+**Authentication → Email Templates**
+- [ ] *Invite user* e *Reset password* com o texto em português que foi combinado (não o padrão em inglês).
+
+**Edge Functions → Functions**
+- [ ] `expurgo-fotos` aparece, com *Verify JWT* DESLIGADO. A data de atualização é igual ou posterior à da última mudança no repositório: **27/09/2026** (commit `2a9549e`). Anterior a isso: a versão publicada é velha — publique de novo.
+- [ ] (Só com o Telegram, Etapa 1.13) `telegram-webhook` e `telegram-fila`, *Verify JWT* desligado; última mudança no repositório: 22/09/2026.
+
+**Edge Functions → Secrets**
+- [ ] `STGAME_EXPURGO_SEGREDO` existe (o valor não aparece; se o par estiver errado, a /saude mostra "respondeu 401").
+
+A data de cada função no repositório muda quando ela muda: a lista acima é atualizada na mesma entrega.

@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/ui/Layout";
 import { BARRA_CELULAR_ADMIN, MENU_ADMIN } from "@/ui/menu";
+import { FaixaDaPlataforma } from "@/ui/FaixaDaPlataforma";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/admin")({
   },
   component: () => (
     <Layout menu={MENU_ADMIN} barra={BARRA_CELULAR_ADMIN} comLoja={false} titulo="Administração">
+      <FaixaDaPlataforma />
       <Outlet />
     </Layout>
   ),
