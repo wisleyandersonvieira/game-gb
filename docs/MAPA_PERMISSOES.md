@@ -531,6 +531,17 @@ trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
 - ~~Pessoa em várias lojas~~ **Decidido** (29/09/2026): a linha é o tipo da ação (acima).
 - ~~Metas: gerente lança a venda~~ **Decidido** (29/09/2026): aceitável; a meta e os pontos são só do master, e o master vê pelo nome quem lançou e quem corrigiu cada venda.
 
+**Partes 4 e 5 (30/09/2026), tomadas pelo mais restritivo (decisões pendentes do Wisley):**
+- Gerente com "Agenda: pagamento" mas SEM "Ver valores em R$": vê o valor vazio, mas o banco ainda deixa gravar um valor (às cegas). Exigir também "Ver valores em R$" para gravar valor?
+- Resgate "abate na comanda" por gerente sem "Ver valores em R$": ele digita o valor e o banco aceita. Exigir a permissão?
+- Ranking: "Todas as lojas" some para o gerente; o ranking de pontos do mês sem loja soma só as lojas dele; a nota do mês e os meses fechados, só loja por loja.
+- Equipe: o gerente vê quem tem uma loja em comum com ele; CPF e telefone só de quem está inteiro nas lojas dele; as lojas de cada pessoa, só as dele.
+- Comunicado para "pessoas": o gerente só o vê se TODOS os destinatários têm uma loja dele.
+- Metas: o gerente vê a meta do mês só para consultar e lança venda (se o cargo deixa); as abas "Por dia da semana", "Metas especiais" e "Histórico" somem para ele.
+- Fotos e anexos: o gerente abre, mas não envia (registrar entrega COM foto e anexar na agenda continuam só do master; o campo some para ele).
+- O código da empresa (tablet e folha de acesso): só com "Lojas: acesso do tablet" ou "Equipe: criar acesso".
+- A validade do link do convite é a do Supabase (padrão: 24 horas; muda em Authentication → Email).
+
 **Achados (não mexidos):**
 - ~~A lista do dia numera as linhas sem ordem fixa (juntar com o desempate).~~ **Resolvido** (desempate fixo, 29/09/2026).
 - ~~Quadro (validação e lista para registrar entrega): entregas gravadas no mesmo instante saem em ordem incerta (a prova da parte 3 viu a MESMA resposta em outra ordem, banco igual). Juntar com o desempate.~~ **Resolvido** (desempate fixo, 29/09/2026).

@@ -6280,6 +6280,66 @@ export type Database = {
         Args: never
         Returns: { codigo: string | null; nomefantasia: string | null }[]
       }
+      cargos_da_conta: {
+        Args: never
+        Returns: { cargoid: number; codigos: string[]; criadoem: string; nome: string; usuarios: number }[]
+      }
+      salvar_cargo: { Args: { p_cargoid: number; p_codigos: string[]; p_nome: string }; Returns: number }
+      duplicar_cargo: { Args: { p_cargoid: number; p_nome: string }; Returns: number }
+      apagar_cargo: { Args: { p_cargoid: number }; Returns: undefined }
+      criar_cargo_acesso_total: { Args: { p_nome?: string }; Returns: number }
+      permissoes_sem_cargo: { Args: never; Returns: { codigo: string; nome: string; tela: string }[] }
+      usuarios_gerenciais: {
+        Args: never
+        Returns: {
+          ativo: boolean
+          cargo: string
+          cargoid: number
+          convitependente: boolean
+          criadoem: string
+          email: string | null
+          funcionarioid: number | null
+          lojas: number[]
+          nome: string | null
+          pessoa: string | null
+          ultimoacesso: string | null
+          userid: string
+        }[]
+      }
+      preparar_convite_gerente: {
+        Args: { p_cargoid: number; p_email: string; p_funcionarioid?: number | null; p_lojas: number[]; p_nome: string }
+        Returns: number
+      }
+      registrar_gerente_convidado: {
+        Args: {
+          p_cargoid: number
+          p_contaid: number
+          p_funcionarioid: number
+          p_lojas: number[]
+          p_nome: string
+          p_quem: string
+          p_userid: string
+        }
+        Returns: undefined
+      }
+      editar_usuario_gerencial: {
+        Args: { p_cargoid: number; p_funcionarioid?: number | null; p_lojas: number[]; p_nome: string; p_userid: string }
+        Returns: undefined
+      }
+      ativar_usuario_gerencial: { Args: { p_ativo: boolean; p_userid: string }; Returns: undefined }
+      email_do_gerente: { Args: { p_userid: string }; Returns: string }
+      historico_de_permissoes: {
+        Args: { p_limite?: number }
+        Returns: {
+          acao: string
+          antes: Json | null
+          depois: Json | null
+          em: string
+          historicoid: number
+          quem: string
+          tabela: string
+        }[]
+      }
       posso_na_pessoa: {
         Args: { p_codigo: string; p_funcionarioid: number }
         Returns: Json

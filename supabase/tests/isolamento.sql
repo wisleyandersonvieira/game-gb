@@ -5233,6 +5233,10 @@ BEGIN
       'equipe_da_tela', 'vinculos_da_tela', 'jornadas_da_conta', 'situacao_dos_acessos_gerente', 'travas_do_pin_gerente',
       'nome_da_conta', 'conta_da_gestao', 'lojas_da_gestao', 'links_de_tv', 'som_da_loja', 'vinculos_para', 'jornadas_da_tela',
       'dias_das_jornadas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana', 'codigo_da_empresa',
+      -- Parte 5: a pagina Usuarios e cargos, so do master (sou_master e a conta dele) (secao 113).
+      'cargos_da_conta', 'salvar_cargo', 'apagar_cargo', 'duplicar_cargo', 'permissoes_sem_cargo', 'criar_cargo_acesso_total',
+      'usuarios_gerenciais', 'preparar_convite_gerente', 'editar_usuario_gerencial', 'email_do_gerente', 'ativar_usuario_gerencial',
+      'historico_de_permissoes',
       -- Decisoes 2 e 4: so responde sobre quem chama (conta dele, pessoa da
       -- conta dele, pode_na_pessoa e nunca o proprio) (secao 111).
       'posso_na_pessoa',
@@ -12043,7 +12047,10 @@ SELECT unnest(ARRAY[
   'salvar_tipo_evento', 'ativar_tipo_evento',
   'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
   'criar_loja', 'ativar_loja', 'apagar_jornada',
-  'salvar_meta_do_mes', 'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial']), 'so_master'   -- decisao 5: a meta e so do master   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'salvar_meta_do_mes', 'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
+  -- Parte 5: Usuarios e cargos, nunca delegavel.
+  'salvar_cargo', 'duplicar_cargo', 'apagar_cargo', 'criar_cargo_acesso_total', 'editar_usuario_gerencial',
+  'ativar_usuario_gerencial']), 'so_master'   -- decisao 5: a meta e so do master   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -15147,6 +15154,151 @@ BEGIN
     RAISE EXCEPTION 'desfazer_112';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_112' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 113. Parte 5: Usuarios e cargos (30/09/2026)
+-- ===========================================================================
+-- So o master (nunca delegavel). Cargos reutilizaveis (criar, editar,
+-- duplicar, apagar se ninguem usa). "Acesso total" com o catalogo de hoje; o
+-- que ficar sem cargo aparece no aviso. O gerente convidado so entra pelo
+-- servidor. Desativar nega tudo na hora. O historico: so o master le, guarda
+-- antes e depois, e sobrevive ao apagamento do cargo, do usuario e do login.
+DO $$ BEGIN RAISE NOTICE '113. parte 5: usuarios e cargos'; END $$;
+
+DO $$
+DECLARE
+  M constant uuid := '96969696-9696-9696-9696-969696969696';
+  GA constant uuid := '96000000-0000-0000-0000-0000000000a1';
+  NOVO constant uuid := '11300000-0000-0000-0000-000000000001';
+  c1 integer; c2 integer; ct integer; v jsonb; n integer; hist0 integer;
+BEGIN
+  BEGIN
+    -- 1. O gerente (com TODAS as permissoes do catalogo) nao mexe em nada da pagina.
+    PERFORM set_config('teste.uid', GA::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_cargo(NULL, 'Cargo do gerente', ARRAY['quadro.ver']); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.duplicar_cargo(9600, 'Copia'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_cargo(9600); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_cargo_acesso_total('Total do gerente'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.editar_usuario_gerencial(GA, 'Eu', 9600, ARRAY[9601, 9602, 9603]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.ativar_usuario_gerencial('96000000-0000-0000-0000-0000000000b1', false); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.preparar_convite_gerente('X', 'x@exemplo.com', 9600, ARRAY[9601]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.registrar_gerente_convidado(96, NOVO, 'X', 9600, ARRAY[9601], NULL, GA); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.cargos (contaid, nome) VALUES (96, 'Direto'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o gerente nao cria, edita, duplica, apaga cargo, nem mexe em usuario (nunca delegavel)');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.cargos_da_conta() x)
+                                     || coalesce((SELECT jsonb_agg(x) FROM public.usuarios_gerenciais() x), '[]'::jsonb)
+                                     || coalesce((SELECT jsonb_agg(x) FROM public.historico_de_permissoes() x), '[]'::jsonb)
+                                     || coalesce((SELECT jsonb_agg(x) FROM public.permissoes_sem_cargo() x), '[]'::jsonb));
+    PERFORM public.exigir(public.nada_voltou(), 'o gerente nao le cargos, usuarios, historico nem o aviso');
+    RESET ROLE;
+
+    -- 2. O master: cria, duplica, edita, "Acesso total", e o aviso.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    c1 := public.salvar_cargo(NULL, 'Caixa', ARRAY['quadro.ver', 'quadro.registrar_entrega']);
+    c2 := public.duplicar_cargo(c1, 'Caixa 2');
+    PERFORM public.exigir((SELECT codigos FROM public.cargos_da_conta() WHERE cargoid = c2) = ARRAY['quadro.registrar_entrega', 'quadro.ver'],
+                          'duplicar copia as permissoes do cargo');
+    PERFORM public.salvar_cargo(c2, 'Caixa da noite', ARRAY['quadro.ver']);
+    PERFORM public.exigir((SELECT nome = 'Caixa da noite' AND codigos = ARRAY['quadro.ver'] FROM public.cargos_da_conta() WHERE cargoid = c2)
+                          AND (SELECT codigos FROM public.cargos_da_conta() WHERE cargoid = c1) = ARRAY['quadro.registrar_entrega', 'quadro.ver'],
+                          'editar muda so o cargo editado (o original fica como estava)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_cargo(NULL, 'caixa', ARRAY['quadro.ver']); EXCEPTION WHEN unique_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_cargo(NULL, 'Invalido', ARRAY['nao.existe']); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.apagar_cargo(9600); EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nome repetido, permissao que nao existe e apagar cargo em uso: nada muda');
+    ct := public.criar_cargo_acesso_total();
+    PERFORM public.exigir((SELECT cardinality(codigos) FROM public.cargos_da_conta() WHERE cargoid = ct) = (SELECT count(*) FROM public.catalogo_de_permissoes()),
+                          '"Acesso total" nasce com todas as permissoes do catalogo de hoje');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.permissoes_sem_cargo()), 'com o Acesso total, nenhuma permissao fica sem cargo');
+    -- Uma permissao que o Acesso total NAO tem (como uma que entrasse no catalogo depois): nao entra sozinha, e vira aviso.
+    RESET ROLE;
+    DELETE FROM public.cargospermissoes WHERE contaid = 96 AND codigo = 'agenda.pagamento';
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT jsonb_agg(codigo) FROM public.permissoes_sem_cargo()) = '["agenda.pagamento"]'::jsonb,
+                          'a permissao que nenhum cargo tem aparece no aviso (nao entra sozinha em cargo nenhum)');
+    PERFORM public.apagar_cargo(c2);
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.cargos_da_conta() WHERE cargoid = c2), 'o master apaga o cargo que ninguem usa');
+
+    -- 3. O convite: o master confere; o registro so pelo servidor.
+    PERFORM public.exigir(public.preparar_convite_gerente('Gil', 'gil.113@exemplo.com', c1, ARRAY[9601], 96011) = 96,
+                          'o master prepara o convite (nome, e-mail, cargo, lojas e o vinculo com a Ana-A)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.preparar_convite_gerente('Gil', 'gil.113@exemplo.com', c1, ARRAY[9701], NULL); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.preparar_convite_gerente('Gil', 'sem-arroba', c1, ARRAY[9601], NULL); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.preparar_convite_gerente('Gil', 'gil.113@exemplo.com', c1, ARRAY[]::integer[], NULL); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.registrar_gerente_convidado(96, NOVO, 'Gil', c1, ARRAY[9601], 96011, M); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'loja de outra conta, e-mail invalido e sem loja: recusados; e nem o master registra direto (so o servidor)');
+    RESET ROLE;
+    SELECT count(*) INTO hist0 FROM public.permissoeshistorico WHERE contaid = 96;
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (NOVO, 'gil.113@exemplo.com', now());
+    PERFORM set_config('teste.uid', '', true);
+    PERFORM public.registrar_gerente_convidado(96, NOVO, 'Gil', c1, ARRAY[9601], 96011, M);   -- o servidor (fora do papel authenticated)
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.usuariosgerenciais WHERE userid = NOVO AND cargoid = c1 AND funcionarioid = 96011 AND nome = 'Gil')
+                          AND (SELECT count(*) FROM public.permissoeshistorico WHERE contaid = 96 AND quem = M) > 0,
+                          'o servidor registra o gerente, e o historico diz que foi o master');
+    -- O gerente novo: ve so a loja dele e o que o cargo deixa; e o proprio (Ana-A) nao gera pontos para si.
+    PERFORM set_config('teste.uid', NOVO::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT jsonb_agg(lojaid) FROM public.minhas_lojas()) = '[9601]'::jsonb
+                          AND public.minhas_permissoes()->'codigos' = '["quadro.registrar_entrega", "quadro.ver"]'::jsonb
+                          AND public.meu_acesso()->>'tipo' = 'gerente',
+                          'o gerente convidado entra com a loja e as permissoes do cargo, e nada mais');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', '', true);
+    PERFORM public.exigir((public.acesso_por_email('gil.113@exemplo.com')->>'userid')::uuid = NOVO,
+                          'a entrada por e-mail aceita o gerente ativo');
+
+    -- 4. Desativar: nega tudo na hora (e a entrada por e-mail tambem).
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.editar_usuario_gerencial(NOVO, 'Gil Silva', ct, ARRAY[9601, 9602], 96011);
+    PERFORM public.exigir((SELECT cargo = 'Acesso total' AND lojas = ARRAY[9601, 9602] AND nome = 'Gil Silva' FROM public.usuarios_gerenciais() WHERE userid = NOVO),
+                          'o master troca o cargo, as lojas e o nome');
+    PERFORM public.ativar_usuario_gerencial(NOVO, false);
+    PERFORM set_config('teste.uid', NOVO::text, true);
+    PERFORM public.limpar_resultado();
+    BEGIN PERFORM public.guardar_resultado(public.painel_inicio(NULL)); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.meu_acesso()->>'tipo' = 'desligado' AND NOT EXISTS (SELECT 1 FROM public.minhas_lojas())
+                          AND public.nada_voltou(),
+                          'desativado: desligado na hora, sem loja e sem dado');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', '', true);
+    PERFORM public.exigir(public.acesso_por_email('gil.113@exemplo.com') IS NULL, 'desativado: a entrada por e-mail recusa');
+
+    -- 5. O historico sobrevive ao apagamento do usuario, do login e do cargo; guarda antes e depois.
+    DELETE FROM public.usuariosgerenciais WHERE userid = NOVO;
+    DELETE FROM public.contasusuarios WHERE userid = NOVO;
+    DELETE FROM auth.users WHERE id = NOVO;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.editar_usuario_gerencial(GA, NULL, 9600, ARRAY[9601], NULL);
+    PERFORM public.apagar_cargo(c1);
+    SELECT jsonb_agg(x) INTO v FROM public.historico_de_permissoes(1000) x;
+    PERFORM public.exigir(v::text LIKE '%Gil Silva%' AND v::text LIKE '%Caixa da noite%'
+                          AND EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE x->>'tabela' = 'cargos' AND x->>'acao' = 'DELETE'
+                                        AND x->'antes'->>'nome' = 'Caixa')
+                          AND EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE x->>'tabela' = 'usuariosgerenciais' AND x->>'acao' = 'UPDATE'
+                                        AND x->'antes'->>'ativo' = 'true' AND x->'depois'->>'ativo' = 'false'),
+                          'o historico guarda antes e depois, e sobrevive ao apagamento do cargo, do usuario e do login');
+    RESET ROLE;
+    -- So o master le o historico: o colaborador e o tablet, nada (nem pela tabela).
+    PERFORM set_config('teste.uid', '10100000-0000-0000-0000-000000000002', true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.historico_de_permissoes() x)
+                                     || coalesce((SELECT jsonb_agg(h) FROM public.permissoeshistorico h), '[]'::jsonb));
+    PERFORM public.exigir(public.nada_voltou(), 'o colaborador nao le o historico de permissoes');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_113';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_113' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

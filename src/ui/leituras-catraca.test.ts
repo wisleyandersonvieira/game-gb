@@ -35,7 +35,7 @@ const FORA = ["src/routes/eu", "src/routes/tablet", "src/routes/admin", "src/rou
 // Telas SÓ do master (o gerente nem entra; o banco também recusa).
 const SO_MASTER = ["src/routes/_authenticated/canal-confidencial.tsx", "src/routes/_authenticated/documentos-pessoais.tsx",
   "src/routes/_authenticated/configuracoes.tsx", "src/routes/_authenticated/estornos.tsx", "src/routes/medir.tsx",
-  "src/configuracoes/", "src/telegram/"];
+  "src/routes/_authenticated/usuarios.tsx", "src/configuracoes/", "src/telegram/"];
 // Onde ainda há leitura de tabela, e por quê (só o master).
 const TABELA_PERMITIDA: Record<string, string[]> = {
   // O documento pessoal ligado a uma etapa: o seletor só aparece para o master.
@@ -122,3 +122,14 @@ describe("parte 4: as telas de gestão leem pelo banco", () => {
   });
 });
 
+describe("parte 5: o botão de criar usuário gerencial é a última chave", () => {
+  const pagina = ler("src/routes/_authenticated/usuarios.tsx");
+  const tudoVazio =
+    pendenciasDeGravacao().length === 0 && telasPendentesDoGerente() === "" && tabelasFora().length === 0 && leiturasFora().length === 0;
+  it("o botão existe se, e só se, não há pendência de gravação nem de leitura", () => {
+    expect(pagina.includes('data-botao="criar-gerente"')).toBe(tudoVazio);
+  });
+  it("hoje as pendências estão vazias (o botão pode existir)", () => {
+    expect({ gravacao: pendenciasDeGravacao(), telas: telasPendentesDoGerente() }).toEqual({ gravacao: [], telas: "" });
+  });
+});
