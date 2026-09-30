@@ -147,3 +147,8 @@ jobs:
             exit 1
           fi
           echo "Servidor empacotado em .output/server."
+      - name: Nenhum segredo do servidor vai para o navegador
+        # Monta o site de novo com valores-isca nos segredos (e nas variantes
+        # VITE_) e procura as iscas em todo arquivo gerado; e confere que só os
+        # arquivos do servidor da lista leem esses segredos (01/10/2026).
+        run: bash scripts/segredos-fora-do-navegador.sh
