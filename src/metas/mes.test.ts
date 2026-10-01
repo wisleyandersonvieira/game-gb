@@ -54,6 +54,12 @@ describe("replicar", () => {
     const { rascunho } = replicar(MES, { "2026-10-04": { valor: "999", pontos: "9" } }, SEMANA, false);
     expect(rascunho["2026-10-04"]).toEqual({ valor: "999", pontos: "9" });
   });
+  it("dia fora da janela do lançamento (o banco diz editavel: false): nem Replicar nem Salvar mexem nele", () => {
+    const fora = [dia(4, { editavel: false }), dia(5)];
+    const { rascunho } = replicar(fora, {}, SEMANA, true);
+    expect(rascunho["2026-10-04"]).toBeUndefined();
+    expect(mudancas(fora, { "2026-10-04": { valor: "1", pontos: "1" } }).linhas).toEqual([]);
+  });
   it("dia da semana com o campo vazio não mexe em nada", () => {
     const semana = SEMANA.map((s, i) => (i === 0 ? { valor: "", pontos: "" } : s));
     expect(replicar(MES, {}, semana, false).rascunho["2026-10-04"]).toBeUndefined();

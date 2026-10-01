@@ -30,6 +30,8 @@ import {
 type MesPorDia = {
   hoje: string;
   mesatual: string;
+  /** A janela do lançamento (mês anterior): antes dela, somente leitura. */
+  primeirodiaeditavel: string;
   podeeditar: boolean;
   especiaisver: boolean;
   especiaiseditar: boolean;
@@ -97,7 +99,8 @@ export function MetaPorDia({
   }, [lojaid, mes]);
 
   const { linhas, erros } = mudancas(dias, rascunho);
-  const passado = m ? `${mes}-01` < m.mesatual : false;
+  // A janela da meta é a do lançamento (01/10/2026): mês atual e anterior.
+  const passado = m ? !dias.some((d) => d.dia >= m.primeirodiaeditavel) : false;
   const podeEditar = !!m?.podeeditar;
 
   const salvar = useMutation({
@@ -164,7 +167,7 @@ export function MetaPorDia({
       )}
       {passado ? (
         <p className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-          Este mês já passou: é somente leitura. O passado é o que foi.
+          Este mês já saiu da janela de lançamento (mês atual e anterior): é somente leitura.
         </p>
       ) : !podeEditar ? (
         <p className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">

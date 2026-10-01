@@ -1,7 +1,7 @@
 -- =========================================================================
 -- STGame: DIAGNÓSTICO de quais migrações do repositório NÃO estão neste banco.
 -- SÓ LEITURA: não muda nada. Gerado por scripts/gerar-diagnostico.py
--- (135 migrações, até 20260930100000_metas_por_mes).
+-- (136 migrações, até 20261001100000_meta_pela_janela_do_lancamento).
 --
 -- Como usar: Supabase -> SQL Editor -> New query -> colar TUDO -> Run.
 -- Mande para o Claude o resultado inteiro (todas as linhas).
@@ -147,7 +147,8 @@ WITH imp_migracoes(migracao) AS (VALUES
   ('20260929291000_recusa_diz_o_motivo'),
   ('20260929292000_jornada_por_loja'),
   ('20260929293000_mapa_do_gerente'),
-  ('20260930100000_metas_por_mes')
+  ('20260930100000_metas_por_mes'),
+  ('20261001100000_meta_pela_janela_do_lancamento')
 ),
 imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260918230035_77b24cff-2af8-4cfb-89df-77511fa9f8e5','coluna','tarefas.descricao','0e3a0ef19449'),
@@ -3508,19 +3509,13 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260930100000_metas_por_mes','coluna','metasdodia.metadodiaid','9e4dfc1b96aa'),
   ('20260930100000_metas_por_mes','coluna','metasdodia.pontospremio','5b13e015c53f'),
   ('20260930100000_metas_por_mes','coluna','metasdodia.valormeta','bfee74aab7bd'),
-  ('20260930100000_metas_por_mes','funcao','apagar_meta_especial(p_metaespecialid integer)','b07032d9ebb8'),
   ('20260930100000_metas_por_mes','funcao','catalogo_de_permissoes()','2e91cb8e2fe4'),
-  ('20260930100000_metas_por_mes','funcao','criar_meta_especial(p_lojaid integer, p_data date, p_descricao text, p_valormeta numeric, p_pontospremio integer)','b26190ef5d1b'),
-  ('20260930100000_metas_por_mes','funcao','estornos_da_conta(p_lojaid integer)','551adde0412b'),
   ('20260930100000_metas_por_mes','funcao','meta_do_dia(p_lojaid integer, p_dia date)','1ded803a16a4'),
   ('20260930100000_metas_por_mes','funcao','metas_da_semana(p_lojaid integer)','3c039e02023d'),
   ('20260930100000_metas_por_mes','funcao','metas_do_mes_gerente(p_lojaid integer, p_mes date)','0ea838389fb6'),
-  ('20260930100000_metas_por_mes','funcao','metas_do_mes_por_dia(p_lojaid integer, p_mes date)','485df8bfd702'),
   ('20260930100000_metas_por_mes','funcao','metas_especiais_da_loja(p_lojaid integer)','55958fe7f3f9'),
   ('20260930100000_metas_por_mes','funcao','registrar_mudanca_de_meta()','e250768b09bd'),
-  ('20260930100000_metas_por_mes','funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','4dd48e3f7e75'),
   ('20260930100000_metas_por_mes','funcao','salvar_metas_da_semana(p_lojaid integer, p_linhas jsonb)','e5942330222b'),
-  ('20260930100000_metas_por_mes','funcao','salvar_metas_do_mes_por_dia(p_lojaid integer, p_mes date, p_linhas jsonb)','fc7d8cd13326'),
   ('20260930100000_metas_por_mes','gatilho','public.metasalteracoes.metasalteracoes_imutavel','5406de6e0b06'),
   ('20260930100000_metas_por_mes','gatilho','public.metasdiariasmodelos.metasdiariasmodelos_historico','836e38e8182d'),
   ('20260930100000_metas_por_mes','gatilho','public.metasdodia.metasdodia_historico','83c3686978d3'),
@@ -3548,7 +3543,13 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260930100000_metas_por_mes','restricao','metasdodia.metasdodia_uma_por_data','87a062f44cfd'),
   ('20260930100000_metas_por_mes','restricao','metasdodia.metasdodia_valores_validos','1aa69afb24fe'),
   ('20260930100000_metas_por_mes','tabela','metasalteracoes','f50a7b6012ea'),
-  ('20260930100000_metas_por_mes','tabela','metasdodia','f50a7b6012ea')
+  ('20260930100000_metas_por_mes','tabela','metasdodia','f50a7b6012ea'),
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','apagar_meta_especial(p_metaespecialid integer)','4e0747851694'),
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','criar_meta_especial(p_lojaid integer, p_data date, p_descricao text, p_valormeta numeric, p_pontospremio integer)','7ba284493bfb'),
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','estornos_da_conta(p_lojaid integer)','e3b4667108f1'),
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','metas_do_mes_por_dia(p_lojaid integer, p_mes date)','8d5014b47df8'),
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','815277af0d2b'),
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','salvar_metas_do_mes_por_dia(p_lojaid integer, p_mes date, p_linhas jsonb)','0894a8780206')
 ),
 imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('acesso','acesso_travado(p_contaid integer, p_tipo text, p_chave text, p_origem text)','e6c865df7848','20260927100400_pin_e_travas'),
@@ -3694,6 +3695,7 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','apagar_jornada(p_jornadaid integer)','fecb2effdfb8','20260929262000_equipe_permissoes'),
   ('funcao','apagar_meta_especial(p_metaespecialid integer)','0baea2dcafe1','20260929273000_meta_so_do_master'),
   ('funcao','apagar_meta_especial(p_metaespecialid integer)','95b18bf04d20','20260929253000_metas_permissoes'),
+  ('funcao','apagar_meta_especial(p_metaespecialid integer)','b07032d9ebb8','20260930100000_metas_por_mes'),
   ('funcao','apagar_meta_especial(p_metaespecialid integer)','b0d35ee9ba04','20260929291000_recusa_diz_o_motivo'),
   ('funcao','aplica_movimento_no_saldo()','cb3c1f1d14bd','20260921140000_loja_resgates_extrato'),
   ('funcao','apos_aprovar_entrega(p_entregaid integer)','e2c454ff779f','20260921120000_entregas_validacao_ranking'),
@@ -3773,6 +3775,7 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','criar_link_tv(p_lojaid integer, p_nome text)','58df659abb62','20260929261000_lojas_permissoes'),
   ('funcao','criar_loja(p_nome text, p_cidade text, p_endereco text)','d51b1ba31904','20260929261000_lojas_permissoes'),
   ('funcao','criar_meta_especial(p_lojaid integer, p_data date, p_descricao text, p_valormeta numeric, p_pontospremio integer)','9035d85c71d7','20260929273000_meta_so_do_master'),
+  ('funcao','criar_meta_especial(p_lojaid integer, p_data date, p_descricao text, p_valormeta numeric, p_pontospremio integer)','b26190ef5d1b','20260930100000_metas_por_mes'),
   ('funcao','criar_meta_especial(p_lojaid integer, p_data date, p_descricao text, p_valormeta numeric, p_pontospremio integer)','ee3d70036b8b','20260929291000_recusa_diz_o_motivo'),
   ('funcao','criar_meta_especial(p_lojaid integer, p_data date, p_descricao text, p_valormeta numeric, p_pontospremio integer)','f8b84ba3f68a','20260929253000_metas_permissoes'),
   ('funcao','criterio_disponivel(p_tipo text)','93952614f864','20260922100000_feedbacks_canal_solicitacoes_justificativas'),
@@ -3810,6 +3813,7 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','estornar_troca(p_resgateid integer, p_motivo text)','310cce3bef99','20260921150000_conquistas_ranking_configuracoes'),
   ('funcao','estornos_da_conta(p_lojaid integer)','44aef11638dd','20260929250000_quadro_permissoes'),
   ('funcao','estornos_da_conta(p_lojaid integer)','4b88fbd0a31f','20260929288000_valor_e_entrega_sem_foto'),
+  ('funcao','estornos_da_conta(p_lojaid integer)','551adde0412b','20260930100000_metas_por_mes'),
   ('funcao','estornos_da_conta(p_lojaid integer)','731bb57e924b','20260929252000_feedbacks_permissoes'),
   ('funcao','estornos_da_conta(p_lojaid integer)','dac270e5935c','20260929251000_premios_permissoes'),
   ('funcao','eu_confere_pessoa(p_contaid integer, p_funcionarioid integer)','4f21b20137be','20260929100100_consertos_revisao_c1'),
@@ -3889,6 +3893,7 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','metas_da_semana(p_lojaid integer)','986328627bda','20260929278000_leituras_tarefas_metas'),
   ('funcao','metas_do_mes(p_lojaid integer, p_mes date)','237efdf570a2','20260922200000_metas_de_faturamento'),
   ('funcao','metas_do_mes_gerente(p_lojaid integer, p_mes date)','75524826ec45','20260929268000_leituras_metas'),
+  ('funcao','metas_do_mes_por_dia(p_lojaid integer, p_mes date)','485df8bfd702','20260930100000_metas_por_mes'),
   ('funcao','metas_especiais_da_loja(p_lojaid integer)','63936d952b58','20260929278000_leituras_tarefas_metas'),
   ('funcao','meu_acesso()','646073177de1','20260927100300_acessos_papeis_e_contexto'),
   ('funcao','meu_acesso()','ba1e0b756a5d','20260928100600_acesso_diz_se_ha_login'),
@@ -4042,11 +4047,13 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','salvar_jornada(p_jornadaid integer, p_nome text, p_dias jsonb, p_pausainicio time without time zone, p_pausafim time without time zone, p_observacao text, p_ativa boolean)','b658b82178cb','20260929190000_jornadas'),
   ('funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','39bc69900855','20260929253000_metas_permissoes'),
   ('funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','4b9fe034f83a','20260929273000_meta_so_do_master'),
+  ('funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','4dd48e3f7e75','20260930100000_metas_por_mes'),
   ('funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','c3438c631657','20260929291000_recusa_diz_o_motivo'),
   ('funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','c40963fa4b42','20260922200000_metas_de_faturamento'),
   ('funcao','salvar_metas_da_semana(p_lojaid integer, p_linhas jsonb)','92377dd23668','20260929291000_recusa_diz_o_motivo'),
   ('funcao','salvar_metas_da_semana(p_lojaid integer, p_linhas jsonb)','983b57403b82','20260929273000_meta_so_do_master'),
   ('funcao','salvar_metas_da_semana(p_lojaid integer, p_linhas jsonb)','ac605c6ef573','20260929253000_metas_permissoes'),
+  ('funcao','salvar_metas_do_mes_por_dia(p_lojaid integer, p_mes date, p_linhas jsonb)','fc7d8cd13326','20260930100000_metas_por_mes'),
   ('funcao','salvar_pessoa(p_funcionarioid integer, p_nomecompleto text, p_cpf text, p_cargo text, p_setor text, p_telefone text, p_diadefolga integer, p_lojas integer[], p_validador integer[])','00ac23418513','20260929272000_pessoa_pelo_tipo_da_acao'),
   ('funcao','salvar_pessoa(p_funcionarioid integer, p_nomecompleto text, p_cpf text, p_cargo text, p_setor text, p_telefone text, p_diadefolga integer, p_lojas integer[], p_validador integer[])','85e2e1b80b2f','20260929262000_equipe_permissoes'),
   ('funcao','salvar_premio(p_nome text, p_custoempontos integer, p_produtoid integer, p_descricao text, p_estoquedisponivel integer)','b16ac8fda293','20260929251000_premios_permissoes'),
