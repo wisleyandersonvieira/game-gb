@@ -1,7 +1,7 @@
 -- =========================================================================
 -- STGame: DIAGNÓSTICO de quais migrações do repositório NÃO estão neste banco.
 -- SÓ LEITURA: não muda nada. Gerado por scripts/gerar-diagnostico.py
--- (136 migrações, até 20261001100000_meta_pela_janela_do_lancamento).
+-- (137 migrações, até 20261001200000_jit_desligado_nas_consultas_pequenas).
 --
 -- Como usar: Supabase -> SQL Editor -> New query -> colar TUDO -> Run.
 -- Mande para o Claude o resultado inteiro (todas as linhas).
@@ -148,7 +148,8 @@ WITH imp_migracoes(migracao) AS (VALUES
   ('20260929292000_jornada_por_loja'),
   ('20260929293000_mapa_do_gerente'),
   ('20260930100000_metas_por_mes'),
-  ('20261001100000_meta_pela_janela_do_lancamento')
+  ('20261001100000_meta_pela_janela_do_lancamento'),
+  ('20261001200000_jit_desligado_nas_consultas_pequenas')
 ),
 imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260918230035_77b24cff-2af8-4cfb-89df-77511fa9f8e5','coluna','tarefas.descricao','0e3a0ef19449'),
@@ -3183,7 +3184,6 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260929267000_leituras_relatorios','funcao','pendencias_da_pessoa_gerente(p_funcionarioid integer, p_de date, p_ate date)','8eed85ca49c1'),
   ('20260929267000_leituras_relatorios','funcao','tarefas_pegas_da_pessoa(p_funcionarioid integer, p_de date, p_ate date)','0bef9b030034'),
   ('20260929268000_leituras_metas','acesso','metas_do_mes_gerente(p_lojaid integer, p_mes date)','26954e4c8dd1'),
-  ('20260929268000_leituras_metas','funcao','metas_do_mes(p_lojaid integer, p_mes date)','d39bb518fb44'),
   ('20260929268500_lojas_do_gerente_uma_vez','funcao','contagem_do_menu_gerente()','b2459eaadda5'),
   ('20260929268500_lojas_do_gerente_uma_vez','funcao','tarefas_nao_pegas(p_lojaid integer)','4ea23541a857'),
   ('20260929270000_porta_do_gerente','acesso','minhas_lojas()','26954e4c8dd1'),
@@ -3205,7 +3205,6 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260929274000_arquivos_do_gerente','policy','storage.objects.entregas_sel_gerente','5d838ac028ad'),
   ('20260929275000_fila_nao_cresce_com_os_dias','funcao','atribuicoes_para_entregar_gerente(p_lojaid integer)','0997d5a9229f'),
   ('20260929275000_fila_nao_cresce_com_os_dias','funcao','fila_no_dia(p_contaid integer, p_lojaid integer, p_dia date, p_fim timestamp with time zone)','9ca707f3ef1c'),
-  ('20260929275000_fila_nao_cresce_com_os_dias','funcao','painel_inicio(p_lojaid integer)','b78b11f24728'),
   ('20260929275000_fila_nao_cresce_com_os_dias','funcao','tarefa_unica_ja_cumprida(p_contaid integer, p_atribuicaoid integer)','684eef73c133'),
   ('20260929275000_fila_nao_cresce_com_os_dias','indice','entregas_atribuicao_envio_idx','926647b6f66a'),
   ('20260929275000_fila_nao_cresce_com_os_dias','indice','justificativas_atribuicao_dia_idx','b4d91db5cdda'),
@@ -3344,7 +3343,6 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260929286000_comunicados_e_inicio_do_gerente_uma_vez','funcao','ciencias_da_tela()','e742b126d66d'),
   ('20260929286000_comunicados_e_inicio_do_gerente_uma_vez','funcao','comunicados_da_tela()','3d8847f0ac4f'),
   ('20260929286000_comunicados_e_inicio_do_gerente_uma_vez','funcao','comunicados_do_gerente_ids()','4025fdf1d84a'),
-  ('20260929286000_comunicados_e_inicio_do_gerente_uma_vez','funcao','painel_inicio_gerente(p_lojaid integer)','b575c502749d'),
   ('20260929287000_usuarios_e_cargos','acesso','apagar_cargo(p_cargoid integer)','26954e4c8dd1'),
   ('20260929287000_usuarios_e_cargos','acesso','ativar_usuario_gerencial(p_userid uuid, p_ativo boolean)','26954e4c8dd1'),
   ('20260929287000_usuarios_e_cargos','acesso','cargos_da_conta()','26954e4c8dd1'),
@@ -3512,7 +3510,6 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260930100000_metas_por_mes','funcao','catalogo_de_permissoes()','2e91cb8e2fe4'),
   ('20260930100000_metas_por_mes','funcao','meta_do_dia(p_lojaid integer, p_dia date)','1ded803a16a4'),
   ('20260930100000_metas_por_mes','funcao','metas_da_semana(p_lojaid integer)','3c039e02023d'),
-  ('20260930100000_metas_por_mes','funcao','metas_do_mes_gerente(p_lojaid integer, p_mes date)','0ea838389fb6'),
   ('20260930100000_metas_por_mes','funcao','metas_especiais_da_loja(p_lojaid integer)','55958fe7f3f9'),
   ('20260930100000_metas_por_mes','funcao','registrar_mudanca_de_meta()','e250768b09bd'),
   ('20260930100000_metas_por_mes','funcao','salvar_metas_da_semana(p_lojaid integer, p_linhas jsonb)','e5942330222b'),
@@ -3549,7 +3546,11 @@ imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20261001100000_meta_pela_janela_do_lancamento','funcao','estornos_da_conta(p_lojaid integer)','e3b4667108f1'),
   ('20261001100000_meta_pela_janela_do_lancamento','funcao','metas_do_mes_por_dia(p_lojaid integer, p_mes date)','8d5014b47df8'),
   ('20261001100000_meta_pela_janela_do_lancamento','funcao','salvar_meta_do_mes(p_lojaid integer, p_mes date, p_nome text, p_valor numeric, p_pontos integer, p_descricao text)','815277af0d2b'),
-  ('20261001100000_meta_pela_janela_do_lancamento','funcao','salvar_metas_do_mes_por_dia(p_lojaid integer, p_mes date, p_linhas jsonb)','0894a8780206')
+  ('20261001100000_meta_pela_janela_do_lancamento','funcao','salvar_metas_do_mes_por_dia(p_lojaid integer, p_mes date, p_linhas jsonb)','0894a8780206'),
+  ('20261001200000_jit_desligado_nas_consultas_pequenas','funcao','metas_do_mes(p_lojaid integer, p_mes date)','19ed7b794366'),
+  ('20261001200000_jit_desligado_nas_consultas_pequenas','funcao','metas_do_mes_gerente(p_lojaid integer, p_mes date)','7ffac9e37d4f'),
+  ('20261001200000_jit_desligado_nas_consultas_pequenas','funcao','painel_inicio(p_lojaid integer)','5f1741662a41'),
+  ('20261001200000_jit_desligado_nas_consultas_pequenas','funcao','painel_inicio_gerente(p_lojaid integer)','6f3777400a8f')
 ),
 imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('acesso','acesso_travado(p_contaid integer, p_tipo text, p_chave text, p_origem text)','e6c865df7848','20260927100400_pin_e_travas'),
@@ -3892,6 +3893,8 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','meta_para_painel(p_contaid integer, p_lojaid integer, p_tv boolean)','cf512aeafd25','20260929243000_tela_meta_especial'),
   ('funcao','metas_da_semana(p_lojaid integer)','986328627bda','20260929278000_leituras_tarefas_metas'),
   ('funcao','metas_do_mes(p_lojaid integer, p_mes date)','237efdf570a2','20260922200000_metas_de_faturamento'),
+  ('funcao','metas_do_mes(p_lojaid integer, p_mes date)','d39bb518fb44','20260929268000_leituras_metas'),
+  ('funcao','metas_do_mes_gerente(p_lojaid integer, p_mes date)','0ea838389fb6','20260930100000_metas_por_mes'),
   ('funcao','metas_do_mes_gerente(p_lojaid integer, p_mes date)','75524826ec45','20260929268000_leituras_metas'),
   ('funcao','metas_do_mes_por_dia(p_lojaid integer, p_mes date)','485df8bfd702','20260930100000_metas_por_mes'),
   ('funcao','metas_especiais_da_loja(p_lojaid integer)','63936d952b58','20260929278000_leituras_tarefas_metas'),
@@ -3928,10 +3931,12 @@ imp_velhas(tipo, chave, marca, migracao) AS (VALUES
   ('funcao','painel_inicio(p_lojaid integer)','9046c375aeeb','20260929242000_inicio_da_fila'),
   ('funcao','painel_inicio(p_lojaid integer)','98bc80441299','20260924120000_rotinas_conferencia_e_agendamento'),
   ('funcao','painel_inicio(p_lojaid integer)','a7139d658223','20260929266000_leituras_inicio_menu'),
+  ('funcao','painel_inicio(p_lojaid integer)','b78b11f24728','20260929275000_fila_nao_cresce_com_os_dias'),
   ('funcao','painel_inicio(p_lojaid integer)','bf7a5fd699ae','20260924100000_rotinas_lista_do_dia'),
   ('funcao','painel_inicio(p_lojaid integer)','e64e2c81c722','20260929244000_concluidas_uma_conta'),
   ('funcao','painel_inicio_gerente(p_lojaid integer)','3891fd1e8cd0','20260929275000_fila_nao_cresce_com_os_dias'),
   ('funcao','painel_inicio_gerente(p_lojaid integer)','634ccdb7606b','20260929266000_leituras_inicio_menu'),
+  ('funcao','painel_inicio_gerente(p_lojaid integer)','b575c502749d','20260929286000_comunicados_e_inicio_do_gerente_uma_vez'),
   ('funcao','painel_inicio_gerente(p_lojaid integer)','ebceba4b74a4','20260929268500_lojas_do_gerente_uma_vez'),
   ('funcao','parear_tv(p_codigo text, p_lojaid integer, p_nome text)','0279e4b6c6ff','20260929261000_lojas_permissoes'),
   ('funcao','parear_tv(p_codigo text, p_lojaid integer, p_nome text)','efc29fa13789','20260929100500_tv_por_codigo_curto'),

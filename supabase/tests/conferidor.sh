@@ -55,8 +55,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP FUNCTION public.apagar_meta_especial(integer);")"
-if echo "$s" | grep -q "|rode aplicar-meta-pela-janela.sql"; then
+s="$(conferir "ALTER FUNCTION public.painel_inicio(integer) RESET jit;")"
+if echo "$s" | grep -q "|rode aplicar-jit-desligado.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

@@ -14,7 +14,7 @@ IMAGEM="postgres:17"
 
 # -v: apaga JUNTO o disco do banco. Sem ele, cada rodada deixava para trás um
 # volume de ~51 MB; em 28/09/2026 eram 220 (11 GB) e o Codespace encheu.
-limpar() { docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || true; }
+limpar() { docker rm -f -v "$CONTAINER" gamegb-teste-jit >/dev/null 2>&1 || true; }
 trap limpar EXIT
 limpar
 
@@ -352,6 +352,29 @@ if [ "$ok_v" != "1" ]; then
   echo "$saida_v" | grep -E 'ERROR|FALHOU' || true
   exit 1
 fi
+
+# A trava do JIT (01/10/2026): nenhuma funcao do sistema liga o JIT, nem no
+# teste de isolamento nem nas telas com volume. Banco proprio, so com as
+# migracoes (o isolamento roda de novo la, com os planos registrados).
+echo "==> nenhuma funcao do sistema liga o JIT do Postgres"
+CJ="gamegb-teste-jit"
+docker rm -f -v "$CJ" >/dev/null 2>&1 || true
+docker run -d --name "$CJ" --tmpfs /var/lib/postgresql/data -e POSTGRES_PASSWORD=teste "$IMAGEM" >/dev/null
+for _ in $(seq 1 60); do
+  sleep 1
+  prontos=$(docker logs "$CJ" 2>&1 | grep -c "ready to accept connections" || true)
+  if [ "$prontos" -ge 2 ] && docker exec "$CJ" psql -U postgres -qtAc "select 1" >/dev/null 2>&1; then break; fi
+done
+rodar_jit() { docker cp "$1" "$CJ:/$(basename "$1")" >/dev/null; docker exec "$CJ" psql -U postgres -q -v ON_ERROR_STOP=1 -f "/$(basename "$1")"; }
+rodar_jit "$RAIZ/supabase/tests/_ambiente_local.sql" >/dev/null
+for m in "$RAIZ"/supabase/migrations/*.sql; do rodar_jit "$m" >/dev/null 2>&1 || { echo "    a migracao $(basename "$m") nao aplicou no banco do JIT"; ok_c=0; }; done
+if ! bash "$RAIZ/supabase/tests/jit.sh" "$CJ"; then
+  docker rm -f -v "$CJ" >/dev/null 2>&1 || true
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (JIT)"
+  exit 1
+fi
+docker rm -f -v "$CJ" >/dev/null 2>&1 || true
 
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
