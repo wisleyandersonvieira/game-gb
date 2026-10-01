@@ -2978,6 +2978,63 @@ export type Database = {
           },
         ]
       }
+      metasalteracoes: {
+        Row: {
+          alteracaoid: number
+          alteradoem: string
+          alteradopor: string | null
+          contaid: number
+          lojaid: number
+          pontosantes: number | null
+          pontosdepois: number | null
+          referencia: string
+          tipo: string
+          valorantes: number | null
+          valordepois: number | null
+        }
+        Insert: {
+          alteracaoid?: number
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          lojaid: number
+          pontosantes?: number | null
+          pontosdepois?: number | null
+          referencia: string
+          tipo: string
+          valorantes?: number | null
+          valordepois?: number | null
+        }
+        Update: {
+          alteracaoid?: number
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          lojaid?: number
+          pontosantes?: number | null
+          pontosdepois?: number | null
+          referencia?: string
+          tipo?: string
+          valorantes?: number | null
+          valordepois?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metasalteracoes_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metasalteracoes_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
       metasdiariasmodelos: {
         Row: {
           contaid: number
@@ -3013,6 +3070,54 @@ export type Database = {
           },
           {
             foreignKeyName: "metasdiariasmodelos_loja_fk"
+            columns: ["contaid", "lojaid"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["contaid", "lojaid"]
+          },
+        ]
+      }
+      metasdodia: {
+        Row: {
+          alteradoem: string
+          alteradopor: string | null
+          contaid: number
+          data: string
+          lojaid: number
+          metadodiaid: number
+          pontospremio: number
+          valormeta: number
+        }
+        Insert: {
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          data: string
+          lojaid: number
+          metadodiaid?: number
+          pontospremio?: number
+          valormeta: number
+        }
+        Update: {
+          alteradoem?: string
+          alteradopor?: string | null
+          contaid?: number
+          data?: string
+          lojaid?: number
+          metadodiaid?: number
+          pontospremio?: number
+          valormeta?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metasdodia_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+          {
+            foreignKeyName: "metasdodia_loja_fk"
             columns: ["contaid", "lojaid"]
             isOneToOne: false
             referencedRelation: "lojas"
@@ -6119,6 +6224,7 @@ export type Database = {
         Args: { p_lojaid: number }
         Returns: { diasemanaid: number; pontospremio: number; valormeta: number }[]
       }
+      metas_do_mes_por_dia: { Args: { p_lojaid: number; p_mes: string }; Returns: Json }
       metas_especiais_da_loja: {
         Args: { p_lojaid: number }
         Returns: {
@@ -7031,6 +7137,7 @@ export type Database = {
         Returns: number
       }
       salvar_metas_da_semana: { Args: { p_linhas: Json; p_lojaid: number }; Returns: undefined }
+      salvar_metas_do_mes_por_dia: { Args: { p_linhas: Json; p_lojaid: number; p_mes: string }; Returns: number }
       salvar_premio: {
         Args: {
           p_custoempontos: number

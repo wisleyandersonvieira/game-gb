@@ -2,7 +2,8 @@
 // o próprio erro da tela; o livro de pontos guarda, mas ninguém olha o livro.
 // Aqui o master vê cada estorno, com QUEM fez (o nome daquela hora, que não
 // muda se o e-mail mudar depois) e quando. Só o master: o banco recusa os outros.
-// Entregas, resgates (cancelados e estornados) e feedbacks anulados.
+// Entregas, resgates (cancelados e estornados) e feedbacks anulados. E, desde
+// 30/09/2026, toda mudança de meta (o master delega a meta e vê o que foi feito).
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +35,13 @@ const ROTULO: Record<string, string> = {
   // Não é estorno: é a entrega que um GERENTE registrou sem foto (30/09/2026),
   // à vista do master para ele conferir.
   "entrega sem foto": "Entrega sem foto (registrada por gerente)",
+  // Também não é estorno: toda mudança de meta, com o antes e o depois (30/09/2026).
+  "meta alterada": "Meta alterada",
+};
+const VERBO: Record<string, string> = {
+  "resgate cancelado": "Cancelado",
+  "feedback anulado": "Anulado",
+  "meta alterada": "Alterada",
 };
 /** Entrega estornada tira pontos; resgate desfeito devolve. */
 const sinal = (p: number) => (p > 0 ? `+${p}` : `${p}`);
@@ -62,7 +70,8 @@ function Estornos() {
   return (
     <Pagina titulo="Estornos">
       <p className="mb-4 text-sm text-muted-foreground">
-        Tudo o que foi estornado nesta loja, com quem estornou e quando. O nome é o que a pessoa tinha na hora.
+        Tudo o que foi estornado nesta loja, e toda mudança de meta, com quem fez e quando. O nome é o que a pessoa tinha
+        na hora.
       </p>
       {lista.isLoading && <p className="text-muted-foreground">Carregando...</p>}
       {lista.isError && <p className="text-destructive">{(lista.error as Error).message}</p>}
@@ -79,10 +88,12 @@ function Estornos() {
                 {ROTULO[e.tipo] ?? e.tipo}: {e.descricao ?? "—"}
                 {e.pessoa ? <span className="text-muted-foreground"> · {e.pessoa}</span> : null}
               </p>
-              <span className={`text-sm font-semibold ${e.pontos < 0 ? "text-perigo" : "text-sucesso"}`}>{sinal(e.pontos)} pontos</span>
+              {e.tipo !== "meta alterada" && (
+                <span className={`text-sm font-semibold ${e.pontos < 0 ? "text-perigo" : "text-sucesso"}`}>{sinal(e.pontos)} pontos</span>
+              )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {e.tipo === "resgate cancelado" ? "Cancelado" : e.tipo === "feedback anulado" ? "Anulado" : "Estornado"} por <strong className="text-foreground">{e.quem}</strong>{" "}
+              {VERBO[e.tipo] ?? "Estornado"} por <strong className="text-foreground">{e.quem}</strong>{" "}
               {quandoFoi(e.quando, relogio.data?.hoje, relogio.data?.fuso)}
               {e.motivo ? ` · motivo: ${e.motivo}` : ""}
             </p>

@@ -2319,7 +2319,37 @@ SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 SELECT public.salvar_metas_da_semana(11, (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'Dia ' || d,
                                                                               'valormeta', 1000, 'pontospremio', 10))
                                             FROM generate_series(1, 7) d));
-SELECT public.criar_meta_especial(11, public.dia_em_sao_paulo(now()) - 2, 'Dia especial', 5000, 50);
+-- Meta de mes passado nao se edita mais (30/09/2026). Nos dias 1 e 2, a data
+-- de anteontem e do mes anterior: o preparo entra direto, como dono do banco.
+DO $$
+DECLARE d date := public.dia_em_sao_paulo(now()) - 2;
+BEGIN
+  IF d >= date_trunc('month', public.dia_em_sao_paulo(now()))::date THEN
+    PERFORM public.criar_meta_especial(11, d, 'Dia especial', 5000, 50);
+  ELSE
+    SET LOCAL ROLE NONE;
+    INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio) VALUES (1, 11, d, 'Dia especial', 5000, 50);
+    SET LOCAL ROLE authenticated;
+  END IF;
+END $$;
+-- O mesmo para a meta do mes de ontem (no dia 1, ontem e do mes anterior).
+CREATE FUNCTION pg_temp.meta_do_mes_33(p_mes date, p_valor numeric) RETURNS integer LANGUAGE plpgsql AS $f$
+DECLARE v integer;
+BEGIN
+  IF p_mes >= date_trunc('month', public.dia_em_sao_paulo(now()))::date THEN
+    RETURN public.salvar_meta_do_mes(11, p_mes, 'Meta do mes', p_valor, 30);
+  END IF;
+  SET LOCAL ROLE NONE;
+  INSERT INTO public.metasprincipais (contaid, lojaid, nomemeta, valormetatotal, datainicio, datafim, pontospremio)
+  VALUES (1, 11, 'Meta do mes', p_valor, p_mes, (p_mes + interval '1 month - 1 day')::date, 30)
+  ON CONFLICT (lojaid, datainicio) DO UPDATE SET valormetatotal = EXCLUDED.valormetatotal
+  RETURNING metaprincipalid INTO v;
+  UPDATE public.metasdiariasapuracoes SET metaprincipalid = v
+   WHERE lojaid = 11 AND dataapuracao BETWEEN p_mes AND (p_mes + interval '1 month - 1 day')::date;
+  PERFORM public.reavaliar_meta_do_mes(1, 11, p_mes);
+  SET LOCAL ROLE authenticated;
+  RETURN v;
+END $f$;
 
 DO $$
 DECLARE
@@ -2452,7 +2482,7 @@ DECLARE
 BEGIN
   SELECT coalesce(sum(valordia), 0) INTO v_total FROM public.metasdiariasapuracoes
    WHERE lojaid = 11 AND dataapuracao BETWEEN mes AND (mes + interval '1 month - 1 day')::date;
-  m := public.salvar_meta_do_mes(11, mes, 'Meta do mes', v_total + 100, 30);
+  m := pg_temp.meta_do_mes_33(mes, v_total + 100);
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.metaspremiacoes WHERE metaprincipalid = m),
                         'meta do mes ainda nao batida: sem premio');
 
@@ -2469,7 +2499,7 @@ BEGIN
                                                                          AND estornadoem IS NULL),
                         'o mes deixou de bater e foi estornado; o dia continua batido');
 
-  PERFORM public.salvar_meta_do_mes(11, mes, 'Meta do mes', v_total, 30);
+  PERFORM pg_temp.meta_do_mes_33(mes, v_total);
   PERFORM public.exigir((SELECT count(*) FROM public.metaspremiacoes WHERE metaprincipalid = m AND estornadoem IS NULL) = 1,
                         'baixar a meta do mes para o que ja foi vendido paga de novo, uma vez');
 
@@ -5253,6 +5283,9 @@ BEGIN
       -- 29/09/2026 (parte 2, Metas): leem a conta de quem chamou e conferem
       -- pode() na loja (secao 97).
       'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
+      -- 30/09/2026 (metas por mes): leem a conta de quem chamou e conferem
+      -- pode() na loja; a leitura, a conta do master ou do gerente (secao 118).
+      'metas_do_mes_por_dia', 'salvar_metas_do_mes_por_dia',
       -- Decisao 5: so o master le (sou_master e a conta dele) (secao 97).
       'historico_das_vendas',
       -- 29/09/2026 (parte 2, Tarefas): leem a conta de quem chamou e conferem
@@ -12062,10 +12095,9 @@ SELECT unnest(ARRAY[
   'salvar_tipo_evento', 'ativar_tipo_evento',
   'criar_conquista', 'editar_conquista', 'ativar_conquista', 'salvar_etapa_onboarding',
   'criar_loja', 'ativar_loja',
-  'salvar_meta_do_mes', 'salvar_metas_da_semana', 'criar_meta_especial', 'apagar_meta_especial',
   -- Parte 5: Usuarios e cargos, nunca delegavel.
   'salvar_cargo', 'duplicar_cargo', 'apagar_cargo', 'criar_cargo_acesso_total', 'editar_usuario_gerencial',
-  'ativar_usuario_gerencial']), 'so_master'   -- decisao 5: a meta e so do master   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
+  'ativar_usuario_gerencial']), 'so_master'   -- parte 2, Premios   -- pegar em nome de alguem: sem tela; por fora, so o master (parte 2, Quadro)
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
@@ -13113,10 +13145,11 @@ RESET ROLE;
 -- ===========================================================================
 -- 97. Usuarios gerenciais, parte 2, fatia 4: Metas (29/09/2026)
 -- ===========================================================================
--- Decisao 5 do Wisley (29/09/2026): o gerente LANCA a venda da loja dele; a
--- meta e os pontos (meta do mes, da semana, especial) sao so do master, e o
--- master ve o nome de quem lancou e de quem corrigiu cada venda.
-DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: venda pela loja; meta so do master; quem lancou'; END $$;
+-- Decisao 5 do Wisley (29/09/2026): o gerente LANCA a venda da loja dele, e o
+-- master ve o nome de quem lancou e de quem corrigiu cada venda. A meta, que
+-- era so do master, passou a ser delegavel (metas por mes, 30/09/2026): com
+-- as permissoes novas, e so nas lojas dele (secao 118).
+DO $$ BEGIN RAISE NOTICE '97. parte 2, Metas: venda pela loja; meta so nas lojas dele; quem lancou'; END $$;
 
 DO $$
 DECLARE
@@ -13169,14 +13202,25 @@ BEGIN
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.lancar_venda_do_dia(11, v_hoje, 1234); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'com as permissoes: NAO lanca venda na loja 11');
+    -- Metas por mes (30/09/2026): o master DELEGA a meta. Com as permissoes,
+    -- na loja 11 (que nao e dele) nada; na 10, sim.
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_metas_da_semana(10, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.criar_meta_especial(10, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.apagar_meta_especial(e10); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.salvar_meta_do_mes(11, v_hoje, 'Meta 97', 50000, 5); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(11, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(11, v_hoje + 21, 'Especial 97', 900, 9); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.apagar_meta_especial(e11); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'nem na loja DELE mexe na meta do mes, da semana ou especial (so o master)');
+    -- (um dia do mes que vem: sem lancamento nem especial, so a loja decide)
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(11, (date_trunc('month', v_hoje) + interval '1 month')::date,
+            jsonb_build_array(jsonb_build_object('dia', (date_trunc('month', v_hoje) + interval '1 month 9 days')::date, 'valormeta', 3, 'pontospremio', 1)));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com todas as permissoes: NAO mexe em meta nenhuma da loja 11 (nao e dele)');
+    PERFORM public.salvar_meta_do_mes(10, v_hoje, 'Meta 97 do gerente', 50000, 5);
+    PERFORM public.apagar_meta_especial(e10);
+    RESET ROLE;
+    PERFORM public.exigir(EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND nomemeta = 'Meta 97 do gerente')
+                          AND NOT EXISTS (SELECT 1 FROM public.metasespeciais WHERE metaespecialid = e10),
+                          'e na loja 10 (dele) salva a meta do mes e apaga a especial de verdade');
+    SET LOCAL ROLE authenticated;
     -- Decisao 3 do Wisley (30/09/2026): o gerente ve o historico das lojas dele (e quem lanca).
     PERFORM public.exigir((SELECT count(*) FROM public.historico_das_vendas(10) h WHERE h.foivoce) >= 2,
                           'o gerente le o historico das vendas da loja dele (com o que ele lancou)');
@@ -14759,6 +14803,13 @@ BEGIN
                           'gestor ' || g.m || ': metas do mes da loja dele');
     PERFORM public.guardar_resultado(public.metas_do_mes(g.outra, v_mes));
     PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': metas de outra loja vem vazio');
+    -- O mes dia a dia (metas por mes, 30/09/2026): o mes da especial dela.
+    v := public.metas_do_mes_por_dia(g.loja, v_hoje + 10);
+    PERFORM public.exigir(v::text LIKE '%Especial-' || g.m || '%' AND public.sem_marca_de_fora(v, g.m)
+                          AND jsonb_array_length(v->'dias') >= 28,
+                          'gestor ' || g.m || ': o mes dia a dia da loja dele, com a especial dela');
+    PERFORM public.guardar_resultado(public.metas_do_mes_por_dia(g.outra, v_hoje + 10));
+    PERFORM public.exigir(public.nada_voltou(), 'gestor ' || g.m || ': o mes dia a dia de outra loja nao vem');
     IF g.m = 'A' THEN
       -- O mes da meta e todo em R$: sem "Ver valores em R$", nem da propria loja.
       SET LOCAL ROLE NONE;
@@ -14867,7 +14918,9 @@ BEGIN
                               -- parte 4, fatia 10
                               'nome_da_conta', 'conta_da_gestao', 'lojas_da_gestao', 'links_de_tv', 'som_da_loja', 'vinculos_para',
                               'jornadas_da_tela', 'dias_das_jornadas', 'jornadas_que_servem', 'resumo_das_lojas', 'resumo_das_lojas_gerente', 'mapa_da_jornada', 'mapa_da_semana',
-                              'codigo_da_empresa', 'historico_das_vendas');
+                              'codigo_da_empresa', 'historico_das_vendas',
+                              -- metas por mes (30/09/2026)
+                              'metas_do_mes_por_dia');
   PERFORM public.exigir(sobra IS NULL,
     'toda leitura do gerente esta na lista testada pela secao 107 (fora da lista: ' || coalesce(sobra, '') || ')');
   -- E toda versao "_gerente" confere a permissao de ver (pode ou lojas_onde_posso).
@@ -15349,8 +15402,7 @@ BEGIN
      AND EXISTS (SELECT 1 FROM unnest(p.proargnames, p.proargtypes::oid[]) a(nome, tipo)
                   WHERE a.nome LIKE 'p\_valor%' AND a.tipo = 'numeric'::regtype)
      AND p.prosrc NOT LIKE '%valores.ver_rs%'
-     AND p.proname NOT IN ('salvar_meta_do_mes', 'criar_meta_especial',   -- so do master (decisao 5)
-                           'reais');                                     -- so escreve o numero como texto
+     AND p.proname NOT IN ('reais');   -- so escreve o numero como texto
   PERFORM public.exigir(sobra IS NULL,
     'toda funcao que grava valor em R$ confere "Ver valores em R$" (sem: ' || coalesce(sobra, '') || ')');
 END $$;
@@ -15810,6 +15862,332 @@ BEGIN
     RAISE EXCEPTION 'desfazer_117';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_117' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 118. Metas por mes (30/09/2026)
+-- ===========================================================================
+-- 1. A meta de um dia: especial > meta daquele dia no mes > modelo da semana,
+--    numa funcao so (meta_do_dia), e todas as telas a seguem.
+-- 2. O mes dia a dia: nunca em dia ja lancado, nunca em dia com especial,
+--    nunca em mes que passou; tudo ou nada.
+-- 3. As seis permissoes novas: nascem negadas; quem nao ve nao edita; a regua
+--    do alcance (so as lojas dele).
+-- 4. Toda mudanca de meta no historico, a vista do master nos Estornos.
+DO $$ BEGIN RAISE NOTICE '118. metas por mes'; END $$;
+
+DO $$
+DECLARE
+  G constant uuid := '11811811-8118-4118-8118-118118118101';
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  B constant uuid := 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  v_hoje date := public.hoje_da_conta(1);
+  v_mes date := date_trunc('month', public.hoje_da_conta(1))::date;
+  v_prox date := (date_trunc('month', public.hoje_da_conta(1)) + interval '1 month')::date;
+  v_passado date := (date_trunc('month', public.hoje_da_conta(1)) - interval '1 month')::date;
+  d_esp date; d_mes date; d_mod date;
+  v_cargo integer; e integer; e_passada integer; n integer; v jsonb; v_livre date;
+  semana jsonb := (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d, 'valormeta', 100, 'pontospremio', 1))
+                     FROM generate_series(1, 7) d);
+  semana2 jsonb := (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d, 'valormeta', 110, 'pontospremio', 2))
+                      FROM generate_series(1, 7) d);
+BEGIN
+  BEGIN
+    d_esp := v_prox + 4; d_mes := v_prox + 5; d_mod := v_prox + 6;
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'gerente.118@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Metas 118') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+
+    -- ---- 1. A ordem das tres origens --------------------------------------
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.salvar_metas_da_semana(10, semana);
+    -- d_esp ganha meta do mes (250) E depois especial (300): as tres ao mesmo tempo.
+    PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(
+      jsonb_build_object('dia', d_esp, 'valormeta', 250, 'pontospremio', 5),
+      jsonb_build_object('dia', d_mes, 'valormeta', 200, 'pontospremio', 2)));
+    e := public.criar_meta_especial(10, d_esp, 'Especial 118', 300, 3);
+    PERFORM public.exigir((SELECT origem = 'especial' AND valormeta = 300 AND pontospremio = 3 FROM public.meta_do_dia(10, d_esp)),
+                          'com as tres origens no mesmo dia, vale a ESPECIAL (300), nao a do mes (250) nem o modelo (100)');
+    PERFORM public.exigir((SELECT origem = 'mes' AND valormeta = 200 AND pontospremio = 2 FROM public.meta_do_dia(10, d_mes)),
+                          'com a do mes e o modelo, vale a DO MES (200), nao o modelo (100)');
+    PERFORM public.exigir((SELECT origem = 'semana' AND valormeta = 100 FROM public.meta_do_dia(10, d_mod)),
+                          'sem as outras, vale o MODELO do dia da semana (100)');
+    -- As telas seguem a mesma ordem.
+    v := public.metas_do_mes(10, v_prox);
+    PERFORM public.exigir((SELECT (x->>'meta')::numeric = 300 AND x->>'origem' = 'especial' FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_esp::text)
+                          AND (SELECT (x->>'meta')::numeric = 200 AND x->>'origem' = 'mes' FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_mes::text)
+                          AND (SELECT (x->>'meta')::numeric = 100 FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_mod::text),
+                          'o mes da tela Lancar venda segue a mesma ordem (especial, do mes, modelo)');
+    v := public.metas_do_mes_por_dia(10, v_prox);
+    PERFORM public.exigir((SELECT (x->>'meta')::numeric = 300 AND x->>'origem' = 'especial' AND x->>'descricao' = 'Especial 118' FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_esp::text)
+                          AND (SELECT (x->>'meta')::numeric = 200 AND x->>'origem' = 'mes' FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_mes::text)
+                          AND (SELECT (x->>'meta')::numeric = 100 AND x->>'origem' = 'semana' AND (x->>'modelo')::numeric = 100 FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_mod::text)
+                          AND (v->>'podeeditar')::boolean AND jsonb_array_length(v->'modelo') = 7,
+                          'a tela nova diz de onde veio cada dia, o modelo e que o master pode editar');
+    PERFORM public.exigir((public.metas_do_mes(10, v_prox)->>'somametas')::numeric
+                          = (SELECT sum(valormeta) FROM generate_series(v_prox, (v_prox + interval '1 month - 1 day')::date, interval '1 day') d,
+                                    LATERAL public.meta_do_dia(10, d::date)),
+                          'a soma das metas diarias do mes e a soma do que vale em cada dia');
+    -- Apagar a especial: a do mes volta a valer.
+    PERFORM public.apagar_meta_especial(e);
+    PERFORM public.exigir((SELECT origem = 'mes' AND valormeta = 250 FROM public.meta_do_dia(10, d_esp)),
+                          'apagada a especial, a meta do mes daquele dia volta a valer (250)');
+    -- Valor vazio: o dia volta ao modelo.
+    n := public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_esp, 'valormeta', NULL, 'pontospremio', NULL)));
+    PERFORM public.exigir(n = 1 AND (SELECT origem = 'semana' AND valormeta = 100 FROM public.meta_do_dia(10, d_esp)),
+                          'meta do dia apagada: o dia volta a seguir o modelo');
+    e := public.criar_meta_especial(10, d_esp, 'Especial 118', 300, 3);
+
+    -- ---- 2. O mes dia a dia ------------------------------------------------
+    IF NOT EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_hoje) THEN
+      PERFORM public.lancar_venda_do_dia(10, v_hoje, 500);
+    END IF;
+    -- Um dia do mes atual sem lancamento (hoje foi lancado; no ultimo dia do
+    -- mes, o "dia bom" e outro).
+    SELECT min(d::date) INTO v_livre FROM generate_series(v_mes, (v_mes + interval '1 month - 1 day')::date, interval '1 day') d
+     WHERE d::date <> v_hoje AND NOT EXISTS (SELECT 1 FROM public.metasdiariasapuracoes a WHERE a.lojaid = 10 AND a.dataapuracao = d::date);
+    -- Dia ja lancado: nunca (nem junto com um dia bom: tudo ou nada).
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_mes, jsonb_build_array(jsonb_build_object('dia', v_hoje, 'valormeta', 999, 'pontospremio', 9)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'dia ja lancado: a meta dele nao muda (ficou guardada no lancamento)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_mes, jsonb_build_array(
+            jsonb_build_object('dia', v_livre, 'valormeta', 7, 'pontospremio', 7),
+            jsonb_build_object('dia', v_hoje, 'valormeta', 999, 'pontospremio', 9)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'um dia lancado no meio: nada e salvo (nem o dia bom)');
+    -- O dia lancado mostra a meta congelada, marcado "lancado".
+    PERFORM public.salvar_metas_da_semana(10, semana2);
+    v := public.metas_do_mes_por_dia(10, v_mes);
+    PERFORM public.exigir((SELECT (x->>'lancado')::boolean AND (x->>'meta')::numeric = a.valormetadia AND (x->>'meta')::numeric <> 110
+                             FROM jsonb_array_elements(v->'dias') x, public.metasdiariasapuracoes a
+                            WHERE x->>'dia' = v_hoje::text AND a.lojaid = 10 AND a.dataapuracao = v_hoje),
+                          'o dia lancado mostra a meta que ficou congelada, nao o modelo novo');
+    PERFORM public.salvar_metas_da_semana(10, semana);
+    -- Dia com especial: nunca pela tabela do mes.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_esp, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'dia com meta especial: a tabela do mes nao mexe nele');
+    -- Dia de outro mes, dia repetido, pontos invalidos: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', v_prox - 1, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 1, 'pontospremio', 1),
+                                                                                   jsonb_build_object('dia', d_mod, 'valormeta', 2, 'pontospremio', 1)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 1, 'pontospremio', 1.5)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', -1, 'pontospremio', 1)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'dia de outro mes, dia repetido, pontos quebrados ou meta negativa: nada');
+    -- Mes passado: somente leitura (meta do mes, do dia, especial criar e apagar).
+    RESET ROLE;
+    INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio)
+    VALUES (1, 10, v_passado + 3, 'Especial passada', 50, 1) RETURNING metaespecialid INTO e_passada;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_passado, jsonb_build_array(jsonb_build_object('dia', v_passado + 5, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_passado, 'Passado', 1000, 1); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_passado + 6, 'Passada', 10, 1); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e_passada); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'mes passado: nem o master mexe na meta do mes, do dia ou especial');
+    PERFORM public.exigir(NOT (public.metas_do_mes_por_dia(10, v_passado)->>'podeeditar')::boolean
+                          AND (public.metas_do_mes_por_dia(10, v_mes)->>'podeeditar')::boolean,
+                          'a tela sabe: mes passado somente leitura, mes atual editavel');
+    -- Mes atual (dia nao lancado) e proximos: sim.
+    n := public.salvar_metas_do_mes_por_dia(10, v_mes, jsonb_build_array(jsonb_build_object('dia', v_livre, 'valormeta', 7, 'pontospremio', 7)))
+       + public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 150, 'pontospremio', 4)));
+    PERFORM public.exigir(n = 2 AND (SELECT valormeta = 150 FROM public.meta_do_dia(10, d_mod)),
+                          'mes atual e proximo: salva de verdade');
+    RESET ROLE;
+
+    -- ---- 3. As permissoes novas --------------------------------------------
+    PERFORM public.exigir((SELECT count(*) FROM public.catalogo_de_permissoes()
+                            WHERE codigo IN ('metas.mes_ver', 'metas.mes_editar', 'metas.dia_ver', 'metas.dia_editar',
+                                             'metas.especiais_ver', 'metas.especiais_editar')) = 6
+                          -- (fora os cargos que o proprio teste montou com o catalogo INTEIRO, de proposito)
+                          AND NOT EXISTS (SELECT 1 FROM public.cargospermissoes cp
+                                           WHERE cp.codigo IN ('metas.mes_ver', 'metas.mes_editar', 'metas.dia_ver', 'metas.dia_editar',
+                                                               'metas.especiais_ver', 'metas.especiais_editar')
+                                             AND (SELECT count(*) FROM public.cargospermissoes c2 WHERE c2.cargoid = cp.cargoid)
+                                                 < (SELECT count(*) FROM public.catalogo_de_permissoes())),
+                          'as seis permissoes novas existem e nascem desmarcadas em todo cargo');
+    -- O gerente com Metas e R$ (o de antes), sem as novas: nao ve nem mexe.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.ver'), (1, v_cargo, 'valores.ver_rs');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.salvar_meta_do_mes(10, v_prox, 'Meta 118', 9000, 4);
+    RESET ROLE;
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado(public.metas_do_mes_por_dia(10, v_prox));
+    PERFORM public.exigir(public.nada_voltou(), 'sem "Ver meta por dia": o mes dia a dia nao vem');
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.metas_da_semana(10) x)
+                                     || coalesce((SELECT jsonb_agg(x) FROM public.metas_especiais_da_loja(10) x), '[]'::jsonb));
+    PERFORM public.exigir(public.nada_voltou(), 'sem as permissoes novas: nem o modelo da semana nem as especiais');
+    v := public.metas_do_mes(10, v_prox);
+    PERFORM public.exigir(v->'mes' = 'null'::jsonb AND v->'somametas' = 'null'::jsonb
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'dias') x
+                                           WHERE x->'meta' <> 'null'::jsonb OR x->'pontos' <> 'null'::jsonb OR x->'descricao' <> 'null'::jsonb),
+                          'na tela Lancar venda: sem "Ver meta do mes" nem "Ver meta por dia", nenhuma meta vem (nem a soma)');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(10, semana2); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_prox, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_prox + 9, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'sem as permissoes novas: nao mexe em meta nenhuma, nem na loja dele');
+    RESET ROLE;
+    -- "Editar" sem "Ver": quem nao ve nao edita.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
+      (1, v_cargo, 'metas.dia_editar'), (1, v_cargo, 'metas.mes_editar'), (1, v_cargo, 'metas.especiais_editar');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(10, semana2); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_prox, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_prox + 9, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'com "editar" mas sem "ver": nao mexe (quem nao ve nao edita)');
+    RESET ROLE;
+    -- Com "Ver meta por dia" (sem ver especiais): ve o mes, e o dia da especial vem sem valor.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.dia_ver');
+    SET LOCAL ROLE authenticated;
+    v := public.metas_do_mes_por_dia(10, v_prox);
+    PERFORM public.exigir((SELECT (x->>'meta')::numeric = 150 FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_mod::text)
+                          AND (SELECT x->>'origem' = 'especial' AND x->'meta' = 'null'::jsonb AND x->'pontos' = 'null'::jsonb
+                                      AND x->'descricao' = 'null'::jsonb
+                                 FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_esp::text)
+                          AND NOT (v->>'especiaisver')::boolean AND (v->>'podeeditar')::boolean,
+                          'com "Ver meta por dia": ve o mes; o dia com especial vem sem valor (falta "Ver metas especiais")');
+    v := public.metas_do_mes(10, v_prox);
+    PERFORM public.exigir((SELECT (x->>'meta')::numeric = 150 FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_mod::text)
+                          AND (SELECT x->'meta' = 'null'::jsonb FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_esp::text)
+                          AND v->'somametas' = 'null'::jsonb AND v->'mes' = 'null'::jsonb,
+                          'na tela Lancar venda: a meta do dia sim; a da especial, a soma e a meta do mes nao');
+    -- A regua do alcance: na loja 10 (dele) sim, na 11 nao.
+    n := public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mes, 'valormeta', 222, 'pontospremio', 2)));
+    PERFORM public.salvar_metas_da_semana(10, semana2);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(11, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mes, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(11, semana2); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente NAO edita a meta por dia de loja que nao e dele (11)');
+    PERFORM public.guardar_resultado(public.metas_do_mes_por_dia(11, v_prox));
+    PERFORM public.exigir(public.nada_voltou(), 'e nao le o mes dia a dia da loja 11');
+    RESET ROLE;
+    PERFORM public.exigir(n = 1 AND (SELECT valormeta = 222 FROM public.meta_do_dia(10, d_mes))
+                          AND (SELECT valormeta = 110 FROM public.meta_do_dia(10, d_mod + 1)),
+                          'e na loja 10 edita o dia e o modelo de verdade');
+    -- Meta do mes e especiais: com o "ver" de cada uma.
+    INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES (1, v_cargo, 'metas.mes_ver'), (1, v_cargo, 'metas.especiais_ver');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.salvar_meta_do_mes(10, v_prox, 'Meta 118 do gerente', 9500, 4);
+    PERFORM public.apagar_meta_especial(e);
+    e := public.criar_meta_especial(10, d_esp, 'Especial 118 do gerente', 310, 3);
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_meta_do_mes(11, v_prox, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(11, v_prox + 9, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'gerente NAO mexe na meta do mes nem nas especiais da loja 11');
+    v := public.metas_do_mes(10, v_prox);
+    PERFORM public.exigir((v->'mes'->>'valormetatotal')::numeric = 9500 AND v->'somametas' <> 'null'::jsonb
+                          AND (SELECT (x->>'meta')::numeric = 310 FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = d_esp::text),
+                          'com todas as de ver: a meta do mes, a soma e a especial aparecem');
+    -- Sem "Ver valores em R$": nada.
+    RESET ROLE;
+    DELETE FROM public.cargospermissoes WHERE cargoid = v_cargo AND codigo = 'valores.ver_rs';
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_metas_da_semana(10, semana); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_prox, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_prox + 9, 'x', 1, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'sem "Ver valores em R$": nao edita meta nenhuma');
+    PERFORM public.guardar_resultado(public.metas_do_mes_por_dia(10, v_prox));
+    PERFORM public.exigir(public.nada_voltou(), 'e nao le o mes dia a dia');
+    RESET ROLE;
+
+    -- ---- 4. O historico, a vista do master ---------------------------------
+    PERFORM public.exigir((SELECT count(*) FROM public.metasalteracoes
+                            WHERE lojaid = 10 AND alteradopor = G AND tipo = 'dia' AND valorantes = 200 AND valordepois = 222
+                              AND pontosantes = 2 AND pontosdepois = 2) = 1
+                          AND (SELECT count(*) FROM public.metasalteracoes WHERE lojaid = 10 AND alteradopor = G AND tipo = 'semana'
+                                  AND valorantes = 100 AND valordepois = 110) = 7
+                          AND EXISTS (SELECT 1 FROM public.metasalteracoes WHERE lojaid = 10 AND alteradopor = G AND tipo = 'mes'
+                                        AND valorantes = 9000 AND valordepois = 9500)
+                          AND EXISTS (SELECT 1 FROM public.metasalteracoes WHERE lojaid = 10 AND alteradopor = G AND tipo = 'especial'
+                                        AND valorantes = 300 AND valordepois IS NULL)
+                          AND EXISTS (SELECT 1 FROM public.metasalteracoes WHERE lojaid = 10 AND alteradopor = G AND tipo = 'especial'
+                                        AND valorantes IS NULL AND valordepois = 310),
+                          'toda mudanca do gerente fica no historico: quem, o valor antes e o depois (dia, modelo, mes, especial)');
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.metasalteracoes WHERE lojaid = 10 AND tipo = 'semana'
+                                        AND valorantes = valordepois AND pontosantes IS NOT DISTINCT FROM pontosdepois),
+                          'salvar de novo o mesmo valor nao vira linha no historico');
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT count(*) FROM public.estornos_da_conta(10) x
+                            WHERE x.tipo = 'meta alterada' AND x.quem LIKE '%gerente.118@exemplo.com%'
+                              AND x.descricao LIKE '%' || to_char(d_mes, 'DD/MM/YYYY') || '%' AND x.descricao LIKE '%222%') = 1
+                          AND EXISTS (SELECT 1 FROM public.estornos_da_conta(10) x
+                                       WHERE x.tipo = 'meta alterada' AND x.quem LIKE '%gerente.118@exemplo.com%'
+                                         AND x.descricao LIKE 'Meta do mês%' AND x.descricao LIKE '%9000,00 e 4 pontos → R$ 9500,00%')
+                          AND NOT EXISTS (SELECT 1 FROM public.estornos_da_conta(11) x WHERE x.quem LIKE '%gerente.118%'),
+                          'o master ve cada mudanca do gerente na lista dos Estornos, com o nome e o antes e depois');
+    -- Ninguem mexe no historico nem na tabela do mes direto (nem o master).
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.metasalteracoes SET valordepois = 1; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN DELETE FROM public.metasalteracoes; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.metasalteracoes (lojaid, tipo, referencia) VALUES (10, 'dia', 'x'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN INSERT INTO public.metasdodia (lojaid, data, valormeta) VALUES (10, d_mod + 2, 1); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.metasdodia SET valormeta = 1; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'nem o master grava direto no historico ou na meta do dia');
+    RESET ROLE;
+    PERFORM public.guardar_foto();
+    BEGIN UPDATE public.metasalteracoes SET valordepois = 1; EXCEPTION WHEN restrict_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'o historico nao se altera nem pelo dono do banco');
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.metasalteracoes x));
+    PERFORM public.exigir(public.nada_voltou(), 'o gerente nao le o historico das metas');
+    PERFORM public.guardar_resultado(NULL);
+    BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.estornos_da_conta(10) x));
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_voltou(), 'nem a lista dos Estornos');
+    RESET ROLE;
+
+    -- ---- 5. Outra conta ----------------------------------------------------
+    PERFORM set_config('teste.uid', B::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado((SELECT jsonb_agg(x) FROM public.metasdodia x)
+                                     || coalesce((SELECT jsonb_agg(x) FROM public.metasalteracoes x), '[]'::jsonb));
+    PERFORM public.exigir(public.nada_voltou(), 'B nao le a meta do dia nem o historico de A');
+    PERFORM public.guardar_resultado(public.metas_do_mes_por_dia(10, v_prox));
+    PERFORM public.exigir(public.nada_voltou(), 'B nao le o mes dia a dia de A');
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN no_data_found THEN NULL; END;
+    BEGIN INSERT INTO public.metasdodia (contaid, lojaid, data, valormeta) VALUES (1, 10, d_mod + 3, 1);
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'B nao grava meta do dia em loja de A');
+    RESET ROLE;
+
+    RAISE EXCEPTION 'desfazer_118';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_118' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

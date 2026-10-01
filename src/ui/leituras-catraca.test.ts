@@ -55,7 +55,7 @@ const NAO_LEITURA = new Set([
   "recusar_entrega", "refazer_fechamento", "registrar_anexo_agendamento", "registrar_ciencia", "registrar_entrega",
   "registrar_feedback", "registrar_justificativa", "registrar_troca", "registrar_troca_por_valor", "remarcar_agendamento",
   "remover_anexo_agendamento", "revogar_aceite", "revogar_link_tv", "salvar_etapa_onboarding", "salvar_intervalo_do_mapa",
-  "salvar_jornada", "salvar_meta_do_mes", "salvar_metas_da_semana", "salvar_pessoa", "salvar_premio", "salvar_som_da_loja",
+  "salvar_jornada", "salvar_meta_do_mes", "salvar_metas_da_semana", "salvar_metas_do_mes_por_dia", "salvar_pessoa", "salvar_premio", "salvar_som_da_loja",
   "salvar_tarefa", "salvar_tipo_evento", "salvar_tv_da_loja", "trocar_responsavel_agendamento", "vincular_jornada",
   // Leitura só do master (decisão 5: a conferência das vendas é dele).
   "historico_das_vendas",

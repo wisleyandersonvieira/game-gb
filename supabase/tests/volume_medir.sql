@@ -66,6 +66,9 @@ BEGIN
     PERFORM pg_temp.tela(q.quem, q.uid, 'Metas', ARRAY[format('public.metas_do_mes(9001, %L::date)', m),
       '(SELECT jsonb_agg(x) FROM public.metas_da_semana(9001) x)', '(SELECT jsonb_agg(x) FROM public.metas_especiais_da_loja(9001) x)',
       'public.contagem_do_menu()']);
+    -- A meta do mês dia a dia (30/09/2026): a lista principal são os dias do mês.
+    PERFORM pg_temp.tela(q.quem, q.uid, 'Meta por dia', ARRAY[format('public.metas_do_mes_por_dia(9001, %L::date)', m),
+      'public.contagem_do_menu()']);
     PERFORM pg_temp.tela(q.quem, q.uid, 'Relatórios', ARRAY[format('public.analise_de_tarefas(%L::date, %L::date)', h - 30, h),
       'public.historico_da_pessoa(90001)', format('public.pendencias_da_pessoa(90001, %L::date, %L::date)', h - 30, h),
       format('(SELECT jsonb_agg(t) FROM public.tarefas_pegas_da_pessoa(90001, %L::date, %L::date) t)', h - 30, h)]);
