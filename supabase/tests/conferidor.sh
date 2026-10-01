@@ -55,8 +55,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP FUNCTION public.jornadas_que_servem(integer[]);")"
-if echo "$s" | grep -q "|rode aplicar-jornada-por-loja.sql"; then
+s="$(conferir "DROP FUNCTION public.salvar_metas_do_mes_por_dia(integer, date, jsonb);")"
+if echo "$s" | grep -q "|rode aplicar-metas-por-mes.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

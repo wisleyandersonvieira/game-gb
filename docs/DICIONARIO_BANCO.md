@@ -53,6 +53,8 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `metasdiariasapuracoes` | **loja** | apuracaoid | funcionarios, metasprincipais |
 | `metasdiariasinstancias` | **loja** | metainstanciaid |  |
 | `metasdiariasmodelos` | **loja** | diasemanaid |  |
+| `metasalteracoes` | **loja** | alteracaoid |  |
+| `metasdodia` | **loja** | metadodiaid |  |
 | `metasespeciais` | **loja** | metaespecialid |  |
 | `metashistorico` | **loja** | historicoid | metasdiariasapuracoes |
 | `metaspremiacoes` | **loja** | premiacaoid | metasdiariasapuracoes, metasprincipais |
@@ -736,6 +738,22 @@ Fila do que precisa sair do Storage. Nível conta.
 | pontospremio | integer | obrigatório; 0 a 10.000 |
 
 `diasemanaid` 1 = domingo … 7 = sábado. Único por loja (a trava antiga era por conta e impedia duas lojas de terem meta no mesmo dia da semana). O navegador grava direto (RLS da conta).
+
+## metasdodia
+Tabela **nova** (30/09/2026), **nível loja**. A meta de um dia de um mês. Vale entre a meta especial da data e o modelo do dia da semana: **a ordem mora só em `meta_do_dia`** (1º especial, 2º `metasdodia`, 3º modelo). Grava só pela `salvar_metas_do_mes_por_dia` (tudo ou nada; nunca em dia lançado, com especial ou de mês que passou). Master lê pela regra da tabela; gerente, pela `metas_do_mes_por_dia`.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| metadodiaid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; → contas |
+| lojaid | integer | obrigatório; → lojas (junto com contaid) |
+| data | date | obrigatório; única por loja |
+| valormeta | numeric(18,2) | obrigatório; 0 ou mais (0 = dia sem meta) |
+| pontospremio | integer | 0 a 10.000 |
+| alteradopor / alteradoem | uuid / timestamptz | quem e quando mudou por último |
+
+## metasalteracoes
+Tabela **nova** (30/09/2026), **nível loja**. Toda mudança de meta: `tipo` = `mes` (meta do mês), `dia` (`metasdodia`), `semana` (modelo) ou `especial`; `referencia` em texto ("Meta do dia 05/10/2026"); `valorantes`/`valordepois` e `pontosantes`/`pontosdepois` (vazio = não existia / foi apagada); `alteradopor`/`alteradoem`. Grava só o gatilho `registrar_mudanca_de_meta` (nas quatro tabelas de meta, por qualquer caminho), e só quando o valor ou os pontos mudam. **Nunca muda nem se apaga.** Só o master lê; aparece na lista dos Estornos (`estornos_da_conta`, tipo "meta alterada").
 
 ## metasespeciais
 Tabela **nova** (Etapa 1.8), **nível loja**. Meta de uma data específica (feriado, data comemorativa), que substitui o modelo do dia da semana naquela data.

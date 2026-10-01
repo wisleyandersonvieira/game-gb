@@ -128,8 +128,16 @@ não estava e o sistema faz · **(só master)** = proposta de não delegar.
 | Ver metas | `metas_do_mes`, `meta_do_dia` | Metas: ver (sua) |
 |---|---|---|
 | Lançar a venda do dia | `lancar_venda_do_dia` | Metas: lançar venda (sua) |
-| Meta do mês e meta de cada dia da semana | `salvar_meta_do_mes`, escrita direta em `metasdiariasmodelos` | **Só o master** (decisão 5, 29/09/2026; o código saiu do catálogo) |
-| Meta especial (criar, apagar) | escrita direta em `metasespeciais` | **Só o master** (decisão 5, 29/09/2026; o código saiu do catálogo) |
+| Meta do mês (ver / editar) | `metas_do_mes` (o bloco do mês), `salvar_meta_do_mes` | Metas: ver meta do mês / editar meta do mês (sua) — 30/09/2026, o master delega |
+| Meta por dia: o mês dia a dia e o modelo da semana (ver / editar) | `metas_do_mes_por_dia`, `metas_da_semana`, `salvar_metas_do_mes_por_dia`, `salvar_metas_da_semana` | Metas: ver meta por dia / editar meta por dia (sua) |
+| Meta especial (ver / criar e apagar) | `metas_especiais_da_loja`, `criar_meta_especial`, `apagar_meta_especial` | Metas: ver metas especiais / editar metas especiais (sua) |
+
+Metas (30/09/2026): as seis nascem desmarcadas. Editar pede também o "ver" da
+mesma meta e "Ver valores em R$" (quem não vê não edita). Nenhuma meta de mês
+que já passou se edita, nem pelo master. Toda mudança de meta (valor e pontos,
+antes e depois, quem e quando) vai para `metasalteracoes` e aparece na lista
+dos Estornos do master: o conflito de interesse se resolve mostrando, não
+bloqueando.
 
 ### Agenda (FALTOU a tela inteira)
 | Ver agenda, conflitos | `conflitos_agendamento`, `agendamentos_sem_tarefa` | Agenda: ver (FALTOU) |
@@ -538,7 +546,7 @@ trava (seção 108) reprova qualquer leitura do gerente fora da lista testada.
 - Ranking: "Todas as lojas" some para o gerente; o ranking de pontos do mês sem loja soma só as lojas dele; a nota do mês e os meses fechados, só loja por loja.
 - Equipe: o gerente vê quem tem uma loja em comum com ele; CPF e telefone só de quem está inteiro nas lojas dele; as lojas de cada pessoa, só as dele.
 - Comunicado para "pessoas": o gerente só o vê se TODOS os destinatários têm uma loja dele.
-- Metas: o gerente vê a meta do mês só para consultar e lança venda (se o cargo deixa); as abas "Por dia da semana", "Metas especiais" e "Histórico" somem para ele.
+- Metas (30/09/2026): cada aba com a sua permissão — Lançar venda, Meta do mês, Meta por dia e Modelo da semana, Metas especiais; o Histórico com "Ver valores em R$".
 - Fotos e anexos: o gerente abre, mas não envia (registrar entrega COM foto e anexar na agenda continuam só do master; o campo some para ele).
 - O código da empresa (tablet e folha de acesso): só com "Lojas: acesso do tablet" ou "Equipe: criar acesso".
 - A validade do link do convite é a do Supabase (padrão: 24 horas; muda em Authentication → Email).

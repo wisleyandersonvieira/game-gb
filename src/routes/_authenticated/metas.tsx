@@ -1,12 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { TabelaResponsiva } from "@/ui/TabelaResponsiva";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pagina } from "@/ui/Pagina";
 import { CADASTRO, DINHEIRO } from "@/ui/prazos";
 import { useMinhasPermissoes } from "@/ui/permissoes";
+import { MetaPorDia } from "@/metas/MetaPorDia";
+import { NavegarMes } from "@/metas/NavegarMes";
+import { nomeDoMes, somarMes, type Rascunho } from "@/metas/mes";
 
 export const Route = createFileRoute("/_authenticated/metas")({
   component: Metas,
@@ -51,15 +54,18 @@ type DiaDoMes = {
 type ResumoMes = {
   mes: { metaprincipalid: number; nomemeta: string; valormetatotal: number; pontospremio: number; premiado: boolean } | null;
   vendido: number;
-  somametas: number;
+  /** Vazio para o gerente sem "Ver meta por dia" e "Ver metas especiais". */
+  somametas: number | null;
   diaslancados: number;
   dias: DiaDoMes[];
   primeirodiaeditavel: string;
+  /** Só para o gerente: o que ele pode ver nesta loja (o master vê tudo). */
+  pode?: { mesver: boolean; diaver: boolean; especiaisver: boolean };
 };
 
 /** Tudo o que muda quando uma meta ou venda muda. */
 function atualizarTudo(qc: ReturnType<typeof useQueryClient>) {
-  for (const k of ["metas-mes", "metas-historico", "painel", "extrato", "pessoas-saldo", "metas-modelos", "metas-especiais"]) {
+  for (const k of ["metas-mes", "metas-mes-dia", "metas-historico", "painel", "extrato", "pessoas-saldo", "metas-modelos", "metas-especiais"]) {
     qc.invalidateQueries({ queryKey: [k] });
   }
 }
@@ -77,40 +83,70 @@ function useResumo(lojaid: number, mes: string) {
   });
 }
 
+type Aba = "lancar" | "mes" | "dia" | "semana" | "especiais" | "historico";
+
 function Metas() {
   const { lojas, lojaAtiva, loja, carregando } = useLojaAtiva();
-  const [escolhida, setAba] = useState<"lancar" | "mes" | "semana" | "especiais" | "historico">("lancar");
-  // A meta e os pontos são só do master (decisão 5, 29/09/2026): o gerente vê
-  // "Lançar venda" (se o cargo deixa), a meta do mês só para consultar e o
-  // histórico das vendas.
+  const [escolhida, setAba] = useState<Aba>("lancar");
+  // Um mês só para as abas: navegar é livre (30/09/2026); o que cada ação
+  // permite quem decide é o banco.
+  const mesDeHoje = hoje().slice(0, 7);
+  const [mes, setMes] = useState(mesDeHoje);
+  // Cada aba de Metas tem a sua permissão (30/09/2026: o master escolhe o que
+  // delegar). Esconder a aba é só a tela: o banco confere de novo.
   const permissoes = useMinhasPermissoes();
   const master = permissoes.data?.master === true;
+  const codigos = permissoes.data?.codigos ?? [];
+  const tem = (c: string) => master || codigos.includes(c);
+  // Quem não pode ver um valor não pode gravá-lo: tudo aqui é em R$.
+  const veValores = tem("valores.ver_rs");
   const abas = (
     [
       ["lancar", "Lançar venda"],
       ["mes", "Meta do mês"],
-      ["semana", "Por dia da semana"],
+      ["dia", "Meta por dia"],
+      ["semana", "Modelo da semana"],
       ["especiais", "Metas especiais"],
       ["historico", "Histórico"],
     ] as const
   ).filter(([id]) => {
-    if (master) return true;
-    const codigos = permissoes.data?.codigos ?? [];
-    // Quem não pode ver um valor não pode gravá-lo: lançar pede também "Ver valores em R$".
-    const veValores = codigos.includes("valores.ver_rs");
-    if (id === "lancar") return codigos.includes("metas.lancar_venda") && veValores;
+    if (!veValores) return false;
+    if (id === "lancar") return tem("metas.lancar_venda");
+    if (id === "mes") return tem("metas.mes_ver");
+    if (id === "dia" || id === "semana") return tem("metas.dia_ver");
+    if (id === "especiais") return tem("metas.especiais_ver");
     // O histórico das vendas das lojas dele (decisão 3, 30/09/2026): é ele quem lança.
-    if (id === "historico") return veValores;
-    return id === "mes";
+    return true;
   });
-  const aba = abas.some(([id]) => id === escolhida) ? escolhida : (abas[0]?.[0] ?? "mes");
+  const aba = abas.some(([id]) => id === escolhida) ? escolhida : abas[0]?.[0];
+
+  // O que foi digitado na Meta por dia e ainda não foi salvo, por loja e mês.
+  const [rascunhos, setRascunhos] = useState<Record<string, Rascunho>>({});
+  const [sujos, setSujos] = useState<Record<string, boolean>>({});
+  const chave = `${lojaAtiva}|${mes}`;
+  const aoMudarSujo = useCallback((s: boolean) => setSujos((x) => (x[chave] === s ? x : { ...x, [chave]: s })), [chave]);
+  const pendentes = Object.entries(sujos).filter(([, s]) => s).map(([k]) => k);
+  // Sair da tela com meta digitada e não salva: avisa antes (e ao fechar a aba do navegador).
+  useBlocker({
+    shouldBlockFn: () => !window.confirm("Há metas digitadas e não salvas. Sair mesmo assim? O que não foi salvo se perde."),
+    enableBeforeUnload: pendentes.length > 0,
+    disabled: pendentes.length === 0,
+  });
+  const nomeDaChave = (k: string) => {
+    const [l, m] = k.split("|");
+    return `${nomeDoMes(m)} (${lojas.find((x) => String(x.lojaid) === l)?.nome ?? "outra loja"})`;
+  };
 
   return (
     <Pagina titulo={<>Metas {loja ? `· ${loja.nome}` : ""}</>}>
-      {carregando ? (
+      {carregando || permissoes.isLoading ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : lojas.length === 0 || lojaAtiva === null ? (
         <AvisoSemLoja />
+      ) : !aba ? (
+        <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          Seu cargo não mostra nenhuma parte das metas.
+        </p>
       ) : (
         <>
           <div className="flex flex-wrap gap-x-2 border-b border-border">
@@ -123,13 +159,29 @@ function Metas() {
                 }`}
               >
                 {rotulo}
+                {id === "dia" && pendentes.length > 0 && <span className="ml-1 text-amber-600">●</span>}
               </button>
             ))}
           </div>
-          {aba === "lancar" && <Lancar lojaid={lojaAtiva} />}
-          {aba === "mes" && <MetaDoMes lojaid={lojaAtiva} somenteLeitura={!master} />}
-          {aba === "semana" && <PorDiaDaSemana lojaid={lojaAtiva} />}
-          {aba === "especiais" && <Especiais lojaid={lojaAtiva} />}
+          {(aba === "lancar" || aba === "mes" || aba === "dia") && (
+            <NavegarMes mes={mes} mesAtual={mesDeHoje} aoMudar={setMes} />
+          )}
+          {aba === "lancar" && <Lancar lojaid={lojaAtiva} mes={mes} setMes={setMes} />}
+          {aba === "mes" && <MetaDoMes lojaid={lojaAtiva} mes={mes} mesDeHoje={mesDeHoje} podeEditar={tem("metas.mes_editar")} />}
+          {aba === "dia" && (
+            <MetaPorDia
+              lojaid={lojaAtiva}
+              mes={mes}
+              rascunho={rascunhos[chave] ?? {}}
+              aoDigitar={(r) => setRascunhos((x) => ({ ...x, [chave]: r }))}
+              aoSalvar={() => setRascunhos((x) => ({ ...x, [chave]: {} }))}
+              aoMudarSujo={aoMudarSujo}
+              outrosPendentes={pendentes.filter((k) => k !== chave).map(nomeDaChave)}
+              irParaEspeciais={() => setAba("especiais")}
+            />
+          )}
+          {aba === "semana" && <PorDiaDaSemana lojaid={lojaAtiva} podeEditar={tem("metas.dia_editar")} />}
+          {aba === "especiais" && <Especiais lojaid={lojaAtiva} mesDeHoje={mesDeHoje} podeEditar={tem("metas.especiais_editar")} />}
           {aba === "historico" && <Historico lojaid={lojaAtiva} />}
         </>
       )}
@@ -141,15 +193,30 @@ function Metas() {
 /* Lançar a venda do dia + o mês dia a dia                             */
 /* ------------------------------------------------------------------ */
 
-function Lancar({ lojaid }: { lojaid: number }) {
+/** O último dia do mês ("2026-09" → "2026-09-30"). */
+const ultimoDia = (mes: string) => {
+  const [a, m] = mes.split("-").map(Number);
+  return `${mes}-${String(new Date(Date.UTC(a, m, 0)).getUTCDate()).padStart(2, "0")}`;
+};
+
+function Lancar({ lojaid, mes, setMes }: { lojaid: number; mes: string; setMes: (m: string) => void }) {
   const qc = useQueryClient();
   const h = hoje();
   const [data, setData] = useState(h);
   const [valor, setValor] = useState("");
   const [motivo, setMotivo] = useState("");
   const [recado, setRecado] = useState<string | null>(null);
-  const resumo = useResumo(lojaid, data.slice(0, 7));
+  const resumo = useResumo(lojaid, mes);
   const r = resumo.data;
+  // Lançar e corrigir: só o mês atual e o anterior, como sempre (o banco recusa o resto).
+  const mesMinimo = r?.primeirodiaeditavel?.slice(0, 7) ?? somarMes(h.slice(0, 7), -1);
+  const podeLancarNoMes = mes <= h.slice(0, 7) && mes >= mesMinimo;
+  // Mudou o mês: o dia do formulário vai para dentro dele.
+  useEffect(() => {
+    if (data.slice(0, 7) === mes) return;
+    setData(mes === h.slice(0, 7) ? h : ultimoDia(mes));
+    setRecado(null);
+  }, [mes]); // eslint-disable-line react-hooks/exhaustive-deps
   const doDia = r?.dias.find((d) => d.dia === data);
   const corrigindo = doDia?.apuracaoid != null;
 
@@ -184,8 +251,17 @@ function Lancar({ lojaid }: { lojaid: number }) {
   const diasNoMes = r?.dias.length ?? 0;
   const projecao = r && r.diaslancados > 0 ? (r.vendido / r.diaslancados) * diasNoMes : null;
 
+  const pode = r?.pode;
+  const metaDoMes = r?.mes;
+  const soma = r?.somametas;
+
   return (
     <div className="space-y-6">
+      {!podeLancarNoMes ? (
+        <p className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+          Lançar e corrigir venda: só no mês atual e no anterior. Este mês é só para consulta.
+        </p>
+      ) : (
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -204,7 +280,9 @@ function Lancar({ lojaid }: { lojaid: number }) {
               max={h}
               min={r?.primeirodiaeditavel}
               onChange={(e) => {
+                if (!e.target.value) return;
                 setData(e.target.value);
+                if (e.target.value.slice(0, 7) !== mes) setMes(e.target.value.slice(0, 7));
                 setRecado(null);
               }}
               className={campo}
@@ -224,7 +302,9 @@ function Lancar({ lojaid }: { lojaid: number }) {
         {doDia && (
           <p className="text-sm text-muted-foreground">
             Meta de {dia(data)}:{" "}
-            <strong className="text-foreground">{doDia.meta ? reais(doDia.meta) : "sem meta"}</strong>
+            <strong className="text-foreground">
+              {doDia.meta ? reais(doDia.meta) : pode && doDia.meta === null && doDia.origem === null && !pode.diaver ? "sem permissão para ver" : "sem meta"}
+            </strong>
             {doDia.meta ? ` · ${doDia.pontos ?? 0} pontos para cada um da equipe` : ""}
             {doDia.origem === "especial" && ` · meta especial: ${doDia.descricao}`}
             {corrigindo && ` · já lançado: ${reais(doDia.vendido)}`}
@@ -255,14 +335,32 @@ function Lancar({ lojaid }: { lojaid: number }) {
         {recado && <p className="text-sm text-sucesso">{recado}</p>}
         {lancar.isError && <p className="text-sm text-destructive">{(lancar.error as Error).message}</p>}
       </form>
+      )}
 
       {r && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Cartao titulo="Vendido no mês" valor={reais(r.vendido)} />
           <Cartao
-            titulo={r.mes ? `Meta do mês (${r.mes.nomemeta})` : "Meta do mês"}
-            valor={r.mes ? `${((r.vendido / r.mes.valormetatotal) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% de ${reais(r.mes.valormetatotal)}` : "não cadastrada"}
-            destaque={r.mes?.premiado ? "🎉 batida — prêmio pago" : undefined}
+            titulo={metaDoMes ? `Meta do mês (${metaDoMes.nomemeta})` : "Meta do mês"}
+            valor={
+              pode && !pode.mesver
+                ? "sem permissão para ver"
+                : metaDoMes
+                  ? `${((r.vendido / metaDoMes.valormetatotal) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% de ${reais(metaDoMes.valormetatotal)}`
+                  : "não cadastrada"
+            }
+            destaque={metaDoMes?.premiado ? "🎉 batida — prêmio pago" : undefined}
+          />
+          {/* A soma das metas diárias, ao lado da meta do mês (30/09/2026). Não é
+              erro se forem diferentes: a meta do mês é um alvo próprio. */}
+          <Cartao
+            titulo="Soma das metas diárias"
+            valor={soma == null ? "sem permissão para ver" : reais(soma)}
+            nota={
+              soma != null && metaDoMes && Math.abs(soma - metaDoMes.valormetatotal) >= 0.01
+                ? `${reais(Math.abs(soma - metaDoMes.valormetatotal))} ${soma > metaDoMes.valormetatotal ? "acima" : "abaixo"} da meta do mês`
+                : undefined
+            }
           />
           <Cartao titulo="Projeção do mês" valor={projecao ? reais(projecao) : "—"} />
         </div>
@@ -273,9 +371,10 @@ function Lancar({ lojaid }: { lojaid: number }) {
 
       {r && (
         <TabelaResponsiva
-          linhas={r.dias.filter((d) => d.dia <= h).reverse()}
+          // Mês que ainda não chegou: todos os dias (planejamento); os outros, até hoje.
+          linhas={r.dias.filter((d) => d.dia <= h || mes > h.slice(0, 7)).reverse()}
           chave={(d) => d.dia}
-          aoClicar={(d) => d.dia >= r.primeirodiaeditavel && setData(d.dia)}
+          aoClicar={(d) => podeLancarNoMes && d.dia >= r.primeirodiaeditavel && d.dia <= h && setData(d.dia)}
           destacar={(d) => d.dia === data}
           vazio="Nenhum dia neste mês ainda."
           colunas={[
@@ -289,6 +388,7 @@ function Lancar({ lojaid }: { lojaid: number }) {
                     {DIAS_SEMANA[new Date(`${d.dia}T12:00:00Z`).getUTCDay()]}
                   </span>
                   {d.origem === "especial" && <span className="ml-1 text-xs text-azul">★ {d.descricao}</span>}
+                  {d.origem === "mes" && <span className="ml-1 text-xs text-muted-foreground">meta deste mês</span>}
                 </>
               ),
               classe: () => "whitespace-nowrap",
@@ -299,7 +399,7 @@ function Lancar({ lojaid }: { lojaid: number }) {
             {
               titulo: "Pontos",
               valor: (d) =>
-                d.bateu && d.premiados > 0
+                d.bateu && d.premiados > 0 && d.pontos != null
                   ? `🎉 +${d.pontos} para ${d.premiados} ${d.premiados === 1 ? "pessoa" : "pessoas"}`
                   : d.vendido == null
                     ? "não lançado"
@@ -313,12 +413,13 @@ function Lancar({ lojaid }: { lojaid: number }) {
   );
 }
 
-function Cartao({ titulo, valor, destaque }: { titulo: string; valor: string; destaque?: string }) {
+function Cartao({ titulo, valor, destaque, nota }: { titulo: string; valor: string; destaque?: string; nota?: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <p className="text-xs text-muted-foreground">{titulo}</p>
       <p className="text-lg font-bold">{valor}</p>
       {destaque && <p className="text-xs text-sucesso">{destaque}</p>}
+      {nota && <p className="text-xs text-muted-foreground">{nota}</p>}
     </div>
   );
 }
@@ -327,13 +428,15 @@ function Cartao({ titulo, valor, destaque }: { titulo: string; valor: string; de
 /* Meta do mês                                                         */
 /* ------------------------------------------------------------------ */
 
-function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somenteLeitura?: boolean }) {
+function MetaDoMes({ lojaid, mes, mesDeHoje, podeEditar }: { lojaid: number; mes: string; mesDeHoje: string; podeEditar: boolean }) {
   const qc = useQueryClient();
-  const [mes, setMes] = useState(hoje().slice(0, 7));
   const resumo = useResumo(lojaid, mes);
   const r = resumo.data;
   const [form, setForm] = useState({ nome: "", valor: "", pontos: "0" });
   const [recado, setRecado] = useState<string | null>(null);
+  // O passado é o que foi (30/09/2026): mês que já passou é só leitura.
+  const passado = mes < mesDeHoje;
+  const somenteLeitura = passado || !podeEditar;
 
   useEffect(() => {
     setForm({
@@ -341,7 +444,8 @@ function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somente
       valor: r?.mes ? String(r.mes.valormetatotal).replace(".", ",") : "",
       pontos: r?.mes ? String(r.mes.pontospremio) : "0",
     });
-  }, [r?.mes?.metaprincipalid, r?.mes?.valormetatotal, r?.mes?.pontospremio, r?.mes?.nomemeta, mes]);
+    setRecado(null);
+  }, [r?.mes?.metaprincipalid, r?.mes?.valormetatotal, r?.mes?.pontospremio, r?.mes?.nomemeta, mes, lojaid]);
 
   const salvar = useMutation({
     mutationFn: async () => {
@@ -364,7 +468,13 @@ function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somente
     },
   });
 
-  const minimo = r?.primeirodiaeditavel?.slice(0, 7);
+  if (r?.pode && !r.pode.mesver) {
+    return (
+      <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        Seu cargo não mostra a meta do mês desta loja.
+      </p>
+    );
+  }
 
   return (
     <form
@@ -375,10 +485,9 @@ function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somente
       }}
       className="space-y-3 rounded-xl border border-border bg-card p-4"
     >
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        Mês
-        <input type="month" value={mes} min={minimo} onChange={(e) => setMes(e.target.value)} className={campo} />
-      </label>
+      {passado && (
+        <p className="text-sm text-muted-foreground">Este mês já passou: é somente leitura. O passado é o que foi.</p>
+      )}
       <fieldset disabled={somenteLeitura} className="grid gap-3 sm:grid-cols-3">
         <input
           placeholder={`Nome (ex.: Meta de ${mes.slice(5, 7)}/${mes.slice(0, 4)})`}
@@ -411,7 +520,13 @@ function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somente
       </fieldset>
       {r && (
         <p className="text-sm text-muted-foreground">
-          A soma das metas diárias deste mês dá <strong className="text-foreground">{reais(r.somametas)}</strong>
+          {r.somametas == null ? (
+            <>A soma das metas diárias deste mês: sem permissão para ver</>
+          ) : (
+            <>
+              A soma das metas diárias deste mês dá <strong className="text-foreground">{reais(r.somametas)}</strong>
+            </>
+          )}
           {form.valor && numero(form.valor) > 0 && (
             <> · meta do mês: <strong className="text-foreground">{reais(numero(form.valor))}</strong></>
           )}
@@ -420,10 +535,11 @@ function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somente
       )}
       <p className="text-xs text-muted-foreground">
         Batendo a meta do mês, cada pessoa ligada à loja e ativa naquele momento ganha os pontos do prêmio, uma vez só.
-        Se uma correção fizer o mês deixar de bater, o prêmio é estornado. 0 pontos = meta sem prêmio.
+        Se uma correção fizer o mês deixar de bater, o prêmio é estornado. 0 pontos = meta sem prêmio. A meta do mês é um
+        alvo próprio: não precisa ser igual à soma das metas diárias.
       </p>
       {somenteLeitura ? (
-        <p className="text-sm text-muted-foreground">A meta do mês e o prêmio são definidos pelo dono da conta.</p>
+        !passado && <p className="text-sm text-muted-foreground">Seu cargo mostra a meta do mês desta loja, mas não permite editar.</p>
       ) : (
         <button
           type="submit"
@@ -443,7 +559,7 @@ function MetaDoMes({ lojaid, somenteLeitura = false }: { lojaid: number; somente
 /* Meta por dia da semana                                              */
 /* ------------------------------------------------------------------ */
 
-function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
+function PorDiaDaSemana({ lojaid, podeEditar }: { lojaid: number; podeEditar: boolean }) {
   const qc = useQueryClient();
   const [linhas, setLinhas] = useState(DIAS_SEMANA.map(() => ({ valor: "", pontos: "0" })));
   const [recado, setRecado] = useState<string | null>(null);
@@ -497,10 +613,11 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
       className="space-y-3 rounded-xl border border-border bg-card p-4"
     >
       <p className="text-sm text-muted-foreground">
-        A meta de cada dia da semana, em R$, e os pontos que cada pessoa da equipe ganha ao bater. Deixe em branco (ou 0)
-        o dia sem meta. Uma meta especial para uma data substitui o valor do dia da semana.
+        O modelo: a meta de cada dia da semana, em R$, e os pontos que cada pessoa da equipe ganha ao bater. Ele vale
+        para todo dia que não tem meta deste mês (aba Meta por dia) nem meta especial. Deixe em branco (ou 0) o dia sem
+        meta.
       </p>
-      <div className="space-y-2">
+      <fieldset disabled={!podeEditar} className="space-y-2">
         {DIAS_SEMANA.map((nome, i) => (
           <div key={nome} className="grid grid-cols-[6rem_1fr_7rem] items-center gap-2 sm:grid-cols-[8rem_12rem_10rem]">
             <span className="text-sm font-medium">{nome}</span>
@@ -523,14 +640,18 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
             </label>
           </div>
         ))}
-      </div>
-      <button
-        type="submit"
-        disabled={salvar.isPending}
-        className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-      >
-        Salvar
-      </button>
+      </fieldset>
+      {podeEditar ? (
+        <button
+          type="submit"
+          disabled={salvar.isPending}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+        >
+          Salvar
+        </button>
+      ) : (
+        <p className="text-sm text-muted-foreground">Seu cargo mostra o modelo desta loja, mas não permite editar.</p>
+      )}
       <p className="text-xs text-muted-foreground">Mudar aqui não muda os dias já lançados: cada lançamento guarda a meta daquele dia.</p>
       {recado && <p className="text-sm text-sucesso">{recado}</p>}
       {salvar.isError && <p className="text-sm text-destructive">{(salvar.error as Error).message}</p>}
@@ -542,7 +663,7 @@ function PorDiaDaSemana({ lojaid }: { lojaid: number }) {
 /* Metas especiais (feriados, datas comemorativas)                     */
 /* ------------------------------------------------------------------ */
 
-function Especiais({ lojaid }: { lojaid: number }) {
+function Especiais({ lojaid, mesDeHoje, podeEditar }: { lojaid: number; mesDeHoje: string; podeEditar: boolean }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ data: "", descricao: "", valor: "", pontos: "0" });
 
@@ -589,8 +710,12 @@ function Especiais({ lojaid }: { lojaid: number }) {
     onSuccess: () => atualizarTudo(qc),
   });
 
+  // O passado é o que foi (30/09/2026): meta especial só do mês atual em diante.
+  const primeiroDia = `${mesDeHoje}-01`;
+
   return (
     <div className="space-y-4">
+      {podeEditar ? (
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -600,7 +725,14 @@ function Especiais({ lojaid }: { lojaid: number }) {
       >
         <p className="text-sm font-semibold">Nova meta especial</p>
         <div className="grid gap-3 sm:grid-cols-4">
-          <input type="date" required value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} className={campo} />
+          <input
+            type="date"
+            required
+            min={primeiroDia}
+            value={form.data}
+            onChange={(e) => setForm({ ...form, data: e.target.value })}
+            className={campo}
+          />
           <input
             required
             placeholder="Nome (ex.: Dia das Mães)"
@@ -641,6 +773,12 @@ function Especiais({ lojaid }: { lojaid: number }) {
         </button>
         {criar.isError && <p className="text-sm text-destructive">{(criar.error as Error).message}</p>}
       </form>
+      ) : (
+        <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          Seu cargo mostra as metas especiais desta loja, mas não permite criar nem apagar.
+        </p>
+      )}
+      {apagar.isError && <p className="text-sm text-destructive">{(apagar.error as Error).message}</p>}
 
       <div className="space-y-2">
         {(especiais.data ?? []).map((m) => (
@@ -654,12 +792,16 @@ function Especiais({ lojaid }: { lojaid: number }) {
                 {reais(m.valormeta)} · {m.pontospremio} pontos
               </span>
             </p>
-            <button
-              onClick={() => window.confirm(`Apagar a meta especial de ${dia(m.data)}?`) && apagar.mutate(m.metaespecialid)}
-              className="rounded-md border border-border px-3 py-1 text-sm"
-            >
-              Apagar
-            </button>
+            {podeEditar && m.data >= primeiroDia ? (
+              <button
+                onClick={() => window.confirm(`Apagar a meta especial de ${dia(m.data)}?`) && apagar.mutate(m.metaespecialid)}
+                className="rounded-md border border-border px-3 py-1 text-sm"
+              >
+                Apagar
+              </button>
+            ) : m.data < primeiroDia ? (
+              <span className="text-xs text-muted-foreground">mês que já passou</span>
+            ) : null}
           </div>
         ))}
         {!especiais.isLoading && (especiais.data ?? []).length === 0 && (
