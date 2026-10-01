@@ -13,6 +13,8 @@ export type Origem = "especial" | "mes" | "semana";
 export type DiaDoMes = {
   dia: string; // aaaa-mm-dd
   lancado: boolean;
+  /** O banco diz: não lançado e dentro da janela do lançamento (01/10/2026). */
+  editavel?: boolean;
   origem: Origem | null;
   meta: number | null;
   pontos: number | null;
@@ -43,8 +45,11 @@ export function numero(t: string): number {
 /** 1234.5 → "1234,5" (o jeito de escrever no campo). */
 export const noCampo = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v).replace(".", ","));
 
-/** Só dia não lançado e sem meta especial se edita aqui. */
-export const editavel = (d: DiaDoMes) => !d.lancado && d.origem !== "especial";
+/**
+ * Um dia se edita enquanto não foi lançado, dentro da janela do lançamento
+ * (quem diz é o banco), e sem meta especial (essa muda na aba dela).
+ */
+export const editavel = (d: DiaDoMes) => !d.lancado && d.editavel !== false && d.origem !== "especial";
 
 /** O que está salvo para o dia nesta tabela: só a meta "deste mês" (o resto é de outro lugar). */
 export function salvo(d: DiaDoMes): Campos {

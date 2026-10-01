@@ -15888,6 +15888,8 @@ DECLARE
   v_mes date := date_trunc('month', public.hoje_da_conta(1))::date;
   v_prox date := (date_trunc('month', public.hoje_da_conta(1)) + interval '1 month')::date;
   v_passado date := (date_trunc('month', public.hoje_da_conta(1)) - interval '1 month')::date;
+  v_fora date := (date_trunc('month', public.hoje_da_conta(1)) - interval '2 months')::date;
+  v_livre_ant date; e_lanc integer;
   d_esp date; d_mes date; d_mod date;
   v_cargo integer; e integer; e_passada integer; n integer; v jsonb; v_livre date;
   semana jsonb := (SELECT jsonb_agg(jsonb_build_object('diasemanaid', d, 'nomedia', 'D' || d, 'valormeta', 100, 'pontospremio', 1))
@@ -15988,21 +15990,60 @@ BEGIN
     BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', -1, 'pontospremio', 1)));
     EXCEPTION WHEN check_violation THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'dia de outro mes, dia repetido, pontos quebrados ou meta negativa: nada');
-    -- Mes passado: somente leitura (meta do mes, do dia, especial criar e apagar).
+    -- A janela da meta e a do lancamento (01/10/2026): o dia se edita enquanto
+    -- nao foi lancado, no mes atual e no anterior. Antes disso, somente leitura.
+    -- 1. Fora da janela (dois meses atras): nada, nem para o master.
     RESET ROLE;
     INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio)
-    VALUES (1, 10, v_passado + 3, 'Especial passada', 50, 1) RETURNING metaespecialid INTO e_passada;
+    VALUES (1, 10, v_fora + 3, 'Especial fora', 50, 1) RETURNING metaespecialid INTO e_passada;
     SET LOCAL ROLE authenticated;
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_passado, jsonb_build_array(jsonb_build_object('dia', v_passado + 5, 'valormeta', 1, 'pontospremio', 1)));
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_fora, jsonb_build_array(jsonb_build_object('dia', v_fora + 5, 'valormeta', 1, 'pontospremio', 1)));
     EXCEPTION WHEN check_violation THEN NULL; END;
-    BEGIN PERFORM public.salvar_meta_do_mes(10, v_passado, 'Passado', 1000, 1); EXCEPTION WHEN check_violation THEN NULL; END;
-    BEGIN PERFORM public.criar_meta_especial(10, v_passado + 6, 'Passada', 10, 1); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_meta_do_mes(10, v_fora, 'Fora', 1000, 1); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.criar_meta_especial(10, v_fora + 6, 'Fora', 10, 1); EXCEPTION WHEN check_violation THEN NULL; END;
     BEGIN PERFORM public.apagar_meta_especial(e_passada); EXCEPTION WHEN check_violation THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'mes passado: nem o master mexe na meta do mes, do dia ou especial');
-    PERFORM public.exigir(NOT (public.metas_do_mes_por_dia(10, v_passado)->>'podeeditar')::boolean
+    PERFORM public.exigir(public.nada_mudou(), 'fora da janela do lancamento (dois meses atras): nem o master mexe na meta do mes, do dia ou especial');
+    PERFORM public.exigir(NOT (public.metas_do_mes_por_dia(10, v_fora)->>'podeeditar')::boolean
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.metas_do_mes_por_dia(10, v_fora)->'dias') x WHERE (x->>'editavel')::boolean),
+                          'a tela sabe: dois meses atras e somente leitura, dia a dia');
+    -- 2. O mes anterior (o caso do Wisley: em 2 de novembro, a meta de outubro
+    --    esquecida). Um dia ja lancado nao muda; os outros dias, sim.
+    IF NOT EXISTS (SELECT 1 FROM public.metasdiariasapuracoes WHERE lojaid = 10 AND dataapuracao = v_passado + 10) THEN
+      PERFORM public.lancar_venda_do_dia(10, v_passado + 10, 400);
+    END IF;
+    SELECT min(d::date) INTO v_livre_ant FROM generate_series(v_passado, (v_passado + interval '1 month - 1 day')::date, interval '1 day') d
+     WHERE NOT EXISTS (SELECT 1 FROM public.metasdiariasapuracoes a WHERE a.lojaid = 10 AND a.dataapuracao = d::date)
+       AND NOT EXISTS (SELECT 1 FROM public.metasespeciais me WHERE me.lojaid = 10 AND me.data = d::date);
+    -- Criar especial no dia lancado (ainda sem especial nenhuma nele).
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.criar_meta_especial(10, v_passado + 10, 'No dia lancado', 10, 1); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'mes anterior, dia ja lancado: nao se cria meta especial nele');
+    RESET ROLE;
+    INSERT INTO public.metasespeciais (contaid, lojaid, data, descricao, valormeta, pontospremio)
+    VALUES (1, 10, v_passado + 10, 'Especial do dia lancado', 50, 1);
+    SELECT metaespecialid INTO e_lanc FROM public.metasespeciais WHERE lojaid = 10 AND data = v_passado + 10;
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.salvar_metas_do_mes_por_dia(10, v_passado, jsonb_build_array(jsonb_build_object('dia', v_passado + 10, 'valormeta', 1, 'pontospremio', 1)));
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.apagar_meta_especial(e_lanc); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'mes anterior, dia ja lancado: a meta do dia nao muda, nem se apaga a especial dele');
+    n := public.salvar_metas_do_mes_por_dia(10, v_passado, jsonb_build_array(jsonb_build_object('dia', v_livre_ant, 'valormeta', 321, 'pontospremio', 3)));
+    PERFORM public.salvar_meta_do_mes(10, v_passado, 'Meta do mes anterior', 12345, 2);
+    PERFORM public.apagar_meta_especial(public.criar_meta_especial(10, v_livre_ant, 'Especial do mes anterior', 10, 1));
+    RESET ROLE;
+    PERFORM public.exigir(n = 1 AND (SELECT origem = 'mes' AND valormeta = 321 FROM public.meta_do_dia(10, v_livre_ant))
+                          AND EXISTS (SELECT 1 FROM public.metasprincipais WHERE lojaid = 10 AND datainicio = v_passado AND valormetatotal = 12345)
+                          AND EXISTS (SELECT 1 FROM public.metasalteracoes WHERE lojaid = 10 AND tipo = 'especial' AND referencia LIKE '%Especial do mes anterior%' AND valordepois IS NULL),
+                          'mes anterior, dia nao lancado: a meta do dia, a do mes e a especial (criar e apagar) mudam de verdade');
+    SET LOCAL ROLE authenticated;
+    v := public.metas_do_mes_por_dia(10, v_passado);
+    PERFORM public.exigir((v->>'podeeditar')::boolean
+                          AND (SELECT NOT (x->>'editavel')::boolean FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = (v_passado + 10)::text)
+                          AND (SELECT (x->>'editavel')::boolean FROM jsonb_array_elements(v->'dias') x WHERE x->>'dia' = v_livre_ant::text)
                           AND (public.metas_do_mes_por_dia(10, v_mes)->>'podeeditar')::boolean,
-                          'a tela sabe: mes passado somente leitura, mes atual editavel');
+                          'a tela sabe: no mes anterior, o dia lancado e somente leitura e o outro e editavel');
     -- Mes atual (dia nao lancado) e proximos: sim.
     n := public.salvar_metas_do_mes_por_dia(10, v_mes, jsonb_build_array(jsonb_build_object('dia', v_livre, 'valormeta', 7, 'pontospremio', 7)))
        + public.salvar_metas_do_mes_por_dia(10, v_prox, jsonb_build_array(jsonb_build_object('dia', d_mod, 'valormeta', 150, 'pontospremio', 4)));
@@ -16147,6 +16188,15 @@ BEGIN
                                          AND x.descricao LIKE 'Meta do mês%' AND x.descricao LIKE '%9000,00 e 4 pontos → R$ 9500,00%')
                           AND NOT EXISTS (SELECT 1 FROM public.estornos_da_conta(11) x WHERE x.quem LIKE '%gerente.118%'),
                           'o master ve cada mudanca do gerente na lista dos Estornos, com o nome e o antes e depois');
+    -- Desempate fixo (01/10/2026): duas mudancas no MESMO instante, com o mesmo
+    -- texto, em lojas diferentes, saem sempre na ordem da loja.
+    RESET ROLE;
+    INSERT INTO public.metasalteracoes (contaid, lojaid, tipo, referencia, valorantes, valordepois, alteradopor, alteradoem)
+    VALUES (1, 11, 'dia', 'Empate 118', 1, 2, M, '2000-01-01 12:00'), (1, 10, 'dia', 'Empate 118', 1, 2, M, '2000-01-01 12:00');
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir((SELECT array_agg(x.lojaid ORDER BY x.posicao) FROM (SELECT e.lojaid, row_number() OVER () AS posicao
+                             FROM public.estornos_da_conta(NULL) e WHERE e.descricao LIKE 'Empate 118%') x) = ARRAY[10, 11],
+                          'mudancas de meta no mesmo instante saem sempre na mesma ordem (pela loja)');
     -- Ninguem mexe no historico nem na tabela do mes direto (nem o master).
     PERFORM public.guardar_foto();
     BEGIN UPDATE public.metasalteracoes SET valordepois = 1; EXCEPTION WHEN insufficient_privilege THEN NULL; END;

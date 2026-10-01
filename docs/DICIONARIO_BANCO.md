@@ -740,7 +740,7 @@ Fila do que precisa sair do Storage. Nível conta.
 `diasemanaid` 1 = domingo … 7 = sábado. Único por loja (a trava antiga era por conta e impedia duas lojas de terem meta no mesmo dia da semana). O navegador grava direto (RLS da conta).
 
 ## metasdodia
-Tabela **nova** (30/09/2026), **nível loja**. A meta de um dia de um mês. Vale entre a meta especial da data e o modelo do dia da semana: **a ordem mora só em `meta_do_dia`** (1º especial, 2º `metasdodia`, 3º modelo). Grava só pela `salvar_metas_do_mes_por_dia` (tudo ou nada; nunca em dia lançado, com especial ou de mês que passou). Master lê pela regra da tabela; gerente, pela `metas_do_mes_por_dia`.
+Tabela **nova** (30/09/2026), **nível loja**. A meta de um dia de um mês. Vale entre a meta especial da data e o modelo do dia da semana: **a ordem mora só em `meta_do_dia`** (1º especial, 2º `metasdodia`, 3º modelo). Grava só pela `salvar_metas_do_mes_por_dia` (tudo ou nada; nunca em dia lançado, com especial ou fora da janela do lançamento — mês atual e anterior, desde 01/10/2026). Master lê pela regra da tabela; gerente, pela `metas_do_mes_por_dia`.
 
 | Coluna | Tipo | Obs |
 |---|---|---|

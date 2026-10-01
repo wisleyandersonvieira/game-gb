@@ -434,8 +434,9 @@ function MetaDoMes({ lojaid, mes, mesDeHoje, podeEditar }: { lojaid: number; mes
   const r = resumo.data;
   const [form, setForm] = useState({ nome: "", valor: "", pontos: "0" });
   const [recado, setRecado] = useState<string | null>(null);
-  // O passado é o que foi (30/09/2026): mês que já passou é só leitura.
-  const passado = mes < mesDeHoje;
+  // A janela da meta é a do lançamento (01/10/2026): mês atual e anterior em
+  // diante; antes disso, só leitura. Quem decide é o banco.
+  const passado = mes < (r?.primeirodiaeditavel?.slice(0, 7) ?? somarMes(mesDeHoje, -1));
   const somenteLeitura = passado || !podeEditar;
 
   useEffect(() => {
@@ -486,7 +487,7 @@ function MetaDoMes({ lojaid, mes, mesDeHoje, podeEditar }: { lojaid: number; mes
       className="space-y-3 rounded-xl border border-border bg-card p-4"
     >
       {passado && (
-        <p className="text-sm text-muted-foreground">Este mês já passou: é somente leitura. O passado é o que foi.</p>
+        <p className="text-sm text-muted-foreground">Este mês já saiu da janela de lançamento (mês atual e anterior): é somente leitura.</p>
       )}
       <fieldset disabled={somenteLeitura} className="grid gap-3 sm:grid-cols-3">
         <input
@@ -710,8 +711,9 @@ function Especiais({ lojaid, mesDeHoje, podeEditar }: { lojaid: number; mesDeHoj
     onSuccess: () => atualizarTudo(qc),
   });
 
-  // O passado é o que foi (30/09/2026): meta especial só do mês atual em diante.
-  const primeiroDia = `${mesDeHoje}-01`;
+  // A janela da meta é a do lançamento (01/10/2026): do mês anterior em diante,
+  // e nunca em dia já lançado (o banco recusa e a mensagem aparece aqui).
+  const primeiroDia = `${somarMes(mesDeHoje, -1)}-01`;
 
   return (
     <div className="space-y-4">
@@ -800,7 +802,7 @@ function Especiais({ lojaid, mesDeHoje, podeEditar }: { lojaid: number; mesDeHoj
                 Apagar
               </button>
             ) : m.data < primeiroDia ? (
-              <span className="text-xs text-muted-foreground">mês que já passou</span>
+              <span className="text-xs text-muted-foreground">fora da janela de lançamento</span>
             ) : null}
           </div>
         ))}

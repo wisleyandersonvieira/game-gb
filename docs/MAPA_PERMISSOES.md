@@ -133,8 +133,9 @@ não estava e o sistema faz · **(só master)** = proposta de não delegar.
 | Meta especial (ver / criar e apagar) | `metas_especiais_da_loja`, `criar_meta_especial`, `apagar_meta_especial` | Metas: ver metas especiais / editar metas especiais (sua) |
 
 Metas (30/09/2026): as seis nascem desmarcadas. Editar pede também o "ver" da
-mesma meta e "Ver valores em R$" (quem não vê não edita). Nenhuma meta de mês
-que já passou se edita, nem pelo master. Toda mudança de meta (valor e pontos,
+mesma meta e "Ver valores em R$" (quem não vê não edita). Um dia se edita
+enquanto não foi lançado, dentro da janela do lançamento (mês atual e anterior,
+01/10/2026); fora dela, ninguém edita, nem o master. Toda mudança de meta (valor e pontos,
 antes e depois, quem e quando) vai para `metasalteracoes` e aparece na lista
 dos Estornos do master: o conflito de interesse se resolve mostrando, não
 bloqueando.
