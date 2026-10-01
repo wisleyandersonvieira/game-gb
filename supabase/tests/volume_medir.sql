@@ -33,7 +33,8 @@ END $f$;
 CREATE OR REPLACE FUNCTION pg_temp.tela(p_quem text, p_uid uuid, p_tela text, p_sqls text[]) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE i integer; s text; t0 timestamptz; v text; principal text; ms numeric;
 BEGIN
-  FOR i IN 1..7 LOOP
+  -- 7 vezes; a trava do JIT (jit.sh) passa 1 vez por tela (medir.vezes).
+  FOR i IN 1..coalesce(nullif(current_setting('medir.vezes', true), '')::integer, 7) LOOP
     PERFORM set_config('teste.uid', p_uid::text, true);
     SET LOCAL ROLE authenticated;
     ms := 0; principal := NULL;
@@ -116,6 +117,9 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Daqui para baixo é o relatório do PRÓPRIO teste, não tela: sem JIT (a trava
+-- do JIT, jit.sh, olha só as consultas das telas, acima).
+SET jit = off;
 -- O relatório de cada rodada: tela, quem, mediana, pior e linhas.
 DO $$
 DECLARE r record;
@@ -133,6 +137,12 @@ DECLARE
   pendentes constant text[] := ARRAY[]::text[];
   lentas text; vazias text; saiu text;
 BEGIN
+  -- Na passada da trava do JIT (jit.sh) o tempo não vale: ela registra o plano
+  -- de cada consulta, e isso pesa. Lá só importa que toda tela rodou.
+  IF current_setting('medir.so_jit', true) = 'sim' THEN
+    RAISE NOTICE '  (passada da trava do jit, tempos nao conferidos)';
+    RETURN;
+  END IF;
   SELECT string_agg(tela || '/' || quem || ' ' || mediana || ' ms', ', ') INTO lentas
     FROM (SELECT tela, quem, round(percentile_cont(0.5) WITHIN GROUP (ORDER BY ms)::numeric) AS mediana
             FROM medidas GROUP BY 1, 2) x WHERE mediana > 1500;
