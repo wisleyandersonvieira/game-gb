@@ -1,6 +1,9 @@
 // Início: avisos que pedem atenção e a situação da rotina de hoje.
 import { Link } from "@tanstack/react-router";
-import { CircleAlert, CircleCheck, Clock } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleAlert, CircleCheck, Clock, X } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { avisosDoInicio, separarDispensados } from "./avisos-do-inicio";
 import type { PainelInicio } from "./tipos";
 
 const hora = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
@@ -27,59 +30,83 @@ export function SituacaoRotina({ rotina }: { rotina: PainelInicio["rotina"] }) {
   );
 }
 
-/**
- * "A venda de ontem não foi lançada na Loja X": uma linha por loja; acima de
- * três, uma linha só, resumida. Some sozinho quando a venda é lançada (o
- * banco só manda as lojas que continuam sem lançamento).
- */
-export function linhasVendaOntem(lojas: { loja: string }[]): string[] {
-  if (lojas.length === 0) return [];
-  if (lojas.length <= 3) return lojas.map((l) => `A venda de ontem não foi lançada na ${l.loja}.`);
-  const nomes = lojas.slice(0, 3).map((l) => l.loja).join(", ");
-  return [`A venda de ontem não foi lançada em ${lojas.length} lojas: ${nomes} e mais ${lojas.length - 3}.`];
-}
+// Os avisos do topo e o X (05/10/2026): fechar dispensa AQUELE fato, só
+// para quem fechou, e fica guardado no banco (vale em qualquer aparelho).
+// Sempre tem volta: "N avisos dispensados · mostrar".
+export function Avisos({ avisos, hoje }: { avisos: PainelInicio["avisos"]; hoje: string }) {
+  const qc = useQueryClient();
+  const dispensados = useQuery({
+    queryKey: ["avisos-dispensados"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("avisos_dispensados");
+      if (error) throw error;
+      return new Set<string>(data ?? []);
+    },
+  });
+  const fechar = useMutation({
+    mutationFn: async (chaves: string[]) => {
+      const { error } = await supabase.rpc("dispensar_avisos", { p_chaves: chaves });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["avisos-dispensados"] }),
+  });
+  const mostrar = useMutation({
+    mutationFn: async (chaves: string[]) => {
+      const { error } = await supabase.rpc("reexibir_avisos", { p_chaves: chaves });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["avisos-dispensados"] }),
+  });
 
-export function Avisos({ avisos }: { avisos: PainelInicio["avisos"] }) {
-  if (!avisos) return null;
-  const itens: { texto: string; para: string; grave?: boolean }[] = [];
-  // Primeiro: é a equipe que paga pelo esquecimento (a meta não bate e o
-  // prêmio não sai), então fica no topo.
-  for (const texto of linhasVendaOntem(avisos.vendaontem ?? [])) {
-    itens.push({ texto, para: "/metas", grave: true });
-  }
-  if (avisos.livro === "diferenca") {
-    itens.push({ texto: "Diferença encontrada entre o saldo e o livro de pontos. Nada foi corrigido: veja os detalhes.", para: "/configuracoes", grave: true });
-  }
-  if (avisos.agendamentospassados > 0) {
-    const n = avisos.agendamentospassados;
-    itens.push({
-      texto: `${n} ${n === 1 ? "agendamento já passou e continua" : "agendamentos já passaram e continuam"} como Confirmado.`,
-      para: "/agenda",
-    });
-  }
-  if (avisos.comunicados24h.comunicados > 0) {
-    const c = avisos.comunicados24h;
-    itens.push({
-      texto: `${c.comunicados} ${c.comunicados === 1 ? "comunicado" : "comunicados"} sem ciência há mais de 24 h (${c.pessoas} ${c.pessoas === 1 ? "pessoa" : "pessoas"}).`,
-      para: "/comunicados",
-    });
-  }
+  const itens = avisosDoInicio(avisos, hoje);
   if (itens.length === 0) return null;
+  // Enquanto não sabe o que foi dispensado, mostra tudo (nada some por engano).
+  const { visiveis, dispensados: fora } = separarDispensados(itens, dispensados.data ?? new Set());
   return (
-    <ul className="space-y-2" aria-label="Avisos">
-      {itens.map((i) => (
-        <li key={i.texto}>
-          <Link
-            to={i.para}
-            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm transition hover:shadow-card ${
-              i.grave ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-azul/40 bg-azul-soft"
-            }`}
+    <div className="space-y-2">
+      {visiveis.length > 0 && (
+        <ul className="space-y-2" aria-label="Avisos">
+          {visiveis.map((i) => (
+            <li
+              key={i.chaves.join(",")}
+              className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+                i.grave ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-azul/40 bg-azul-soft"
+              }`}
+            >
+              <Link to={i.para} className="flex flex-1 items-start gap-2 hover:underline">
+                <CircleAlert className={`mt-0.5 h-4 w-4 shrink-0 ${i.grave ? "" : "text-azul"}`} aria-hidden />
+                <span>{i.texto}</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => fechar.mutate(i.chaves)}
+                disabled={fechar.isPending}
+                aria-label="Fechar este aviso"
+                title="Fechar este aviso (só para você; volta se o problema mudar)"
+                className="shrink-0 rounded-md p-0.5 opacity-70 hover:bg-muted hover:opacity-100"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {fora.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {fora.length === 1 ? "1 aviso dispensado" : `${fora.length} avisos dispensados`} ·{" "}
+          <button
+            type="button"
+            onClick={() => mostrar.mutate(fora.flatMap((i) => i.chaves))}
+            disabled={mostrar.isPending}
+            className="underline-offset-2 hover:underline"
           >
-            <CircleAlert className={`mt-0.5 h-4 w-4 shrink-0 ${i.grave ? "" : "text-azul"}`} aria-hidden />
-            <span>{i.texto}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+            mostrar
+          </button>
+        </p>
+      )}
+      {(fechar.isError || mostrar.isError) && (
+        <p className="text-xs text-destructive">{((fechar.error ?? mostrar.error) as Error).message}</p>
+      )}
+    </div>
   );
 }

@@ -25,9 +25,6 @@ const SEMANA_VAZIA = (): Dia[] => Array.from({ length: 7 }, () => ({ ativo: fals
 const FORM_VAZIO = {
   nome: "",
   dias: SEMANA_VAZIA(),
-  temPausa: false,
-  pausainicio: "",
-  pausafim: "",
   observacao: "",
   ativa: true,
   // As lojas em que a jornada vale (30/09/2026).
@@ -143,9 +140,6 @@ function ListaDeJornadas() {
     setForm({
       nome: j.nome,
       dias,
-      temPausa: !!j.pausainicio,
-      pausainicio: j.pausainicio?.slice(0, 5) ?? "",
-      pausafim: j.pausafim?.slice(0, 5) ?? "",
       observacao: j.observacao ?? "",
       ativa: j.ativa,
       lojas: [...(j.lojas ?? [])],
@@ -177,9 +171,6 @@ function ListaDeJornadas() {
           if (d.entrada === d.saida) throw new Error(`${DIAS[d.dia - 1]}: entrada e saída iguais.`);
           return { dia: d.dia, entrada: d.entrada, saida: d.saida };
         });
-      if (form.temPausa && (!form.pausainicio || !form.pausafim)) {
-        throw new Error("Preencha o começo e o fim do intervalo (ou desmarque o intervalo).");
-      }
       if (form.lojas.length === 0) throw new Error("Marque pelo menos uma loja em que a jornada vale.");
       const vinculadas = emEdicao?.pessoas.length ?? 0;
       if (editando !== null && vinculadas > 0) {
@@ -192,8 +183,6 @@ function ListaDeJornadas() {
         p_jornadaid: editando,
         p_nome: form.nome,
         p_dias: dias,
-        p_pausainicio: form.temPausa ? form.pausainicio : null,
-        p_pausafim: form.temPausa ? form.pausafim : null,
         p_observacao: form.observacao || null,
         p_ativa: form.ativa,
         p_lojas: form.lojas,
@@ -360,42 +349,6 @@ function ListaDeJornadas() {
             })}
           </div>
 
-          <div className="space-y-2 rounded-lg border border-border p-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.temPausa}
-                onChange={(e) => setForm({ ...form, temPausa: e.target.checked })}
-              />
-              Intervalo em que o sistema não envia nada (ex.: almoço)
-            </label>
-            <p className="text-xs text-muted-foreground">
-              É silêncio do sistema, não marcação: ninguém registra saída nem volta. Mensagens que caírem no intervalo
-              esperam ele acabar.
-            </p>
-            {form.temPausa && (
-              <div className="flex flex-wrap gap-3 text-sm">
-                <label className="flex items-center gap-1">
-                  De
-                  <input
-                    type="time"
-                    value={form.pausainicio}
-                    onChange={(e) => setForm({ ...form, pausainicio: e.target.value })}
-                    className={campo}
-                  />
-                </label>
-                <label className="flex items-center gap-1">
-                  até
-                  <input
-                    type="time"
-                    value={form.pausafim}
-                    onChange={(e) => setForm({ ...form, pausafim: e.target.value })}
-                    className={campo}
-                  />
-                </label>
-              </div>
-            )}
-          </div>
 
           <input
             placeholder="Observação (opcional)"
@@ -450,10 +403,7 @@ function ListaDeJornadas() {
                 )}
               </p>
               <p className="text-sm text-muted-foreground">
-                {resumoDaJornada(j.dias, {
-                  inicio: j.pausainicio,
-                  fim: j.pausafim,
-                })}
+                {resumoDaJornada(j.dias)}
               </p>
               {j.observacao && <p className="text-xs text-muted-foreground">{j.observacao}</p>}
               <p className="text-xs text-muted-foreground">

@@ -77,7 +77,6 @@ export type MeuInicio = {
   /** Sempre em PONTOS. Nunca convertido em dinheiro nesta visão. */
   saldo: number;
   nota: number | null;
-  feedbackpendente: boolean;
   comunicados: number;
 };
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { linhasVendaOntem } from "./Avisos";
+import { linhasVendaOntem } from "./avisos-do-inicio";
 import { textoSemLancamento } from "./tipos";
 
 const ler = (f: string) => readFileSync(join(import.meta.dir, "..", f), "utf8");

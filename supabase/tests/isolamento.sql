@@ -4306,6 +4306,9 @@ BEGIN
       'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding',
       'rodar_geracao_hoje', 'passar_tarefa_de_folga', 'refazer_fechamento', 'rotinas_resumo_admin',
       'marcar_aviso_lido',
+      -- 05/10/2026: os avisos do Inicio que a PROPRIA pessoa fechou (o X). So
+      -- gravam e leem linhas de quem chamou (auth.uid) na conta dele (secao 120).
+      'dispensar_avisos', 'reexibir_avisos', 'avisos_dispensados',
       -- Etapa 1.12: falam so do proprio login (meu_acesso) ou exigem master
       -- (publicar_politica_de_uso, situacao_dos_acessos).
       'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso',
@@ -8956,23 +8959,19 @@ DO $$
 DECLARE v_j integer; v_hoje date := (public.meu_hoje()->>'hoje')::date; v_dow integer; deu_erro boolean;
 BEGIN
   v_dow := extract(dow FROM v_hoje)::integer + 1;
-  -- Hoje 08h-17h com almoco 12h-13h; amanha 14h-22h; depois de amanha, turno da noite 22h-06h.
+  -- Hoje 08h-17h; amanha 14h-22h; depois de amanha, turno da noite 22h-06h.
   v_j := public.salvar_jornada(NULL, 'Teste 73', jsonb_build_array(
            jsonb_build_object('dia', v_dow, 'entrada', '08:00', 'saida', '17:00'),
            jsonb_build_object('dia', (v_dow % 7) + 1, 'entrada', '14:00', 'saida', '22:00'),
            jsonb_build_object('dia', ((v_dow + 1) % 7) + 1, 'entrada', '22:00', 'saida', '06:00')),
-         '12:00', '13:00', 'almoco', true);
+         'almoco', true);
   PERFORM set_config('teste.j73', v_j::text, false);
   PERFORM public.exigir(public.vincular_jornada(ARRAY[9972], v_j) = 1, 'o master vincula a pessoa a uma jornada da conta dele');
 
   PERFORM public.guardar_foto();
-  BEGIN PERFORM public.salvar_jornada(NULL, 'Teste 73', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
+  BEGIN PERFORM public.salvar_jornada(NULL, 'Teste 73', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, true); deu_erro := false;
   EXCEPTION WHEN unique_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'nome de jornada nao se repete na conta');
-  PERFORM public.guardar_foto();
-  BEGIN PERFORM public.salvar_jornada(NULL, 'Sem fim', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', '12:00', NULL, NULL, true); deu_erro := false;
-  EXCEPTION WHEN check_violation THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'intervalo precisa de comeco e fim');
 
   -- Jornada com gente nao se apaga nem se desativa; a mensagem diz quantos.
   PERFORM public.guardar_foto();
@@ -8980,7 +8979,7 @@ BEGIN
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := SQLERRM LIKE '%1 pessoa%'; END;
   PERFORM public.exigir(public.nada_mudou(), 'jornada com gente vinculada nao se apaga (e diz quantos)');
   PERFORM public.guardar_foto();
-  BEGIN PERFORM public.salvar_jornada(v_j, 'Teste 73', jsonb_build_array(jsonb_build_object('dia', v_dow, 'entrada', '08:00', 'saida', '17:00')), NULL, NULL, NULL, false); deu_erro := false;
+  BEGIN PERFORM public.salvar_jornada(v_j, 'Teste 73', jsonb_build_array(jsonb_build_object('dia', v_dow, 'entrada', '08:00', 'saida', '17:00')), NULL, false); deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'nem se desativa');
   -- O master nao grava a jornada da pessoa direto (so pela funcao).
@@ -9022,7 +9021,7 @@ BEGIN
   PERFORM public.exigir(public.nada_mudou(), 'a conta B nao vincula gente dela a uma jornada de A');
   PERFORM public.exigir(public.vincular_jornada(ARRAY[9972], NULL) = 0, 'nem desvincula gente de A');
   PERFORM public.guardar_foto();
-  BEGIN PERFORM public.salvar_jornada(v_j, 'Invadida', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true); deu_erro := false;
+  BEGIN PERFORM public.salvar_jornada(v_j, 'Invadida', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, true); deu_erro := false;
   EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'nem edita a jornada de A');
   PERFORM public.guardar_foto();
@@ -9042,7 +9041,7 @@ BEGIN
   BEGIN UPDATE public.funcionarios SET jornadaid = current_setting('teste.j73')::integer WHERE funcionarioid = 200; deu_erro := false;
   EXCEPTION WHEN foreign_key_violation THEN deu_erro := true; END;
   PERFORM public.exigir(public.nada_mudou(), 'a chave composta impede pessoa de uma conta na jornada de outra');
-  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.salvar_jornada(integer, text, jsonb, time, time, text, boolean, integer[])', 'EXECUTE')
+  PERFORM public.exigir(NOT has_function_privilege('anon', 'public.salvar_jornada(integer, text, jsonb, text, boolean, integer[])', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.vincular_jornada(integer[], integer)', 'EXECUTE'),
                         'o visitante sem login nao mexe em jornada');
   PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
@@ -9069,11 +9068,9 @@ SET teste.uid = '';
 -- ===========================================================================
 DO $$ BEGIN RAISE NOTICE '74. intervalo e quadro'; END $$;
 
--- Duas jornadas de teste, os sete dias iguais: 08h-17h com intervalo
--- 16h30-18h (passa do fim), e turno da noite 22h-06h com intervalo
--- 23h30-00h30 (cruza a meia-noite).
-INSERT INTO public.jornadas (jornadaid, contaid, nome, pausainicio, pausafim) OVERRIDING SYSTEM VALUE VALUES
-  (7401, 1, 'Teste 74 dia', '16:30', '18:00'), (7402, 1, 'Teste 74 noite', '23:30', '00:30');
+-- Duas jornadas de teste, os sete dias iguais: 08h-17h e turno da noite 22h-06h.
+INSERT INTO public.jornadas (jornadaid, contaid, nome) OVERRIDING SYSTEM VALUE VALUES
+  (7401, 1, 'Teste 74 dia'), (7402, 1, 'Teste 74 noite');
 INSERT INTO public.jornadasdias (contaid, jornadaid, diasemana, entrada, saida)
 SELECT 1, 7401, d, '08:00'::time, '17:00'::time FROM generate_series(1, 7) d
 UNION ALL SELECT 1, 7402, d, '22:00'::time, '06:00'::time FROM generate_series(1, 7) d;
@@ -11166,7 +11163,8 @@ SELECT unnest(ARRAY[
 UNION ALL
 SELECT unnest(ARRAY[
   'painel_da_tv',          -- a TV, sem login
-  'marcar_aviso_lido']),   -- o proprio aviso de quem esta logado
+  'marcar_aviso_lido',     -- o proprio aviso de quem esta logado
+  'dispensar_avisos', 'reexibir_avisos']),   -- o X dos avisos do Inicio: so os de quem esta logado (secao 120)
   'outras'
 UNION ALL
 SELECT unnest(ARRAY[]::text[]), 'pendente_parte2';   -- parte 2 fechada: nenhuma pendente
@@ -11444,6 +11442,15 @@ RESET ROLE;
 -- fechado, sem papel) nao le linha nenhuma. Diz tambem em quantas tabelas o
 -- teste tem dado de mais de uma conta: sem isso, "zero" nao provaria nada.
 DO $$ BEGIN RAISE NOTICE '92. nenhuma leitura devolve outra conta'; END $$;
+-- Avisos fechados (05/10/2026): a chave tem formato conferido pelo banco, entao
+-- o preenchimento automatico abaixo nao inventa uma. Uma linha de cada conta,
+-- de um login proprio (para nao misturar com os avisos testados na secao 120).
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES
+  ('92920920-0920-4920-8920-920920920901', 'avisos.92a@exemplo.com', now()),
+  ('92920920-0920-4920-8920-920920920902', 'avisos.92b@exemplo.com', now());
+INSERT INTO public.avisosdispensados (contaid, userid, chave) VALUES
+  (1, '92920920-0920-4920-8920-920920920901', 'livro|2000-01-01'),
+  (2, '92920920-0920-4920-8920-920920920902', 'livro|2000-01-01');
 
 -- Para o zero valer em TODA tabela (pedido do Wisley, 29/09/2026), cada tabela
 -- com contaid recebe, so dentro desta secao, linhas de pelo menos duas contas:
@@ -13105,8 +13112,8 @@ BEGIN
     INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
     PERFORM set_config('teste.uid', M::text, true);
     SET LOCAL ROLE authenticated;
-    j  := public.salvar_jornada(NULL, 'Jornada 106', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true);
-    j2 := public.salvar_jornada(NULL, 'Jornada 106 b', '[{"dia":2,"entrada":"08:00","saida":"12:00"}]', NULL, NULL, NULL, true);
+    j  := public.salvar_jornada(NULL, 'Jornada 106', '[{"dia":1,"entrada":"08:00","saida":"12:00"}]', NULL, true);
+    j2 := public.salvar_jornada(NULL, 'Jornada 106 b', '[{"dia":2,"entrada":"08:00","saida":"12:00"}]', NULL, true);
     RESET ROLE;
 
     PERFORM set_config('teste.uid', G::text, true);
@@ -14747,10 +14754,10 @@ BEGIN
     -- lojas: a chamada de antes, que o site no ar faz, vale para todas).
     PERFORM set_config('teste.uid', M::text, true);
     SET LOCAL ROLE authenticated;
-    jA  := public.salvar_jornada(NULL, 'J-A', dias, NULL, NULL, NULL, true, ARRAY[9601]);
-    jB  := public.salvar_jornada(NULL, 'J-B', dias, NULL, NULL, NULL, true, ARRAY[9602]);
-    jAB := public.salvar_jornada(NULL, 'J-AB', dias, NULL, NULL, NULL, true, ARRAY[9601, 9602]);
-    jT  := public.salvar_jornada(NULL, 'J-todas', dias, NULL, NULL, NULL, true);
+    jA  := public.salvar_jornada(NULL, 'J-A', dias, NULL, true, ARRAY[9601]);
+    jB  := public.salvar_jornada(NULL, 'J-B', dias, NULL, true, ARRAY[9602]);
+    jAB := public.salvar_jornada(NULL, 'J-AB', dias, NULL, true, ARRAY[9601, 9602]);
+    jT  := public.salvar_jornada(NULL, 'J-todas', dias, NULL, true);
     RESET ROLE;
     PERFORM public.exigir((SELECT array_agg(lojaid ORDER BY lojaid) FROM public.jornadaslojas WHERE jornadaid = jT) = ARRAY[9601, 9602, 9603]
                           AND (SELECT array_agg(lojaid ORDER BY lojaid) FROM public.jornadaslojas WHERE jornadaid = jAB) = ARRAY[9601, 9602],
@@ -14789,21 +14796,21 @@ BEGIN
     PERFORM set_config('teste.uid', GA::text, true);
     SET LOCAL ROLE authenticated;
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.salvar_jornada(jAB, 'J-AB mudada', dias, NULL, NULL, NULL, true); msg := NULL;
+    BEGIN PERFORM public.salvar_jornada(jAB, 'J-AB mudada', dias, NULL, true); msg := NULL;
     EXCEPTION WHEN insufficient_privilege THEN msg := SQLERRM; END;
-    BEGIN PERFORM public.salvar_jornada(jT, 'J-todas', '[{"dia":3,"entrada":"09:00","saida":"13:00"}]', NULL, NULL, NULL, true);
+    BEGIN PERFORM public.salvar_jornada(jT, 'J-todas', '[{"dia":3,"entrada":"09:00","saida":"13:00"}]', NULL, true);
     EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou() AND msg LIKE 'Esta jornada vale também para lojas que não são suas%',
                           'gestor A nao edita jornada que vale tambem na B (nem o nome, nem um horario)');
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.salvar_jornada(jA, 'J-A', dias, NULL, NULL, NULL, true, ARRAY[9601, 9602]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_jornada(NULL, 'Nova B', dias, NULL, NULL, NULL, true, ARRAY[9602]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_jornada(NULL, 'Sem lojas', dias, NULL, NULL, NULL, true); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(jA, 'J-A', dias, NULL, true, ARRAY[9601, 9602]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(NULL, 'Nova B', dias, NULL, true, ARRAY[9602]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(NULL, 'Sem lojas', dias, NULL, true); EXCEPTION WHEN check_violation THEN NULL; END;
     BEGIN PERFORM public.apagar_jornada(jAB); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'gestor A nao marca a loja B, nao cria sem lojas e nao apaga jornada que vale na B');
     -- ... e dentro da loja dele edita e cria, de verdade.
-    PERFORM public.salvar_jornada(jA, 'J-A (gestor)', '[{"dia":4,"entrada":"10:00","saida":"14:00"}]', NULL, NULL, NULL, true);
-    jG := public.salvar_jornada(NULL, 'J-gestor', dias, NULL, NULL, NULL, true, ARRAY[9601]);
+    PERFORM public.salvar_jornada(jA, 'J-A (gestor)', '[{"dia":4,"entrada":"10:00","saida":"14:00"}]', NULL, true);
+    jG := public.salvar_jornada(NULL, 'J-gestor', dias, NULL, true, ARRAY[9601]);
     RESET ROLE;
     PERFORM public.exigir((SELECT nome = 'J-A (gestor)' FROM public.jornadas WHERE jornadaid = jA)
                           AND (SELECT entrada = '10:00' FROM public.jornadasdias WHERE jornadaid = jA AND diasemana = 4)
@@ -14862,7 +14869,7 @@ BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM public.vincular_jornada(ARRAY[96011], jAB);
     PERFORM public.guardar_foto();
-    BEGIN PERFORM public.salvar_jornada(jAB, 'J-AB', dias, NULL, NULL, NULL, true, ARRAY[9602]); msg := NULL;
+    BEGIN PERFORM public.salvar_jornada(jAB, 'J-AB', dias, NULL, true, ARRAY[9602]); msg := NULL;
     EXCEPTION WHEN check_violation THEN msg := SQLERRM; END;
     PERFORM public.exigir(public.nada_mudou() AND msg LIKE '%Loja A (1 pessoa)%',
                           'nao tira a loja A da jornada com a Ana (da A) vinculada; a mensagem diz quantas e de qual loja');
@@ -14876,7 +14883,7 @@ BEGIN
     BEGIN PERFORM public.salvar_pessoa(96011, 'Ana-A', NULL, NULL, NULL, NULL, 0, ARRAY[9603]); EXCEPTION WHEN check_violation THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'a Ana nao vai so para a loja C ficando na jornada que nao vale la');
     -- Loja sem ninguem vinculado sai.
-    PERFORM public.salvar_jornada(jAB, 'J-AB', dias, NULL, NULL, NULL, true, ARRAY[9601]);
+    PERFORM public.salvar_jornada(jAB, 'J-AB', dias, NULL, true, ARRAY[9601]);
     RESET ROLE;
     PERFORM public.exigir((SELECT array_agg(lojaid) FROM public.jornadaslojas WHERE jornadaid = jAB) = ARRAY[9601],
                           'a loja B (sem ninguem da B na jornada) sai');
@@ -14914,8 +14921,8 @@ BEGIN
     PERFORM public.exigir(NOT (public.mapa_da_jornada(9601)->>'podemapa')::boolean, 'sem "Mapa e exportar", o mapa diz que nao pode');
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_intervalo_do_mapa(96011, 3, '12:00', '13:00'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_jornada(NULL, 'Sem permissao', dias, NULL, NULL, NULL, true, ARRAY[9601]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_jornada(jA, 'J-A sem permissao', dias, NULL, NULL, NULL, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(NULL, 'Sem permissao', dias, NULL, true, ARRAY[9601]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN PERFORM public.salvar_jornada(jA, 'J-A sem permissao', dias, NULL, true); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'sem as permissoes: nao marca intervalo, nao cria nem edita jornada');
     RESET ROLE;
     PERFORM public.exigir((SELECT inicio = '12:00' FROM public.intervalosdomapa WHERE funcionarioid = 96011 AND diasemana = 2),
@@ -15321,9 +15328,8 @@ BEGIN
      AND (p.proname LIKE 'bot\_%' OR p.proname ~ '(telegram|_do_bot$|convite_grupo|rotina_mensagens|rotina_ligada|usar_mensagens|no_silencio)')
      AND p.proname NOT IN (
        -- Fatia 2 (sai com prova propria): o contexto do bot dentro de ~110 funcoes.
-       'bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot',
-       -- O aplicativo do colaborador usa (aviso do feedback de ontem): decisao do Wisley.
-       'bot_falta_feedback_ontem');
+       'bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot');
+       -- (bot_falta_feedback_ontem saiu em 05/10/2026, com o aviso do aplicativo.)
   PERFORM public.exigir(sobra IS NULL, 'nenhuma funcao do Telegram voltou' || coalesce(' -- voltou: ' || sobra, ''));
   SELECT string_agg(c.relname, ', ') INTO sobra FROM pg_class c
    WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
@@ -15338,5 +15344,116 @@ BEGIN
                           'o agendamento da fila do Telegram nao existe');
   END IF;
 END $$;
+
+-- ===========================================================================
+-- 120. O intervalo da jornada saiu; o X dos avisos do Inicio (05/10/2026)
+-- ===========================================================================
+DO $$ BEGIN RAISE NOTICE '120. intervalo da jornada fora; o X dos avisos'; END $$;
+DO $$
+BEGIN
+  -- O intervalo da JORNADA nao volta (o do MAPA fica: intervalosdomapa).
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                     WHERE table_schema = 'public' AND table_name = 'jornadas' AND column_name IN ('pausainicio', 'pausafim'))
+                        AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+                                          AND p.proname IN ('salvar_jornada', 'jornadas_da_tela', 'jornada_da_pessoa')
+                                          AND (pg_get_function_arguments(p.oid) ~ 'pausa' OR pg_get_function_result(p.oid) ~ 'pausa'))
+                        AND to_regclass('public.intervalosdomapa') IS NOT NULL,
+                        'o intervalo da jornada nao existe (coluna, parametro ou saida); o do mapa continua');
+  -- O aviso do feedback de ontem saiu do aplicativo.
+  PERFORM public.exigir(to_regproc('public.bot_falta_feedback_ontem') IS NULL
+                        AND (SELECT prosrc FROM pg_proc WHERE proname = 'eu_inicio') NOT LIKE '%feedbackpendente%',
+                        'o aplicativo nao pede mais o feedback de ontem');
+  -- As 9 configuracoes que so o bot lia FICAM (o historico aponta para elas),
+  -- marcadas como obsoletas; nenhuma outra e marcada. (As contas deste teste
+  -- nasceram depois de 04/10/2026, sem elas; a prova de antes e depois, com
+  -- contas antigas, mostra a marcacao acontecendo.)
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.configuracoes
+                          WHERE chave IN ('HORARIO_DELEGACAO_FOLGA', 'HORARIO_LEMBRETE_COMUNICADOS', 'HORARIO_LEMBRETE_DIARIO_AMANHA',
+                                          'HORARIO_LEMBRETE_HOJE', 'HORARIO_LEMBRETE_SEMANAL', 'HORARIO_SILENCIO_FIM',
+                                          'HORARIO_SILENCIO_INICIO', 'MAX_MENSAGENS_AUTOMATICAS_DIA', 'MAX_TAREFAS_FOLGA_POR_PESSOA')
+                            AND descricao NOT LIKE 'OBSOLETA%')
+                        AND NOT EXISTS (SELECT 1 FROM public.configuracoes
+                                         WHERE descricao LIKE 'OBSOLETA%'
+                                           AND chave NOT IN ('HORARIO_DELEGACAO_FOLGA', 'HORARIO_LEMBRETE_COMUNICADOS', 'HORARIO_LEMBRETE_DIARIO_AMANHA',
+                                                             'HORARIO_LEMBRETE_HOJE', 'HORARIO_LEMBRETE_SEMANAL', 'HORARIO_SILENCIO_FIM',
+                                                             'HORARIO_SILENCIO_INICIO', 'MAX_MENSAGENS_AUTOMATICAS_DIA', 'MAX_TAREFAS_FOLGA_POR_PESSOA'))
+                        AND EXISTS (SELECT 1 FROM pg_constraint
+                                     WHERE conrelid = 'public.configuracoeshistorico'::regclass AND confrelid = 'public.configuracoes'::regclass
+                                       AND confdeltype = 'r'),
+                        'as 9 configuracoes do bot ficam, marcadas como obsoletas, e o historico continua preso a elas');
+END $$;
+
+-- O X: por fato, por pessoa, no banco.
+DO $$
+DECLARE
+  M  constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  B  constant uuid := 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  G  constant uuid := '12012012-0120-4120-8120-120120120101';
+  v_cargo integer; n integer; v text[];
+BEGIN
+  BEGIN
+    INSERT INTO auth.users (id, email, email_confirmed_at) VALUES (G, 'gerente.120@exemplo.com', now());
+    INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (1, G, 'gerente');
+    INSERT INTO public.cargos (contaid, nome) VALUES (1, 'Avisos 120') RETURNING cargoid INTO v_cargo;
+    INSERT INTO public.usuariosgerenciais (contaid, userid, cargoid) VALUES (1, G, v_cargo);
+    INSERT INTO public.usuarioslojas (contaid, userid, lojaid) VALUES (1, G, 10);
+
+    -- O master fecha a venda de ontem da loja 10.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    n := public.dispensar_avisos(ARRAY['vendaontem|10|2026-10-03', 'vendaontem|10|2026-10-03']);
+    PERFORM public.exigir(n = 1 AND public.avisos_dispensados() = ARRAY['vendaontem|10|2026-10-03'],
+                          'o master fecha o aviso da loja 10 de 03/10 (uma vez so, mesmo pedido duas vezes)');
+    PERFORM public.exigir(NOT ('vendaontem|11|2026-10-03' = ANY (public.avisos_dispensados()))
+                          AND NOT ('vendaontem|10|2026-10-04' = ANY (public.avisos_dispensados())),
+                          'fechar a loja 10 em 03/10 nao fecha a loja 11 nem o dia seguinte (e por fato)');
+    -- Chave fora do formato: nada.
+    PERFORM public.guardar_foto();
+    BEGIN PERFORM public.dispensar_avisos(ARRAY['qualquer coisa; drop']); EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN INSERT INTO public.avisosdispensados (contaid, userid, chave) VALUES (1, M, 'livro|2026-10-03'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.nada_mudou(), 'chave fora do formato e gravacao direta na tabela: nada (nem o master)');
+    RESET ROLE;
+
+    -- O gerente: nao ve o que o master fechou, e o que ele fecha e so dele.
+    PERFORM set_config('teste.uid', G::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado(to_jsonb(public.avisos_dispensados()));
+    PERFORM public.exigir(public.nada_voltou(), 'o gerente nao recebe os avisos que o master fechou (e por pessoa)');
+    PERFORM public.guardar_foto();
+    n := public.reexibir_avisos(ARRAY['vendaontem|10|2026-10-03']);
+    PERFORM public.exigir(n = 0 AND public.nada_mudou(), 'o "mostrar" do gerente nao reabre o que o master fechou');
+    PERFORM public.dispensar_avisos(ARRAY['livro|2026-10-03']);
+    PERFORM public.exigir(public.avisos_dispensados() = ARRAY['livro|2026-10-03'], 'o gerente fecha o dele');
+    RESET ROLE;
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.exigir(public.avisos_dispensados() = ARRAY['vendaontem|10|2026-10-03'],
+                          'e o master continua so com o que ele fechou');
+    -- "Mostrar": o aviso volta, de verdade.
+    n := public.reexibir_avisos(ARRAY['vendaontem|10|2026-10-03']);
+    PERFORM public.exigir(n = 1 AND cardinality(public.avisos_dispensados()) = 0, 'o "mostrar" traz o aviso de volta');
+    PERFORM public.dispensar_avisos(ARRAY['vendaontem|10|2026-10-03']);
+    RESET ROLE;
+
+    -- Outra conta: nao le nem mexe.
+    PERFORM set_config('teste.uid', B::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM public.guardar_resultado(to_jsonb(public.avisos_dispensados())
+                                     || coalesce((SELECT jsonb_agg(d) FROM public.avisosdispensados d), '[]'::jsonb));
+    PERFORM public.exigir(public.nada_voltou(), 'a conta B nao ve os avisos fechados da conta A');
+    PERFORM public.guardar_foto();
+    n := public.reexibir_avisos(ARRAY['vendaontem|10|2026-10-03', 'livro|2026-10-03']);
+    PERFORM public.exigir(n = 0 AND public.nada_mudou(), 'e nao reabre nenhum');
+    RESET ROLE;
+    PERFORM public.exigir((SELECT count(*) FROM public.avisosdispensados WHERE contaid = 1 AND userid IN (M, G)) = 2,
+                          'no banco: um aviso fechado do master e um do gerente, cada um com o seu dono');
+
+    RAISE EXCEPTION 'desfazer_120';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_120' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

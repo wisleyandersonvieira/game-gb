@@ -19,6 +19,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `agendamentos` | **loja** | agendamentoid | funcionarios, tiposevento |
 | `agendamentosanexos` | **loja** | anexoid | agendamentos |
 | `agendamentoshistorico` | **loja** | historicoid | agendamentos |
+| `avisosdispensados` | conta (por pessoa) | dispensaid | auth.users |
 | `categoriasproduto` | conta | categoriaid |  |
 | `configuracoesescala` | **loja** | configid |  |
 | `configuracoessetores` | conta | setor |  |
@@ -1283,7 +1284,22 @@ O navegador só lê. Os tipos `aprovacao`, `estorno_entrega`, `bonus` e `estorno
 
 O sistema não usa Telegram (decisão do Wisley). Saíram as tabelas `telegramvinculos`, `telegramconvites`, `mensagensfila`, `mensagensrotinas`, `usomensagens`, `grupos` e `funcionariosgrupos`, o schema `bot` (`updates`, `tentativas`, `estados`, `contaativa`), as colunas `funcionarios.chatidtelegram`, `funcionarioslojas.validador`, `entregas.avisochatid`, `entregas.fileidtelegram`, `documentos.telegramfileidfoto`, `notasfiscais.fileidtelegram`, `tarefasatribuidas.grupoid` e `tarefasatribuidas.statustarefagrupo`, e as funções do bot (migração 20261004100000). Os dados saíram junto: o identificador de Telegram das pessoas é dado pessoal sem finalidade sem o bot. A seção 119 do teste de isolamento reprova se algo disso voltar.
 
-**Ficam** de propósito: `avisossistema` (os avisos do Início; `marcar_aviso_lido`); as colunas de canal (`entregas.canalenvio`/`canalvalidacao`, `documentosacessos.canal`, `missoesaceites.canal`), em que linhas antigas dizem `telegram` (histórico); `entregas.validadorfuncionarioid`, `bot_contexto_confiavel`, `conta_do_bot` e `funcionario_do_bot` (saem na fatia 2, com prova própria: estão dentro de ~110 funções); `bot_falta_feedback_ontem` (o aplicativo do colaborador usa); e as configurações que só o bot lia, com o histórico delas (`configuracoeshistorico` aponta para elas, de propósito).
+**Ficam** de propósito: `avisossistema` (os avisos do Início; `marcar_aviso_lido`); as colunas de canal (`entregas.canalenvio`/`canalvalidacao`, `documentosacessos.canal`, `missoesaceites.canal`), em que linhas antigas dizem `telegram` (histórico); `entregas.validadorfuncionarioid`, `bot_contexto_confiavel`, `conta_do_bot` e `funcionario_do_bot` (saem na fatia 2, com prova própria: estão dentro de ~110 funções); e as 9 configurações que só o bot lia (`HORARIO_DELEGACAO_FOLGA`, `HORARIO_LEMBRETE_COMUNICADOS`, `HORARIO_LEMBRETE_DIARIO_AMANHA`, `HORARIO_LEMBRETE_HOJE`, `HORARIO_LEMBRETE_SEMANAL`, `HORARIO_SILENCIO_INICIO`, `HORARIO_SILENCIO_FIM`, `MAX_MENSAGENS_AUTOMATICAS_DIA`, `MAX_TAREFAS_FOLGA_POR_PESSOA`), com o histórico delas (`configuracoeshistorico` aponta para elas, ON DELETE RESTRICT, de propósito). **Desde 05/10/2026 a `descricao` delas diz "OBSOLETA"**: nada lê, nada mostra, conta nova não recebe, e **não se apagam** (decisão do Wisley: o histórico é auditoria).
+
+Saíram em 05/10/2026 (migração 20261005100000): o intervalo da jornada (`jornadas.pausainicio/pausafim`) e `bot_falta_feedback_ontem` (o aviso "Você tem um feedback de ontem para responder" do aplicativo, sem onde responder).
+
+### avisosdispensados (05/10/2026)
+O **X** dos avisos do topo do Início, **nível conta, por pessoa**. Fechar é por **fato**: a chave diz o aviso e aquilo a que ele se refere, e o aviso do dia seguinte (ou de outra loja, ou com outro número) tem outra chave e volta.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| dispensaid | integer | ID automático; chave primária |
+| contaid | integer | obrigatório; padrão `minha_conta()`; → contas |
+| userid | uuid | quem fechou; → auth.users (apagado o login, vai junto) |
+| chave | text | o fato, ex.: `vendaontem\|<loja>\|<dia>`, `livro\|<dia>`, `agenda\|<dia>\|<n>`, `comunicados\|<dia>\|<c>\|<p>`. Formato conferido pelo banco, até 200 letras |
+| dispensadoem | timestamptz | |
+
+Única por (contaid, userid, chave). Cada um lê só as suas linhas (regra `userid = auth.uid()`); ninguém grava direto. `dispensar_avisos(chaves)` (até 50; apaga as dele com mais de 60 dias), `reexibir_avisos(chaves)` (o "mostrar": apaga só as dele) e `avisos_dispensados()`. Master e gerente. A faixa vermelha do /admin não tem X.
 
 ### avisossistema
 Avisos dentro do sistema, mostrados no Início. Colunas: `avisoid`, `contaid`, `tipo`, `texto` (300), `criadoem`, `lidoem` (preenchido por `marcar_aviso_lido`).
@@ -1370,7 +1386,6 @@ Horários de **expediente** com nome ("Balcão manhã"), para o sistema saber **
 | jornadas | Tipo | Obs |
 |---|---|---|
 | nome | varchar(80) | único na conta |
-| pausainicio / pausafim | time | intervalo de **silêncio** do sistema (almoço), não marcação. Os dois ou nenhum |
 | observacao, ativa | | jornada inativa não aparece para vincular; com gente vinculada, não se desativa nem se apaga |
 
 | jornadasdias | Tipo | Obs |
@@ -1378,7 +1393,7 @@ Horários de **expediente** com nome ("Balcão manhã"), para o sistema saber **
 | diasemana | smallint | 1 = domingo ... 7 = sábado (igual a `funcionarios.diadefolga`) |
 | entrada / saida | time | saída menor que a entrada = turno da noite. Dia sem linha = sem horário naquele dia |
 
-`funcionarios.jornadaid` (vazio = sem jornada: não recebe as mensagens do dia) substituiu `horarionotificacao` e `horariosaida`, que foram migradas e **apagadas**. A **folga** continua sendo da pessoa. Quem lê: `jornada_da_pessoa` (mesmas respostas de antes, mais o intervalo), usada pelo bot (`bot_janela`, `rotina_mensagens`). Quem grava: `salvar_jornada` (tudo ou nada) e `vincular_jornada`.
+`funcionarios.jornadaid` (vazio = sem jornada: não recebe as mensagens do dia) substituiu `horarionotificacao` e `horariosaida`, que foram migradas e **apagadas**. A **folga** continua sendo da pessoa. Quem lê: `jornada_da_pessoa` e `jornadas_da_tela`. **O intervalo de silêncio (`pausainicio`/`pausafim`) saiu em 05/10/2026**: sem o bot, não fazia nada (seção 120 do teste de isolamento). Quem grava: `salvar_jornada` (tudo ou nada) e `vincular_jornada`.
 
 ## intervalosdomapa (27/09/2026)
 O **intervalo de PLANEJAMENTO** do Mapa da jornada ("Intervalo (planejamento, não afeta o sistema)"), **um por pessoa e por dia da semana** (desde 29/09/2026; antes era um só para todos os dias). Serve **só para enxergar e imprimir a escala**.
@@ -1389,4 +1404,4 @@ O **intervalo de PLANEJAMENTO** do Mapa da jornada ("Intervalo (planejamento, n�
 | inicio / fim | time | fim menor que o começo = cruza a meia-noite |
 | atualizadoem | timestamptz | |
 
-**Não confundir com `jornadas.pausainicio/pausafim`** (o silêncio do bot, que continua igual). Este aqui **não afeta nada**: não cala o bot, não mexe em tarefa, liberação, nota nem rodízio. **Só duas funções tocam a tabela:** `mapa_da_jornada` (lê, junto com a jornada e a folga, uma loja num dia da semana; `mapa_da_semana` a chama para os sete dias numa consulta só) e `salvar_intervalo_do_mapa(pessoa, dia, início, fim)` (grava, só o master). A seção 75 do teste de isolamento e `src/jornada/mapa-catraca.test.ts` reprovam qualquer outra leitura.
+**Não confundir com o antigo intervalo da jornada** (o silêncio do bot, que saiu em 05/10/2026). Este aqui **fica** e **não afeta nada**: não cala o bot, não mexe em tarefa, liberação, nota nem rodízio. **Só duas funções tocam a tabela:** `mapa_da_jornada` (lê, junto com a jornada e a folga, uma loja num dia da semana; `mapa_da_semana` a chama para os sete dias numa consulta só) e `salvar_intervalo_do_mapa(pessoa, dia, início, fim)` (grava, só o master). A seção 75 do teste de isolamento e `src/jornada/mapa-catraca.test.ts` reprovam qualquer outra leitura.
