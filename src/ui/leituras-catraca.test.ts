@@ -35,7 +35,10 @@ const FORA = ["src/routes/eu", "src/routes/tablet", "src/routes/admin", "src/rou
 // Telas SÓ do master (o gerente nem entra; o banco também recusa).
 const SO_MASTER = ["src/routes/_authenticated/canal-confidencial.tsx", "src/routes/_authenticated/documentos-pessoais.tsx",
   "src/routes/_authenticated/configuracoes.tsx", "src/routes/_authenticated/estornos.tsx", "src/routes/medir.tsx",
-  "src/routes/_authenticated/usuarios.tsx", "src/configuracoes/", "src/telegram/"];
+  "src/routes/_authenticated/usuarios.tsx", "src/configuracoes/",
+  // Os avisos do sistema no Início: lê a tabela direto, e a regra dela só
+  // devolve linhas ao master (morava em src/telegram/, que saiu em 04/10/2026).
+  "src/ui/AvisosDoSistema.tsx"];
 // Onde ainda há leitura de tabela, e por quê (só o master).
 const TABELA_PERMITIDA: Record<string, string[]> = {
   // O documento pessoal ligado a uma etapa: o seletor só aparece para o master.
@@ -47,7 +50,7 @@ const NAO_LEITURA = new Set([
   "abrir_solicitacao", "alterar_hora_da_atribuicao", "alterar_pagamento_agendamento", "anular_feedback", "apagar_jornada",
   "apagar_meta_especial", "aprovar_entrega", "arquivar_comunicado", "ativar_conquista", "ativar_loja", "ativar_premio",
   "ativar_tarefa", "ativar_tipo_evento", "atribuir_tarefa", "cancelar_agendamento", "cancelar_troca", "concluir_troca",
-  "criar_agendamento", "criar_conquista", "criar_convite_telegram", "criar_link_tv", "criar_loja", "criar_meta_especial",
+  "criar_agendamento", "criar_conquista", "criar_link_tv", "criar_loja", "criar_meta_especial",
   "decidir_justificativa", "desfazer_ciencia", "editar_agendamento", "editar_comunicado", "editar_conquista", "editar_loja",
   "encerrar_atribuicoes", "estornar_entrega", "estornar_troca", "incluir_destinatarios", "iniciar_onboarding",
   "lancar_venda_do_dia", "liberar_pin", "marcar_agendamento_realizado", "marcar_etapa_onboarding", "mudar_situacao_solicitacao",
@@ -72,7 +75,7 @@ function listaTestada(): Set<string> {
 
 const telas = [...arquivos("src/routes"), ...arquivos("src/ui"), ...arquivos("src/lojas"), ...arquivos("src/ranking"),
   ...arquivos("src/jornada"), ...arquivos("src/painel"), ...arquivos("src/rh"), ...arquivos("src/configuracoes"),
-  ...arquivos("src/telegram")].filter((f) => !FORA.some((x) => f.startsWith(x)));
+].filter((f) => !FORA.some((x) => f.startsWith(x)));
 const doMaster = (f: string) => SO_MASTER.some((x) => f.startsWith(x));
 
 function tabelasFora(): string[] {

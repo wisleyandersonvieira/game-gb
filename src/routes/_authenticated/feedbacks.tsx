@@ -44,8 +44,8 @@ function Feedbacks() {
   return (
     <Pagina titulo="Feedbacks">
       <p className="text-sm text-muted-foreground">
-        A nota que cada pessoa dá para o próprio dia, de 0 a 10. Enquanto o bot não chega, o gestor registra (fica marcado
-        como "registrado pelo gestor"). Um por pessoa por dia; o bônus entra no saldo e aparece no extrato.
+        A nota que cada pessoa dá para o próprio dia, de 0 a 10. O gestor registra (fica marcado como "registrado pelo
+        gestor"). Um por pessoa por dia; o bônus entra no saldo e aparece no extrato.
       </p>
       <Registrar />
       <Lista />

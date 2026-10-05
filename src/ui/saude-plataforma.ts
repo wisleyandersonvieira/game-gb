@@ -3,7 +3,8 @@
 //
 // CURATIVO: a faixa só aparece para quem abre o /admin. Alarme que depende de
 // alguém abrir a tela ainda depende de alguém abrir a tela. O alarme de verdade
-// é o Telegram, pendência da Etapa 1.13.
+// não existe: o Telegram saiu em 04/10/2026, e a faixa e a /saude só falam a
+// quem abre a tela.
 import type { SaudeDasRotinas, SituacaoDosBuckets } from "@/servidor/acesso";
 
 export type DiagnosticoDaPlataforma = {
@@ -38,8 +39,6 @@ export function problemasDaPlataforma(d: DiagnosticoDaPlataforma, agora = Date.n
     if (r.segredos[nome] !== true) p.push(`Falta o segredo ${nome} no cofre.`);
   if (!r.agendador) p.push("O agendador (pg_cron) não está ligado: nenhuma rotina roda sozinha.");
   for (const j of r.jobs) {
-    // A fila do Telegram só importa com o bot ligado (com o segredo dela).
-    if (j.nome === "stgame-telegram-fila" && r.segredos["stgame_fila_segredo"] !== true) continue;
     if (!j.existe) p.push(`O agendamento "${j.nome}" não existe.`);
     else if (!j.ativo) p.push(`O agendamento "${j.nome}" está desligado.`);
     else if (j.comandocerto === false) p.push(`O agendamento "${j.nome}" roda um comando diferente do esperado.`);

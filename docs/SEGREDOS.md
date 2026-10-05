@@ -21,7 +21,6 @@ Estão em três lugares diferentes. O nome muda de lugar para lugar: repare nas 
 |---|---|---|---|
 | `stgame_funcoes_url` | sim | Endereço das Edge Functions: `https://<id-do-projeto>.supabase.co/functions/v1` (sem nada depois do `v1`). | — |
 | `stgame_expurgo_segredo` | sim | Senha com que o banco chama a função que apaga as fotos vencidas. | **igual** ao `STGAME_EXPURGO_SEGREDO` do item 3 |
-| `stgame_fila_segredo` | só com o Telegram (Etapa 1.13) | Senha com que o banco chama a fila de mensagens. | **igual** ao `TELEGRAM_FILA_SEGREDO` do item 3 |
 
 A /saude avisa quando um deles **não existe**, e desde 30/09/2026 mostra a **resposta** da última chamada à função: 401 = o par do item 3 não está igual; 404 = a função não está publicada.
 
@@ -31,7 +30,6 @@ A /saude avisa quando um deles **não existe**, e desde 30/09/2026 mostra a **re
 |---|---|---|
 | `STGAME_EXPURGO_SEGREDO` | sim | O mesmo valor do `stgame_expurgo_segredo` do cofre. Mínimo 16 caracteres: com menos, a função recusa tudo. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | automáticos | O Supabase já coloca. Não cadastrar. |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_FILA_SEGREDO` | só com o Telegram (Etapa 1.13) | O bot. `TELEGRAM_FILA_SEGREDO` é o par do `stgame_fila_segredo` do cofre. |
 
 ## Passo a passo: o apagamento das fotos (30/09/2026)
 
@@ -85,7 +83,7 @@ O que o banco não enxerga e a /saude não confere. Uma vez por mês, no painel 
 
 **Edge Functions → Functions**
 - [ ] `expurgo-fotos` aparece, com *Verify JWT* DESLIGADO. A data de atualização é igual ou posterior à da última mudança no repositório: **27/09/2026** (commit `2a9549e`). Anterior a isso: a versão publicada é velha — publique de novo.
-- [ ] (Só com o Telegram, Etapa 1.13) `telegram-webhook` e `telegram-fila`, *Verify JWT* desligado; última mudança no repositório: 22/09/2026.
+- [ ] `expurgo-fotos` é a ÚNICA função. As do Telegram (`telegram-webhook`, `telegram-fila`) saíram em 04/10/2026: se ainda aparecerem, apague.
 
 **Edge Functions → Secrets**
 - [ ] `STGAME_EXPURGO_SEGREDO` existe (o valor não aparece; se o par estiver errado, a /saude mostra "respondeu 401").

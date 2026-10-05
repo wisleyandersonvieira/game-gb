@@ -117,8 +117,7 @@ function Solicitacoes() {
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            Pedidos de compra e de manutenção da loja <strong>{loja?.nome}</strong>. Por enquanto o gestor registra; com o bot,
-            os líderes pedem direto (e a foto da manutenção vem junto).
+            Pedidos de compra e de manutenção da loja <strong>{loja?.nome}</strong>. O gestor registra.
           </p>
           <Conciliacao lojaid={lojaAtiva} />
           <Abrir lojaid={lojaAtiva} />

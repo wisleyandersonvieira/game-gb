@@ -1004,7 +1004,6 @@ export type Database = {
           pontosporciencia: number
           primeiracienciaem: string | null
           status: string
-          telegramfileidfoto: string | null
           titulo: string
         }
         Insert: {
@@ -1021,7 +1020,6 @@ export type Database = {
           pontosporciencia?: number
           primeiracienciaem?: string | null
           status?: string
-          telegramfileidfoto?: string | null
           titulo: string
         }
         Update: {
@@ -1038,7 +1036,6 @@ export type Database = {
           pontosporciencia?: number
           primeiracienciaem?: string | null
           status?: string
-          telegramfileidfoto?: string | null
           titulo?: string
         }
         Relationships: [
@@ -1379,7 +1376,6 @@ export type Database = {
         Row: {
           aprovadopor: string | null
           atribuicaoid: number | null
-          avisochatid: number | null
           avisomsgid: number | null
           canalenvio: string
           canalvalidacao: string | null
@@ -1390,7 +1386,6 @@ export type Database = {
           datarecusa: string | null
           entregaid: number
           estornadopor: string | null
-          fileidtelegram: string | null
           fotoaguardaremocaoem: string | null
           fotoexpiradaem: string | null
           fotoidunico: string | null
@@ -1412,7 +1407,6 @@ export type Database = {
         Insert: {
           aprovadopor?: string | null
           atribuicaoid?: number | null
-          avisochatid?: number | null
           avisomsgid?: number | null
           canalenvio?: string
           canalvalidacao?: string | null
@@ -1423,7 +1417,6 @@ export type Database = {
           datarecusa?: string | null
           entregaid?: number
           estornadopor?: string | null
-          fileidtelegram?: string | null
           fotoaguardaremocaoem?: string | null
           fotoexpiradaem?: string | null
           fotoidunico?: string | null
@@ -1445,7 +1438,6 @@ export type Database = {
         Update: {
           aprovadopor?: string | null
           atribuicaoid?: number | null
-          avisochatid?: number | null
           avisomsgid?: number | null
           canalenvio?: string
           canalvalidacao?: string | null
@@ -1456,7 +1448,6 @@ export type Database = {
           datarecusa?: string | null
           entregaid?: number
           estornadopor?: string | null
-          fileidtelegram?: string | null
           fotoaguardaremocaoem?: string | null
           fotoexpiradaem?: string | null
           fotoidunico?: string | null
@@ -1936,7 +1927,6 @@ export type Database = {
           acessoredefinidopor: string | null
           ativo: boolean
           cargo: string | null
-          chatidtelegram: string | null
           contaid: number
           cpf: string | null
           datafimafastamento: string | null
@@ -1960,7 +1950,6 @@ export type Database = {
           acessoredefinidopor?: string | null
           ativo?: boolean
           cargo?: string | null
-          chatidtelegram?: string | null
           contaid?: number
           cpf?: string | null
           datafimafastamento?: string | null
@@ -1984,7 +1973,6 @@ export type Database = {
           acessoredefinidopor?: string | null
           ativo?: boolean
           cargo?: string | null
-          chatidtelegram?: string | null
           contaid?: number
           cpf?: string | null
           datafimafastamento?: string | null
@@ -2012,56 +2000,6 @@ export type Database = {
           },
         ]
       }
-      funcionariosgrupos: {
-        Row: {
-          contaid: number
-          funcionarioid: number
-          grupoid: number
-          lojaid: number
-        }
-        Insert: {
-          contaid?: number
-          funcionarioid: number
-          grupoid: number
-          lojaid: number
-        }
-        Update: {
-          contaid?: number
-          funcionarioid?: number
-          grupoid?: number
-          lojaid?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "funcionariosgrupos_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "funcionariosgrupos_funcionarioid_fk"
-            columns: ["contaid", "funcionarioid"]
-            isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["contaid", "funcionarioid"]
-          },
-          {
-            foreignKeyName: "funcionariosgrupos_grupoid_fk"
-            columns: ["contaid", "grupoid"]
-            isOneToOne: false
-            referencedRelation: "grupos"
-            referencedColumns: ["contaid", "grupoid"]
-          },
-          {
-            foreignKeyName: "funcionariosgrupos_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
-          },
-        ]
-      }
       funcionarioslojas: {
         Row: {
           ativo: boolean
@@ -2070,7 +2008,6 @@ export type Database = {
           funcionarioid: number
           lojaid: number
           posicaopadraoid: number | null
-          validador: boolean
         }
         Insert: {
           ativo?: boolean
@@ -2079,7 +2016,6 @@ export type Database = {
           funcionarioid: number
           lojaid: number
           posicaopadraoid?: number | null
-          validador?: boolean
         }
         Update: {
           ativo?: boolean
@@ -2088,7 +2024,6 @@ export type Database = {
           funcionarioid?: number
           lojaid?: number
           posicaopadraoid?: number | null
-          validador?: boolean
         }
         Relationships: [
           {
@@ -2118,45 +2053,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "posicoesloja"
             referencedColumns: ["lojaid", "posicaoid"]
-          },
-        ]
-      }
-      grupos: {
-        Row: {
-          chatidtelegram: string | null
-          contaid: number
-          grupoid: number
-          lojaid: number
-          nomegrupo: string
-        }
-        Insert: {
-          chatidtelegram?: string | null
-          contaid?: number
-          grupoid?: number
-          lojaid: number
-          nomegrupo: string
-        }
-        Update: {
-          chatidtelegram?: string | null
-          contaid?: number
-          grupoid?: number
-          lojaid?: number
-          nomegrupo?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "grupos_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "grupos_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
@@ -2710,133 +2606,6 @@ export type Database = {
           },
           {
             foreignKeyName: "lucromensalhistorico_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
-          },
-        ]
-      }
-      mensagensfila: {
-        Row: {
-          automatica: boolean
-          chatid: number
-          chave: string | null
-          contaid: number
-          conteudo: Json
-          criadoem: string
-          enviadoem: string | null
-          erro: string | null
-          filaid: number
-          funcionarioid: number | null
-          juntarchave: string | null
-          lojaid: number | null
-          naoreenviar: boolean
-          proximaem: string
-          referencia: number | null
-          status: string
-          tentativas: number
-          tipo: string
-        }
-        Insert: {
-          automatica?: boolean
-          chatid: number
-          chave?: string | null
-          contaid: number
-          conteudo: Json
-          criadoem?: string
-          enviadoem?: string | null
-          erro?: string | null
-          filaid?: number
-          funcionarioid?: number | null
-          juntarchave?: string | null
-          lojaid?: number | null
-          naoreenviar?: boolean
-          proximaem?: string
-          referencia?: number | null
-          status?: string
-          tentativas?: number
-          tipo: string
-        }
-        Update: {
-          automatica?: boolean
-          chatid?: number
-          chave?: string | null
-          contaid?: number
-          conteudo?: Json
-          criadoem?: string
-          enviadoem?: string | null
-          erro?: string | null
-          filaid?: number
-          funcionarioid?: number | null
-          juntarchave?: string | null
-          lojaid?: number | null
-          naoreenviar?: boolean
-          proximaem?: string
-          referencia?: number | null
-          status?: string
-          tentativas?: number
-          tipo?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "mensagensfila_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "mensagensfila_funcionario_fk"
-            columns: ["contaid", "funcionarioid"]
-            isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["contaid", "funcionarioid"]
-          },
-          {
-            foreignKeyName: "mensagensfila_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
-          },
-        ]
-      }
-      mensagensrotinas: {
-        Row: {
-          alteradoem: string
-          alteradopor: string | null
-          ativo: boolean
-          contaid: number
-          lojaid: number
-          rotina: string
-        }
-        Insert: {
-          alteradoem?: string
-          alteradopor?: string | null
-          ativo?: boolean
-          contaid?: number
-          lojaid: number
-          rotina: string
-        }
-        Update: {
-          alteradoem?: string
-          alteradopor?: string | null
-          ativo?: boolean
-          contaid?: number
-          lojaid?: number
-          rotina?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "mensagensrotinas_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "mensagensrotinas_loja_fk"
             columns: ["contaid", "lojaid"]
             isOneToOne: false
             referencedRelation: "lojas"
@@ -3548,7 +3317,6 @@ export type Database = {
         Row: {
           contaid: number
           datarecebimento: string | null
-          fileidtelegram: string
           funcionarioid: number
           lojaid: number
           notafiscalid: number
@@ -3558,7 +3326,6 @@ export type Database = {
         Insert: {
           contaid?: number
           datarecebimento?: string | null
-          fileidtelegram: string
           funcionarioid: number
           lojaid: number
           notafiscalid?: number
@@ -3568,7 +3335,6 @@ export type Database = {
         Update: {
           contaid?: number
           datarecebimento?: string | null
-          fileidtelegram?: string
           funcionarioid?: number
           lojaid?: number
           notafiscalid?: number
@@ -4446,11 +4212,9 @@ export type Database = {
           descricaooverride: string | null
           funcionarioid: number | null
           funcionarioresponsavelid: number | null
-          grupoid: number | null
           horariodisparo: string | null
           lojaid: number
           origematribuicaoid: number | null
-          statustarefagrupo: string | null
           tarefaid: number
           tipofrequencia: string
           valorfrequencia: number | null
@@ -4471,11 +4235,9 @@ export type Database = {
           descricaooverride?: string | null
           funcionarioid?: number | null
           funcionarioresponsavelid?: number | null
-          grupoid?: number | null
           horariodisparo?: string | null
           lojaid: number
           origematribuicaoid?: number | null
-          statustarefagrupo?: string | null
           tarefaid: number
           tipofrequencia?: string
           valorfrequencia?: number | null
@@ -4496,11 +4258,9 @@ export type Database = {
           descricaooverride?: string | null
           funcionarioid?: number | null
           funcionarioresponsavelid?: number | null
-          grupoid?: number | null
           horariodisparo?: string | null
           lojaid?: number
           origematribuicaoid?: number | null
-          statustarefagrupo?: string | null
           tarefaid?: number
           tipofrequencia?: string
           valorfrequencia?: number | null
@@ -4540,13 +4300,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "funcionarios"
             referencedColumns: ["contaid", "funcionarioid"]
-          },
-          {
-            foreignKeyName: "tarefasatribuidas_grupoid_fk"
-            columns: ["contaid", "grupoid"]
-            isOneToOne: false
-            referencedRelation: "grupos"
-            referencedColumns: ["contaid", "grupoid"]
           },
           {
             foreignKeyName: "tarefasatribuidas_loja_fk"
@@ -4743,149 +4496,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tarefas"
             referencedColumns: ["contaid", "tarefaid"]
-          },
-        ]
-      }
-      telegramconvites: {
-        Row: {
-          canceladoem: string | null
-          codigohash: string
-          contaid: number
-          conviteid: number
-          criadoem: string
-          criadopor: string | null
-          expiraem: string
-          funcionarioid: number | null
-          lojaid: number | null
-          papelgrupo: string | null
-          tipo: string
-          usadoem: string | null
-          userid: string | null
-        }
-        Insert: {
-          canceladoem?: string | null
-          codigohash: string
-          contaid?: number
-          conviteid?: number
-          criadoem?: string
-          criadopor?: string | null
-          expiraem: string
-          funcionarioid?: number | null
-          lojaid?: number | null
-          papelgrupo?: string | null
-          tipo: string
-          usadoem?: string | null
-          userid?: string | null
-        }
-        Update: {
-          canceladoem?: string | null
-          codigohash?: string
-          contaid?: number
-          conviteid?: number
-          criadoem?: string
-          criadopor?: string | null
-          expiraem?: string
-          funcionarioid?: number | null
-          lojaid?: number | null
-          papelgrupo?: string | null
-          tipo?: string
-          usadoem?: string | null
-          userid?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "telegramconvites_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "telegramconvites_funcionario_fk"
-            columns: ["contaid", "funcionarioid"]
-            isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["contaid", "funcionarioid"]
-          },
-          {
-            foreignKeyName: "telegramconvites_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
-          },
-        ]
-      }
-      telegramvinculos: {
-        Row: {
-          ativo: boolean
-          bloqueadoem: string | null
-          chatid: number
-          contaid: number
-          desligadoem: string | null
-          desligadopor: string | null
-          funcionarioid: number | null
-          lojaid: number | null
-          nometelegram: string | null
-          papelgrupo: string | null
-          tipo: string
-          userid: string | null
-          vinculadoem: string
-          vinculoid: number
-        }
-        Insert: {
-          ativo?: boolean
-          bloqueadoem?: string | null
-          chatid: number
-          contaid?: number
-          desligadoem?: string | null
-          desligadopor?: string | null
-          funcionarioid?: number | null
-          lojaid?: number | null
-          nometelegram?: string | null
-          papelgrupo?: string | null
-          tipo: string
-          userid?: string | null
-          vinculadoem?: string
-          vinculoid?: number
-        }
-        Update: {
-          ativo?: boolean
-          bloqueadoem?: string | null
-          chatid?: number
-          contaid?: number
-          desligadoem?: string | null
-          desligadopor?: string | null
-          funcionarioid?: number | null
-          lojaid?: number | null
-          nometelegram?: string | null
-          papelgrupo?: string | null
-          tipo?: string
-          userid?: string | null
-          vinculadoem?: string
-          vinculoid?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "telegramvinculos_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "telegramvinculos_funcionario_fk"
-            columns: ["contaid", "funcionarioid"]
-            isOneToOne: false
-            referencedRelation: "funcionarios"
-            referencedColumns: ["contaid", "funcionarioid"]
-          },
-          {
-            foreignKeyName: "telegramvinculos_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
           },
         ]
       }
@@ -5294,48 +4904,6 @@ export type Database = {
           },
         ]
       }
-      usomensagens: {
-        Row: {
-          canal: string
-          contaid: number
-          dia: string
-          lojaid: number | null
-          quantidade: number
-          tipo: string
-        }
-        Insert: {
-          canal: string
-          contaid: number
-          dia: string
-          lojaid?: number | null
-          quantidade?: number
-          tipo: string
-        }
-        Update: {
-          canal?: string
-          contaid?: number
-          dia?: string
-          lojaid?: number | null
-          quantidade?: number
-          tipo?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "usomensagens_contaid_fkey"
-            columns: ["contaid"]
-            isOneToOne: false
-            referencedRelation: "contas"
-            referencedColumns: ["contaid"]
-          },
-          {
-            foreignKeyName: "usomensagens_loja_fk"
-            columns: ["contaid", "lojaid"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["contaid", "lojaid"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
@@ -5486,263 +5054,11 @@ export type Database = {
         Args: { p_contaid: number; p_funcionarioid: number }
         Returns: number
       }
-      bot_abertas_da_pessoa: {
-        Args: { p_contaid: number; p_funcionarioid: number }
-        Returns: Json
-      }
-      bot_chat_da_pessoa: {
-        Args: { p_contaid: number; p_funcionarioid: number }
-        Returns: number
-      }
-      bot_chat_do_grupo: {
-        Args: { p_contaid: number; p_lojaid: number; p_papel: string }
-        Returns: number
-      }
-      bot_ciencia: {
-        Args: { p_assinaturaid: number; p_chatid: number }
-        Returns: Json
-      }
-      bot_ciencia_documento: {
-        Args: { p_chatid: number; p_documentoid: number }
-        Returns: Json
-      }
-      bot_comanda: {
-        Args: { p_chatid: number; p_valor: number }
-        Returns: Json
-      }
-      bot_comanda_iniciar: { Args: { p_chatid: number }; Returns: Json }
-      bot_conferir_foto: {
-        Args: { p_chatid: number; p_fotoidunico: string }
-        Returns: Json
-      }
-      bot_consulta: {
-        Args: { p_chatid: number; p_item: string }
-        Returns: Json
-      }
       bot_contexto_confiavel: { Args: never; Returns: boolean }
-      bot_documento: {
-        Args: { p_chatid: number; p_documentoid: number; p_tipochat: string }
-        Returns: Json
-      }
-      bot_enfileirar: {
-        Args: {
-          p_chatid: number
-          p_contaid: number
-          p_conteudo: Json
-          p_lojaid: number
-          p_referencia: number
-          p_tipo: string
-        }
-        Returns: undefined
-      }
-      bot_enfileirar_ex: {
-        Args: {
-          p_chatid: number
-          p_chave: string
-          p_contaid: number
-          p_conteudo: Json
-          p_funcionarioid: number
-          p_juntarchave: string
-          p_lojaid: number
-          p_naoreenviar: boolean
-          p_quando: string
-          p_referencia: number
-          p_tipo: string
-        }
-        Returns: number
-      }
-      bot_entrar: {
-        Args: { p_contaid: number; p_funcionarioid: number; p_userid: string }
-        Returns: undefined
-      }
-      bot_entrar_pessoa: { Args: { p_chatid: number }; Returns: Json }
-      bot_enviadas_hoje: {
-        Args: { p_agora: string; p_contaid: number; p_funcionarioid: number }
-        Returns: number
-      }
-      bot_erro: { Args: { p_mensagem: string }; Returns: Json }
-      bot_escolher_conta: {
-        Args: { p_chatid: number; p_contaid: number }
-        Returns: Json
-      }
-      bot_estado: {
-        Args: { p_chatid: number; p_usuarioid: number }
-        Returns: Json
-      }
       bot_falta_feedback_ontem: {
         Args: { p_contaid: number; p_funcionarioid: number }
         Returns: boolean
       }
-      bot_feedback: {
-        Args: { p_chatid: number; p_nota: number; p_quando: string }
-        Returns: Json
-      }
-      bot_fila_disparar: { Args: never; Returns: undefined }
-      bot_fila_pegar: { Args: { p_limite: number }; Returns: Json }
-      bot_fila_resultado: {
-        Args: {
-          p_erro: string
-          p_esperar: number
-          p_filaid: number
-          p_msgid: number
-          p_ok: boolean
-        }
-        Returns: undefined
-      }
-      bot_grupo: { Args: { p_chatid: number }; Returns: Json }
-      bot_guardar_estado: {
-        Args: {
-          p_chatid: number
-          p_contaid: number
-          p_dados: Json
-          p_estado: string
-          p_minutos: number
-          p_usuarioid: number
-        }
-        Returns: undefined
-      }
-      bot_html: { Args: { p_texto: string }; Returns: string }
-      bot_iniciar_entrega: {
-        Args: { p_atribuicaoid: number; p_chatid: number }
-        Returns: Json
-      }
-      bot_janela: {
-        Args: { p_agora: string; p_contaid: number; p_funcionarioid: number }
-        Returns: Json
-      }
-      bot_lancar: {
-        Args: {
-          p_chatgrupo: number
-          p_motivo: string
-          p_usuario: number
-          p_valor: number
-        }
-        Returns: Json
-      }
-      bot_legenda_entrega: { Args: { p_entregaid: number }; Returns: Json }
-      bot_limpar_estado: {
-        Args: { p_chatid: number; p_usuarioid: number }
-        Returns: undefined
-      }
-      bot_lista_tarefas: { Args: { p_itens: Json }; Returns: Json }
-      bot_marcar_bloqueio: {
-        Args: { p_chatid: number; p_contaid: number; p_erro: string }
-        Returns: undefined
-      }
-      bot_nao_aplicavel: {
-        Args: { p_chatid: number; p_motivo: string }
-        Returns: Json
-      }
-      bot_nao_aplicavel_iniciar: {
-        Args: { p_atribuicaoid: number; p_chatid: number }
-        Returns: Json
-      }
-      bot_pegar_folga: {
-        Args: { p_atribuicaoid: number; p_chatgrupo: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_pegar_missao: {
-        Args: { p_atribuicaoid: number; p_chatgrupo: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_pendencias: {
-        Args: { p_chatgrupo: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_pessoa_do_chat: { Args: { p_chatid: number }; Returns: Json }
-      bot_pessoa_do_grupo: {
-        Args: { p_chatgrupo: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_quem: { Args: { p_chatid: number }; Returns: Json }
-      bot_recusa_guardar: {
-        Args: {
-          p_chatgrupo: number
-          p_entregaid: number
-          p_msgid: number
-          p_usuario: number
-        }
-        Returns: undefined
-      }
-      bot_recusa_motivo: {
-        Args: {
-          p_chatgrupo: number
-          p_motivo: string
-          p_respostaa: number
-          p_usuario: number
-        }
-        Returns: Json
-      }
-      bot_recusa_pedir: {
-        Args: { p_chatgrupo: number; p_entregaid: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_registrar_entrega: {
-        Args: {
-          p_atribuicaoid: number
-          p_caminho: string
-          p_chatid: number
-          p_fileid: string
-          p_fotoidunico: string
-        }
-        Returns: Json
-      }
-      bot_registrar_update: { Args: { p_updateid: number }; Returns: boolean }
-      bot_registrar_uso: {
-        Args: { p_chatid: number; p_qtd: number; p_tipo: string }
-        Returns: undefined
-      }
-      bot_resgatar: {
-        Args: { p_chatid: number; p_produtoid: number }
-        Returns: Json
-      }
-      bot_resumo_ausencia: {
-        Args: { p_contaid: number; p_funcionarioid: number }
-        Returns: Json
-      }
-      bot_status_meta: {
-        Args: { p_chatgrupo: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_tarefas: { Args: { p_chatid: number }; Returns: Json }
-      bot_texto_grupo: {
-        Args: { p_chatgrupo: number; p_referencia: number; p_tipo: string }
-        Returns: Json
-      }
-      bot_texto_juntado: { Args: { p_conteudos: Json }; Returns: string }
-      bot_texto_rotina: {
-        Args: {
-          p_contaid: number
-          p_funcionarioid: number
-          p_referencia: number
-          p_tipo: string
-        }
-        Returns: Json
-      }
-      bot_usar_convite: {
-        Args: {
-          p_chatid: number
-          p_codigo: string
-          p_nome: string
-          p_tipochat: string
-        }
-        Returns: Json
-      }
-      bot_validador: {
-        Args: { p_chatgrupo: number; p_usuario: number }
-        Returns: Json
-      }
-      bot_validar: {
-        Args: {
-          p_aprovar: boolean
-          p_chatgrupo: number
-          p_entregaid: number
-          p_motivo?: string
-          p_usuario: number
-        }
-        Returns: Json
-      }
-      bot_visto: { Args: { p_chatid: number }; Returns: undefined }
       canal_atual: { Args: never; Returns: string }
       catalogo_de_tarefas: {
         Args: { p_busca?: string; p_inativas?: boolean; p_limite?: number; p_lojaid?: number; p_offset?: number }
@@ -5860,15 +5176,6 @@ export type Database = {
         }
         Returns: Json
       }
-      criar_convite_grupo: {
-        Args: { p_lojaid: number; p_papel: string }
-        Returns: string
-      }
-      criar_convite_meu_telegram: { Args: never; Returns: string }
-      criar_convite_telegram: {
-        Args: { p_funcionarioid: number }
-        Returns: string
-      }
       criar_loja: { Args: { p_cidade?: string | null; p_endereco?: string | null; p_nome: string }; Returns: number }
       criar_link_tv: {
         Args: { p_lojaid: number; p_nome: string }
@@ -5892,10 +5199,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      definir_rotina_mensagem: {
-        Args: { p_ativo: boolean; p_lojaid: number; p_rotina: string }
-        Returns: undefined
-      }
       definir_senha_app: {
         Args: { p_contaid: number; p_funcionarioid: number; p_hash: string }
         Returns: undefined
@@ -5917,7 +5220,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      desligar_telegram: { Args: { p_vinculoid: number }; Returns: undefined }
       dia_de_trabalho: {
         Args: {
           p_dia: string
@@ -6370,7 +5672,7 @@ export type Database = {
       }
       vinculos_da_tela: {
         Args: never
-        Returns: { ativo: boolean; funcionarioid: number; lojaid: number; validador: boolean }[]
+        Returns: { ativo: boolean; funcionarioid: number; lojaid: number }[]
       }
       jornadas_da_conta: {
         Args: never
@@ -6615,10 +5917,6 @@ export type Database = {
           p_status: string
         }
         Returns: undefined
-      }
-      no_silencio: {
-        Args: { p_contaid: number; p_hora: string }
-        Returns: boolean
       }
       nome_curto: { Args: { p_nome: string }; Returns: string }
       origem_da_acao: { Args: { p_origem_bot: string }; Returns: string }
@@ -6927,7 +6225,6 @@ export type Database = {
           p_nomecompleto: string
           p_setor: string | null
           p_telefone: string | null
-          p_validador?: number[]
         }
         Returns: number
       }
@@ -7438,24 +6735,12 @@ export type Database = {
         Args: { p_chave: string; p_contaid: number; p_padrao: string }
         Returns: string
       }
-      rotina_ligada: {
-        Args: { p_contaid: number; p_lojaid: number; p_rotina: string }
-        Returns: boolean
-      }
-      rotina_ligada_pessoa: {
-        Args: { p_contaid: number; p_funcionarioid: number; p_rotina: string }
-        Returns: boolean
-      }
       rotina_limpeza: {
         Args: { p_agora: string; p_contaid: number }
         Returns: Json
       }
       rotina_lista_do_dia: {
         Args: { p_agora: string; p_contaid: number; p_origem: string }
-        Returns: Json
-      }
-      rotina_mensagens: {
-        Args: { p_agora: string; p_contaid: number }
         Returns: Json
       }
       rotina_registrar: {
@@ -7537,8 +6822,6 @@ export type Database = {
       }
       tarefas_de_folga_hoje: { Args: { p_lojaid: number }; Returns: Json }
       taxa_da_conta: { Args: { p_contaid: number }; Returns: number }
-      telegram_hash: { Args: { p_codigo: string }; Returns: string }
-      telegram_novo_codigo: { Args: never; Returns: string }
       tem_justificativa: {
         Args: {
           p_atribuicaoid: number
@@ -7580,16 +6863,6 @@ export type Database = {
       usar_codigo_acesso: {
         Args: { p_codigohash: string; p_contaid: number; p_cpf: string }
         Returns: Json
-      }
-      usar_mensagens: {
-        Args: {
-          p_canal: string
-          p_contaid: number
-          p_lojaid: number
-          p_qtd: number
-          p_tipo: string
-        }
-        Returns: undefined
       }
     }
     Enums: {

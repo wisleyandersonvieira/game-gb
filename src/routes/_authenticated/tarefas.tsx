@@ -627,7 +627,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
     mutationFn: async () => {
       if (tarefaid === "") throw new Error("Escolha a tarefa.");
       if (!missao && selecionados.length === 0) throw new Error("Escolha quem faz a tarefa.");
-      if (missao && !horarioMissao) throw new Error("Escolha a hora em que a missão vai para o grupo.");
+      if (missao && !horarioMissao) throw new Error("Escolha a partir de que hora a missão fica disponível.");
       if (frequencia === "Semanal" && diasSemana.length === 0) {
         throw new Error("Escolha pelo menos um dia da semana.");
       }
@@ -809,7 +809,7 @@ function Atribuicoes({ lojaid, nomeDaLoja }: { lojaid: number; nomeDaLoja: strin
         {missao && (
           <div className="space-y-1 rounded-lg border border-azul/40 bg-azul-soft px-3 py-2">
             <label className="flex flex-wrap items-center gap-2 text-sm text-azul">
-              A que horas o bot manda a missão ao grupo da equipe?
+              A partir de que hora a missão fica disponível para a equipe?
               <input
                 type="time"
                 required

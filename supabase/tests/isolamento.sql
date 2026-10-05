@@ -170,7 +170,6 @@ DO $$ BEGIN PERFORM public.registrar_entrega(5000); END $$;
 -- grupos nao aceita mais escrita direta de quem esta logado (fechada em 29/09/2026,
 -- tabela sem tela): o dado de teste entra pelo dono do banco, com a conta explicita.
 RESET ROLE;
-INSERT INTO public.grupos (grupoid, contaid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (200, 1, 'Cozinha', 10);
 SET ROLE authenticated;
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '1/10/foto-a.jpg');
 
@@ -183,7 +182,6 @@ SELECT public.como_dono($q$INSERT INTO public.tarefaslojas (tarefaid, lojaid) VA
 SELECT public.como_dono($q$INSERT INTO public.tarefasatribuidas (atribuicaoid, tarefaid, funcionarioid, lojaid) OVERRIDING SYSTEM VALUE VALUES (6000, 2000, 200, 20)$q$);
 DO $$ BEGIN PERFORM public.registrar_entrega(6000); END $$;
 RESET ROLE;
-INSERT INTO public.grupos (grupoid, contaid, nomegrupo, lojaid) OVERRIDING SYSTEM VALUE VALUES (300, 2, 'Cozinha', 20);
 SET ROLE authenticated;
 INSERT INTO storage.objects (bucket_id, name) VALUES ('entregas', '2/20/foto-b.jpg');
 
@@ -4130,892 +4128,6 @@ SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- ===========================================================================
--- 39. Telegram (Etapa 1.13A)
---     Chats: Tina 5001 (conta A), Vitor 5002 (validador loja 10), Nina 5003,
---     Otto 5004 (validador só da loja 11), master A 5000; grupos A: gestão
---     -1001 e equipe -1002 (loja 10). Conta B: Bia 6001, validador B 6002,
---     grupo de gestão B -2001 (loja 20).
--- ===========================================================================
-
-RESET ROLE;
-SET teste.uid = '';
-
-INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga) OVERRIDING SYSTEM VALUE VALUES
-  (7501, 1, 'Tina Telegram', 0), (7502, 1, 'Vitor Validador', 0), (7503, 1, 'Nina Naovalida', 0),
-  (7504, 1, 'Otto Outra Loja', 0), (7601, 2, 'Bia de B', 0), (7602, 2, 'Beto Validador B', 0);
-INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid, validador) VALUES
-  (1, 7501, 10, false), (1, 7502, 10, true), (1, 7503, 10, false), (1, 7504, 11, true),
-  (2, 7601, 20, false), (2, 7602, 20, true);
-INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
-  (7701, 1, 'Limpar balcao', 12), (7703, 1, 'Repor casquinhas', 3), (7704, 1, 'Varrer salao', 2), (7705, 1, 'Regar plantas', 1),
-  (7702, 2, 'Tarefa de B', 9);
-INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (1, 7701, 10), (1, 7703, 10), (1, 7704, 10), (1, 7705, 10), (2, 7702, 20);
-INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia, dataatribuicao)
-OVERRIDING SYSTEM VALUE VALUES
-  (7801, 1, 7701, 7501, 10, 'Diaria', now() - interval '2 days'),
-  (7803, 1, 7703, 7501, 10, 'Diaria', now() - interval '2 days'),
-  (7804, 1, 7704, 7501, 10, 'Diaria', now() - interval '2 days'),
-  (7805, 1, 7705, 7501, 10, 'Diaria', now() - interval '2 days'),
-  (7802, 2, 7702, 7601, 20, 'Diaria', now() - interval '2 days');
-INSERT INTO public.produtosloja (produtoid, contaid, nome, custoempontos, ativo) OVERRIDING SYSTEM VALUE VALUES
-  (7901, 1, 'Brinde', 5, true), (7902, 2, 'Brinde de B', 1, true);
-
-CREATE TEMP TABLE tg_b_antes AS
-SELECT (SELECT md5(string_agg(e::text, '' ORDER BY entregaid)) FROM public.entregas e WHERE contaid = 2) AS entregas,
-       (SELECT md5(string_agg(m::text, '' ORDER BY movimentoid)) FROM public.movimentospontos m WHERE contaid = 2) AS movimentos,
-       (SELECT md5(string_agg(f::text, '' ORDER BY funcionarioid)) FROM public.funcionarios f WHERE contaid = 2) AS funcionarios;
-
--- O contexto do bot NUNCA vale para usuário logado.
-SET ROLE authenticated;
-SET teste.uid = '';
-DO $$
-DECLARE deu_erro boolean;
-BEGIN
-  RAISE NOTICE '39. telegram';
-  PERFORM set_config('stgame.bot_conta', '2', false);
-  PERFORM set_config('stgame.bot_funcionario', '7601', false);
-  PERFORM set_config('stgame.bot_canal', 'telegram', false);
-  PERFORM public.exigir(public.minha_conta() IS NULL AND (SELECT count(*) FROM public.funcionarios) = 0,
-                        'usuario logado que tenta ativar o contexto do bot nao ve nada');
-  PERFORM public.limpar_resultado();
-  BEGIN PERFORM public.guardar_resultado((SELECT jsonb_agg(to_jsonb(r)) FROM public.bot_quem(6001) r)); deu_erro := false;
-  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_voltou(), 'usuario logado nao chama as funcoes do bot');
-  PERFORM public.guardar_foto();
-  BEGIN PERFORM public.bot_entrar(2, 7601, NULL); deu_erro := false;
-  EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao entra no contexto do bot');
-END $$;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$
-BEGIN
-  PERFORM public.exigir(public.minha_conta() = 1 AND NOT EXISTS (SELECT 1 FROM public.funcionarios WHERE contaid = 2),
-                        'master de A com o contexto do bot apontando para B continua so em A');
-  PERFORM set_config('stgame.bot_conta', '', false);
-  PERFORM set_config('stgame.bot_funcionario', '', false);
-  PERFORM set_config('stgame.bot_canal', '', false);
-END $$;
-
--- Convites (pelas telas).
-DO $$
-DECLARE deu_erro boolean;
-BEGIN
-  PERFORM set_config('teste.c_master', public.criar_convite_meu_telegram(), false);
-  PERFORM set_config('teste.c_tina', public.criar_convite_telegram(7501), false);
-  PERFORM set_config('teste.c_vitor', public.criar_convite_telegram(7502), false);
-  PERFORM set_config('teste.c_nina', public.criar_convite_telegram(7503), false);
-  PERFORM set_config('teste.c_otto', public.criar_convite_telegram(7504), false);
-  PERFORM set_config('teste.c_gestao', public.criar_convite_grupo(10, 'gestao'), false);
-  PERFORM set_config('teste.c_equipe', public.criar_convite_grupo(10, 'equipe'), false);
-  PERFORM public.exigir(current_setting('teste.c_tina') ~ '^[0-9a-f]{64}$', 'convite tem codigo longo e aleatorio (64 caracteres)');
-  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.telegramvinculos WHERE contaid = 2),
-                        'A nao ve vinculos de B');
-  PERFORM public.guardar_foto();
-  BEGIN PERFORM public.criar_convite_telegram(7601); deu_erro := false;
-  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'A nao cria convite para funcionario de B');
-  PERFORM public.guardar_foto();
-  BEGIN PERFORM public.criar_convite_grupo(20, 'gestao'); deu_erro := false;
-  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'A nao cria convite de grupo para loja de B');
-END $$;
-SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-DO $$
-BEGIN
-  PERFORM set_config('teste.c_bia', public.criar_convite_telegram(7601), false);
-  PERFORM set_config('teste.c_vb', public.criar_convite_telegram(7602), false);
-  PERFORM set_config('teste.c_gb', public.criar_convite_grupo(20, 'gestao'), false);
-END $$;
-
--- O bot (servidor) usa os convites.
-RESET ROLE;
-SET teste.uid = '';
-DO $$
-DECLARE r jsonb; i integer;
-BEGIN
-  PERFORM public.exigir(public.bot_registrar_update(900001) AND NOT public.bot_registrar_update(900001),
-                        'mensagem repetida do Telegram (mesmo update_id) e tratada uma vez so');
-  PERFORM public.exigir(public.bot_quem(7777)->>'status' = 'sem_vinculo', 'chat sem vinculo nao recebe dado nenhum');
-
-  r := public.bot_usar_convite(5000, 'private', current_setting('teste.c_master'), 'Ana');
-  PERFORM public.exigir((r->>'ok')::boolean AND r->>'tipo' = 'master', 'master liga o proprio Telegram');
-  r := public.bot_usar_convite(5001, 'private', current_setting('teste.c_tina'), 'Tina');
-  PERFORM public.exigir((r->>'ok')::boolean AND r->>'nome' = 'Tina Telegram', 'pessoa liga o Telegram pelo convite');
-  r := public.bot_usar_convite(5009, 'private', current_setting('teste.c_tina'), 'Outro');
-  PERFORM public.exigir(r->>'erro' = 'invalido', 'convite usado duas vezes e recusado');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.avisossistema WHERE contaid = 1 AND texto = 'Tina Telegram ligou o Telegram agora.')
-                        AND EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND chatid = 5000 AND tipo = 'vinculo'),
-                        'vinculo novo avisa o master no sistema e no Telegram');
-
-  UPDATE public.telegramconvites SET expiraem = now() - interval '1 minute' WHERE codigohash = public.telegram_hash(current_setting('teste.c_nina'));
-  r := public.bot_usar_convite(5003, 'private', current_setting('teste.c_nina'), 'Nina');
-  PERFORM public.exigir(r->>'erro' = 'invalido', 'convite vencido e recusado');
-  UPDATE public.telegramconvites SET expiraem = now() + interval '1 hour' WHERE codigohash = public.telegram_hash(current_setting('teste.c_nina'));
-
-  r := public.bot_usar_convite(5002, 'private', current_setting('teste.c_gestao'), 'X');
-  PERFORM public.exigir(r->>'erro' = 'invalido', 'convite de grupo nao liga conversa privada');
-  r := public.bot_usar_convite(-1001, 'group', current_setting('teste.c_tina'), 'Grupo');
-  PERFORM public.exigir(r->>'erro' = 'invalido', 'convite de pessoa nao liga grupo');
-
-  FOR i IN 1..5 LOOP
-    PERFORM public.bot_usar_convite(5999, 'private', repeat('0', 64), 'Chutador');
-  END LOOP;
-  r := public.bot_usar_convite(5999, 'private', current_setting('teste.c_nina'), 'Chutador');
-  PERFORM public.exigir(r->>'erro' = 'bloqueado', 'depois de 5 codigos errados em 1 hora, o chat fica bloqueado (nem codigo certo passa)');
-
-  PERFORM public.exigir((public.bot_usar_convite(5002, 'private', current_setting('teste.c_vitor'), 'Vitor')->>'ok')::boolean
-                        AND (public.bot_usar_convite(5003, 'private', current_setting('teste.c_nina'), 'Nina')->>'ok')::boolean
-                        AND (public.bot_usar_convite(5004, 'private', current_setting('teste.c_otto'), 'Otto')->>'ok')::boolean
-                        AND (public.bot_usar_convite(-1001, 'supergroup', current_setting('teste.c_gestao'), 'Gestao A')->>'ok')::boolean
-                        AND (public.bot_usar_convite(-1002, 'group', current_setting('teste.c_equipe'), 'Equipe A')->>'ok')::boolean
-                        AND (public.bot_usar_convite(6001, 'private', current_setting('teste.c_bia'), 'Bia')->>'ok')::boolean
-                        AND (public.bot_usar_convite(6002, 'private', current_setting('teste.c_vb'), 'Beto')->>'ok')::boolean,
-                        'demais vinculos feitos');
-  r := public.bot_usar_convite(-1001, 'group', current_setting('teste.c_gb'), 'Gestao A');
-  PERFORM public.exigir(r->>'erro' = 'invalido', 'grupo ja ligado a A nao aceita codigo de B');
-  PERFORM public.exigir((public.bot_usar_convite(-2001, 'group', current_setting('teste.c_gb'), 'Gestao B')->>'ok')::boolean,
-                        'grupo de B ligado com codigo de B');
-  PERFORM public.exigir(public.bot_grupo(-9999)->>'vinculado' = 'false', 'grupo sem codigo fica sem vinculo');
-END $$;
-
--- Tarefas, foto e entrega.
-DO $$
-DECLARE r jsonb; v_e1 integer; v_e2 integer; v_e3 integer;
-BEGIN
-  r := public.bot_tarefas(5001);
-  PERFORM public.exigir(r->'tarefas' @> '[{"atribuicaoid": 7801}]' AND NOT r::text LIKE '%Tarefa de B%',
-                        'bot mostra as tarefas de hoje da pessoa, e nada de outra conta');
-  PERFORM public.exigir(public.bot_iniciar_entrega(5001, 7802)->>'ok' = 'false', 'bot de A nao inicia entrega de tarefa de B');
-  PERFORM public.exigir(public.bot_conferir_foto(5001, 'fotoA')->>'erro' = 'sem_tarefa', 'foto sem escolher tarefa e recusada');
-
-  PERFORM public.bot_iniciar_entrega(5001, 7801);
-  r := public.bot_registrar_entrega(5001, 7801, '1/10/tg-a.jpg', 'fileA', 'fotoA');
-  PERFORM public.exigir((r->>'ok')::boolean, 'entrega com foto registrada pelo bot (mesma funcao das telas)');
-  v_e1 := (r->>'entregaid')::integer;
-  PERFORM set_config('teste.e1', v_e1::text, false);
-  PERFORM public.exigir((SELECT canalenvio = 'telegram' AND fotoidunico = 'fotoA' AND statusvalidacao = 'Pendente'
-                           FROM public.entregas WHERE entregaid = v_e1), 'entrega marcada como vinda do Telegram');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila WHERE chatid = -1001 AND tipo = 'entrega_nova' AND referencia = v_e1),
-                        'entrega nova vai para o grupo de gestao da loja');
-
-  PERFORM public.bot_iniciar_entrega(5001, 7803);
-  PERFORM public.exigir(public.bot_conferir_foto(5001, 'fotoA')->>'erro' = 'repetida', 'foto repetida e recusada');
-  UPDATE bot.estados SET expiraem = now() - interval '1 second' WHERE chatid = 5001;
-  PERFORM public.exigir(public.bot_conferir_foto(5001, 'fotoB')->>'erro' = 'expirou', 'foto depois de 10 minutos e recusada');
-
-  PERFORM public.bot_iniciar_entrega(5001, 7803);
-  v_e2 := (public.bot_registrar_entrega(5001, 7803, '1/10/tg-b.jpg', 'fileB', 'fotoB')->>'entregaid')::integer;
-  PERFORM public.bot_iniciar_entrega(5001, 7804);
-  v_e3 := (public.bot_registrar_entrega(5001, 7804, '1/10/tg-c.jpg', 'fileC', 'fotoC')->>'entregaid')::integer;
-  PERFORM set_config('teste.e2', v_e2::text, false);
-  PERFORM set_config('teste.e3', v_e3::text, false);
-  PERFORM public.exigir(v_e2 IS NOT NULL AND v_e3 IS NOT NULL, 'outras duas entregas registradas');
-END $$;
-
--- Validação pelo grupo de gestão.
-DO $$
-DECLARE r jsonb; e1 integer := current_setting('teste.e1')::integer; e2 integer := current_setting('teste.e2')::integer;
-        e3 integer := current_setting('teste.e3')::integer; v_saldo integer;
-BEGIN
-  PERFORM public.exigir(public.bot_validar(-1001, 5003, e1, true)->>'erro' = 'sem_permissao'
-                        AND (SELECT statusvalidacao FROM public.entregas WHERE entregaid = e1) = 'Pendente',
-                        'quem nao e validador recebe "sem permissao" e nada muda');
-  PERFORM public.exigir(public.bot_validar(-1001, 5004, e1, true)->>'erro' = 'sem_permissao',
-                        'validador de outra loja nao aprova nesta loja');
-  PERFORM public.exigir(public.bot_validar(-1001, 6002, e1, true)->>'erro' = 'sem_permissao',
-                        'validador de B nao aprova no grupo de A');
-  PERFORM public.exigir(public.bot_validar(-2001, 5002, e1, true)->>'ok' = 'false'
-                        AND (SELECT statusvalidacao FROM public.entregas WHERE entregaid = e1) = 'Pendente',
-                        'validador de A nao aprova entrega de A pelo grupo de B');
-  PERFORM public.exigir(public.bot_validar(-1002, 5002, e1, true)->>'erro' = 'grupo',
-                        'aprovacao so no grupo de gestao (nao no da equipe)');
-
-  r := public.bot_validar(-1001, 5002, e1, true);
-  PERFORM public.exigir((r->>'ok')::boolean AND (r->>'pontos')::integer = 12, 'validador da loja aprova pelo Telegram');
-  PERFORM public.exigir((SELECT statusvalidacao = 'Aprovada' AND canalvalidacao = 'telegram' AND validadorfuncionarioid = 7502
-                           FROM public.entregas WHERE entregaid = e1), 'fica gravado quem aprovou e por qual canal');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.movimentospontos WHERE entregaid = e1 AND tipo = 'aprovacao' AND pontos = 12),
-                        'os pontos entram pelo livro');
-  PERFORM public.exigir(public.bot_validar(-1001, 5002, e1, true)->>'erro' = 'ja_validada', 'segunda aprovacao nao muda nada');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila WHERE chatid = 5001 AND tipo = 'entrega_aprovada' AND referencia = e1),
-                        'a pessoa recebe o aviso de aprovada');
-
-  PERFORM public.exigir((public.bot_recusa_pedir(-1001, 5002, e2)->>'ok')::boolean, 'validador pede para recusar');
-  PERFORM public.bot_recusa_guardar(-1001, 5002, e2, 555);
-  PERFORM public.exigir(public.bot_recusa_motivo(-1001, 5003, 555, 'x')->>'erro' = 'sem_pedido', 'outra pessoa nao responde o motivo');
-  PERFORM public.exigir(public.bot_recusa_motivo(-1001, 5002, 556, 'x')->>'erro' = 'sem_pedido', 'resposta a outra mensagem nao conta');
-  r := public.bot_recusa_motivo(-1001, 5002, 555, 'Foto escura');
-  PERFORM public.exigir((r->>'ok')::boolean AND (SELECT statusvalidacao = 'Recusada' AND motivorecusa = 'Foto escura'
-                                                    FROM public.entregas WHERE entregaid = e2),
-                        'recusa com o motivo guardado no banco');
-
-  r := public.bot_validar(-1001, 5000, e3, true);
-  PERFORM public.exigir((r->>'ok')::boolean AND (SELECT aprovadopor = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-                                                     AND canalvalidacao = 'telegram' AND validadorfuncionarioid IS NULL
-                                                   FROM public.entregas WHERE entregaid = e3),
-                        'master aprova pelo Telegram como ele mesmo');
-
-  SELECT saldopontos INTO v_saldo FROM public.funcionarios WHERE funcionarioid = 7501;
-  PERFORM public.exigir(v_saldo = (SELECT sum(pontos) FROM public.movimentospontos WHERE funcionarioid = 7501),
-                        'saldo da pessoa bate com o livro');
-END $$;
-
--- Menu, trava do feedback, prêmio, comanda.
-DO $$
-DECLARE r jsonb; v_saldo integer;
-BEGIN
-  PERFORM public.exigir((public.bot_consulta(5001, 'saldo')->>'saldo')::integer
-                        = (SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 7501), 'saldo pelo bot');
-  PERFORM public.exigir(public.bot_resgatar(5001, 7901)->>'erro' = 'falta_feedback', 'resgate travado sem o feedback de ontem');
-  PERFORM public.exigir(public.bot_comanda_iniciar(5001)->>'erro' = 'falta_feedback', 'comanda travada sem o feedback de ontem');
-  PERFORM public.exigir((public.bot_consulta(5001, 'ranking')->>'ok')::boolean, 'ranking funciona sem trava');
-
-  r := public.bot_feedback(5001, 'ontem', 8);
-  PERFORM public.exigir((r->>'ok')::boolean AND (SELECT origem FROM public.feedbacks WHERE funcionarioid = 7501
-                                                    AND datafeedback = public.dia_em_sao_paulo(now()) - 1) = 'bot',
-                        'feedback pelo bot (mesma funcao, origem = bot)');
-  PERFORM public.exigir(public.bot_resgatar(5001, 7902)->>'ok' = 'false', 'bot de A nao resgata premio de B');
-  SELECT saldopontos INTO v_saldo FROM public.funcionarios WHERE funcionarioid = 7501;
-  r := public.bot_resgatar(5001, 7901);
-  PERFORM public.exigir((r->>'ok')::boolean AND (r->>'saldo')::integer = v_saldo - 5
-                        AND (SELECT status FROM public.resgates WHERE resgateid = (r->>'resgateid')::integer) = 'Pendente',
-                        'resgate pelo bot: pontos saem pelo livro e a entrega fica para a gestao');
-  PERFORM public.exigir((public.bot_comanda_iniciar(5001)->>'ok')::boolean, 'comanda liberada depois do feedback');
-  r := public.bot_comanda(5001, 0.06);
-  PERFORM public.exigir((r->>'ok')::boolean AND (r->>'pontos')::integer = 2, 'abate na comanda pelo bot (mesma funcao)');
-  PERFORM public.exigir((SELECT saldopontos FROM public.funcionarios WHERE funcionarioid = 7501)
-                        = (SELECT sum(pontos) FROM public.movimentospontos WHERE funcionarioid = 7501),
-                        'saldo continua batendo com o livro');
-
-  PERFORM public.exigir(public.bot_nao_aplicavel_iniciar(5001, 7801)->>'ok' = 'false', 'tarefa ja entregue hoje nao vira "nao se aplica"');
-  PERFORM public.exigir((public.bot_nao_aplicavel_iniciar(5001, 7805)->>'ok')::boolean, 'bot pede o motivo do "nao se aplica"');
-  r := public.bot_nao_aplicavel(5001, 'Chuva forte');
-  PERFORM public.exigir((r->>'ok')::boolean, 'bot registra o "nao se aplica"');
-  PERFORM public.exigir((SELECT status = 'Pendente' AND origem = 'bot' AND motivo = 'Chuva forte'
-                           FROM public.justificativas WHERE atribuicaoid = 7805),
-                        '"nao se aplica" pelo bot vira justificativa pendente (origem = bot)');
-END $$;
-
--- Comunicado e documento pessoal.
-SET ROLE authenticated;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$
-BEGIN
-  PERFORM set_config('teste.com_tg', public.publicar_comunicado('Aviso do bot', 'Leia pelo Telegram', 0, 'funcionarios', NULL, ARRAY[7501])::text, false);
-END $$;
-RESET ROLE;
-SET teste.uid = '';
-INSERT INTO public.documentospessoais (documentoid, contaid, funcionarioid, tipodocumento, mesano, caminhoarquivo, nomearquivo, situacao)
-OVERRIDING SYSTEM VALUE VALUES (7951, 1, 7501, 'Holerite', '2026-08-01', '1/funcionarios/7501/holerite.pdf', 'holerite.pdf', 'Ativo');
-INSERT INTO public.documentospessoaisciencia (contaid, documentoid, funcionarioid, status) VALUES (1, 7951, 7501, 'Pendente');
-DO $$
-DECLARE r jsonb; v_ass integer;
-BEGIN
-  SELECT assinaturaid INTO v_ass FROM public.documentosassinaturas
-   WHERE documentoid = current_setting('teste.com_tg')::integer AND funcionarioid = 7501;
-  PERFORM public.exigir(public.bot_ciencia(5002, v_ass)->>'ok' = 'false', 'outra pessoa nao da ciencia no comunicado de Tina');
-  r := public.bot_ciencia(5001, v_ass);
-  PERFORM public.exigir((r->>'ok')::boolean AND (SELECT origem = 'funcionario' AND statusassinatura = 'Ciente'
-                                                    FROM public.documentosassinaturas WHERE assinaturaid = v_ass),
-                        'ciencia pelo bot com origem = funcionario');
-
-  PERFORM public.exigir(public.bot_documento(5001, 'group', 7951)->>'ok' = 'false', 'documento pessoal nunca em grupo');
-  PERFORM public.exigir(public.bot_documento(5002, 'private', 7951)->>'ok' = 'false', 'documento de outra pessoa e recusado');
-  r := public.bot_documento(5001, 'private', 7951);
-  PERFORM public.exigir((r->>'ok')::boolean AND r->>'caminho' = '1/funcionarios/7501/holerite.pdf'
-                        AND EXISTS (SELECT 1 FROM public.documentosacessos WHERE documentoid = 7951 AND funcionarioid = 7501
-                                     AND canal = 'telegram' AND acao = 'visualizacao'),
-                        'documento pessoal so na conversa privada da propria pessoa, com registro de acesso');
-  r := public.bot_ciencia_documento(5001, 7951);
-  PERFORM public.exigir((r->>'ok')::boolean, 'bot registra a ciencia do documento');
-  PERFORM public.exigir((SELECT origem FROM public.documentospessoaisciencia WHERE documentoid = 7951) = 'funcionario',
-                        'ciencia do documento pelo bot com origem = funcionario');
-END $$;
-
--- Fila e medição.
-DO $$
-DECLARE v jsonb; x jsonb; e1 integer := current_setting('teste.e1')::integer;
-BEGIN
-  -- O teste nao pode depender da hora em que roda: estas pessoas nao tem
-  -- horario de trabalho, entao o silencio da noite as pegaria. Aqui o silencio
-  -- e jogado para daqui a duas horas (e volta ao normal no fim do bloco).
-  UPDATE public.configuracoes
-     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '2 hours')::time, 'HH24:MI')
-   WHERE chave = 'HORARIO_SILENCIO_INICIO';
-  UPDATE public.configuracoes
-     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '3 hours')::time, 'HH24:MI')
-   WHERE chave = 'HORARIO_SILENCIO_FIM';
-
-  v := public.bot_fila_pegar(50);
-  PERFORM public.exigir(jsonb_array_length(v) > 0, 'fila entrega os avisos para envio');
-  FOR x IN SELECT * FROM jsonb_array_elements(v) LOOP
-    PERFORM public.exigir((SELECT contaid FROM public.mensagensfila WHERE filaid = (x->>'filaid')::bigint)
-                          = coalesce((SELECT contaid FROM public.telegramvinculos WHERE chatid = (x->>'chat_id')::bigint AND ativo
-                                       ORDER BY vinculoid DESC LIMIT 1), -1),
-                          'cada aviso vai para um chat da mesma conta');
-    PERFORM public.bot_fila_resultado((x->>'filaid')::bigint, true, 700 + (x->>'filaid')::integer, NULL, 0);
-  END LOOP;
-  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) y
-                                     WHERE y->>'tipo' = 'entrega_nova' AND (y->>'filaid')::bigint IN
-                                       (SELECT filaid FROM public.mensagensfila WHERE referencia = e1 AND tipo = 'entrega_nova')),
-                        'entrega ja validada nao e mais oferecida ao grupo');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.usomensagens WHERE contaid = 1 AND canal = 'telegram'),
-                        'envio medido por conta, canal, tipo e dia');
-  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'usomensagens'
-                                     AND column_name NOT IN ('contaid', 'lojaid', 'canal', 'tipo', 'dia', 'quantidade')),
-                        'a medicao nao guarda texto');
-
-  UPDATE public.configuracoes SET valor = '22:00' WHERE chave = 'HORARIO_SILENCIO_INICIO';
-  UPDATE public.configuracoes SET valor = '07:00' WHERE chave = 'HORARIO_SILENCIO_FIM';
-END $$;
-
--- Funcionário desativado não usa nada; master desliga um vínculo.
-UPDATE public.funcionarios SET ativo = false WHERE funcionarioid = 7503;
-DO $$
-BEGIN
-  PERFORM public.exigir(public.bot_quem(5003)->>'status' = 'sem_vinculo'
-                        AND public.bot_tarefas(5003)->>'erro' = 'sem_vinculo'
-                        AND public.bot_feedback(5003, 'hoje', 5)->>'erro' = 'sem_vinculo',
-                        'funcionario desativado nao consegue usar nada');
-END $$;
-
-SET ROLE authenticated;
-SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-DO $$
-DECLARE deu_erro boolean;
-BEGIN
-  PERFORM public.guardar_foto();
-  BEGIN
-    PERFORM public.desligar_telegram(-1); deu_erro := false;
-  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'desligar vinculo inexistente da erro');
-END $$;
-RESET ROLE;
-DO $$
-DECLARE v integer; deu_erro boolean;
-BEGIN
-  SELECT vinculoid INTO v FROM public.telegramvinculos WHERE funcionarioid = 7501 AND ativo;
-  PERFORM set_config('teste.v_tina', v::text, false);
-END $$;
-SET ROLE authenticated;
-DO $$
-DECLARE deu_erro boolean;
-BEGIN
-  PERFORM public.guardar_foto();
-  BEGIN PERFORM public.desligar_telegram(current_setting('teste.v_tina')::integer); deu_erro := false;
-  EXCEPTION WHEN no_data_found THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'B nao desliga o Telegram de alguem de A');
-END $$;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$
-BEGIN
-  PERFORM public.desligar_telegram(current_setting('teste.v_tina')::integer);
-END $$;
-RESET ROLE;
-SET teste.uid = '';
-DO $$
-BEGIN
-  PERFORM public.exigir(public.bot_quem(5001)->>'status' = 'sem_vinculo', 'master desliga o Telegram da pessoa');
-  PERFORM public.exigir((SELECT entregas FROM tg_b_antes) IS NOT DISTINCT FROM
-                          (SELECT md5(string_agg(e::text, '' ORDER BY entregaid)) FROM public.entregas e WHERE contaid = 2)
-                        AND (SELECT movimentos FROM tg_b_antes) IS NOT DISTINCT FROM
-                          (SELECT md5(string_agg(m::text, '' ORDER BY movimentoid)) FROM public.movimentospontos m WHERE contaid = 2)
-                        AND (SELECT funcionarios FROM tg_b_antes) IS NOT DISTINCT FROM
-                          (SELECT md5(string_agg(f::text, '' ORDER BY funcionarioid)) FROM public.funcionarios f WHERE contaid = 2),
-                        'o bot da conta A nunca alterou nada da conta B');
-  PERFORM public.exigir(NOT EXISTS (
-      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'public' AND p.proname LIKE 'bot\_%'
-         AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))),
-    'nenhuma funcao do bot fica liberada para o navegador');
-END $$;
-
--- Como o webhook chama no Supabase (papel service_role).
-SET ROLE service_role;
-DO $$
-DECLARE r jsonb;
-BEGIN
-  r := public.bot_consulta(5002, 'saldo');
-  PERFORM public.exigir((r->>'ok')::boolean, 'funcoes do bot funcionam com a chave de servidor (service_role)');
-  r := public.bot_feedback(5002, 'hoje', 9);
-  PERFORM public.exigir((r->>'ok')::boolean, 'contexto do bot vale com service_role');
-END $$;
-RESET ROLE;
-DO $$
-BEGIN
-  PERFORM public.exigir((SELECT origem FROM public.feedbacks WHERE funcionarioid = 7502
-                          AND datafeedback = public.dia_em_sao_paulo(now())) = 'bot',
-                        'feedback feito com a chave de servidor fica com origem = bot');
-END $$;
-
-SET ROLE authenticated;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-
--- ===========================================================================
--- 40. Rotinas com mensagem (Etapa 1.13B1)
---     Diana 7510 (chats 5010, lojas 10 e 11, 08:00–17:00), Nelson 7511
---     (5011, loja 10, turno da noite 18:00–02:00), Sandra 7512 (5012, sem
---     horário), Fábio 7513 (5013, de folga hoje). Conta B: Bruno 7610 (6010).
--- ===========================================================================
-
-RESET ROLE;
-SET teste.uid = '';
-
-INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, diadefolga)
-OVERRIDING SYSTEM VALUE VALUES
-  (7510, 1, 'Diana Diurna',   0),
-  (7511, 1, 'Nelson Noturno', 0),
-  (7512, 1, 'Sandra Sem Horario', 0),
-  (7513, 1, 'Fabio Folga', (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1)),
-  (7610, 2, 'Bruno de B',    0);
--- As lojas antes da jornada: desde 30/09/2026 a jornada so se liga a quem
--- tem uma loja em comum com ela.
-INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES
-  (1, 7510, 10), (1, 7510, 11), (1, 7511, 10), (1, 7512, 10), (1, 7513, 10), (2, 7610, 20);
-SELECT public.teste_horario(7510, '08:00', '17:00'), public.teste_horario(7511, '18:00', '02:00'),
-       public.teste_horario(7513, '08:00', '17:00'), public.teste_horario(7610, '08:00', '17:00');
-INSERT INTO public.tarefas (tarefaid, contaid, titulo, pontos) OVERRIDING SYSTEM VALUE VALUES
-  (7710, 1, 'Conferir freezer', 5), (7711, 1, 'Trocar sabor', 5), (7712, 1, 'Lavar calhas', 8),
-  (7713, 1, 'Missao do estoque', 20), (7714, 1, 'Tarefa do Nelson', 4), (7715, 2, 'Tarefa do Bruno', 6);
-INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES
-  (1, 7710, 10), (1, 7711, 11), (1, 7712, 10), (1, 7713, 10), (1, 7714, 10), (2, 7715, 20);
-INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
-                                      dataatribuicao, horariodisparo)
-OVERRIDING SYSTEM VALUE VALUES
-  (7810, 1, 7710, 7510, 10, 'Diaria', now() - interval '3 days', NULL),   -- Diana, loja 10
-  (7811, 1, 7711, 7510, 11, 'Diaria', now() - interval '3 days', NULL),   -- Diana, loja 11
-  (7812, 1, 7712, 7513, 10, 'Diaria', now() - interval '3 days', NULL),   -- Fabio (de folga hoje)
-  (7814, 1, 7714, 7511, 10, 'Diaria', now() - interval '3 days', NULL),   -- Nelson
-  (7813, 1, 7713, NULL,  10, 'Diaria', now() - interval '3 days', '10:00'),  -- missão da equipe
-  (7815, 2, 7715, 7610, 20, 'Diaria', now() - interval '3 days', NULL);
--- Chats: pessoas de A e de B, e o grupo da equipe de B.
-INSERT INTO public.telegramvinculos (contaid, tipo, chatid, funcionarioid) VALUES
-  (1, 'pessoa', 5010, 7510), (1, 'pessoa', 5011, 7511), (1, 'pessoa', 5012, 7512), (1, 'pessoa', 5013, 7513),
-  (2, 'pessoa', 6010, 7610);
-INSERT INTO public.telegramvinculos (contaid, tipo, chatid, lojaid, papelgrupo) VALUES (2, 'grupo', -2002, 20, 'equipe');
-
-CREATE TEMP TABLE b1_b_antes AS
-SELECT (SELECT md5(string_agg(m::text, '' ORDER BY filaid)) FROM public.mensagensfila m WHERE contaid = 2) AS fila,
-       (SELECT count(*) FROM public.mensagensfila WHERE contaid = 2) AS fila_n,
-       (SELECT md5(string_agg(t::text, '' ORDER BY atribuicaoid)) FROM public.tarefasatribuidas t WHERE contaid = 2) AS atribuicoes;
-
--- ---------------------------------------------------------------------------
--- Janela de envio: turno, turno da noite, silêncio e folga
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE
-  v_hoje date := public.dia_em_sao_paulo(now());
-  j jsonb;
-BEGIN
-  RAISE NOTICE '40. rotinas com mensagem';
-
-  -- Turno da noite: 23:00 está DENTRO do turno, mesmo no horário de silêncio.
-  j := public.bot_janela(1, 7511, public.instante_local(v_hoje, '23:00'));
-  PERFORM public.exigir((j->>'pode')::boolean, 'turno da noite recebe as 23:00, apesar do silencio');
-
-  -- 01:00 do dia seguinte ainda é o turno que começou ontem.
-  j := public.bot_janela(1, 7511, public.instante_local(v_hoje + 1, '01:00'));
-  PERFORM public.exigir((j->>'pode')::boolean, 'turno da noite recebe depois da meia-noite');
-
-  -- 03:00 já passou do fim (02:00 + 30 min de folga).
-  j := public.bot_janela(1, 7511, public.instante_local(v_hoje + 1, '03:00'));
-  PERFORM public.exigir(NOT (j->>'pode')::boolean AND j->>'motivo' = 'fora_do_turno',
-                        'depois do fim do turno da noite, espera');
-  PERFORM public.exigir((j->>'proxima')::timestamptz = public.instante_local(v_hoje + 1, '18:00'),
-                        'a espera vai ate a proxima entrada da noite');
-
-  -- Diurna: 23:00 está fora do turno dela.
-  j := public.bot_janela(1, 7510, public.instante_local(v_hoje, '23:00'));
-  PERFORM public.exigir(NOT (j->>'pode')::boolean, 'quem trabalha de dia nao recebe as 23:00');
-  j := public.bot_janela(1, 7510, public.instante_local(v_hoje, '10:00'));
-  PERFORM public.exigir((j->>'pode')::boolean, 'quem trabalha de dia recebe as 10:00');
-
-  -- Sem horário: vale só o silêncio.
-  j := public.bot_janela(1, 7512, public.instante_local(v_hoje, '23:00'));
-  PERFORM public.exigir(NOT (j->>'pode')::boolean AND j->>'motivo' = 'silencio',
-                        'sem horario, o silencio da noite vale');
-  j := public.bot_janela(1, 7512, public.instante_local(v_hoje, '12:00'));
-  PERFORM public.exigir((j->>'pode')::boolean, 'sem horario, recebe avisos durante o dia');
-
-  -- Folga: nada.
-  j := public.bot_janela(1, 7513, public.instante_local(v_hoje, '10:00'));
-  PERFORM public.exigir(NOT (j->>'pode')::boolean AND j->>'motivo' = 'folga', 'na folga ninguem recebe');
-END $$;
-
--- ---------------------------------------------------------------------------
--- As rotinas: início, lembretes, fim, e nunca repetir
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE
-  v_hoje date := public.dia_em_sao_paulo(now());
-  v_n integer;
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-
-  -- 08:00: início da jornada.
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:00'));
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:05'));   -- roda de novo
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:10'));   -- e de novo
-
-  SELECT count(*) INTO v_n FROM public.mensagensfila
-   WHERE contaid = 1 AND tipo = 'inicio_jornada' AND funcionarioid = 7510;
-  PERFORM public.exigir(v_n = 1, 'rodar a rotina tres vezes gera uma mensagem so (etiqueta unica)');
-
-  SELECT count(*) INTO v_n FROM public.mensagensfila
-   WHERE contaid = 1 AND tipo = 'inicio_jornada' AND funcionarioid IN (7512, 7513);
-  PERFORM public.exigir(v_n = 0, 'quem esta de folga ou sem horario nao recebe a jornada');
-
-  SELECT count(*) INTO v_n FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada';
-  PERFORM public.exigir(v_n = 1, 'quem trabalha em duas lojas recebe uma mensagem so');
-
-  -- Turno da noite: início às 18:00 e fim às 02:00 do dia seguinte.
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '18:00'));
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila
-                                 WHERE contaid = 1 AND tipo = 'inicio_jornada' AND funcionarioid = 7511
-                                   AND chave = 'inicio:7511:' || v_hoje),
-                        'turno da noite recebe o inicio as 18:00');
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje + 1, '02:05'));
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila
-                                 WHERE contaid = 1 AND tipo = 'fim_jornada' AND funcionarioid = 7511
-                                   AND chave = 'fim:7511:' || v_hoje),
-                        'o fim do turno da noite conta no dia em que o turno comecou');
-
-  -- Lembretes: 3 h e 6 h depois da entrada da Diana.
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '11:00'));
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '14:00'));
-  SELECT count(*) INTO v_n FROM public.mensagensfila
-   WHERE contaid = 1 AND funcionarioid = 7510 AND tipo IN ('lembrete3', 'lembrete6');
-  PERFORM public.exigir(v_n = 2, 'os lembretes de 3 h e 6 h sao gerados');
-
-  -- Nada foi criado para a conta B.
-  SELECT count(*) INTO v_n FROM public.mensagensfila WHERE contaid = 2;
-  PERFORM public.exigir(v_n = (SELECT fila_n FROM b1_b_antes), 'a rotina da conta A nao cria mensagem na conta B');
-END $$;
-
--- ---------------------------------------------------------------------------
--- Liga/desliga por loja
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE v_hoje date := public.dia_em_sao_paulo(now());
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  INSERT INTO public.mensagensrotinas (contaid, lojaid, rotina, ativo) VALUES (1, 10, 'inicio_jornada', false);
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:00'));
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada'
-                                  AND funcionarioid = 7510),
-                        'desligado numa loja, quem tem outra loja ligada continua recebendo');
-  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada'
-                                      AND funcionarioid = 7511),
-                        'desligado na loja, quem so tem essa loja nao recebe');
-
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  INSERT INTO public.mensagensrotinas (contaid, lojaid, rotina, ativo) VALUES (1, 11, 'inicio_jornada', false);
-  PERFORM public.rotina_mensagens(1, public.instante_local(v_hoje, '08:00'));
-  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.mensagensfila WHERE contaid = 1 AND tipo = 'inicio_jornada'),
-                        'desligado nas duas lojas, ninguem recebe');
-  DELETE FROM public.mensagensrotinas WHERE contaid = 1;
-END $$;
-
--- ---------------------------------------------------------------------------
--- Fila: silêncio, limite do dia, lembrete cancelado e avisos juntados
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE
-  v_hoje date := public.dia_em_sao_paulo(now());
-  v_id bigint;
-  v_saida jsonb;
-  r public.mensagensfila%ROWTYPE;
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  -- O teste nao pode depender da hora em que roda: poe a Diana DENTRO do
-  -- turno agora (entrada 1 h atras, saida daqui a 1 h). O horario fixo dela
-  -- volta no fim do bloco.
-  PERFORM public.teste_horario(7510, (((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time)::time, (((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time)::time);
-
-  -- Lembrete sem nada em aberto: some na hora de enviar.
-  INSERT INTO public.entregas (contaid, lojaid, atribuicaoid, tarefaid, funcionarioid, statusvalidacao, dataenvio)
-  VALUES (1, 10, 7810, 7710, 7510, 'Pendente', now()), (1, 11, 7811, 7711, 7510, 'Pendente', now());
-  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'lembrete3', '{}', NULL, 'teste-lembrete', NULL, true, now());
-  v_saida := public.bot_fila_pegar(10);
-  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
-  PERFORM public.exigir(r.status = 'descartada', 'lembrete some quando as tarefas ja foram entregues');
-
-  -- Avisos juntados: duas aprovações viram uma mensagem só.
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  PERFORM public.bot_enfileirar_ex(1, 10, 5010, 7510, 'entrega_aprovada',
-    jsonb_build_object('metodo', 'sendMessage', 'titulo', 'Tarefa 1', 'pontos', 10, 'texto', 'a'),
-    NULL, NULL, 'juntas', false, now() - interval '1 minute');
-  PERFORM public.bot_enfileirar_ex(1, 10, 5010, 7510, 'entrega_aprovada',
-    jsonb_build_object('metodo', 'sendMessage', 'titulo', 'Tarefa 2', 'pontos', 5, 'texto', 'b'),
-    NULL, NULL, 'juntas', false, now() - interval '1 minute');
-  v_saida := public.bot_fila_pegar(10);
-  PERFORM public.exigir(jsonb_array_length(v_saida) = 1, 'duas aprovacoes juntas viram uma mensagem so');
-  PERFORM public.exigir((v_saida->0->>'texto') LIKE '%2 entregas aprovadas%' AND (v_saida->0->>'texto') LIKE '%15 pontos%',
-                        'a mensagem juntada soma os pontos das duas');
-  PERFORM public.exigir((SELECT count(*) FROM public.mensagensfila
-                          WHERE contaid = 1 AND status = 'descartada' AND erro = 'juntada') = 1,
-                        'a segunda mensagem nao e enviada de novo');
-
-  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-END $$;
-
--- Fora do turno (e no silêncio): o aviso espera a próxima entrada.
-DO $$
-DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE; v_hora time;
-BEGIN
-  v_hora := (now() AT TIME ZONE 'America/Sao_Paulo')::time;
-  -- Turno curto daqui a 2 horas: agora a Diana está fora do turno dela.
-  PERFORM public.teste_horario(7510, (v_hora + interval '2 hours')::time, (v_hora + interval '4 hours')::time);
-  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
-            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
-  v_saida := public.bot_fila_pegar(10);
-  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
-  PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
-                        'aviso fora do turno espera a proxima entrada');
-  PERFORM public.exigir(jsonb_array_length(v_saida) = 0, 'nada e enviado fora do turno');
-  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-END $$;
-
--- Depois do FIM do expediente: espera a proxima entrada, nao vira "folga".
--- (Defeito da 1.13B1 corrigido em 23/09/2026: o aviso das 18:00 de quem
--- trabalha ate as 17:00 era guardado como se a pessoa estivesse de folga, e
--- voltava so como resumo — ou sumia depois de 7 dias.)
-DO $$
-DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE; v_hora time; j jsonb;
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  v_hora := (now() AT TIME ZONE 'America/Sao_Paulo')::time;
-  -- Turno que COMECOU ha 3 horas e TERMINOU ha 1 hora: expediente encerrado.
-  PERFORM public.teste_horario(7510, ((v_hora - interval '3 hours')::time)::time, ((v_hora - interval '1 hour')::time)::time);
-  j := public.bot_janela(1, 7510, now());
-  PERFORM public.exigir((j->>'motivo') = 'fora_do_turno',
-                        'depois do expediente o motivo e fora_do_turno, nao folga');
-  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'entrega_aprovada',
-            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
-  v_saida := public.bot_fila_pegar(10);
-  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
-  PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
-                        'aviso depois do expediente espera a proxima entrada');
-  PERFORM public.exigir(r.status <> 'guardada', 'aviso depois do expediente nao vira resumo de ausencia');
-  PERFORM public.exigir(jsonb_array_length(v_saida) = 0, 'nada e enviado depois do expediente');
-
-  -- Quem esta de folga hoje continua no caminho do resumo (guardada).
-  UPDATE public.funcionarios
-     SET diadefolga = (extract(dow FROM public.dia_em_sao_paulo(now()))::integer + 1)
-   WHERE funcionarioid = 7510;
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'entrega_aprovada',
-            jsonb_build_object('metodo', 'sendMessage', 'texto', 'y'), NULL, NULL, NULL, false, now());
-  PERFORM public.bot_fila_pegar(10);
-  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
-  PERFORM public.exigir(r.status = 'guardada', 'na folga o aviso continua sendo guardado para o resumo');
-
-  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
-  UPDATE public.funcionarios SET diadefolga = 0 WHERE funcionarioid = 7510;
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-END $$;
-
--- ---------------------------------------------------------------------------
--- Limite de mensagens por dia
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE v_id bigint; v_saida jsonb; r public.mensagensfila%ROWTYPE;
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  -- Fora do silencio, seja qual for a hora em que o teste rode.
-  UPDATE public.configuracoes
-     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '2 hours')::time, 'HH24:MI')
-   WHERE chave = 'HORARIO_SILENCIO_INICIO';
-  UPDATE public.configuracoes
-     SET valor = to_char(((now() AT TIME ZONE 'America/Sao_Paulo') + interval '3 hours')::time, 'HH24:MI')
-   WHERE chave = 'HORARIO_SILENCIO_FIM';
-  UPDATE public.configuracoes SET valor = '1' WHERE contaid = 1 AND chave = 'MAX_MENSAGENS_AUTOMATICAS_DIA';
-
-  -- Uma já enviada hoje.
-  INSERT INTO public.mensagensfila (contaid, chatid, funcionarioid, tipo, conteudo, status, enviadoem, automatica)
-  VALUES (1, 5012, 7512, 'conquista', '{}', 'enviada', now(), true);
-
-  -- Rotina passa do limite: é descartada.
-  v_id := public.bot_enfileirar_ex(1, NULL, 5012, 7512, 'inicio_jornada', '{}', NULL, 'lim-rotina', NULL, true, now());
-  v_saida := public.bot_fila_pegar(10);
-  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
-  PERFORM public.exigir(r.status = 'descartada' AND r.erro = 'limite do dia',
-                        'rotina acima do limite diario e descartada');
-
-  -- Aviso passa do limite: fica para o dia seguinte.
-  v_id := public.bot_enfileirar_ex(1, NULL, 5012, 7512, 'conquista',
-            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
-  v_saida := public.bot_fila_pegar(10);
-  SELECT * INTO r FROM public.mensagensfila WHERE filaid = v_id;
-  PERFORM public.exigir(r.status = 'pendente' AND r.proximaem > now(),
-                        'aviso acima do limite espera o dia seguinte');
-
-  UPDATE public.configuracoes SET valor = '8' WHERE contaid = 1 AND chave = 'MAX_MENSAGENS_AUTOMATICAS_DIA';
-  UPDATE public.configuracoes SET valor = '22:00' WHERE chave = 'HORARIO_SILENCIO_INICIO';
-  UPDATE public.configuracoes SET valor = '07:00' WHERE chave = 'HORARIO_SILENCIO_FIM';
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-END $$;
-
--- ---------------------------------------------------------------------------
--- Folga: avisos guardados viram um resumo só (7 dias)
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE v_saida jsonb; v_id bigint; v_texto text;
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-
-  -- Aviso para quem está de folga hoje: fica guardado, não é enviado.
-  v_id := public.bot_enfileirar_ex(1, NULL, 5013, 7513, 'entrega_aprovada',
-            jsonb_build_object('metodo', 'sendMessage', 'titulo', 'T', 'pontos', 3, 'texto', 'x'),
-            NULL, NULL, NULL, false, now());
-  v_saida := public.bot_fila_pegar(10);
-  PERFORM public.exigir((SELECT status FROM public.mensagensfila WHERE filaid = v_id) = 'guardada',
-                        'aviso de quem esta de folga fica guardado');
-
-  -- Afastamento de 20 dias: 5 avisos recentes e 2 antigos viram UM resumo.
-  INSERT INTO public.mensagensfila (contaid, chatid, funcionarioid, tipo, conteudo, status, criadoem, automatica)
-  SELECT 1, 5013, 7513, x.tipo, '{}', 'guardada', now() - x.idade, true
-    FROM (VALUES ('entrega_aprovada', interval '2 days'), ('entrega_aprovada', interval '3 days'),
-                 ('comunicado_novo',  interval '4 days'), ('conquista', interval '5 days'),
-                 ('entrega_recusada', interval '15 days'), ('conquista', interval '20 days')) AS x(tipo, idade);
-
-  v_texto := public.bot_texto_rotina('resumo_ausencia', 1, 7513, NULL)->>'texto';
-  PERFORM public.exigir(v_texto LIKE '%Enquanto você esteve fora%' AND v_texto LIKE '%3 entregas aprovadas%'
-                          AND v_texto LIKE '%comunicado%',
-                        'a volta gera um resumo so, com as contagens');
-  PERFORM public.exigir(v_texto NOT LIKE '%recusada%',
-                        'o resumo ignora o que ficou guardado ha mais de 7 dias');
-  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.mensagensfila
-                                     WHERE contaid = 1 AND funcionarioid = 7513 AND status = 'guardada'),
-                        'depois do resumo nada fica guardado');
-  PERFORM public.exigir(public.bot_texto_rotina('resumo_ausencia', 1, 7513, NULL) IS NULL,
-                        'sem nada guardado, o resumo nao se repete');
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-END $$;
-
--- ---------------------------------------------------------------------------
--- Bot bloqueado pela pessoa
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE v_id bigint; v_saida jsonb;
-BEGIN
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-  -- Independente da hora em que o teste roda: a Diana precisa estar DENTRO do
-  -- turno para a mensagem sair da fila. O horario fixo dela volta no fim.
-  PERFORM public.teste_horario(7510, (((now() AT TIME ZONE 'America/Sao_Paulo') - interval '1 hour')::time)::time, (((now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 hour')::time)::time);
-  v_id := public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista',
-            jsonb_build_object('metodo', 'sendMessage', 'texto', 'x'), NULL, NULL, NULL, false, now());
-  v_saida := public.bot_fila_pegar(10);
-  PERFORM public.bot_fila_resultado(v_id, false, NULL, '403 Forbidden: bot was blocked by the user', 0);
-
-  PERFORM public.exigir((SELECT bloqueadoem IS NOT NULL FROM public.telegramvinculos
-                          WHERE chatid = 5010 AND ativo), 'bot bloqueado marca o vinculo');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.avisossistema
-                                 WHERE contaid = 1 AND tipo = 'telegram_bloqueado' AND lidoem IS NULL),
-                        'o master e avisado no sistema quando alguem bloqueia o bot');
-  PERFORM public.exigir(public.bot_enfileirar_ex(1, NULL, 5010, 7510, 'conquista', '{}', NULL, NULL, NULL, false, now()) IS NULL,
-                        'com o bot bloqueado, nada mais e enfileirado');
-  PERFORM public.bot_visto(5010);
-  PERFORM public.exigir((SELECT bloqueadoem IS NULL FROM public.telegramvinculos WHERE chatid = 5010 AND ativo),
-                        'quando a pessoa volta a usar o bot, o bloqueio some sozinho');
-  PERFORM public.teste_horario(7510, ('08:00')::time, ('17:00')::time);
-  DELETE FROM public.mensagensfila WHERE contaid = 1;
-END $$;
-
--- ---------------------------------------------------------------------------
--- "O primeiro que clicar": missão e tarefa de folga
--- ---------------------------------------------------------------------------
-DO $$
-DECLARE r jsonb; v_hoje date := public.dia_em_sao_paulo(now());
-BEGIN
-  -- Missão: o segundo a clicar não leva.
-  r := public.bot_pegar_missao(-1002, 5010, 7813);
-  PERFORM public.exigir((r->>'ok')::boolean, 'a primeira pessoa pega a missao');
-  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.tarefasatribuidas
-                                 WHERE contaid = 1 AND origematribuicaoid = 7813 AND funcionarioid = 7510
-                                   AND tipofrequencia = 'Unica'),
-                        'quem pegou a missao ganha a tarefa de hoje (esforco extra)');
-  r := public.bot_pegar_missao(-1002, 5011, 7813);
-  PERFORM public.exigir(NOT (r->>'ok')::boolean AND r->>'erro' = 'ja_pega', 'a segunda pessoa recebe "ja foi pega"');
-
-  -- Quem não tem o Telegram ligado não pega nada.
-  r := public.bot_pegar_missao(-1002, 9999, 7813);
-  PERFORM public.exigir(NOT (r->>'ok')::boolean AND r->>'erro' = 'sem_vinculo', 'quem nao tem vinculo nao pega missao');
-
-  -- Tarefa de folga do Fábio: o limite por pessoa é respeitado.
-  UPDATE public.configuracoes SET valor = '1' WHERE contaid = 1 AND chave = 'MAX_TAREFAS_FOLGA_POR_PESSOA';
-  r := public.bot_pegar_folga(-1002, 5010, 7812);
-  PERFORM public.exigir((r->>'ok')::boolean, 'a tarefa de quem esta de folga e pega pelo grupo');
-  PERFORM public.exigir((SELECT passadapara FROM public.tarefasdodia
-                          WHERE contaid = 1 AND dia = v_hoje AND atribuicaoid = 7812) = 7510,
-                        'a lista do dia registra para quem a tarefa foi');
-  r := public.bot_pegar_folga(-1002, 5011, 7812);
-  PERFORM public.exigir(NOT (r->>'ok')::boolean AND r->>'erro' = 'ja_pega', 'a mesma tarefa nao e pega duas vezes');
-  UPDATE public.configuracoes SET valor = '3' WHERE contaid = 1 AND chave = 'MAX_TAREFAS_FOLGA_POR_PESSOA';
-END $$;
-
--- ---------------------------------------------------------------------------
--- Isolamento entre contas
--- ---------------------------------------------------------------------------
-SET ROLE authenticated;
-SET teste.uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';   -- master da conta B
-DO $$
-DECLARE deu_erro boolean; v_n integer;
-BEGIN
-  SELECT count(*) INTO v_n FROM public.mensagensrotinas;
-  PERFORM public.exigir(v_n = 0, 'B nao le o liga/desliga de rotinas de A');
-  -- Desde a Etapa 1.12 B1a, entregar tambem grava aceite, entao B tem aceites
-  -- proprios. A prova e que nenhuma linha de OUTRA conta aparece.
-  SELECT count(*) INTO v_n FROM public.missoesaceites WHERE contaid <> 2;
-  PERFORM public.exigir(v_n = 0, 'B nao le as missoes aceitas em A');
-
-  PERFORM public.guardar_foto();
-  BEGIN PERFORM public.definir_rotina_mensagem(10, 'inicio_jornada', false); deu_erro := false;
-  EXCEPTION WHEN OTHERS THEN deu_erro := true; END;
-  PERFORM public.exigir(public.nada_mudou(), 'B nao desliga uma rotina de uma loja de A');
-
-  -- A função existe para B, mas não alcança ninguém de A: 0 pessoas mudadas.
-  PERFORM public.exigir(public.vincular_jornada(ARRAY[7510], NULL) = 0,
-                        'B pede para mudar a jornada de alguem de A e nao muda ninguem');
-END $$;
-
-RESET ROLE;
-SET teste.uid = '';
-DO $$
-BEGIN
-  PERFORM public.exigir((SELECT jornadaid FROM public.funcionarios WHERE funcionarioid = 7510) IS NOT NULL,
-                        'B nao muda a jornada de ninguem de A');
-  PERFORM public.exigir((SELECT md5(string_agg(t::text, '' ORDER BY atribuicaoid)) FROM public.tarefasatribuidas t
-                          WHERE contaid = 2) = (SELECT atribuicoes FROM b1_b_antes),
-                        'nada da conta B foi alterado pelas rotinas de A');
-  PERFORM public.exigir((SELECT count(*) FROM public.mensagensfila WHERE contaid = 2) = (SELECT fila_n FROM b1_b_antes),
-                        'a fila da conta B continua igual');
-END $$;
-
--- As funções novas do bot não ficam liberadas para o navegador.
-SET ROLE authenticated;
-SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-DO $$
-DECLARE f text; deu_erro boolean;
-BEGIN
-  FOREACH f IN ARRAY ARRAY['public.bot_pegar_folga(-1002::bigint, 5010::bigint, 7812)',
-                           'public.bot_pegar_missao(-1002::bigint, 5010::bigint, 7813)',
-                           'public.bot_visto(5010::bigint)',
-                           'public.rotina_mensagens(1, now())',
-                           'public.bot_janela(1, 7510, now())',
-                           'public.pegar_missao(7813, 7510)'] LOOP
-    PERFORM public.guardar_foto();
-  BEGIN EXECUTE format('SELECT %s', f); deu_erro := false;
-    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(public.nada_mudou(), 'usuario logado nao chama ' || split_part(f, '(', 1));
-  END LOOP;
-END $$;
-RESET ROLE;
-SET teste.uid = '';
-
--- ===========================================================================
 -- 14. Conferencia estrutural: nenhuma tabela ficou sem RLS ou com USING (true)
 -- ===========================================================================
 
@@ -5193,8 +4305,7 @@ BEGIN
       'registrar_documento_pessoal', 'registrar_ciencia_documento', 'excluir_documento_por_engano',
       'arquivar_documento_pessoal', 'liberar_documento_pessoal', 'iniciar_onboarding', 'marcar_etapa_onboarding',
       'rodar_geracao_hoje', 'passar_tarefa_de_folga', 'refazer_fechamento', 'rotinas_resumo_admin',
-      'criar_convite_telegram', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'desligar_telegram', 'marcar_aviso_lido',
-      'definir_rotina_mensagem',
+      'marcar_aviso_lido',
       -- Etapa 1.12: falam so do proprio login (meu_acesso) ou exigem master
       -- (publicar_politica_de_uso, situacao_dos_acessos).
       'meu_acesso', 'publicar_politica_de_uso', 'situacao_dos_acessos', 'minha_politica_de_uso',
@@ -6700,11 +5811,13 @@ END $$;
 
 RESET ROLE;
 SET teste.uid = '';
+-- (Antes conferido pelo texto do bot, que saiu em 04/10/2026: agora pelo dado.)
 DO $$
 DECLARE v_atr integer := current_setting('teste.missao')::integer;
 BEGIN
-  PERFORM public.exigir(public.bot_texto_rotina('missao', 1, NULL, v_atr) IS NULL,
-                        'missao ja pega nao e reanunciada no grupo');
+  PERFORM public.exigir(EXISTS (SELECT 1 FROM public.missoesaceites m
+                                 WHERE m.atribuicaoid = v_atr AND m.dia = public.dia_em_sao_paulo(now()) AND m.revogadoem IS NULL),
+                        'missao ja pega fica com quem pegou (aceite valendo hoje)');
 END $$;
 
 SET ROLE authenticated;
@@ -6720,8 +5833,10 @@ SET teste.uid = '';
 DO $$
 DECLARE v_atr integer := current_setting('teste.missao')::integer;
 BEGIN
-  PERFORM public.exigir(public.bot_texto_rotina('missao', 1, NULL, v_atr) IS NOT NULL,
-                        'depois de revogada, a missao volta a ser anunciada');
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM public.missoesaceites m
+                                     WHERE m.atribuicaoid = v_atr AND m.dia = public.dia_em_sao_paulo(now()) AND m.revogadoem IS NULL)
+                        AND (SELECT datafimvigencia IS NULL FROM public.tarefasatribuidas WHERE atribuicaoid = v_atr),
+                        'depois de revogada, a missao volta a ficar livre (sem aceite valendo hoje, ainda vigente)');
 END $$;
 
 -- ===========================================================================
@@ -9890,15 +9005,6 @@ BEGIN
   PERFORM public.exigir(j.fim = public.instante_local(v_hoje + 3, '06:00'), 'turno da noite: saida menor que a entrada vira o dia');
   SELECT * INTO j FROM public.jornada_da_pessoa(1, 9972, v_hoje + 3);
   PERFORM public.exigir(NOT j.temhorario, 'dia sem horario na jornada: sem horario (vale so o silencio da empresa)');
-
-  IF (SELECT t.trabalha FROM public.jornada_da_pessoa(1, 9972, v_hoje) t) THEN
-    v := public.bot_janela(1, 9972, public.instante_local(v_hoje, '12:30'));
-    PERFORM public.exigir(v->>'motivo' = 'intervalo' AND (v->>'proxima')::timestamptz = public.instante_local(v_hoje, '13:00'),
-                          'no intervalo o sistema nao envia: espera ate 13h');
-    PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(v_hoje, '10:00'))->>'pode')::boolean
-                          AND (public.bot_janela(1, 9972, public.instante_local(v_hoje, '13:10'))->>'pode')::boolean,
-                          'fora do intervalo, dentro do turno, envia');
-  END IF;
 END $$;
 
 -- A conta B nao ve, nao usa e nao mexe na jornada da conta A.
@@ -9975,28 +9081,6 @@ UNION ALL SELECT 1, 7402, d, '22:00'::time, '06:00'::time FROM generate_series(1
 INSERT INTO public.jornadaslojas (contaid, jornadaid, lojaid)
 SELECT 1, j, l.lojaid FROM unnest(ARRAY[7401, 7402]) j, public.lojas l WHERE l.contaid = 1;
 
-DO $$
-DECLARE v jsonb; h date := public.hoje_da_conta(1);
-BEGIN
-  UPDATE public.funcionarios SET jornadaid = 7401, diadefolga = 0 WHERE funcionarioid = 9972;
-  v := public.bot_janela(1, 9972, public.instante_local(h, '16:45'));
-  PERFORM public.exigir(v->>'motivo' = 'intervalo' AND (v->>'proxima')::timestamptz = public.instante_local(h, '17:00'),
-                        'intervalo que passa do fim do turno: silencio so ate o fim do turno (antes era ignorado)');
-  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h, '17:00'))->>'motivo') IS DISTINCT FROM 'intervalo',
-                        'e no fim do turno a mensagem volta a andar (nao fica presa no intervalo)');
-  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h, '18:30'))->>'motivo') = 'fora_do_turno',
-                        'depois do expediente vale o de sempre: espera a proxima entrada');
-
-  UPDATE public.funcionarios SET jornadaid = 7402 WHERE funcionarioid = 9972;
-  v := public.bot_janela(1, 9972, public.instante_local(h + 1, '00:10'));
-  PERFORM public.exigir(v->>'motivo' = 'intervalo' AND (v->>'proxima')::timestamptz = public.instante_local(h + 1, '00:30'),
-                        'turno da noite, intervalo cruzando a meia-noite: espera ate 00h30 do dia seguinte');
-  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h + 1, '00:40'))->>'pode')::boolean,
-                        'e depois do intervalo volta a enviar');
-  PERFORM public.exigir((public.bot_janela(1, 9972, public.instante_local(h, '23:00'))->>'pode')::boolean,
-                        'antes do intervalo, dentro do turno da noite, envia');
-  UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid = 9972;
-END $$;
 
 -- O Quadro: pendentes de qualquer dia; historico pela data da entrega, ate ontem por padrao.
 SET ROLE authenticated;
@@ -10083,19 +9167,6 @@ INSERT INTO public.funcionarios (funcionarioid, contaid, nomecompleto, cargo, di
 INSERT INTO public.funcionarioslojas (contaid, funcionarioid, lojaid) VALUES (1, 7551, 10);
 UPDATE public.funcionarios SET jornadaid = 7402 WHERE funcionarioid = 7551;
 
--- A prova de que o intervalo do mapa nao muda nada: a decisao do bot a cada
--- 15 minutos, por 9 dias, para uma pessoa de dia (jornada 7401, que tem
--- intervalo de silencio) e uma da noite, SEM e COM intervalo do mapa em cima
--- do expediente. Tem de dar 0 diferencas.
-UPDATE public.funcionarios SET jornadaid = 7401, diadefolga = 0 WHERE funcionarioid = 9972;
-CREATE TEMP TABLE mapa_antes AS
-SELECT p.id, g.t, public.bot_janela(1, p.id, g.t) AS decisao
-  FROM (VALUES (9972), (7551)) p(id)
- CROSS JOIN generate_series(public.instante_local(public.hoje_da_conta(1) - 1, '00:00'),
-                            public.instante_local(public.hoje_da_conta(1) + 7, '23:45'),
-                            interval '15 minutes') g(t);
-GRANT SELECT ON mapa_antes TO authenticated;
-
 SET ROLE authenticated;
 SET teste.uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 DO $$
@@ -10179,20 +9250,13 @@ RESET ROLE;
 SET teste.uid = '';
 
 DO $$
-DECLARE v_casos integer; v_dif integer;
 BEGIN
-  SELECT count(*), count(*) FILTER (WHERE a.decisao IS DISTINCT FROM public.bot_janela(1, a.id, a.t))
-    INTO v_casos, v_dif FROM mapa_antes a;
-  RAISE NOTICE '   intervalo do mapa: % decisoes do bot comparadas, % diferencas', v_casos, v_dif;
-  PERFORM public.exigir(v_casos > 1500 AND v_dif = 0,
-                        'com o intervalo do mapa em cima do expediente, o bot decide exatamente igual');
   PERFORM public.exigir(NOT has_function_privilege('anon', 'public.mapa_da_jornada(integer, integer)', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.salvar_intervalo_do_mapa(integer, integer, time, time)', 'EXECUTE')
                         AND NOT has_function_privilege('anon', 'public.mapa_da_semana(integer)', 'EXECUTE'),
                         'o visitante sem login nao ve nem grava o mapa');
 END $$;
 UPDATE public.funcionarios SET jornadaid = NULL WHERE funcionarioid IN (9972, 7551);
-DROP TABLE mapa_antes;
 
 -- ===========================================================================
 -- 76. Tarefas "do sistema" viram comuns; rotina sem tarefa avisa; a lista de
@@ -10440,8 +9504,9 @@ BEGIN
   s := public.saude_das_rotinas();
   PERFORM public.exigir((s->'fotos'->>'vencidas')::integer >= 1 AND (s->'fotos'->>'diasdeatraso')::integer >= 19,
                         'a Saude conta a foto vencida ainda guardada, e ha quantos dias passou do prazo');
-  PERFORM public.exigir(s ? 'segredos' AND s ? 'jobs' AND s ? 'mensagensfalhadas' AND s ? 'agendador',
-                        'a Saude confere cofre, agendamento e mensagens que falharam');
+  -- (A conta das mensagens que falharam saiu com o Telegram, em 04/10/2026.)
+  PERFORM public.exigir(s ? 'segredos' AND s ? 'jobs' AND s ? 'agendador' AND NOT s ? 'mensagensfalhadas',
+                        'a Saude confere cofre e agendamento (e nao fala mais de mensagens do Telegram)');
   PERFORM public.exigir(s::text NOT LIKE '%decrypted%', 'a Saude nunca devolve valor de segredo');
 
   DELETE FROM public.rotinasexecucoes WHERE contaid = 1 AND rotina = 'expurgo_fotos';
@@ -12085,8 +11150,8 @@ DO $$ BEGIN RAISE NOTICE '91. usuarios gerenciais: a base'; END $$;
 CREATE TEMP TABLE classificacao_escrita (nome text PRIMARY KEY, grupo text NOT NULL);
 INSERT INTO classificacao_escrita (nome, grupo)
 SELECT unnest(ARRAY[
-  'arquivar_documento_pessoal', 'criar_convite_grupo', 'criar_convite_meu_telegram', 'criar_convite_telegram',
-  'definir_rotina_mensagem', 'desfazer_ciencia', 'desligar_telegram', 'excluir_documento_por_engano',
+  'arquivar_documento_pessoal',
+  'desfazer_ciencia', 'excluir_documento_por_engano',
   'liberar_documento_pessoal', 'preparar_envio_documento', 'publicar_politica_de_uso', 'refazer_fechamento',
   'registrar_ciencia_documento', 'registrar_documento_pessoal', 'rodar_geracao_hoje',
   'tratar_relato',
@@ -12350,16 +11415,12 @@ BEGIN
   BEGIN UPDATE public.funcionarios SET isgestor = true WHERE funcionarioid = 100; deu_erro := false;
     EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
     PERFORM public.exigir(public.nada_mudou(), 'a coluna isgestor nao se grava direto');
-    PERFORM public.guardar_foto();
-  BEGIN UPDATE public.funcionarios SET chatidtelegram = 1 WHERE funcionarioid = 100; deu_erro := false;
-    EXCEPTION WHEN insufficient_privilege THEN deu_erro := true; END;
-    PERFORM public.exigir(public.nada_mudou(), 'nem a chatidtelegram');
     RESET ROLE;
     PERFORM public.exigir(NOT EXISTS (
         SELECT 1 FROM information_schema.role_table_grants
          WHERE grantee = 'authenticated' AND table_schema = 'public' AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE')
            AND table_name IN ('configuracoesescala', 'configuracoessetores', 'escaladiaria', 'posicoesloja', 'picodiario',
-                              'freelancers', 'grupos', 'funcionariosgrupos', 'contagensestoque', 'itenscontagemestoque',
+                              'freelancers', 'contagensestoque', 'itenscontagemestoque',
                               'produtosestoque', 'fornecedores', 'produtosfornecedor', 'categoriasproduto', 'notasfiscais',
                               'notasfiscaisentrada', 'itensnotafiscalentrada', 'lucromensalhistorico',
                               'metasdiariasinstancias', 'feedbacksolicitacoes')),
@@ -14021,7 +13082,7 @@ RESET ROLE;
 -- ===========================================================================
 -- As bordas: criar so nas lojas dele; dados da pessoa so com ela inteira nas
 -- lojas dele; trocar as lojas e cadastro: a pessoa inteira nas lojas dele, e
--- so as dele mudam (decisao 4, 29/09/2026); CPF de quem existe e validador, so o
+-- so as dele mudam (decisao 4, 29/09/2026); CPF de quem existe, so o
 -- master; nunca o proprio cadastro. PIN e jornada: na pessoa, nunca o proprio.
 DO $$ BEGIN RAISE NOTICE '106. parte 2, Equipe: as bordas, o CPF, o PIN e a jornada'; END $$;
 
@@ -14062,12 +13123,11 @@ BEGIN
     INSERT INTO public.cargospermissoes (contaid, cargoid, codigo) VALUES
       (1, v_cargo, 'equipe.criar'), (1, v_cargo, 'equipe.editar'), (1, v_cargo, 'equipe.liberar_pin'), (1, v_cargo, 'jornada.vincular');
     SET LOCAL ROLE authenticated;
-    -- 2. Criar: so nas lojas dele, sem marcar quem valida.
+    -- 2. Criar: so nas lojas dele.
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_pessoa(NULL, 'Nas duas', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.salvar_pessoa(NULL, 'Sem loja', NULL, NULL, NULL, NULL, 0, ARRAY[]::integer[]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN PERFORM public.salvar_pessoa(NULL, 'Validadora', NULL, NULL, NULL, NULL, 0, ARRAY[10], ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'nao cria pessoa na loja 11, sem loja nem ja validando');
+    PERFORM public.exigir(public.nada_mudou(), 'nao cria pessoa na loja 11 nem sem loja');
     -- 3. Editar: as bordas.
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_pessoa(10615, 'Kaio Mudado', NULL, NULL, NULL, NULL, 0, ARRAY[10, 11]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
@@ -14085,9 +13145,6 @@ BEGIN
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Dez', '30630630615', NULL, NULL, NULL, 0, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nao muda o CPF de quem ja existe (so o master)');
-    PERFORM public.guardar_foto();
-    BEGIN PERFORM public.salvar_pessoa(10612, 'Hugo Dez', '10610610600', NULL, NULL, NULL, 0, ARRAY[10], ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    PERFORM public.exigir(public.nada_mudou(), 'nao marca quem valida (so o master)');
     PERFORM public.guardar_foto();
     BEGIN PERFORM public.salvar_pessoa(10614, 'Joel Gerente', NULL, NULL, NULL, NULL, 3, ARRAY[10]); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN PERFORM public.liberar_pin(10614); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
@@ -14130,16 +13187,16 @@ BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM public.guardar_foto();
     BEGIN UPDATE public.funcionarios SET nomecompleto = 'Direto' WHERE funcionarioid = 10612; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-    BEGIN UPDATE public.funcionarioslojas SET validador = true WHERE funcionarioid = 10612; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN UPDATE public.funcionarioslojas SET ativo = false WHERE funcionarioid = 10612; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     BEGIN DELETE FROM public.jornadas WHERE jornadaid = j2; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
     PERFORM public.exigir(public.nada_mudou(), 'nem o master grava direto em funcionarios, funcionarioslojas ou jornadas');
-    PERFORM public.salvar_pessoa(10612, 'Hugo Dez (novo)', '30630630615', 'Balcao', NULL, '11999990000', 3, ARRAY[10, 11], ARRAY[11]);
+    PERFORM public.salvar_pessoa(10612, 'Hugo Dez (novo)', '30630630615', 'Balcao', NULL, '11999990000', 3, ARRAY[10, 11]);
     PERFORM public.apagar_jornada(j2);
     RESET ROLE;
     PERFORM public.exigir((SELECT cpf = '30630630615' FROM public.funcionarios WHERE funcionarioid = 10612)
-                          AND (SELECT validador FROM public.funcionarioslojas WHERE funcionarioid = 10612 AND lojaid = 11)
+                          AND (SELECT ativo FROM public.funcionarioslojas WHERE funcionarioid = 10612 AND lojaid = 11)
                           AND NOT EXISTS (SELECT 1 FROM public.jornadas WHERE jornadaid = j2),
-                          'e o master troca CPF, marca quem valida e apaga jornada pela funcao');
+                          'e o master troca CPF, poe a pessoa na loja e apaga jornada pela funcao');
     RAISE EXCEPTION 'desfazer_106';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_106' THEN RAISE; END IF;
@@ -15639,8 +14696,13 @@ BEGIN
     SELECT jsonb_object_agg(x->>'nome', x) INTO d FROM jsonb_array_elements(s->'jobs') x;
     PERFORM public.exigir((d#>>'{gamegb-rotinas,atrasado}')::boolean = false AND (d#>>'{gamegb-rotinas,comandocerto}')::boolean
                           AND (d#>>'{stgame-codigos-vencidos,atrasado}')::boolean AND NOT (d#>>'{stgame-codigos-vencidos,comandocerto}')::boolean
-                          AND NOT (d#>>'{stgame-telegram-fila,existe}')::boolean AND (d#>>'{stgame-telegram-fila,atrasado}')::boolean,
-                          'agendamentos: em dia, atrasado ha 1 hora com comando errado, e o que nao existe');
+                          AND jsonb_array_length(s->'jobs') = 2,
+                          'agendamentos: em dia, e atrasado ha 1 hora com comando errado (so os dois do sistema: o do Telegram saiu)');
+    -- O agendamento que nao existe aparece (era o exemplo do Telegram, que saiu em 04/10/2026).
+    DELETE FROM cron.job WHERE jobid = 2;
+    SELECT jsonb_object_agg(x->>'nome', x) INTO d FROM jsonb_array_elements(public.saude_das_rotinas()->'jobs') x;
+    PERFORM public.exigir(NOT (d#>>'{stgame-codigos-vencidos,existe}')::boolean AND (d#>>'{stgame-codigos-vencidos,atrasado}')::boolean,
+                          'agendamento que nao existe aparece como nao existe e atrasado');
 
     -- 8. As rotinas diarias: a conta ativa sem rodar ha 2 dias esta atrasada;
     --    a que rodou com erro aparece.
@@ -16242,5 +15304,39 @@ BEGIN
 END $$;
 SET teste.uid = '';
 RESET ROLE;
+
+-- ===========================================================================
+-- 119. O Telegram saiu (04/10/2026, decisao do Wisley)
+-- ===========================================================================
+-- Nada do Telegram volta sem alguem decidir: funcao do bot (fora a lista
+-- fechada do que fica de proposito), tabela, coluna com o identificador de
+-- Telegram ou o agendamento da fila. A lista fechada so diminui (fatia 2).
+DO $$ BEGIN RAISE NOTICE '119. o Telegram saiu'; END $$;
+DO $$
+DECLARE sobra text;
+BEGIN
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO sobra
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND (p.proname LIKE 'bot\_%' OR p.proname ~ '(telegram|_do_bot$|convite_grupo|rotina_mensagens|rotina_ligada|usar_mensagens|no_silencio)')
+     AND p.proname NOT IN (
+       -- Fatia 2 (sai com prova propria): o contexto do bot dentro de ~110 funcoes.
+       'bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot',
+       -- O aplicativo do colaborador usa (aviso do feedback de ontem): decisao do Wisley.
+       'bot_falta_feedback_ontem');
+  PERFORM public.exigir(sobra IS NULL, 'nenhuma funcao do Telegram voltou' || coalesce(' -- voltou: ' || sobra, ''));
+  SELECT string_agg(c.relname, ', ') INTO sobra FROM pg_class c
+   WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
+     AND c.relname IN ('mensagensfila', 'mensagensrotinas', 'usomensagens', 'telegramconvites', 'telegramvinculos', 'grupos', 'funcionariosgrupos');
+  PERFORM public.exigir(sobra IS NULL, 'nenhuma tabela do Telegram voltou' || coalesce(' -- voltou: ' || sobra, ''));
+  PERFORM public.exigir(to_regnamespace('bot') IS NULL, 'o schema do bot (updates, tentativas, estados, empresa por chat) nao existe');
+  SELECT string_agg(table_name || '.' || column_name, ', ') INTO sobra FROM information_schema.columns
+   WHERE table_schema = 'public' AND (column_name ~ '(telegram|chatid)' OR (table_name = 'funcionarioslojas' AND column_name = 'validador'));
+  PERFORM public.exigir(sobra IS NULL, 'nenhuma coluna com o identificador de Telegram (nem o validador) voltou' || coalesce(' -- voltou: ' || sobra, ''));
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'stgame-telegram-fila'),
+                          'o agendamento da fila do Telegram nao existe');
+  END IF;
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

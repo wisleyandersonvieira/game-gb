@@ -13,7 +13,7 @@ import { Avisos, SituacaoRotina } from "@/inicio/Avisos";
 import { pct, quando, reais, textoSemLancamento, type PainelInicio } from "@/inicio/tipos";
 import { textoDiasSemLancamento } from "@/painel/textoDaMeta";
 import { Pontos } from "@/ui/Pontos";
-import { AvisosDoSistema } from "@/telegram/Telegram";
+import { AvisosDoSistema } from "@/ui/AvisosDoSistema";
 import { Pagina } from "@/ui/Pagina";
 
 export const Route = createFileRoute("/_authenticated/inicio")({

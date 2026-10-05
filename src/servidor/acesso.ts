@@ -1277,7 +1277,6 @@ export type SaudeDasRotinas = {
   /** Amostra de apagadas conferida pelo servidor no Storage, uma a uma. */
   amostra?: { conferidas: number; encontradas: number; erro: string | null } | null;
   /** null = só o admin geral vê o total de todas as contas. */
-  mensagensfalhadas: number | null;
   fotos: { vencidas: number; diasdeatraso: number; presas: number } | null;
   /** Dias sem foto da fila do Quadro (29/09/2026), todas as contas somadas. */
   fila: { dias: number; contas: number; ultimo: string | null } | null;
@@ -1435,7 +1434,7 @@ export const diagnostico = createServerFn({ method: "GET" })
         const bruto: SaudeDasRotinas = { ...resto, apagamento, amostra };
         rotinas = verTudo
           ? bruto
-          : { ...bruto, mensagensfalhadas: null, fotos: null, fila: null, apagamento: null, storage: null, amostra: null };
+          : { ...bruto, fotos: null, fila: null, apagamento: null, storage: null, amostra: null };
       }
     } catch {
       rotinas = null;

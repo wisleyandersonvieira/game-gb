@@ -4,13 +4,11 @@ import { useEffect, useState } from "react";
 import { Botao } from "@/ui/Botao";
 import { escolherTema, temaAtual, type Tema } from "@/ui/tema";
 import { salvarNome, useUsuario } from "@/ui/usuario";
-import { MeuTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 
 const campo = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground";
 
-/** `telegram`: só no app do master (o administrador geral não tem conta). */
-export function MeuPerfil({ telegram = false }: { telegram?: boolean }) {
+export function MeuPerfil() {
   const usuario = useUsuario();
   const [nome, setNome] = useState("");
   const [tema, setTema] = useState<Tema>("claro");
@@ -94,7 +92,6 @@ export function MeuPerfil({ telegram = false }: { telegram?: boolean }) {
         <p className="text-xs text-muted-foreground">A escolha fica guardada no seu login e vale no próximo acesso. A TV continua escura.</p>
       </section>
 
-      {telegram && <MeuTelegram />}
     </Pagina>
   );
 }

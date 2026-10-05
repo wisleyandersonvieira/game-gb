@@ -1,5 +1,5 @@
--- Prepara o teste de "o primeiro que clicar" (conta 14): duas pessoas tocam
--- "Eu aceito" na mesma missão, no grupo da equipe, no mesmo instante.
+-- Prepara o teste de "o primeiro que pegar" (conta 14): a mesma missão pega
+-- para duas pessoas no mesmo instante.
 \set ON_ERROR_STOP on
 INSERT INTO public.contas (contaid, nome, email, limitelojas) OVERRIDING SYSTEM VALUE
 VALUES (14, 'Empresa Missao', 'missao@exemplo.com', 1);
@@ -13,5 +13,7 @@ INSERT INTO public.tarefaslojas (contaid, tarefaid, lojaid) VALUES (14, 1410, 14
 INSERT INTO public.tarefasatribuidas (atribuicaoid, contaid, tarefaid, funcionarioid, lojaid, tipofrequencia,
                                       dataatribuicao, horariodisparo)
 OVERRIDING SYSTEM VALUE VALUES (14900, 14, 1410, NULL, 140, 'Diaria', now() - interval '1 day', '08:00');
-INSERT INTO public.telegramvinculos (contaid, tipo, chatid, lojaid, papelgrupo) VALUES (14, 'grupo', -14001, 140, 'equipe');
-INSERT INTO public.telegramvinculos (contaid, tipo, chatid, funcionarioid) VALUES (14, 'pessoa', 14001, 1401), (14, 'pessoa', 14002, 1402);
+-- O dono da conta pega a missão para cada pessoa (era o botão do grupo do
+-- Telegram, que saiu em 04/10/2026; a trava que decide é a mesma: pegar_tarefa).
+INSERT INTO auth.users (id, email, email_confirmed_at) VALUES ('14141414-1414-1414-1414-141414141414', 'master.14@exemplo.com', now());
+INSERT INTO public.contasusuarios (contaid, userid, papel) VALUES (14, '14141414-1414-1414-1414-141414141414', 'master');

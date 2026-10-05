@@ -12,7 +12,7 @@
 
 **Nível conta** = compartilhado entre as lojas do cliente. **Nível loja** = cada loja tem os seus.
 
-As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas pontas leem o mesmo `contaid` da mesma linha, então é impossível apontar para o registro de outra conta. Toda unicidade é por conta ou por loja — nunca global, com uma exceção: `grupos.chatidtelegram`, único no sistema inteiro porque um único bot do Telegram atende todas as contas (Fase 15).
+As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas pontas leem o mesmo `contaid` da mesma linha, então é impossível apontar para o registro de outra conta. Toda unicidade é por conta ou por loja — nunca global. (A única exceção, `grupos.chatidtelegram`, saiu com o Telegram em 04/10/2026.)
 
 | Tabela | Nível | Chave | Referencia |
 |---|---|---|---|
@@ -43,8 +43,6 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `fornecedores` | conta | fornecedorid |  |
 | `freelancers` | conta | freelancerid |  |
 | `funcionarios` | conta | funcionarioid | posicoesloja |
-| `funcionariosgrupos` | **loja** | funcionarioid + grupoid | funcionarios, grupos |
-| `grupos` | **loja** | grupoid |  |
 | `historicoranking` | **loja** (vazio = geral da conta) | historicoid | fechamentosmensais, funcionarios |
 | `itenscontagemestoque` | **loja** | itemcontagemid | contagensestoque, produtosestoque |
 | `itensnotafiscalentrada` | **loja** | itemnotaid | notasfiscaisentrada, produtosfornecedor |
@@ -250,7 +248,6 @@ Os **comunicados** (Etapa 1.10). Nível conta.
 | pontosporciencia | integer | obrigatório; 0 a 10.000. Padrão sugerido: os pontos da tarefa do sistema "Leitura de comunicado" |
 | datacriacao | timestamptz | quando foi publicado |
 | funcionariocriadorid | integer | sem uso (quem publicou está em `criadopor`) |
-| telegramfileidfoto | varchar(255) | sem uso (imagem via Telegram, Etapa 1.13) |
 | status | varchar(10) | obrigatório; `Publicado` ou `Arquivado` (final) |
 | alvo | varchar(12) | obrigatório; `conta`, `lojas` (ver `documentoslojas`) ou `funcionarios` |
 | criadopor | uuid | quem publicou |
@@ -342,7 +339,6 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | pontosganhos | integer | padrão 0 |
 | motivorecusa | text |  |
 | atribuicaoid | integer |  |
-| fileidtelegram | varchar(255) |  |
 | notificacaogestorenviada | boolean | padrão false |
 | observacao | text | Observação de quem registrou a entrega |
 | dataaprovacao | timestamptz | Quando foi aprovada. **O ranking usa esta data.** `dataenvio` guarda sempre o envio real |
@@ -421,7 +417,6 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 |---|---|---|
 | funcionarioid | integer | ID automático; obrigatório |
 | nomecompleto | varchar(255) | obrigatório |
-| chatidtelegram | varchar(100) |  |
 | cargo | varchar(100) |  |
 | pontostotal | integer | padrão 0. Tudo o que a pessoa já ganhou (aprovações, bônus, estornos de entrega; resgates não contam). Só o gatilho do livro altera |
 | horarionotificacao | time | **hora de entrada** (nome herdado do sistema antigo). Vazio = a pessoa não recebe as mensagens de jornada (Etapa 1.13B1). O padrão 08:00 foi retirado |
@@ -444,19 +439,6 @@ O Storage `documentos-rh` só deixa ler, enviar ou apagar um arquivo se houver u
 | datainicioafastamento | date |  |
 | datafimafastamento | date |  |
 | ativo | boolean | obrigatório; padrão true. Acrescentada em 21/09/2026: `false` = desligado definitivamente. As datas de afastamento valem só para afastamento temporário. |
-
-## funcionariosgrupos
-| Coluna | Tipo | Obs |
-|---|---|---|
-| funcionarioid | integer | obrigatório; chave primária composta; → funcionarios.funcionarioid |
-| grupoid | integer | obrigatório; chave primária composta; → grupos.grupoid |
-
-## grupos
-| Coluna | Tipo | Obs |
-|---|---|---|
-| grupoid | integer | ID automático; obrigatório |
-| nomegrupo | varchar(100) | obrigatório |
-| chatidtelegram | varchar(50) |  |
 
 ## historicoranking
 | Coluna | Tipo | Obs |
@@ -612,7 +594,7 @@ O mapa e as decisões estão em `docs/MAPA_PERMISSOES.md`. O **catálogo** do qu
 
 **O último master ATIVO:** o gatilho `contasusuarios_ultimo_master` recusa apagar ou rebaixar o último master de uma conta, e os gatilhos `stgame_ultimo_master_apagar`/`stgame_ultimo_master_bloquear` em `auth.users` recusam apagar ou bloquear o login dele. Master com login bloqueado não conta como "outro master" (`outro_master_ativo`). As cinco tabelas acima só o master lê.
 
-**Escrita direta fechada (29/09/2026):** as 20 tabelas da Fase 2 sem tela (`configuracoesescala`, `configuracoessetores`, `escaladiaria`, `posicoesloja`, `picodiario`, `freelancers`, `grupos`, `funcionariosgrupos`, `contagensestoque`, `itenscontagemestoque`, `produtosestoque`, `fornecedores`, `produtosfornecedor`, `categoriasproduto`, `notasfiscais`, `notasfiscaisentrada`, `itensnotafiscalentrada`, `lucromensalhistorico`, `metasdiariasinstancias`, `feedbacksolicitacoes`) e as colunas `funcionarios.isgestor` e `funcionarios.chatidtelegram` não aceitam gravação de quem está logado, master inclusive. Quando a tela existir, nasce com função e permissão.
+**Escrita direta fechada (29/09/2026):** as tabelas da Fase 2 sem tela (`configuracoesescala`, `configuracoessetores`, `escaladiaria`, `posicoesloja`, `picodiario`, `freelancers`, `contagensestoque`, `itenscontagemestoque`, `produtosestoque`, `fornecedores`, `produtosfornecedor`, `categoriasproduto`, `notasfiscais`, `notasfiscaisentrada`, `itensnotafiscalentrada`, `lucromensalhistorico`, `metasdiariasinstancias`, `feedbacksolicitacoes`) e a coluna `funcionarios.isgestor` não aceitam gravação de quem está logado, master inclusive. Quando a tela existir, nasce com função e permissão.
 
 ## autores (29/09/2026, parte 2)
 O nome de cada login em cada momento, para "quem fez" nunca depender do login continuar existindo. Nível conta. Só recebe linha nova (quando o login nasce ou quando o e-mail, o nome da pessoa ou o nome da loja muda). `autor_em(login, instante)` devolve o nome daquela hora. Só o master lê.
@@ -823,7 +805,6 @@ Tabela **nova** (Etapa 1.8), **nível loja**. Cada prêmio de meta pago. Quem re
 |---|---|---|
 | notafiscalid | integer | ID automático; obrigatório |
 | funcionarioid | integer | obrigatório; → funcionarios.funcionarioid |
-| fileidtelegram | varchar(255) | obrigatório |
 | pathfoto | varchar(512) |  |
 | status | varchar(50) | padrão 'Pendente' |
 | datarecebimento | timestamptz | padrão now() |
@@ -979,10 +960,8 @@ Tabela **nova** (Etapa 1.10), **nível conta**. O checklist de cada pessoa. **Ú
 | dataatribuicao | timestamptz | padrão now() |
 | tipofrequencia | varchar(20) | obrigatório; padrão 'Unica' |
 | valorfrequencia | integer |  |
-| grupoid | integer | → grupos.grupoid |
 | funcionarioresponsavelid | integer | → funcionarios.funcionarioid |
 | horariodisparo | time |  |
-| statustarefagrupo | varchar(50) |  |
 | dataaceite | timestamptz |  |
 | datainiciovigencia | date |  |
 | datafimvigencia | date |  |
@@ -1113,7 +1092,6 @@ Em quais lojas cada funcionário trabalha. Tirar alguém de uma loja = `ativo = 
 | lojaid | integer | obrigatório; chave primária composta; → lojas (junto com contaid) |
 | posicaopadraoid | integer | lugar padrão no mapa **daquela loja**; → posicoesloja (junto com lojaid) |
 | ativo | boolean | obrigatório; padrão true |
-| validador | boolean | obrigatório; padrão false. Pode aprovar e recusar entregas **desta loja** pelo Telegram e usar `/pendencias`, `/lancar` e `/status_meta` no grupo de gestão (Etapa 1.13A) |
 | criadoem | timestamptz | obrigatório; padrão now() |
 
 ## acessoslojaeventos (Etapa 1.12 B1) — histórico do acesso do tablet
@@ -1301,58 +1279,14 @@ O navegador só lê. Os tipos `aprovacao`, `estorno_entrega`, `bonus` e `estorno
 **resgates**: `status` é `Pendente`, `Entregue`, `Cancelado` ou `Estornado`. Novas colunas: `valorreais` e `taxaconversao` (comanda), `registradopor`, `dataentrega`/`entreguepor`, `datacancelamento`/`canceladopor`/`motivocancelamento`, `dataestorno`/`estornadopor`/`motivoestorno`. Cancelado e Estornado exigem motivo. O navegador só lê; tudo muda pelas funções. As colunas antigas `gestorid_aprovacao` e `dataaprovacao` ficaram sem uso.
 
 
-## Telegram (Etapa 1.13A)
+## Telegram: retirado em 04/10/2026
 
-Tudo aqui é **nível conta** (os grupos têm também a loja). O navegador só **lê** `telegramvinculos`, `avisossistema` e `usomensagens`; o resto passa pelas funções. As funções `bot_*` só são liberadas para a chave de servidor (o webhook e a fila); nenhuma para o navegador.
+O sistema não usa Telegram (decisão do Wisley). Saíram as tabelas `telegramvinculos`, `telegramconvites`, `mensagensfila`, `mensagensrotinas`, `usomensagens`, `grupos` e `funcionariosgrupos`, o schema `bot` (`updates`, `tentativas`, `estados`, `contaativa`), as colunas `funcionarios.chatidtelegram`, `funcionarioslojas.validador`, `entregas.avisochatid`, `entregas.fileidtelegram`, `documentos.telegramfileidfoto`, `notasfiscais.fileidtelegram`, `tarefasatribuidas.grupoid` e `tarefasatribuidas.statustarefagrupo`, e as funções do bot (migração 20261004100000). Os dados saíram junto: o identificador de Telegram das pessoas é dado pessoal sem finalidade sem o bot. A seção 119 do teste de isolamento reprova se algo disso voltar.
 
-### telegramvinculos
-Quem está ligado ao bot: a pessoa da equipe, o master ou um grupo da loja.
-
-| Coluna | Tipo | Obs |
-|---|---|---|
-| vinculoid | integer | ID automático; chave primária |
-| contaid | integer | obrigatório; → contas |
-| tipo | varchar(10) | `pessoa`, `master` ou `grupo` |
-| chatid | bigint | obrigatório. Conversa privada (> 0) ou grupo (< 0) |
-| funcionarioid | integer | só em `pessoa`; → funcionarios (junto com contaid) |
-| userid | uuid | só em `master`; → auth.users |
-| lojaid | integer | só em `grupo`; → lojas (junto com contaid) |
-| papelgrupo | varchar(10) | só em `grupo`: `equipe` ou `gestao` |
-| nometelegram | varchar(120) | nome mostrado no Telegram (pessoa) ou título do grupo |
-| ativo | boolean | desligar = `false`, nunca apagar |
-| vinculadoem / desligadoem / desligadopor | | quando ligou; quando e quem desligou |
-
-Únicos (entre os ativos): um Telegram por pessoa; um por master em cada conta; um chat por conta; um grupo em uma conta só; um grupo de cada papel por loja. A mesma pessoa pode estar ligada em duas empresas com o mesmo Telegram: o bot pergunta com qual quer falar.
-
-### telegramconvites
-Convites de 48 h e uso único. **Só o hash (sha256) do código fica guardado**; ninguém lê pelo navegador. Colunas: `conviteid`, `contaid`, `tipo`, `funcionarioid`/`userid`/`lojaid`+`papelgrupo`, `codigohash` (único), `expiraem`, `usadoem`, `canceladoem`, `criadopor`, `criadoem`.
+**Ficam** de propósito: `avisossistema` (os avisos do Início; `marcar_aviso_lido`); as colunas de canal (`entregas.canalenvio`/`canalvalidacao`, `documentosacessos.canal`, `missoesaceites.canal`), em que linhas antigas dizem `telegram` (histórico); `entregas.validadorfuncionarioid`, `bot_contexto_confiavel`, `conta_do_bot` e `funcionario_do_bot` (saem na fatia 2, com prova própria: estão dentro de ~110 funções); `bot_falta_feedback_ontem` (o aplicativo do colaborador usa); e as configurações que só o bot lia, com o histórico delas (`configuracoeshistorico` aponta para elas, de propósito).
 
 ### avisossistema
-Avisos dentro do sistema (ex.: "Bruna Lima ligou o Telegram agora."). Colunas: `avisoid`, `contaid`, `tipo`, `texto` (300), `criadoem`, `lidoem` (preenchido por `marcar_aviso_lido`).
-
-### mensagensfila
-Fila central de avisos e rotinas (a resposta a uma ação da própria pessoa não passa por aqui). Colunas: `filaid`, `contaid`, `lojaid`, `chatid`, `tipo`, `conteudo` (jsonb), `referencia` (ex.: a entrega), `status` (`pendente`, `enviando`, `enviada`, `falhou`, `descartada`), `tentativas`, `proximaem`, `criadoem`, `enviadoem`, `erro` (só o código de erro do Telegram). Linhas terminadas são apagadas depois de 7 dias. Ninguém lê pelo navegador.
-
-### usomensagens
-Medição de uso por dia: `contaid`, `lojaid`, `canal` (`telegram`/`whatsapp`), `tipo`, `dia`, `quantidade`. **Nunca o texto.** Único por conta + loja + canal + tipo + dia.
-
-### Schema `bot` (controle técnico, sem acesso nenhum pelo navegador)
-- `bot.updates`: `update_id` já tratados (3 dias), para a mesma mensagem nunca ser tratada duas vezes.
-- `bot.tentativas`: códigos de convite errados por chat (1 dia). 5 em 1 hora bloqueiam.
-- `bot.estados`: passo da conversa (ex.: esperando a foto da tarefa X, 10 min; motivo de recusa). Nunca guarda texto de mensagem.
-- `bot.contaativa`: empresa escolhida por quem está em mais de uma.
-
-### Colunas novas em tabelas existentes
-- **entregas:** `canalenvio` (`app`/`telegram`), `canalvalidacao`, `validadorfuncionarioid` (quem validou pelo Telegram, quando não é o master), `fotoidunico` (id único da foto no Telegram; único por conta, recusa foto repetida), `avisochatid`/`avisomsgid` (a mensagem no grupo de gestão, para atualizar depois da validação). Preenchidas por gatilho; o navegador não escolhe.
-- **documentosacessos:** `funcionarioid` (quando a própria pessoa abriu) e `canal` (`app`/`telegram`).
-
-### Funções para as telas (master)
-`criar_convite_telegram(funcionario)`, `criar_convite_grupo(loja, papel)`, `criar_convite_meu_telegram()`: devolvem o código uma vez só. `desligar_telegram(vinculo)`, `marcar_aviso_lido(aviso)`.
-
-## Rotinas com mensagem (Etapa 1.13B1)
-
-### mensagensrotinas
-Liga/desliga de cada rotina do bot, **por loja**. Tudo nasce ligado: só aparece aqui o que o master mudou. Colunas: `contaid`, `lojaid`, `rotina` (`inicio_jornada`, `lembrete3`, `lembrete6`, `fim_jornada`, `comunicado_novo`, `comunicado_lembrete`, `folga_drop`, `missao`), `ativo`, `alteradoem`, `alteradopor`. O navegador só lê; muda por `definir_rotina_mensagem(loja, rotina, ativo)`.
+Avisos dentro do sistema, mostrados no Início. Colunas: `avisoid`, `contaid`, `tipo`, `texto` (300), `criadoem`, `lidoem` (preenchido por `marcar_aviso_lido`).
 
 ### missoesaceites
 Quem pegou cada tarefa, em que dia e por onde. Desde a **Etapa 1.12 B1a** vale para os três casos: missão, tarefa compartilhada e tarefa com dono (entregar sem ter pegado grava o aceite).
@@ -1368,12 +1302,7 @@ Não são tabelas novas: são linhas de **`tarefasatribuidas` sem `funcionarioid
 
 Quem pega ganha uma tarefa `Unica` de hoje com `origematribuicaoid` apontando para a original. Desde a **Etapa 1.12 B1a**, ela conta nos **pontos possíveis de quem pegou** e a entrega aprovada conta na **confiabilidade** dela (antes era só esforço extra). Quem estava atribuído e não pegou fica neutro; o que ninguém pegou não entra na nota de ninguém. A tarefa recebida de quem está de folga continua sendo esforço extra: não tem aceite.
 
-Entra por `pegar_tarefa(atribuicao, funcionario)` (o bot continua chamando `pegar_missao`, que é um atalho para ela) e sai por `revogar_aceite(atribuicao, dia, motivo)`.
-
-### Colunas novas
-- **`mensagensfila`**: `funcionarioid` (de quem é o aviso, para o limite diário e a folga), `automatica`, `naoreenviar` (rotina não é reenviada se falhar), `chave` (etiqueta única por conta: o banco recusa a segunda mensagem igual) e `juntarchave` (avisos que viram uma mensagem só). Situação nova **`guardada`**: aviso retido porque a pessoa está de folga ou afastada.
-- **`telegramvinculos`**: `bloqueadoem` (o Telegram recusou o envio; some sozinho quando a pessoa volta a usar o bot).
-- **`rotinasexecucoes.rotina`** aceita também `mensagens`.
+Entra por `pegar_tarefa(atribuicao, funcionario)` (`pegar_missao` é um atalho para ela) e sai por `revogar_aceite(atribuicao, dia, motivo)`.
 
 ### Configurações novas
 `MINUTOS_RODIZIO_ACEITE` (10; 0 desliga) — rodízio no aceite: minutos que quem pegou a última tarefa disputada da loja espera antes de pegar outra; `MINUTOS_TAREFA_PARADA` (30) — a partir de quantos minutos o tablet marca a tarefa como parada; `HORARIO_SILENCIO_INICIO` (22:00) e `HORARIO_SILENCIO_FIM` (07:00) — o silêncio **não vale dentro do turno da pessoa**; `MAX_MENSAGENS_AUTOMATICAS_DIA` (8); `MAX_TAREFAS_FOLGA_POR_PESSOA` (3).
