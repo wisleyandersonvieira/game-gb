@@ -4823,7 +4823,7 @@ BEGIN
   ] LOOP
     PERFORM public.exigir(NOT has_function_privilege('authenticated', f, 'EXECUTE')
                           AND NOT has_function_privilege('anon', f, 'EXECUTE'),
-                          'funcao do acesso nao liberada para o navegador: ' || f);
+                          'funcao do acesso (papeis e contexto) nao liberada para o navegador: ' || f);
   END LOOP;
   PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.tentativasacesso', 'SELECT')
                         AND NOT has_table_privilege('anon', 'public.tentativasacesso', 'SELECT'),
@@ -15451,6 +15451,88 @@ BEGIN
     RAISE EXCEPTION 'desfazer_120';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'desfazer_120' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 121. O contexto do SERVIDOR fica fechado (05/10/2026, decisao do Wisley)
+-- ===========================================================================
+-- bot_contexto_confiavel, conta_do_bot e funcionario_do_bot (o nome e antigo:
+-- sao o contexto do SERVIDOR, que o tablet, o celular, a TV, o acesso e as
+-- rotinas usam) e entrar_na_visao, a unica que liga esse contexto, so podem
+-- ser executadas pela chave de servidor. E a lista de canais da
+-- entrar_na_visao e FIXA: o WhatsApp (opcao a, token do proprio usuario) NAO
+-- entra nela. Para mudar a lista, este teste tem de ser mudado de proposito.
+DO $$ BEGIN RAISE NOTICE '121. contexto do servidor: so a chave de servidor, canais fixos'; END $$;
+DO $$
+DECLARE v_fora text;
+BEGIN
+  -- Ninguem alem do dono e da chave de servidor executa as quatro (nem o
+  -- PUBLIC, que e o padrao do Postgres quando ninguem tira).
+  SELECT string_agg(DISTINCT p.proname || ' -> ' || CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END, ', ')
+    INTO v_fora
+    FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.proname IN ('bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot', 'entrar_na_visao')
+     AND a.privilege_type = 'EXECUTE'
+     AND a.grantee <> p.proowner
+     AND (a.grantee = 0 OR a.grantee::regrole::text <> 'service_role');
+  PERFORM public.exigir(v_fora IS NULL
+                        AND (SELECT count(*) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+                               AND p.proname IN ('bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot', 'entrar_na_visao')) = 4
+                        AND (SELECT bool_and(has_function_privilege('service_role', p.oid, 'EXECUTE')
+                                             AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+                                             AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+                               FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+                                AND p.proname IN ('bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot', 'entrar_na_visao')),
+                        'contexto do servidor: as 4 funcoes so pela chave de servidor (fora: ' || coalesce(v_fora, 'ninguem') || ')');
+  -- Quem LIGA o contexto e so a entrar_na_visao (nenhuma outra funcao grava stgame.bot_*).
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_fora
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc ~ 'set_config\(\s*''stgame\.(bot_|visao_)'
+     AND p.proname <> 'entrar_na_visao';
+  PERFORM public.exigir(v_fora IS NULL, 'contexto do servidor: so a entrar_na_visao o liga (outras: ' || coalesce(v_fora, 'nenhuma') || ')');
+  -- A lista de canais, escrita: exatamente tablet e colaborador.
+  PERFORM public.exigir((SELECT substring(p.prosrc FROM 'p_canal NOT IN \(([^)]*)\)') FROM pg_proc p
+                          WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'entrar_na_visao') = '''tablet'', ''colaborador''',
+                        'entrar_na_visao: a lista de canais e exatamente tablet e colaborador (WhatsApp nao entra)');
+END $$;
+
+DO $$
+DECLARE
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+BEGIN
+  BEGIN
+    -- O servidor (aqui, o postgres sem papel) tentando abrir o contexto por
+    -- outro canal: o contexto continua desligado.
+    PERFORM set_config('stgame.bot_conta', '', true);
+    BEGIN PERFORM public.entrar_na_visao(2, NULL, NULL, 'whatsapp'); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(coalesce(current_setting('stgame.bot_conta', true), '') = '',
+                          'entrar_na_visao recusa o canal whatsapp: o contexto nao liga');
+    BEGIN PERFORM public.entrar_na_visao(2, NULL, NULL, 'telegram'); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(coalesce(current_setting('stgame.bot_conta', true), '') = '',
+                          'entrar_na_visao recusa o canal telegram: o contexto nao liga');
+    -- Controle: pelo canal certo, liga (a checagem acima nao e vazia).
+    PERFORM public.entrar_na_visao(2, NULL, NULL, 'tablet');
+    PERFORM public.exigir(current_setting('stgame.bot_conta', true) = '2', 'entrar_na_visao pelo tablet liga o contexto (controle)');
+    PERFORM set_config('stgame.bot_conta', '', true);
+    PERFORM set_config('request.jwt.claims', '', true);
+
+    -- Quem esta logado: chamar a porta ou ligar o contexto a mao nao muda a conta.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    BEGIN PERFORM public.entrar_na_visao(2, NULL, NULL, 'tablet'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.minha_conta() = 1, 'logado chamando entrar_na_visao: continua na propria conta');
+    PERFORM set_config('stgame.bot_conta', '2', true);
+    PERFORM set_config('stgame.bot_funcionario', '1', true);
+    PERFORM public.exigir(public.minha_conta() = 1 AND public.minha_conta_editavel() = 1,
+                          'logado ligando stgame.bot_conta a mao: continua na propria conta');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_121';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_121' THEN RAISE; END IF;
   END;
 END $$;
 SET teste.uid = '';

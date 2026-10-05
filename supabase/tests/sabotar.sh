@@ -10,7 +10,9 @@
 #
 # A sabotagem é um arquivo .sql que começa com a linha
 #   -- ALVO: <arquivo da migração que ela desmonta>
-# e recria as funções da migração com o defeito de propósito.
+# e recria as funções da migração com o defeito de propósito — ou mexe só na
+# PERMISSÃO delas (GRANT/REVOKE ... ON FUNCTION public.<nome>), desde
+# 05/10/2026: a impressão do banco inclui quem pode executar cada função.
 #
 #   bash supabase/tests/sabotar.sh <sabotagem.sql> [--entrega-anterior] [--trava jit] [--desligar '<texto exato de uma linha do teste>']...
 #
@@ -63,10 +65,10 @@ if git cat-file -e "origin/main:supabase/migrations/$ALVO" 2>/dev/null; then
 fi
 
 # 2. O ALVO é a versão mais recente de cada função sabotada?
-FUNCOES="$(grep -oiE '(CREATE (OR REPLACE )?|ALTER )FUNCTION public\.[a-z_0-9]+' "$SAB" | sed -E 's/.*public\.//' | sort -u)"
+FUNCOES="$(grep -oiE '((CREATE (OR REPLACE )?|ALTER )FUNCTION|(GRANT|REVOKE) .* ON FUNCTION) public\.[a-z_0-9]+' "$SAB" | sed -E 's/.*public\.//' | sort -u)"
 [ -n "$FUNCOES" ] || parar "a sabotagem nao recria nem altera nenhuma funcao"
 for f in $FUNCOES; do
-  ultima="$(grep -liE "(CREATE (OR REPLACE )?FUNCTION|ALTER FUNCTION) public\.$f *\(" supabase/migrations/*.sql | sort | tail -1)"
+  ultima="$(grep -liE "(CREATE (OR REPLACE )?FUNCTION|ALTER FUNCTION|(GRANT|REVOKE) .* ON FUNCTION) public\.$f *\(" supabase/migrations/*.sql | sort | tail -1)"
   [ "$(basename "$ultima")" = "$ALVO" ] \
     || parar "a versao mais recente de $f esta em $(basename "$ultima"), nao no ALVO $ALVO: essa migracao recriaria a funcao por cima da sabotagem"
 done
@@ -85,12 +87,12 @@ rodar() { docker cp "$1" "$C:/x.sql" >/dev/null; docker exec "$C" psql -U postgr
 rodar supabase/tests/_ambiente_local.sql >/dev/null
 for m in supabase/migrations/*.sql; do rodar "$m" >/dev/null 2>&1 || parar "a migracao $(basename "$m") nao aplicou"; done
 lista="$(echo "$FUNCOES" | sed "s/.*/'&'/" | paste -sd,)"
-impressao="SELECT md5(string_agg(p.oid::regprocedure::text || p.prosrc || coalesce(array_to_string(p.proconfig, ','), ''), '|' ORDER BY p.oid::regprocedure::text)) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ($lista)"
+impressao="SELECT md5(string_agg(p.oid::regprocedure::text || p.prosrc || coalesce(array_to_string(p.proconfig, ','), '') || coalesce(p.proacl::text, 'padrao'), '|' ORDER BY p.oid::regprocedure::text)) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ($lista)"
 antes="$(docker exec "$C" psql -U postgres -qtAc "$impressao")"
 rodar "$SAB" >/dev/null 2>&1 || parar "a sabotagem nao aplicou"
 depois="$(docker exec "$C" psql -U postgres -qtAc "$impressao")"
 # 3. A porta abriu de verdade?
-[ "$antes" != "$depois" ] || parar "a sabotagem nao mudou nada no banco (as funcoes ficaram iguais): a porta nao abriu"
+[ "$antes" != "$depois" ] || parar "a sabotagem nao mudou nada no banco (as funcoes e as permissoes delas ficaram iguais): a porta nao abriu"
 echo "mira conferida: ALVO $ALVO; funcoes sabotadas no banco: $(echo $FUNCOES)"
 
 if [ "$TRAVA" = jit ]; then
