@@ -133,7 +133,7 @@ function Inicio() {
           <div className="-mt-3">
             <SituacaoRotina rotina={p.rotina ?? null} />
           </div>
-          <Avisos avisos={p.avisos} />
+          <Avisos avisos={p.avisos} hoje={p.hoje} />
           {mostrarGuia && (
             <Guia
               guia={p.guia}

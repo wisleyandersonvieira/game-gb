@@ -14,10 +14,8 @@ describe("resumo da jornada", () => {
   it("buraco no meio separa os blocos", () => {
     expect(resumoDaJornada([d(2, "08:00", "17:00"), d(4, "08:00", "17:00")])).toBe("Seg 08:00–17:00 · Qua 08:00–17:00");
   });
-  it("turno da noite aparece como está, e o intervalo no fim", () => {
-    expect(resumoDaJornada([d(6, "22:00", "06:00")], { inicio: "02:00:00", fim: "02:30:00" })).toBe(
-      "Sex 22:00–06:00 · intervalo 02:00–02:30",
-    );
+  it("turno da noite aparece como está (sem intervalo: ele saiu em 05/10/2026)", () => {
+    expect(resumoDaJornada([d(6, "22:00", "06:00")])).toBe("Sex 22:00–06:00");
   });
   it("sem dia nenhum", () => {
     expect(resumoDaJornada([])).toBe("Sem horário em nenhum dia");

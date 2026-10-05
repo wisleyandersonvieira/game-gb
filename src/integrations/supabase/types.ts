@@ -307,6 +307,38 @@ export type Database = {
         }
         Relationships: []
       }
+      avisosdispensados: {
+        Row: {
+          chave: string
+          contaid: number
+          dispensadoem: string
+          dispensaid: number
+          userid: string
+        }
+        Insert: {
+          chave: string
+          contaid?: number
+          dispensadoem?: string
+          dispensaid?: number
+          userid: string
+        }
+        Update: {
+          chave?: string
+          contaid?: number
+          dispensadoem?: string
+          dispensaid?: number
+          userid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "avisosdispensados_contaid_fkey"
+            columns: ["contaid"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["contaid"]
+          },
+        ]
+      }
       avisossistema: {
         Row: {
           avisoid: number
@@ -2319,8 +2351,6 @@ export type Database = {
           jornadaid: number
           nome: string
           observacao: string | null
-          pausafim: string | null
-          pausainicio: string | null
         }
         Insert: {
           ativa?: boolean
@@ -2329,8 +2359,6 @@ export type Database = {
           jornadaid?: number
           nome: string
           observacao?: string | null
-          pausafim?: string | null
-          pausainicio?: string | null
         }
         Update: {
           ativa?: boolean
@@ -2339,8 +2367,6 @@ export type Database = {
           jornadaid?: number
           nome?: string
           observacao?: string | null
-          pausafim?: string | null
-          pausainicio?: string | null
         }
         Relationships: []
       }
@@ -5055,10 +5081,9 @@ export type Database = {
         Returns: number
       }
       bot_contexto_confiavel: { Args: never; Returns: boolean }
-      bot_falta_feedback_ontem: {
-        Args: { p_contaid: number; p_funcionarioid: number }
-        Returns: boolean
-      }
+      avisos_dispensados: { Args: never; Returns: string[] }
+      dispensar_avisos: { Args: { p_chaves: string[] }; Returns: number }
+      reexibir_avisos: { Args: { p_chaves: string[] }; Returns: number }
       canal_atual: { Args: never; Returns: string }
       catalogo_de_tarefas: {
         Args: { p_busca?: string; p_inativas?: boolean; p_limite?: number; p_lojaid?: number; p_offset?: number }
@@ -5733,8 +5758,6 @@ export type Database = {
           jornadaid: number
           nome: string
           observacao: string | null
-          pausafim: string | null
-          pausainicio: string | null
           lojas: number[]
           outraslojas: number
           editavel: boolean
@@ -6235,8 +6258,6 @@ export type Database = {
           p_jornadaid: number | null
           p_nome: string
           p_observacao: string | null
-          p_pausafim: string | null
-          p_pausainicio: string | null
           p_lojas?: number[] | null
         }
         Returns: number

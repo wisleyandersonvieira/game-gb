@@ -52,12 +52,6 @@ function Inicio() {
         </div>
       </div>
 
-      {eu.data?.feedbackpendente ? (
-        <p className="rounded-2xl border border-border bg-muted/40 p-4 text-sm">
-          Você tem um feedback de ontem para responder. Ele entra na próxima etapa do aplicativo.
-        </p>
-      ) : null}
-
       {eu.data?.comunicados ? (
         <p className="rounded-2xl border border-border bg-muted/40 p-4 text-sm">
           {eu.data.comunicados === 1 ? "Há 1 comunicado novo" : `Há ${eu.data.comunicados} comunicados novos`} da
