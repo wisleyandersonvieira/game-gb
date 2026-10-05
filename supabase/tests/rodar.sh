@@ -240,39 +240,18 @@ if [ "$ok_r" != "1" ] || [ "$repasse" != "1" ] || [ "$erros_r" != "0" ]; then
 $saida_r"
 fi
 
-echo "==> duas aprovacoes pelo Telegram ao mesmo tempo (validador e master)"
-rodar "$RAIZ/supabase/tests/concorrencia_telegram_preparo.sql" >/dev/null
-docker cp "$RAIZ/supabase/tests/concorrencia_telegram_sessao.sql" "$CONTAINER:/sessao_t.sql" >/dev/null
-docker exec "$CONTAINER" psql -U postgres -q -v usuario=13002 -f /sessao_t.sql >/tmp/gamegb-sessao13.txt 2>&1 &
-p13=$!
-docker exec "$CONTAINER" psql -U postgres -q -v usuario=13000 -f /sessao_t.sql >/tmp/gamegb-sessao14.txt 2>&1 &
-p14=$!
-wait "$p13" "$p14" || true
-ja_validada=$(cat /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt | grep -c "ja_validada" || true)
-erros_t=$(cat /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt | grep -c "ERROR" || true)
-grep -h ERROR /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt || true
-rm -f /tmp/gamegb-sessao13.txt /tmp/gamegb-sessao14.txt
-echo "    conexao que encontrou a entrega ja aprovada: $ja_validada de 2; erros: $erros_t"
-
-saida_t="$(rodar "$RAIZ/supabase/tests/concorrencia_telegram_confere.sql" 2>&1)" && ok_t=1 || ok_t=0
-echo "$saida_t" | sed -n 's/^psql:[^ ]* //p' | grep -vE '^(DO|SET)' || true
-if [ "$ok_t" != "1" ] || [ "$ja_validada" != "1" ] || [ "$erros_t" != "0" ]; then
-  ok_c=0
-  saida_c="$saida_c
-$saida_t"
-fi
-
-echo "==> dois cliques em \"Eu aceito\" (missao da equipe) ao mesmo tempo"
+echo "==> a mesma missao da equipe pega para duas pessoas ao mesmo tempo"
 rodar "$RAIZ/supabase/tests/concorrencia_missao_preparo.sql" >/dev/null
 docker cp "$RAIZ/supabase/tests/concorrencia_missao_sessao.sql" "$CONTAINER:/sessao_m.sql" >/dev/null
-docker exec "$CONTAINER" psql -U postgres -q -v usuario=14001 -f /sessao_m.sql >/tmp/gamegb-sessao15.txt 2>&1 &
+docker exec "$CONTAINER" psql -U postgres -q -v usuario=1401 -f /sessao_m.sql >/tmp/gamegb-sessao15.txt 2>&1 &
 p15=$!
-docker exec "$CONTAINER" psql -U postgres -q -v usuario=14002 -f /sessao_m.sql >/tmp/gamegb-sessao16.txt 2>&1 &
+docker exec "$CONTAINER" psql -U postgres -q -v usuario=1402 -f /sessao_m.sql >/tmp/gamegb-sessao16.txt 2>&1 &
 p16=$!
 wait "$p15" "$p16" || true
-ja_pega=$(cat /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep -c "ja_pega" || true)
-erros_m=$(cat /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep -c "ERROR" || true)
-grep -h ERROR /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt || true
+# Quem perde a corrida recebe "ja foi pega hoje por <nome>"; qualquer outro erro reprova.
+ja_pega=$(cat /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep -c "já foi pega hoje por" || true)
+erros_m=$(cat /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep "ERROR" | grep -vc "já foi pega hoje por" || true)
+grep -h ERROR /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt | grep -v "já foi pega hoje por" || true
 rm -f /tmp/gamegb-sessao15.txt /tmp/gamegb-sessao16.txt
 echo "    conexao que encontrou a missao ja pega: $ja_pega de 2; erros: $erros_m"
 
@@ -324,7 +303,7 @@ if [ "$ok_t" != "1" ]; then
   exit 1
 fi
 
-echo "==> bot do Telegram: chamada sem o segredo certo e recusada (401)"
+echo "==> segredo das funcoes do servidor: segredo curto nunca vale"
 if docker run --rm -v "$RAIZ/supabase/functions:/f" -w /f denoland/deno:2.1.4 \
      deno test --allow-env --no-check tests/ >/tmp/gamegb-deno.txt 2>&1; then
   echo "    $(grep -oE '[0-9]+ passed \| [0-9]+ failed' /tmp/gamegb-deno.txt | tail -1)"

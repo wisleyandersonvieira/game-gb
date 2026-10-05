@@ -26,9 +26,10 @@
 # do teste por um comentário, para provar que a checagem SEGUINTE também pega),
 # ou, com --trava jit, roda supabase/tests/jit.sh (isolamento e telas com volume).
 #
-# Saída: 0 = o teste REPROVOU (a trava pegou; diz em qual checagem);
+# Saída: 0 = uma checagem REPROVOU (FALHOU: a trava pegou; diz qual);
 #        1 = o teste PASSOU (sabotagem não pega: o teste está incompleto);
-#        2 = parou: a mira está errada (nada foi provado).
+#        2 = parou: a mira está errada, ou o teste quebrou com outro erro
+#            antes de alguma checagem reprovar (nada foi provado).
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$RAIZ"
@@ -105,11 +106,16 @@ cp supabase/tests/isolamento.sql "$COPIA"
 for d in "${DESLIGAR[@]+"${DESLIGAR[@]}"}"; do
   n="$(grep -cF -- "$d" "$COPIA")"
   [ "$n" = 1 ] || { rm -f "$COPIA"; parar "--desligar precisa casar com exatamente 1 linha do teste (casou com $n): $d"; }
+  # Desliga o COMANDO inteiro a que a linha pertence (do PERFORM ao ";"), não
+  # só a linha: um comando de várias linhas cortado ao meio quebraria o SQL.
   python3 - "$COPIA" "$d" <<'PY'
 import sys
 p, d = sys.argv[1], sys.argv[2]
 t = open(p).read()
-i = t.index(d); ini = t.rfind('\n', 0, i) + 1; fim = t.index('\n', i)
+i = t.index(d)
+ini = t.rfind('PERFORM ', 0, i)
+ini = t.rfind('\n', 0, ini) + 1
+fim = t.index(';', i) + 1
 open(p, 'w').write(t[:ini] + '    -- (desligado de proposito pela sabotagem)' + t[fim:])
 PY
   echo "desligado de proposito no teste: $d"
@@ -117,7 +123,13 @@ done
 saida="$(rodar "$COPIA" 2>&1)"; rc=$?
 rm -f "$COPIA"
 if [ "$rc" != 0 ]; then
-  echo "REPROVOU (a trava pegou): $(echo "$saida" | grep -E 'ERROR' | head -1 | sed 's/^psql:[^ ]* //')"
+  erro="$(echo "$saida" | grep -E 'ERROR' | head -1 | sed 's/^psql:[^ ]* //')"
+  # Só uma checagem que reprovou (FALHOU) prova a trava. Outro erro (o teste
+  # quebrou, a sabotagem derrubou o preparo) não prova nada.
+  if ! echo "$erro" | grep -q "FALHOU:"; then
+    echo "PAROU (o teste quebrou antes de alguma checagem reprovar; nada foi provado): $erro"; exit 2
+  fi
+  echo "REPROVOU (a trava pegou): $erro"
   exit 0
 fi
 echo "PASSOU: a sabotagem nao foi pega. O teste esta incompleto (nao a sabotagem provada)."

@@ -4,7 +4,7 @@
 //
 // 1. A IMPRESSÃO DIGITAL (SHA-256). É o que impede a mesma foto de provar
 //    duas tarefas, mesmo renomeada. O banco guarda em entregas.fotoidunico,
-//    o mesmo campo que o Telegram já usava.
+//    o campo de sempre.
 //
 // 2. A HORA EM QUE A FOTO FOI TIRADA (EXIF DateTimeOriginal). O navegador não
 //    sabe dizer se a foto veio da câmera ou da galeria — isso não existe na

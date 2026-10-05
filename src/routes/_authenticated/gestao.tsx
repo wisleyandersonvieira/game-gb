@@ -5,7 +5,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { BarraDoDia, percentual, type DadosPainel } from "@/painel/PainelDaLoja";
 import { useLojaAtiva } from "@/lojas/loja-ativa";
 import { criarAcessoLoja, definirSenhaDoTablet, fichaDosTablets, redefinirSenhaLoja } from "@/servidor/acesso";
-import { GruposTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 import { ESTAVEL } from "@/ui/prazos";
 import { ConfigurarTv, type BlocosDaTv } from "@/lojas/ConfigurarTv";
@@ -395,7 +394,6 @@ function Gestao() {
           <ResumoDasLojas />
           <AcessoDasLojas suspensa={suspensa} />
           <LinksDeTv suspensa={suspensa} />
-          <GruposTelegram lojas={ativas} suspensa={suspensa} />
         </>
       )}
 

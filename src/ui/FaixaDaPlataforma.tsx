@@ -1,7 +1,8 @@
 // A faixa vermelha do /admin (01/10/2026, decisão do Wisley): qualquer ✗ da
 // plataforma aparece no topo, sem precisar abrir a /saude.
-// CURATIVO: só avisa quem abre o /admin. O alarme de verdade é o Telegram
-// (Etapa 1.13).
+// Só avisa quem abre o /admin. Sem o Telegram (retirado em 04/10/2026), esta
+// faixa e a /saude são os únicos alarmes da plataforma: nenhum dos dois manda
+// aviso a ninguém, os dois esperam alguém abrir a tela.
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";

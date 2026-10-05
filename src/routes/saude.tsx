@@ -212,7 +212,6 @@ function ha(instante: string | null | undefined): string {
 const NOME_DO_AGENDAMENTO: Record<string, string> = {
   "gamegb-rotinas": "Rotinas do sistema (lista do dia, fechamento, fotos), a cada 5 minutos",
   "stgame-codigos-vencidos": "Limpeza dos códigos de acesso vencidos, a cada 5 minutos",
-  "stgame-telegram-fila": "Fila de mensagens do Telegram, a cada 15 segundos (só importa com o bot ligado)",
 };
 const NOME_DA_ROTINA: Record<string, string> = {
   lista_do_dia: "Lista de tarefas do dia",
@@ -255,7 +254,7 @@ function Rotinas({ r }: { r: SaudeDasRotinas }) {
         <Linha
           ok={r.cofre && r.pgnet}
           titulo="Cofre de segredos e chamadas do banco (Vault e pg_net)"
-          ajuda="Sem eles, nenhuma foto vencida é apagada e nenhuma mensagem sai. Ligue as extensões Vault e pg_net no Supabase."
+          ajuda="Sem eles, nenhuma foto vencida é apagada. Ligue as extensões Vault e pg_net no Supabase."
         />
         {["stgame_funcoes_url", "stgame_expurgo_segredo"].map((nome) => (
           <Linha
@@ -269,12 +268,11 @@ function Rotinas({ r }: { r: SaudeDasRotinas }) {
           <Linha ok={false} titulo="Agendador (pg_cron)" ajuda="A extensão pg_cron não está ligada: nenhuma rotina roda sozinha." />
         )}
         {r.jobs.map((j) => {
-          const telegram = j.nome === "stgame-telegram-fila";
           const ok = j.existe && j.ativo && j.comandocerto !== false && !j.atrasado && j.ultimostatus !== "failed";
           return (
             <Linha
               key={j.nome}
-              ok={ok || (telegram && !segredo("stgame_fila_segredo"))}
+              ok={ok}
               titulo={`${NOME_DO_AGENDAMENTO[j.nome] ?? j.nome}: ${
                 !j.existe ? "NÃO EXISTE" : !j.ativo ? "DESLIGADO" : `rodou ${ha(j.ultimaexecucao)}${j.atrasado ? " — ATRASADO" : ""}`
               }`}
@@ -290,13 +288,6 @@ function Rotinas({ r }: { r: SaudeDasRotinas }) {
             />
           );
         })}
-        {r.mensagensfalhadas !== null && (
-          <Linha
-            ok={r.mensagensfalhadas === 0}
-            titulo={`Mensagens que falharam nas últimas 24 horas: ${r.mensagensfalhadas}`}
-            ajuda="Mensagens que o Telegram recusou até desistir. Todas as contas somadas."
-          />
-        )}
         {r.fila && (
           <Linha
             ok={r.fila.dias === 0}
@@ -407,7 +398,6 @@ function SaudeDaConta() {
       return {
         saude: saude.data as unknown as {
           fotos: { vencidas: number; diasdeatraso: number; presas: number };
-          mensagensfalhadas: number;
           fila: { dias: number; ultimo: string | null };
         } | null,
         avisos: avisos.data ?? [],
@@ -426,11 +416,6 @@ function SaudeDaConta() {
               ok={saude.fotos.vencidas === 0 || saude.fotos.diasdeatraso <= 2}
               titulo={`Fotos vencidas ainda guardadas: ${saude.fotos.vencidas}`}
               ajuda={`A mais antiga passou do prazo há ${saude.fotos.diasdeatraso} dia(s)${saude.fotos.presas > 0 ? `; ${saude.fotos.presas} com a remoção falhando` : ""}. A política de uso promete que elas são apagadas: a rotina de apagar não está dando conta.`}
-            />
-            <Linha
-              ok={saude.mensagensfalhadas === 0}
-              titulo={`Mensagens do Telegram que falharam nas últimas 24 horas: ${saude.mensagensfalhadas}`}
-              ajuda="O Telegram recusou essas mensagens até o sistema desistir."
             />
             <Linha
               ok={saude.fila.dias === 0}

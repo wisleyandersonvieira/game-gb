@@ -11,7 +11,6 @@ import {
 } from "@/servidor/acesso";
 import { AvisoSemLoja, useLojaAtiva } from "@/lojas/loja-ativa";
 import { Pontos } from "@/ui/Pontos";
-import { IconeTelegram, JanelaConvite, useDesligarTelegram, useVinculosTelegram } from "@/telegram/Telegram";
 import { Pagina } from "@/ui/Pagina";
 import { useHojeDaConta } from "@/ui/hoje";
 import { dataHoraBr } from "@/rh/datas";
@@ -97,11 +96,6 @@ function Funcionarios() {
 
   const [form, setForm] = useState(FORM_VAZIO);
   const [lojasEscolhidas, setLojasEscolhidas] = useState<number[]>([]);
-  // Lojas em que a pessoa pode aprovar e recusar entregas pelo Telegram.
-  const [validadorEm, setValidadorEm] = useState<number[]>([]);
-  const [convite, setConvite] = useState<{ funcionarioid: number; nome: string } | null>(null);
-  const vinculos = useVinculosTelegram();
-  const desligar = useDesligarTelegram();
   const [editando, setEditando] = useState<number | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
   const [filtroLoja, setFiltroLoja] = useState<number | "todas">("todas");
@@ -126,22 +120,17 @@ function Funcionarios() {
       if (erroVinculos) throw erroVinculos;
 
       const porFuncionario = new Map<number, number[]>();
-      const validadorPor = new Map<number, number[]>();
       for (const v of vinculos ?? []) {
         if (!v.ativo) continue;
         porFuncionario.set(v.funcionarioid, [
           ...(porFuncionario.get(v.funcionarioid) ?? []),
           v.lojaid,
         ]);
-        if (v.validador) {
-          validadorPor.set(v.funcionarioid, [...(validadorPor.get(v.funcionarioid) ?? []), v.lojaid]);
-        }
       }
 
       return (pessoas ?? []).map((p) => ({
         ...p,
         lojas: porFuncionario.get(p.funcionarioid) ?? [],
-        validadorEm: validadorPor.get(p.funcionarioid) ?? [],
       }));
     },
   });
@@ -149,7 +138,6 @@ function Funcionarios() {
   function limparFormulario() {
     setForm(FORM_VAZIO);
     setLojasEscolhidas(lojaAtiva ? [lojaAtiva] : []);
-    setValidadorEm([]);
     setEditando(null);
   }
 
@@ -175,7 +163,6 @@ function Funcionarios() {
         p_telefone: dados.telefonewhatsapp,
         p_diadefolga: dados.diadefolga,
         p_lojas: lojasEscolhidas,
-        p_validador: validadorEm,
       });
       if (error) throw error;
     },
@@ -371,8 +358,6 @@ function Funcionarios() {
   const visiveis = mostrarInativos ? porLoja : porLoja.filter((f) => f.ativo);
   const inativos = porLoja.length - porLoja.filter((f) => f.ativo).length;
   const nomeDaLoja = (id: number) => lojas.find((l) => l.lojaid === id)?.nome ?? `Loja ${id}`;
-  const telegramDe = (id: number) =>
-    (vinculos.data ?? []).find((v) => v.tipo === "pessoa" && v.funcionarioid === id);
 
   return (
     <Pagina
@@ -484,31 +469,6 @@ function Funcionarios() {
               </label>
             ))}
           </div>
-          {lojasEscolhidas.length > 0 && (
-            <div className="space-y-1 pt-1">
-              <p className="text-sm text-muted-foreground">
-                Pode aprovar e recusar entregas pelo Telegram (no grupo de gestão da loja)?
-              </p>
-              <div className="flex flex-wrap gap-3">
-                {lojas
-                  .filter((l) => lojasEscolhidas.includes(l.lojaid))
-                  .map((l) => (
-                    <label key={l.lojaid} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={validadorEm.includes(l.lojaid)}
-                        onChange={(e) =>
-                          setValidadorEm((atual) =>
-                            e.target.checked ? [...atual, l.lojaid] : atual.filter((id) => id !== l.lojaid),
-                          )
-                        }
-                      />
-                      Validador em {l.nome}
-                    </label>
-                  ))}
-              </div>
-            </div>
-          )}
           {lojasEscolhidas.length === 0 && (
             <p className="text-xs text-muted-foreground">
               Sem loja marcada, a pessoa fica cadastrada mas não pode receber tarefas.
@@ -662,17 +622,6 @@ function Funcionarios() {
               <div className="min-w-0">
               <p className="flex flex-wrap items-center gap-2 font-medium">
                 {f.nomecompleto}
-                {telegramDe(f.funcionarioid) &&
-                  (telegramDe(f.funcionarioid)!.bloqueadoem ? (
-                    <span
-                      className="rounded-md border border-destructive px-1.5 py-0.5 text-xs font-medium text-destructive"
-                      title="A pessoa bloqueou o bot no Telegram. Peça para ela desbloquear e mandar uma mensagem ao bot."
-                    >
-                      Bot bloqueado
-                    </span>
-                  ) : (
-                    <IconeTelegram desde={telegramDe(f.funcionarioid)!.vinculadoem} />
-                  ))}
                 {!f.ativo && (
                   <span className="ml-2 rounded-md border border-border px-2 py-0.5 text-xs font-normal text-muted-foreground">
                     Inativo
@@ -689,15 +638,10 @@ function Funcionarios() {
                   ? f.lojas.map(nomeDaLoja).join(" · ")
                   : "Nenhuma loja"}
               </p>
-              {f.validadorEm.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Aprova no Telegram: {f.validadorEm.map(nomeDaLoja).join(" · ")}
-                </p>
-              )}
               <p className="text-xs text-muted-foreground">
                 {f.jornadaid
                   ? `Jornada: ${nomeDaJornada(f.jornadaid) ?? "…"}`
-                  : "Sem jornada: não recebe as mensagens do dia"}
+                  : "Sem jornada"}
               </p>
               <p className="text-xs text-muted-foreground">
                 {cpfMascarado(f.cpf) ? `CPF ${cpfMascarado(f.cpf)}` : "Sem CPF cadastrado"} ·{" "}
@@ -739,7 +683,6 @@ function Funcionarios() {
                     diadefolga: f.diadefolga,
                   });
                   setLojasEscolhidas(f.lojas);
-                  setValidadorEm(f.validadorEm);
                 }}
                 className="rounded-md border border-border px-3 py-1 text-sm"
               >
@@ -859,37 +802,9 @@ function Funcionarios() {
               >
                 {f.ativo ? "Desativar" : "Reativar"}
               </button>
-              {telegramDe(f.funcionarioid) ? (
-                <button
-                  onClick={() => {
-                    if (confirm(`Desligar o Telegram de ${f.nomecompleto}? A pessoa para de receber avisos e de usar o bot até receber um novo convite.`)) {
-                      desligar.mutate(telegramDe(f.funcionarioid)!.vinculoid);
-                    }
-                  }}
-                  disabled={desligar.isPending}
-                  className="rounded-md border border-border px-3 py-1 text-sm"
-                >
-                  Desligar Telegram
-                </button>
-              ) : (
-                f.ativo && (
-                  <button
-                    onClick={() => setConvite({ funcionarioid: f.funcionarioid, nome: f.nomecompleto })}
-                    className="rounded-md border border-border px-3 py-1 text-sm"
-                  >
-                    Convite do Telegram
-                  </button>
-                )
-              )}
             </div>
           </div>
         ))}
-
-        {desligar.isError && (
-          <p className="text-sm text-destructive">
-            Não foi possível desligar o Telegram: {(desligar.error as Error).message}
-          </p>
-        )}
 
         {!equipe.isLoading && visiveis.length === 0 && (
           <p className="text-sm text-muted-foreground">
@@ -900,20 +815,6 @@ function Funcionarios() {
         )}
       </div>
 
-      {convite && (
-        <JanelaConvite
-          titulo={`Convite do Telegram: ${convite.nome}`}
-          modo="link"
-          gerar={() => gerarConvite(convite.funcionarioid)}
-          aoFechar={() => setConvite(null)}
-        />
-      )}
     </Pagina>
   );
-}
-
-async function gerarConvite(funcionarioid: number) {
-  const { data, error } = await supabase.rpc("criar_convite_telegram", { p_funcionarioid: funcionarioid });
-  if (error) throw error;
-  return data as string;
 }

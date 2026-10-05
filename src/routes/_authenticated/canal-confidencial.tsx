@@ -64,8 +64,8 @@ function CanalConfidencial() {
           login, nem telefone, nem a hora (só o dia). Só o responsável pela conta lê esta tela.
         </p>
         <p>
-          Os relatos chegam pelo bot (Etapa 1.13). Quem enviou recebe um protocolo e, com ele, acompanha a resposta sem se
-          identificar.
+          Ainda não existe um caminho para o funcionário enviar o relato (ele chegaria pelo bot, que saiu do sistema em
+          04/10/2026). Quando existir, quem enviar recebe um protocolo e, com ele, acompanha a resposta sem se identificar.
         </p>
       </div>
 

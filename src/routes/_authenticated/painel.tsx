@@ -131,7 +131,7 @@ function Quadro() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Registrar entrega (enquanto o bot não existe)                       */
+/* Registrar entrega                                                    */
 /* ------------------------------------------------------------------ */
 
 function RegistrarEntrega({ lojaid }: { lojaid: number }) {

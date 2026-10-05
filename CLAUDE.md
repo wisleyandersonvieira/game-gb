@@ -70,7 +70,7 @@
 ## Ordem de trabalho (decisões do Wisley)
 - O plano tem **FASE 1 — Lançamento** (etapas 1.1 a 1.14) e **FASE 2 — Expansão** (etapas 2.1 a 2.3, adiada). Siga as etapas da Fase 1 **em ordem**.
 - O registro de decisões e os commits antigos usam a numeração antiga ("Fase 7" = Etapa 1.7 etc.); a tabela de tradução está no topo do plano.
-- **Stripe (Etapa 1.12) e Telegram/WhatsApp (Etapa 1.13) ficam para o fim da Fase 1.** Não implemente envio de mensagens nem cobrança antes disso. Mas já prepare o modelo: `contas.status`, `contas.limitelojas`.
+- **Stripe (Etapa 1.12) e WhatsApp (Etapa 1.13) ficam para o fim da Fase 1.** Não implemente envio de mensagens nem cobrança antes disso. **O Telegram foi retirado do sistema em 04/10/2026** (decisão do Wisley): não o traga de volta sem pedido (a seção 119 do teste de isolamento reprova). Mas já prepare o modelo: `contas.status`, `contas.limitelojas`.
 - O **endurecimento** de segurança fica para a Etapa 1.14. O **isolamento entre contas não é opcional** e vale desde a Etapa 1.2.
 - **Não construir nada da Fase 2 sem pedido explícito. As tabelas existem, mas ficam sem tela.** (Fase 2 = escala, mapa e pausas; estoque, incluindo nota fiscal pelo bot e "guardar mercadoria"; financeiro de lucro.)
 

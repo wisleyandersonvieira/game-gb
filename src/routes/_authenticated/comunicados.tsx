@@ -90,8 +90,8 @@ function Comunicados() {
   return (
     <Pagina titulo="Comunicados">
       <p className="text-sm text-muted-foreground">
-        Avisos para a equipe, com registro de quem leu e deu ciência. Por enquanto o gestor registra a ciência de cada
-        pessoa (com data e hora); quando houver o portal ou o bot, o próprio funcionário confirma.
+        Avisos para a equipe, com registro de quem leu e deu ciência. O gestor registra a ciência de cada pessoa (com
+        data e hora), ou a própria pessoa confirma no tablet da loja.
       </p>
 
       <div className="flex flex-wrap gap-x-2 border-b border-border">

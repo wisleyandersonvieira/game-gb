@@ -1,3 +1,4 @@
--- Uma das duas conexões: aceita a missão e segura a transação 1 s.
-SET ROLE service_role;
-SELECT public.bot_pegar_missao(-14001, :usuario, 14900), pg_sleep(1);
+-- Uma das duas conexões: pega a missão para uma pessoa e segura a transação 1 s.
+SELECT set_config('teste.uid', '14141414-1414-1414-1414-141414141414', false);
+SET ROLE authenticated;
+SELECT public.pegar_tarefa(14900, :usuario), pg_sleep(1);
