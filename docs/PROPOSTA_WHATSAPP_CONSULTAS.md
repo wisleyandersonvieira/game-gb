@@ -82,10 +82,12 @@ Cinco coisas que o pedido não previa. Cada uma tem uma proposta. As que mudam u
 | Chave de servidor do principal no ambiente | **sim**, injetada automaticamente (o código não a usaria, mas ela está lá) | não, se usar o papel `wa_porteiro`; sim, se usar a chave de servidor | **não** |
 | Chave de assinatura visível para a função de fotos | **sim** (segredos valem para o projeto todo) | não | não |
 | Credencial para as 3 funções | papel `wa_porteiro` (ou a chave injetada) | papel `wa_porteiro` | papel `wa_porteiro` |
-| Se o porteiro for invadido, leva | **a chave de servidor + a de assinatura**: tudo | a de assinatura (e as chaves de um projeto vazio) | a de assinatura |
+| Se o porteiro for invadido, leva | **a chave de servidor + a de assinatura**: tudo | a chave de assinatura, **que fabrica token de servidor** | a chave de assinatura, **que fabrica token de servidor** |
 | Custo mensal | US$ 0 | plano gratuito: **pausa** após 7 dias sem atividade **no banco** (um projeto só com o porteiro não usa banco, e pausaria); plano pago: **a partir de US$ 10/mês** a mais | US$ 0 no plano gratuito (1 milhão de pedidos por mês, 50 ms de processamento por pedido; a espera pela rede não conta); Pro: US$ 20/mês |
 | Painéis para você cuidar | 1 (o que já existe) | 2 | 2 (o Deno Deploy já entra pela consulta) |
 | Regra "recusa iniciar se achar chave de servidor" | impossível (a chave está sempre lá) | possível só "do nosso projeto" | **estrita** |
+
+**Correção (06/10/2026, apontada pelo Wisley):** quem rouba a chave de assinatura **não leva "só a chave de assinatura"**. Com ela, fabrica um token de **servidor**, que no banco tem o mesmo poder da chave de servidor. Por isso a defesa da seção 6.4 deixou de ser "camada extra" e virou **portão obrigatório**: o banco recusa todo token assinado pela nossa chave que não seja o formato A ou o B. Sem o portão provado, nenhuma fatia começa. E mesmo com ele, o token fabricado continua valendo no **Storage** e no **Auth**, aonde o portão não chega: lá, a defesa é a revogação imediata (seção 18).
 
 **Sugestão: Z.** Custo zero e a chave de servidor fora do porteiro. O painel do Deno Deploy já entra pela consulta, então não há painel novo. O porteiro e a consulta ficam em **apps separados** dentro do Deno Deploy, cada um com o seu ambiente: os segredos de um não aparecem para o outro.
 
@@ -257,15 +259,36 @@ Isso é estrutural: não depende de lembrar de conferir em cada função nova.
 
 Em nada: sem `canal = whatsapp`, a função só retorna. O site, o tablet, o celular e a TV continuam iguais. Isso será provado com comparação de antes e depois, com todos os tipos de login (seção 14).
 
-### 6.4 Defesa contra a chave vazada, no próprio banco **[a provar]**
+### 6.4 O PORTÃO: o banco recusa o token de servidor fabricado com a nossa chave (obrigatório, antes de qualquer fatia)
 
-A função antes de cada pedido também lê o **cabeçalho** do token (o `kid`, identificador da chave que assinou). Se o token foi assinado pela **nossa** chave importada e não for **exatamente** o formato A ou o B, o pedido é **recusado**, mesmo que diga `role: service_role`.
+**Por que é obrigatório:** a chave de assinatura fabrica token de servidor (seção 3.2). O portão faz o banco, pela API, aceitar dessa chave **só** os formatos A e B.
 
-Quem roubar a chave não consegue usá-la para virar servidor **no banco pela API**. Em Storage e Auth essa defesa não vale; por isso o plano de vazamento (seção 18) manda revogar a chave na hora.
+**Como funciona:**
+- A função `portao.antes_de_cada_pedido()` roda antes de **todo** pedido ao banco pela API.
+- Ela fica num schema próprio, `portao`, que a API não publica: ninguém a chama pelo navegador, nem o visitante.
+- Ela lê o cabeçalho do token (o `kid`, identificador de quem assinou):
+  - se o `kid` está na tabela de plataforma `portao.chavesproprias` (só as nossas chaves), o token precisa ser **exatamente** o formato A ou o B; qualquer outra coisa é **recusada** ("Token recusado.");
+  - se o `kid` não é nosso (os logins do Supabase, a chave de servidor, o visitante), a função não faz nada.
 
-**A provar antes de contar com ela:** há relato de versões do PostgREST em que a função antes de cada pedido recebe os cabeçalhos vazios. A fatia 2 prova com um PostgREST de verdade no Codespace e, depois, no nosso projeto. Se o `kid` não puder ser lido, sobram duas camadas, e a proposta diz isso no relatório:
-- o formato A só serve para quem tem vínculo ativo, porque a função confere o `sub`;
-- a revogação da chave.
+**Já provado no laboratório (06/10/2026), com o PostgREST de verdade, nas versões 12.2.12 e 13.0.7:**
+
+| Pedido | Resposta |
+|---|---|
+| sem token (visitante) | 200 (passa) |
+| chave do "Supabase", token de servidor | 200 (passa; não é nossa) |
+| chave do "Supabase", login comum | 200 (passa) |
+| **nossa chave, formato A** | 200 (passa) |
+| **nossa chave, formato B** | passa o portão (depois, o banco nega a função por falta de permissão, como deve) |
+| **nossa chave, token de SERVIDOR fabricado** | **403 "Token recusado."** |
+| nossa chave, servidor com a marca "whatsapp" | **403** |
+| nossa chave, formato A com 1 hora | **403** |
+| nossa chave, login sem a marca | **403** |
+
+- **Sabotagem:** o cabeçalho vazio (o relato do PostgREST #2855) fez o token de servidor fabricado **passar**. O laboratório enxerga a falha, então o resultado bom vale.
+
+**O que falta, e é o portão de verdade:** provar **no seu projeto**, junto com o teste no painel (seção 17). Fabricamos um token de servidor com a chave importada e o banco do ar tem de responder "Token recusado.". **Se o cabeçalho chegar vazio, ou a defesa não se provar, eu paro e aviso; nenhuma outra fatia começa.**
+
+**Limite que fica:** o portão só cobre o banco pela API. O Storage e o Auth do Supabase não passam por ele. Contra o token fabricado nesses dois, a defesa é a revogação imediata da chave (seção 18).
 
 ### 6.5 Comparação (a) × (b), para registro
 
@@ -290,6 +313,10 @@ Quem roubar a chave não consegue usá-la para virar servidor **no banco pela AP
   - decodificar os tokens gerados mostra A = `authenticated` + `whatsapp` + 300 s e B = `wa_porteiro` + `whatsapp_porteiro` + 60 s;
   - nenhum outro arquivo do porteiro chama a biblioteca de assinatura.
 - **Sabotagens do módulo:** trocar uma constante para `service_role`, a validade para 3600 s, ou criar um terceiro formato faz o teste reprovar.
+- **Aprovado (06/10/2026): só os dois formatos.** O teste "o código do porteiro não consegue assinar nenhum formato além do A e do B" nasce na **fatia 5**, junto com o código do porteiro, que ainda não existe:
+  - ele percorre todo o código do porteiro e reprova se a biblioteca de assinatura for chamada fora do módulo, ou se o módulo exportar qualquer coisa além das duas funções;
+  - ele chama as duas com todos os argumentos possíveis e decodifica cada token.
+  - **Sabotagem obrigatória:** uma terceira função `assinarQualquer(claims)` no módulo faz o teste reprovar.
 - **Papel `wa_porteiro` no banco:**
   - ele executa exatamente as 3 funções e nada mais (nenhuma tabela, nenhuma outra função);
   - um token B chamando `minhas_lojas()` ou lendo `funcionarios` é recusado, conferido pelo **resultado** (`nada_voltou`).
@@ -532,6 +559,18 @@ A regra fica **no banco**, em `wa_acertar` e na rotina de vencimento. Não depen
 - **No site:** Meu perfil → WhatsApp: saldo, cota do mês, pacotes, consumo por dia (de `whatsappuso`) e os movimentos.
 - **No bot:** "quanto me resta?", "saldo" e variações fixas são reconhecidas **pela consulta, antes da IA**, e respondidas com `meu_saldo_de_tokens()`. Custo: zero token.
 
+
+### 10.7 A taxa de envio (decidido em 06/10/2026)
+
+- **Quem paga o quê:**
+  - cada **resposta a uma pergunta** desconta do saldo os tokens da IA **mais uma taxa fixa de envio**, em tokens, que cubra a resposta da Meta;
+  - o código do vínculo, as respostas de erro, o "quanto me resta?" e o aviso de cota esgotada **não descontam nada**. A plataforma absorve, e cada um já tem limite (seção 11).
+- **Valor:** a taxa de envio vale o custo de uma resposta da Meta (~US$ 0,0068) convertido em tokens ao preço do pacote. Com o Sonnet 5.5 e o pacote a 3 vezes o custo, isso dá **~800 tokens por resposta**. O valor fica numa configuração de plataforma, que só o admin geral muda.
+- **Como entra no livro:** é um movimento a mais no acerto (`taxa_envio`), gravado por `wa_acertar` junto com o consumo. Por isso a reserva inclui a taxa: o banco reserva os tokens da IA **mais** a taxa, e o teto da IA que vai no token é a reserva **menos** a taxa.
+- Se o consumo não for informado (10.4), a reserva inteira é cobrada, com a taxa dentro.
+- **Revisão a cada 3 meses:** a /saude mostra, no dia 1º de janeiro, abril, julho e outubro, o custo real da Meta e da IA por resposta no trimestre, comparado com a taxa e o preço do pacote. Quem decide o novo valor é você.
+- **Pacotes em reais:** o preço em reais tem uma margem para o câmbio. Sugestão: o custo em dólar × câmbio do dia × 1,15. Revisto na mesma data.
+
 ---
 
 ## 11. Meta e infraestrutura
@@ -608,7 +647,15 @@ O que muda no texto:
    - a data e o tipo de cada mensagem;
    - os tokens usados.
 3. O que **não** se guarda: o texto das perguntas e respostas.
-4. Quem processa o texto: a Meta (transporte) e a Anthropic (IA), com os links das políticas deles. A Anthropic não usa dados enviados pela API para treinar modelos.
+4. **Quem processa os dados, e onde** (pedido do Wisley, 06/10/2026). Os links das políticas de cada um vão no texto:
+
+   | Quem | Para quê | O que recebe | Onde |
+   |---|---|---|---|
+   | **Meta** (WhatsApp Cloud API) | transportar as mensagens | o número e o texto das mensagens | nos data centers da Meta, nos **EUA** por padrão. A Meta oferece **armazenamento no Brasil** ("local storage", região América Latina) para o número; com ele, o conteúdo fica no Brasil, e fora daqui só enquanto a mensagem está sendo entregue (até 60 minutos). **Sugestão: ligar o armazenamento no Brasil** na fatia 7 |
+   | **Anthropic** (Claude) | responder a pergunta | o texto da pergunta e os dados que as ferramentas leram para responder | dados guardados nos **EUA**. O processamento pode ser fixado nos EUA (`inference_geo: "us"`, +10% no preço da IA) ou ficar "global" (a Anthropic escolhe). A Anthropic não usa dados enviados pela API para treinar modelos. **Sugestão: fixar nos EUA**, para o texto da política dizer um país só |
+   | **Deno Deploy** (Deno Land) | rodar o porteiro e a consulta | o texto passa por eles em trânsito; **nada é gravado** | **EUA** (a plataforma nova do Deno Deploy só tem EUA e Europa; a região de São Paulo era da versão antiga, encerrada em julho de 2026) |
+
+   O STGame (Supabase) guarda só o número embaralhado, os 4 últimos dígitos, a data, o tipo e os tokens, no mesmo lugar dos outros dados da conta.
 5. A IA pode errar: em decisão, confira no site.
 6. Por quanto tempo:
    - vínculo: enquanto ativo, e o registro de eventos enquanto a conta existir;
@@ -733,7 +780,7 @@ Uma resposta da Meta por pergunta, US$ 0,0068 cada (as 1.000 grátis do número 
 - **Infraestrutura:** porteiro e consulta no Deno Deploy, gratuito até 1 milhão de pedidos por mês; o volume acima fica muito abaixo disso. Pro: US$ 20/mês, se um dia passar.
 - **Em reais:** multiplique pelo câmbio do dia, mais o IOF do cartão internacional. A Meta, com a conta em BRL, já cobra em reais.
 
-**Modelo [APROVAR]:**
+**Modelo: decidido em 06/10/2026, Sonnet 5.5 como padrão.** (Texto anterior, para registro:)
 - A recomendação padrão da Anthropic é o **Opus 5.5**.
 - Para perguntas de consulta com ferramentas, o **Sonnet 5.5** custa metade e deve bastar.
 - **Sugestão:** testar os dois com as 30 perguntas reais do teste 9, e você escolhe pelo resultado. A decisão de custo é sua.
@@ -757,41 +804,66 @@ Uma resposta da Meta por pergunta, US$ 0,0068 cada (as 1.000 grátis do número 
 
 ---
 
-## 17. Teste no painel: a chave em espera (antes de qualquer código)
+## 17. O portão e o teste no painel (antes de qualquer outra fatia)
 
-**Objetivo:** provar que o banco aceita um token assinado por uma chave nossa, importada **em espera**, e que apagar essa chave corta o acesso. O teste também ensaia o plano de vazamento.
+**Objetivo, em três provas, no seu projeto:**
+1. O banco **recusa um token de servidor fabricado** com a nossa chave (o portão, 6.4).
+2. O banco **aceita** um token formato A assinado por uma chave nossa **em espera**.
+3. Apagar a chave em espera **corta** os tokens dela (o ensaio do plano de vazamento).
+
+**Se a prova 1 falhar** (o token fabricado passar, ou o cabeçalho chegar vazio), **eu paro e aviso**, a chave é apagada na hora e nenhuma outra fatia começa. **Se a prova 2 falhar** (o banco não aceitar a chave em espera), também paro: a opção (a) como desenhada não funciona.
 
 ### 17.1 O que NÃO pode mudar no login de ninguém, e como você confere
 
-| Não pode mudar | Como conferir, antes e depois |
+Confira **antes** de começar, **depois** da Etapa A e **no fim**:
+
+| Não pode mudar | Como conferir |
 |---|---|
-| A **chave atual** continua a mesma (ES256, id começando com `39336e49`) e continua "Current" | Project Settings → **JWT Keys**: tire um print antes e depois |
-| A chave antiga (legacy) continua no mesmo estado | mesma tela, mesmo print |
-| Ninguém é deslogado | o site, aberto num navegador **antes** do teste, continua logado depois (recarregue a página) |
-| Login novo funciona | entre no site numa **janela anônima** depois do teste |
-| Tablet e celular funcionam | abra o tablet de uma loja e o celular de um colaborador depois do teste |
-| A /saude fica verde | abra a /saude depois |
+| A **chave atual** continua a mesma (ES256, id começando com `39336e49`) e continua "Current" | Project Settings → **JWT Keys**: um print antes e um no fim |
+| A chave antiga (legacy) continua no mesmo estado | mesma tela, mesmos prints |
+| Ninguém é deslogado | o site aberto num navegador **antes** de começar continua logado no fim (recarregue a página) |
+| Login novo funciona | entre no site numa **janela anônima** |
+| Tablet e celular funcionam | abra o tablet de uma loja e o celular de um colaborador |
+| A TV funciona | abra a TV de uma loja |
+| A /saude fica verde | abra a /saude |
 
-### 17.2 Passo a passo
+### 17.2 Etapa A — instalar o portão (o SQL desta entrega; ACRESCENTA)
 
-1. **Eu, no Codespace:**
-   - gero o par de chaves (`supabase gen signing-key --algorithm ES256`) num arquivo **fora do projeto** (`~/stgame-ferramentas`), que nunca vai ao GitHub;
-   - te passo o conteúdo da **chave privada** pela própria tela do Codespace, para copiar.
-2. **Você, no painel:** Project Settings → JWT Keys → **Create standby key** → **Import an existing private key** → cole → Salvar.
+1. Faça a conferência 17.1 (o "antes").
+2. Supabase → SQL Editor → cole **todo** o `supabase/aplicar-portao-do-token.sql` → Run. Deve terminar sem erro.
+3. **Na hora**, confira a tabela 17.1: site, janela anônima, tablet, celular, TV, /saude.
+   - **Se algo parar de carregar:** rode o `supabase/portao-desligar.sql` (uma linha; volta tudo como era) e me chame.
+4. Rode o `supabase/conferir-o-banco.sql`: a linha **790** ("O portão do WhatsApp...") e a última linha têm de dar **ok**.
+5. Só então faça o merge do PR #15. Ele não muda nada no site: são documentos, testes e esta migração.
+
+Com a tabela de chaves vazia, o portão deixa passar todo token. Por isso nada muda para ninguém.
+
+### 17.3 Etapa B — a chave em espera e as três provas
+
+6. **Eu:** gero a chave com a ferramenta do próprio Supabase (`supabase gen signing-key --algorithm ES256`) num arquivo **fora do projeto**, que nunca vai ao GitHub. Te digo o caminho do arquivo para você abrir e copiar o conteúdo.
+7. **Você, no painel:** Project Settings → JWT Keys → **Create standby key** → **Import an existing private key** → cole → Salvar.
    - **Não clique em "Rotate keys"**: isso faria a chave nova assinar os logins de todo mundo.
    - Confira que ela aparece como **Standby** e a atual continua **Current**.
-3. **Você:** me diga o `userid` de um login **de teste** seu (um master de uma conta de teste, nunca um cliente). Está em Authentication → Users.
-4. **Eu:**
-   - assino um token de 5 minutos para esse login (`authenticated`, `whatsapp`);
-   - peço ao banco `minhas_lojas()` com ele.
-   - **Aceitou** (devolveu as lojas): segue para o passo 5.
-   - **Recusou** ("invalid JWT" ou parecido): **paro e te aviso**. A opção (a) como desenhada não funciona, e voltamos a conversar.
-5. **Você:** no painel, **apague** a chave em espera (o botão de apagar ou revogar ao lado dela).
-6. **Eu:** assino um token novo com a mesma chave e peço de novo. Tem de ser **recusado**. Isso prova o plano de vazamento. Se ainda for aceito, espero 10 minutos (o Supabase pode guardar a lista de chaves por alguns minutos) e tento de novo; se continuar aceito, paro e aviso.
-7. **Eu:** apago a chave privada do Codespace. Na fatia 5, uma chave **nova** é gerada e importada, e vai direto para o segredo do porteiro.
+8. **Eu:** leio a lista pública de chaves do projeto, acho o identificador (`kid`) da chave nova e te mando **uma linha de SQL** para registrá-la no portão (`INSERT INTO portao.chavesproprias ... 'teste do painel'`). **Você** roda no SQL Editor.
+9. **Você:** me diga o `userid` de um login **de teste** seu (um master de uma conta de teste, nunca um cliente). Está em Authentication → Users.
+10. **Eu, as provas 1 e 2** (os pedidos não gravam nada):
+    - **prova 1:** fabrico um token de **servidor** com a chave e peço `painel_da_tv('x')`, que não lê dado de ninguém;
+    - **prova 2:** assino um token **formato A** para o seu login de teste e peço `minhas_lojas()`.
 
-**O formato B (`wa_porteiro`) não entra neste teste:** o papel só passa a existir no banco na fatia 2. Ele é provado na fatia 5, com a chave definitiva, antes de ligar o porteiro: um token B tem de executar `wa_entrada` e ser recusado em `minhas_lojas()`.
-8. **Você:** confere a tabela 17.1 e me manda os dois prints.
+    | Prova 1 (servidor fabricado) | Prova 2 (formato A) | O que quer dizer | O que fazemos |
+    |---|---|---|---|
+    | **403 "Token recusado."** | **200**, com as lojas da conta de teste | o portão funciona e a chave em espera é aceita | **passou**: segue para o passo 11 |
+    | 200 | qualquer | **o portão não segurou** (o cabeçalho chegou vazio, ou a defesa falhou) | **paro**; você apaga a chave **na hora** (passo 11); te aviso |
+    | 401 | 401 | o banco **não aceita** a chave em espera | **paro**; a chave é apagada; te aviso |
+    | outro resultado | | não previsto | **paro** e te mostro |
+
+11. **Você:** no painel, **apague** a chave em espera (o botão de apagar ou revogar ao lado dela).
+12. **Eu, a prova 3:** repito o pedido da prova 2 com a mesma chave. Tem de dar **401** (recusado). Se ainda passar, espero 10 minutos (o Supabase pode guardar a lista de chaves por alguns minutos) e repito; se continuar passando, paro e aviso.
+13. **Você:** rode no SQL Editor `DELETE FROM portao.chavesproprias WHERE motivo LIKE 'teste%';` (a linha 790 do conferidor acusa se uma chave de teste ficar esquecida por mais de um dia).
+14. **Eu:** apago a chave privada do Codespace. A chave **definitiva** é gerada na fatia 5, direto para o segredo do porteiro.
+15. **Você:** a conferência 17.1 do fim, e me manda os prints.
+
+**O formato B (`wa_porteiro`) não entra aqui:** o papel só passa a existir no banco na fatia 2. Ele é provado na fatia 5, com a chave definitiva, antes de ligar o porteiro.
 
 ---
 
@@ -821,7 +893,7 @@ Uma resposta da Meta por pergunta, US$ 0,0068 cada (as 1.000 grátis do número 
 | Fatia | O que entra | Prova principal | Depende de |
 |---|---|---|---|
 | **0** | Esta proposta; a trava 121; a correção do plano e do dicionário | seção 121 + 4 sabotagens (feito) | — |
-| **1** | Teste no painel (seção 17), sem código no projeto | token aceito em espera; recusado depois de apagar | 0 |
+| **1** | **O portão + o teste no painel** (seção 17): a migração 20261006100000 (o banco recusa token de servidor fabricado com a nossa chave), a seção 122 do teste de isolamento e a trava `supabase/tests/portao.sh` (PostgREST de verdade, v12 e v13); no painel, a chave em espera e as três provas | prova 1: servidor fabricado → 403 "Token recusado."; prova 2: formato A aceito; prova 3: recusado depois de apagar | 0 |
 | **2** | Banco: permissão "Consultar pelo WhatsApp" (`whatsapp.consultar`, negada para todo cargo); função antes de cada pedido (somente leitura + defesa do `kid`); `meu_saldo_de_tokens` | testes 3, 4, 17, 18; antes e depois com todos os logins: 0 diferenças | 1 |
 | **3** | Vínculo: tabelas 9.1, 9.2 e `whatsappcodigos` (9.6), tela Meu perfil → WhatsApp (digitar o código, desligar, final, expira), `esquecer_meu_whatsapp`, nova versão da política (sem ligar o bot) | testes 14, 15, 15b, 15c, 16 (código simulado); trava da exclusão | 2 |
 | **4** | Tokens: tabelas 9.4 e 9.5, cota (`contas.cotatokenswhatsapp`), `wa_reservar`, `wa_acertar`, reserva vencida, "Lançar pacote" no /admin, saldo e consumo em Meu perfil | testes 10, 11, 11b, 11c, 11e; livro inalterável | 2 |
@@ -838,9 +910,9 @@ Uma resposta da Meta por pergunta, US$ 0,0068 cada (as 1.000 grátis do número 
 
 | # | Pergunta | Sugestão |
 |---|---|---|
-| 1 | Onde moram o porteiro e a consulta (3.2)? | **Os dois no Deno Deploy, em apps separados**; o porteiro **sem** a chave de servidor, falando com o banco pelo papel `wa_porteiro` (formato B) |
+| 1 | Onde moram o porteiro e a consulta (3.2)? | **PENDENTE:** a resposta do Wisley de 06/10/2026 chegou sem o texto ("[minhas respostas]"). Sugestão: **os dois no Deno Deploy, em apps separados**; o porteiro **sem** a chave de servidor, falando com o banco pelo papel `wa_porteiro` (formato B) |
 | 2 | A consulta informa o consumo e o porteiro grava, com "só devolve a sobra" no banco (3.3)? | **Sim** |
-| 3 | Vínculo invertido: o bot manda o código, o master digita no site, logado (3.4)? | **Sim** (o botão saiu) |
+| 3 | Vínculo invertido: o bot manda o código, o master digita no site, logado (3.4)? | **PENDENTE** (mesmo motivo). Sugestão: **sim** (o botão saiu) |
 | 4 | Repetição, limite, medição e o código do vínculo dentro das 3 funções (3.5)? | **Sim** |
 | 5 | Dois campos a mais no token: reserva e teto (6.1)? | **Sim** |
 | 6 | Número ativo único em toda a plataforma, exceção à regra "unicidade por conta" (9.1)? | **Sim**: o código prova o celular, e o vínculo antigo daquele celular é desligado sem avisar a outra conta |
@@ -855,11 +927,11 @@ Uma resposta da Meta por pergunta, US$ 0,0068 cada (as 1.000 grátis do número 
 | 15 | Consumo não informado (erro, queda, tempo esgotado, valor inválido) cobra a reserva inteira (10.4)? | **Sim** |
 | 16 | Vínculo expira em quanto tempo? | **90 dias**; o site avisa na última semana |
 | 17 | Perguntas por hora | **20**, o master pode mudar |
-| 18 | Modelo da IA | testar **Opus 5.5** e **Sonnet 5.5** com as perguntas reais e você escolher (15) |
+| 18 | Modelo da IA | **Decidido: Sonnet 5.5 como padrão** (Wisley, 06/10/2026). O Opus 5.5 fica como alternativa, se o teste das 30 perguntas mostrar respostas fracas |
 | 19 | Agenda entra sem nome e contato do cliente; feedbacks, prêmios e extrato ficam de fora no começo (8.3)? | **Sim** |
 | 20 | Fatia 2 do Telegram: caminho R ou D (13)? | **D** (só documentação, coluna e 1 gatilho) |
-| 21 | A Meta cobra por **resposta**, não por token (15.3). Como o usuário paga isso? | **Embutido no preço do pacote** (~US$ 0,72 por milhão de tokens, cerca de 106 respostas), com o limite de 20 por hora segurando o abuso de "quanto me resta?". Alternativa: cada resposta desconta um valor fixo em tokens |
-| 22 | Segundo formato de token, `wa_porteiro`, só para as 3 funções (3.2, 6.1)? | **Sim**: é o que tira a chave de servidor do porteiro |
+| 21 | A Meta cobra por **resposta**, não por token (15.3). Como o usuário paga isso? | **Decidido (Wisley, 06/10/2026):** o cliente paga **só as respostas às perguntas**, em tokens da IA **mais uma taxa fixa de envio convertida em tokens**, que cubra a Meta (seção 10.7). A plataforma absorve o código do vínculo, as respostas de erro, o "quanto me resta?" e o aviso de cota esgotada, que já têm limite. Pacotes vendidos **em reais, com margem para o câmbio**; a taxa e o preço revistos **a cada 3 meses** |
+| 22 | Segundo formato de token, `wa_porteiro`, só para as 3 funções (3.2, 6.1)? | **Aprovado (Wisley, 06/10/2026)**, só para o papel `wa_porteiro`; teste e sabotagem em 6.6 |
 
 ---
 
