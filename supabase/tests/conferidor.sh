@@ -55,8 +55,8 @@ else
 fi
 
 # 3. A entrega mais nova faltando: manda rodar o arquivo dela.
-s="$(conferir "DROP TABLE public.avisosdispensados CASCADE;")"
-if echo "$s" | grep -q "|rode aplicar-intervalo-feedback-e-avisos.sql"; then
+s="$(conferir "DROP SCHEMA portao CASCADE;")"
+if echo "$s" | grep -q "|rode aplicar-portao-do-token.sql"; then
   echo "    ok  entrega mais nova faltando: manda rodar o arquivo dela"
 else
   echo "    FALHOU: a entrega mais nova falta e o conferidor nao manda rodar:"; echo "$s" | grep "FALTA" | head -3; falhou=1

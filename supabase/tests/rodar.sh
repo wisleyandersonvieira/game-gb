@@ -355,6 +355,15 @@ if ! bash "$RAIZ/supabase/tests/jit.sh" "$CJ"; then
 fi
 docker rm -f -v "$CJ" >/dev/null 2>&1 || true
 
+# O portão do WhatsApp com o PostgREST de verdade (06/10/2026): o token de
+# servidor fabricado com a nossa chave é recusado nas versões em uso.
+echo "==> o portao do WhatsApp com o PostgREST de verdade"
+if ! bash "$RAIZ/supabase/tests/portao.sh"; then
+  echo
+  echo "TESTE DE ISOLAMENTO: FALHOU (portao)"
+  exit 1
+fi
+
 echo
 if [ "$ok_c" = "1" ] && [ "$recusas" = "1" ]; then
   echo "TESTE DE ISOLAMENTO: PASSOU"

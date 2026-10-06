@@ -77,6 +77,7 @@ WITH arquivos(arquivo, versao) AS (VALUES
   ('aplicar-jit-desligado.sql', '20261001200000'),
   ('aplicar-tirar-telegram.sql', '20261004100000'),
   ('aplicar-intervalo-feedback-e-avisos.sql', '20261005100000'),
+  ('aplicar-portao-do-token.sql', '20261006100000'),
   ('aplicar-mural-no-tablet.sql', '20260929101200'),
   ('aplicar-ninguem-gera-pontos-para-si.sql', '20260929271000'),
   ('aplicar-parte-4-leituras.sql', '20260929286000'),
@@ -261,7 +262,8 @@ imp_migracoes(migracao) AS (VALUES
   ('20261001100000_meta_pela_janela_do_lancamento'),
   ('20261001200000_jit_desligado_nas_consultas_pequenas'),
   ('20261004100000_tirar_telegram'),
-  ('20261005100000_intervalo_feedback_e_x_dos_avisos')
+  ('20261005100000_intervalo_feedback_e_x_dos_avisos'),
+  ('20261006100000_portao_do_token')
 ),
 imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260918230035_77b24cff-2af8-4cfb-89df-77511fa9f8e5','coluna','tarefas.descricao','0e3a0ef19449'),
@@ -4970,7 +4972,17 @@ versao(ordem, parte, tipo, nome, arquivo, tem) AS (VALUES
                         WHERE table_schema = 'public' AND table_name = 'jornadas' AND column_name IN ('pausainicio', 'pausafim'))
        AND to_regprocedure('public.dispensar_avisos(text[])') IS NOT NULL
        AND to_regprocedure('public.reexibir_avisos(text[])') IS NOT NULL
-       AND pg_temp.tenta($q$SELECT (SELECT count(*) >= 0 FROM public.avisosdispensados)$q$))
+       AND pg_temp.tenta($q$SELECT (SELECT count(*) >= 0 FROM public.avisosdispensados)$q$)),
+  (790, 'OPERACAO', 'versao', 'O portao do WhatsApp: o token de servidor fabricado com a nossa chave e recusado', 'aplicar-portao-do-token.sql',
+       -- RODA a decisão (sem gravar) por dentro do tenta: no banco sem esta
+       -- entrega, a linha dá FALTA em vez de derrubar o conferidor. E confere
+       -- que o PostgREST roda a função antes de cada pedido.
+       pg_temp.tenta($q$SELECT portao.token_permitido(NULL, NULL)
+                        AND NOT EXISTS (SELECT 1 FROM portao.chavesproprias k WHERE k.motivo LIKE 'teste%' AND k.criadoem < now() - interval '1 day')$q$)
+       -- (no Supabase o papel authenticator sempre existe; só o banco de teste não o tem)
+       AND (to_regrole('authenticator') IS NULL
+            OR EXISTS (SELECT 1 FROM pg_db_role_setting d JOIN pg_roles r ON r.oid = d.setrole, unnest(d.setconfig) s
+                        WHERE r.rolname = 'authenticator' AND s = 'pgrst.db_pre_request=portao.antes_de_cada_pedido')))
 ),
 -- TODAS as migrações, item a item (30/09/2026): cada tabela, coluna,
 -- restrição, índice, regra de acesso, gatilho e função, com o texto exato.

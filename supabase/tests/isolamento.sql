@@ -4823,7 +4823,7 @@ BEGIN
   ] LOOP
     PERFORM public.exigir(NOT has_function_privilege('authenticated', f, 'EXECUTE')
                           AND NOT has_function_privilege('anon', f, 'EXECUTE'),
-                          'funcao do acesso nao liberada para o navegador: ' || f);
+                          'funcao do acesso (papeis e contexto) nao liberada para o navegador: ' || f);
   END LOOP;
   PERFORM public.exigir(NOT has_table_privilege('authenticated', 'public.tentativasacesso', 'SELECT')
                         AND NOT has_table_privilege('anon', 'public.tentativasacesso', 'SELECT'),
@@ -15455,5 +15455,193 @@ BEGIN
 END $$;
 SET teste.uid = '';
 RESET ROLE;
+
+-- ===========================================================================
+-- 121. O contexto do SERVIDOR fica fechado (05/10/2026, decisao do Wisley)
+-- ===========================================================================
+-- bot_contexto_confiavel, conta_do_bot e funcionario_do_bot (o nome e antigo:
+-- sao o contexto do SERVIDOR, que o tablet, o celular, a TV, o acesso e as
+-- rotinas usam) e entrar_na_visao, a unica que liga esse contexto, so podem
+-- ser executadas pela chave de servidor. E a lista de canais da
+-- entrar_na_visao e FIXA: o WhatsApp (opcao a, token do proprio usuario) NAO
+-- entra nela. Para mudar a lista, este teste tem de ser mudado de proposito.
+DO $$ BEGIN RAISE NOTICE '121. contexto do servidor: so a chave de servidor, canais fixos'; END $$;
+DO $$
+DECLARE v_fora text;
+BEGIN
+  -- Ninguem alem do dono e da chave de servidor executa as quatro (nem o
+  -- PUBLIC, que e o padrao do Postgres quando ninguem tira).
+  SELECT string_agg(DISTINCT p.proname || ' -> ' || CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END, ', ')
+    INTO v_fora
+    FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.proname IN ('bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot', 'entrar_na_visao')
+     AND a.privilege_type = 'EXECUTE'
+     AND a.grantee <> p.proowner
+     AND (a.grantee = 0 OR a.grantee::regrole::text <> 'service_role');
+  PERFORM public.exigir(v_fora IS NULL
+                        AND (SELECT count(*) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+                               AND p.proname IN ('bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot', 'entrar_na_visao')) = 4
+                        AND (SELECT bool_and(has_function_privilege('service_role', p.oid, 'EXECUTE')
+                                             AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+                                             AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+                               FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+                                AND p.proname IN ('bot_contexto_confiavel', 'conta_do_bot', 'funcionario_do_bot', 'entrar_na_visao')),
+                        'contexto do servidor: as 4 funcoes so pela chave de servidor (fora: ' || coalesce(v_fora, 'ninguem') || ')');
+  -- Quem LIGA o contexto e so a entrar_na_visao (nenhuma outra funcao grava stgame.bot_*).
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_fora
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc ~ 'set_config\(\s*''stgame\.(bot_|visao_)'
+     AND p.proname <> 'entrar_na_visao';
+  PERFORM public.exigir(v_fora IS NULL, 'contexto do servidor: so a entrar_na_visao o liga (outras: ' || coalesce(v_fora, 'nenhuma') || ')');
+  -- A lista de canais, escrita: exatamente tablet e colaborador.
+  PERFORM public.exigir((SELECT substring(p.prosrc FROM 'p_canal NOT IN \(([^)]*)\)') FROM pg_proc p
+                          WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'entrar_na_visao') = '''tablet'', ''colaborador''',
+                        'entrar_na_visao: a lista de canais e exatamente tablet e colaborador (WhatsApp nao entra)');
+END $$;
+
+DO $$
+DECLARE
+  M constant uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+BEGIN
+  BEGIN
+    -- O servidor (aqui, o postgres sem papel) tentando abrir o contexto por
+    -- outro canal: o contexto continua desligado.
+    PERFORM set_config('stgame.bot_conta', '', true);
+    BEGIN PERFORM public.entrar_na_visao(2, NULL, NULL, 'whatsapp'); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(coalesce(current_setting('stgame.bot_conta', true), '') = '',
+                          'entrar_na_visao recusa o canal whatsapp: o contexto nao liga');
+    BEGIN PERFORM public.entrar_na_visao(2, NULL, NULL, 'telegram'); EXCEPTION WHEN check_violation THEN NULL; END;
+    PERFORM public.exigir(coalesce(current_setting('stgame.bot_conta', true), '') = '',
+                          'entrar_na_visao recusa o canal telegram: o contexto nao liga');
+    -- Controle: pelo canal certo, liga (a checagem acima nao e vazia).
+    PERFORM public.entrar_na_visao(2, NULL, NULL, 'tablet');
+    PERFORM public.exigir(current_setting('stgame.bot_conta', true) = '2', 'entrar_na_visao pelo tablet liga o contexto (controle)');
+    PERFORM set_config('stgame.bot_conta', '', true);
+    PERFORM set_config('request.jwt.claims', '', true);
+
+    -- Quem esta logado: chamar a porta ou ligar o contexto a mao nao muda a conta.
+    PERFORM set_config('teste.uid', M::text, true);
+    SET LOCAL ROLE authenticated;
+    BEGIN PERFORM public.entrar_na_visao(2, NULL, NULL, 'tablet'); EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    PERFORM public.exigir(public.minha_conta() = 1, 'logado chamando entrar_na_visao: continua na propria conta');
+    PERFORM set_config('stgame.bot_conta', '2', true);
+    PERFORM set_config('stgame.bot_funcionario', '1', true);
+    PERFORM public.exigir(public.minha_conta() = 1 AND public.minha_conta_editavel() = 1,
+                          'logado ligando stgame.bot_conta a mao: continua na propria conta');
+    RESET ROLE;
+    RAISE EXCEPTION 'desfazer_121';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_121' THEN RAISE; END IF;
+  END;
+END $$;
+SET teste.uid = '';
+RESET ROLE;
+
+-- ===========================================================================
+-- 122. O PORTAO do WhatsApp: token de servidor fabricado com a nossa chave e
+--      recusado (06/10/2026, obrigatorio antes de qualquer fatia)
+-- ===========================================================================
+-- portao.token_permitido decide (o teste confere o RESULTADO); a
+-- portao.antes_de_cada_pedido recusa (o PostgREST a roda antes de cada pedido).
+-- A prova com o PostgREST de verdade esta em supabase/tests/portao.sh.
+DO $$ BEGIN RAISE NOTICE '122. portao: so os formatos A e B com a nossa chave'; END $$;
+CREATE OR REPLACE FUNCTION pg_temp.b64u(p jsonb) RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+  SELECT rtrim(translate(replace(encode(convert_to(p::text, 'UTF8'), 'base64'), E'\n', ''), '+/', '-_'), '=') $f$;
+CREATE OR REPLACE FUNCTION pg_temp.portador(p_kid text) RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+  SELECT 'Bearer ' || pg_temp.b64u(jsonb_build_object('alg', 'ES256', 'typ', 'JWT', 'kid', p_kid)) || '.corpo.assinatura' $f$;
+DO $$
+DECLARE
+  NOSSA constant text := 'kid-teste-portao-122';
+  OUTRA constant text := 'kid-do-supabase-nao-registrada';
+  U constant text := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  agora constant bigint := extract(epoch FROM now())::bigint;
+  v_estado text; v_msg text;
+BEGIN
+  -- Estrutura: fora da API, ninguem le a tabela, so o PostgREST roda a funcao.
+  PERFORM public.exigir(
+    NOT EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('antes_de_cada_pedido', 'token_permitido'))
+    AND has_function_privilege('anon', 'portao.antes_de_cada_pedido()', 'EXECUTE')
+    AND has_function_privilege('authenticated', 'portao.antes_de_cada_pedido()', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'portao.token_permitido(text, jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'portao.token_permitido(text, jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'portao.token_permitido(text, jsonb)', 'EXECUTE')
+    AND NOT has_table_privilege('anon', 'portao.chavesproprias', 'SELECT')
+    AND NOT has_table_privilege('authenticated', 'portao.chavesproprias', 'SELECT')
+    AND NOT has_table_privilege('service_role', 'portao.chavesproprias', 'SELECT')
+    AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'portao.chavesproprias'::regclass),
+    'portao: fora da API; a tabela das chaves ninguem le; so o PostgREST roda a funcao antes de cada pedido');
+
+  BEGIN
+    INSERT INTO portao.chavesproprias (kid, motivo) VALUES (NOSSA, 'teste 122');
+
+    -- Com a NOSSA chave: so A e B.
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'service_role', 'iat', agora, 'exp', agora + 300)),
+      'portao: token de SERVIDOR fabricado com a nossa chave e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'service_role', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 300)),
+      'portao: servidor com a marca whatsapp e recusado');
+    PERFORM public.exigir(portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 300)),
+      'portao: formato A passa (controle)');
+    PERFORM public.exigir(portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'wa_porteiro', 'canal', 'whatsapp_porteiro', 'iat', agora, 'exp', agora + 60)),
+      'portao: formato B passa (controle)');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 3600)),
+      'portao: formato A de 1 hora e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'iat', agora, 'exp', agora + 300)),
+      'portao: formato A sem usuario e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'wa_porteiro', 'canal', 'whatsapp_porteiro', 'sub', U, 'iat', agora, 'exp', agora + 60)),
+      'portao: formato B com usuario e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'wa_porteiro', 'canal', 'whatsapp_porteiro', 'iat', agora, 'exp', agora + 300)),
+      'portao: formato B de 5 minutos e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'sub', U, 'iat', agora, 'exp', agora + 300)),
+      'portao: login sem a marca, com a nossa chave, e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', 'agora', 'exp', 'depois')),
+      'portao: validade ilegivel e recusada');
+
+    -- Fora da nossa chave: nada muda.
+    PERFORM public.exigir(portao.token_permitido(pg_temp.portador(OUTRA),
+      jsonb_build_object('role', 'service_role', 'iat', agora, 'exp', agora + 300)),
+      'portao: token de servidor de OUTRA chave (a do Supabase) passa sem mudanca');
+    PERFORM public.exigir(portao.token_permitido(NULL, NULL) AND portao.token_permitido('Bearer !!!.x.y', NULL),
+      'portao: sem token (visitante) e cabecalho ilegivel passam (o PostgREST ja trata)');
+
+    -- A funcao que o PostgREST roda: recusa com o codigo exato; o controle passa.
+    PERFORM set_config('request.headers', json_build_object('authorization', pg_temp.portador(NOSSA))::text, true);
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('role', 'service_role', 'iat', agora, 'exp', agora + 300)::text, true);
+    v_estado := 'passou';
+    BEGIN
+      PERFORM portao.antes_de_cada_pedido();
+    EXCEPTION WHEN insufficient_privilege THEN
+      GET STACKED DIAGNOSTICS v_estado = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
+    END;
+    PERFORM public.exigir(v_estado = '42501' AND v_msg = 'Token recusado.',
+      'portao: antes de cada pedido, o servidor fabricado e barrado (' || v_estado || ')');
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 300)::text, true);
+    v_estado := 'passou';
+    BEGIN
+      PERFORM portao.antes_de_cada_pedido();
+    EXCEPTION WHEN insufficient_privilege THEN
+      GET STACKED DIAGNOSTICS v_estado = RETURNED_SQLSTATE;
+    END;
+    PERFORM public.exigir(v_estado = 'passou', 'portao: antes de cada pedido, o formato A segue (controle)');
+    PERFORM set_config('request.headers', '', true);
+    PERFORM set_config('request.jwt.claims', '', true);
+
+    RAISE EXCEPTION 'desfazer_122';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_122' THEN RAISE; END IF;
+  END;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM portao.chavesproprias),
+    'portao: no banco das migracoes, nenhuma chave registrada (a defesa so age com a chave do teste no painel)');
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

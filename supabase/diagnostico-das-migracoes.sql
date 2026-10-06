@@ -1,7 +1,7 @@
 -- =========================================================================
 -- STGame: DIAGNÓSTICO de quais migrações do repositório NÃO estão neste banco.
 -- SÓ LEITURA: não muda nada. Gerado por scripts/gerar-diagnostico.py
--- (139 migrações, até 20261005100000_intervalo_feedback_e_x_dos_avisos).
+-- (140 migrações, até 20261006100000_portao_do_token).
 --
 -- Como usar: Supabase -> SQL Editor -> New query -> colar TUDO -> Run.
 -- Mande para o Claude o resultado inteiro (todas as linhas).
@@ -151,7 +151,8 @@ WITH imp_migracoes(migracao) AS (VALUES
   ('20261001100000_meta_pela_janela_do_lancamento'),
   ('20261001200000_jit_desligado_nas_consultas_pequenas'),
   ('20261004100000_tirar_telegram'),
-  ('20261005100000_intervalo_feedback_e_x_dos_avisos')
+  ('20261005100000_intervalo_feedback_e_x_dos_avisos'),
+  ('20261006100000_portao_do_token')
 ),
 imp_esperado(migracao, tipo, chave, marca) AS (VALUES
   ('20260918230035_77b24cff-2af8-4cfb-89df-77511fa9f8e5','coluna','tarefas.descricao','0e3a0ef19449'),

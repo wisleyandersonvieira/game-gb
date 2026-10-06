@@ -20,6 +20,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `agendamentosanexos` | **loja** | anexoid | agendamentos |
 | `agendamentoshistorico` | **loja** | historicoid | agendamentos |
 | `avisosdispensados` | conta (por pessoa) | dispensaid | auth.users |
+| `portao.chavesproprias` | **plataforma** (schema `portao`) | kid |  |
 | `categoriasproduto` | conta | categoriaid |  |
 | `configuracoesescala` | **loja** | configid |  |
 | `configuracoessetores` | conta | setor |  |
@@ -1284,9 +1285,33 @@ O navegador só lê. Os tipos `aprovacao`, `estorno_entrega`, `bonus` e `estorno
 
 O sistema não usa Telegram (decisão do Wisley). Saíram as tabelas `telegramvinculos`, `telegramconvites`, `mensagensfila`, `mensagensrotinas`, `usomensagens`, `grupos` e `funcionariosgrupos`, o schema `bot` (`updates`, `tentativas`, `estados`, `contaativa`), as colunas `funcionarios.chatidtelegram`, `funcionarioslojas.validador`, `entregas.avisochatid`, `entregas.fileidtelegram`, `documentos.telegramfileidfoto`, `notasfiscais.fileidtelegram`, `tarefasatribuidas.grupoid` e `tarefasatribuidas.statustarefagrupo`, e as funções do bot (migração 20261004100000). Os dados saíram junto: o identificador de Telegram das pessoas é dado pessoal sem finalidade sem o bot. A seção 119 do teste de isolamento reprova se algo disso voltar.
 
-**Ficam** de propósito: `avisossistema` (os avisos do Início; `marcar_aviso_lido`); as colunas de canal (`entregas.canalenvio`/`canalvalidacao`, `documentosacessos.canal`, `missoesaceites.canal`), em que linhas antigas dizem `telegram` (histórico); `entregas.validadorfuncionarioid`, `bot_contexto_confiavel`, `conta_do_bot` e `funcionario_do_bot` (saem na fatia 2, com prova própria: estão dentro de ~110 funções); e as 9 configurações que só o bot lia (`HORARIO_DELEGACAO_FOLGA`, `HORARIO_LEMBRETE_COMUNICADOS`, `HORARIO_LEMBRETE_DIARIO_AMANHA`, `HORARIO_LEMBRETE_HOJE`, `HORARIO_LEMBRETE_SEMANAL`, `HORARIO_SILENCIO_INICIO`, `HORARIO_SILENCIO_FIM`, `MAX_MENSAGENS_AUTOMATICAS_DIA`, `MAX_TAREFAS_FOLGA_POR_PESSOA`), com o histórico delas (`configuracoeshistorico` aponta para elas, ON DELETE RESTRICT, de propósito). **Desde 05/10/2026 a `descricao` delas diz "OBSOLETA"**: nada lê, nada mostra, conta nova não recebe, e **não se apagam** (decisão do Wisley: o histórico é auditoria).
+**Ficam** de propósito: `avisossistema` (os avisos do Início; `marcar_aviso_lido`); as colunas de canal (`entregas.canalenvio`/`canalvalidacao`, `documentosacessos.canal`, `missoesaceites.canal`), em que linhas antigas dizem `telegram` (histórico); `entregas.validadorfuncionarioid` (sai na fatia 2); `bot_contexto_confiavel`, `conta_do_bot` e `funcionario_do_bot` (**não saem**: são o contexto do servidor, ver abaixo); e as 9 configurações que só o bot lia (`HORARIO_DELEGACAO_FOLGA`, `HORARIO_LEMBRETE_COMUNICADOS`, `HORARIO_LEMBRETE_DIARIO_AMANHA`, `HORARIO_LEMBRETE_HOJE`, `HORARIO_LEMBRETE_SEMANAL`, `HORARIO_SILENCIO_INICIO`, `HORARIO_SILENCIO_FIM`, `MAX_MENSAGENS_AUTOMATICAS_DIA`, `MAX_TAREFAS_FOLGA_POR_PESSOA`), com o histórico delas (`configuracoeshistorico` aponta para elas, ON DELETE RESTRICT, de propósito). **Desde 05/10/2026 a `descricao` delas diz "OBSOLETA"**: nada lê, nada mostra, conta nova não recebe, e **não se apagam** (decisão do Wisley: o histórico é auditoria).
 
 Saíram em 05/10/2026 (migração 20261005100000): o intervalo da jornada (`jornadas.pausainicio/pausafim`) e `bot_falta_feedback_ontem` (o aviso "Você tem um feedback de ontem para responder" do aplicativo, sem onde responder).
+
+### O contexto do SERVIDOR (o nome "bot" é histórico)
+Não é tabela: é como o banco reconhece uma chamada do **servidor** do STGame. Corrigido em 05/10/2026 (antes, este dicionário dizia que era do bot e sairia).
+- `bot_contexto_confiavel()`: verdadeira quando a chamada vem com a **chave de servidor** (`service_role`) ou é uma rotina do pg_cron (`postgres` sem papel). Quem está logado e o visitante nunca.
+- `entrar_na_visao(conta, pessoa, loja, canal)`: a **única** que liga o contexto (`stgame.bot_conta`, `stgame.bot_funcionario`, `stgame.bot_canal`, `stgame.visao_loja`), só valendo na transação. Canais: `tablet` e `colaborador`. Chamada pelas funções `visao_*`, por `eu_*` que gravam e por `politica_dar_ciencia` (tablet e celular do colaborador).
+- `conta_do_bot()` / `funcionario_do_bot()`: leem o contexto, só quando ele é confiável. `minha_conta`, `minha_conta_editavel` e `registrar_ciencia_documento` usam.
+- 105 funções vivas usam alguma das três (tablet, celular, TV, acesso por código/PIN/senha, apagamento de fotos, rotinas).
+- **Trava:** a seção 121 do teste de isolamento reprova se alguém além da chave de servidor puder executar as quatro, se outra função ligar o contexto ou se a lista de canais mudar (o WhatsApp, opção (a) de 05/10/2026, usa o token do próprio usuário e não entra nela).
+
+### portao.chavesproprias (06/10/2026) — PLATAFORMA, schema `portao`
+O **portão do WhatsApp** (proposta, seções 6.4 e 17). As chaves de assinatura do STGame importadas no Supabase, pelo `kid` (o identificador que vai no cabeçalho do token). Não é de conta nenhuma.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| kid | text | chave primária; de 8 a 100 letras |
+| motivo | text | obrigatório. As de teste começam com "teste" (o conferidor, linha 790, acusa uma de teste esquecida há mais de um dia) |
+| criadoem | timestamptz | |
+
+- Ninguém lê nem grava pela API (nem a chave de servidor): só pelo SQL Editor.
+- `portao.token_permitido(autorização, dados do token)` decide: token assinado por uma chave desta tabela só vale nos formatos A (`authenticated` + `whatsapp` + usuário + até 5 min) e B (`wa_porteiro` + `whatsapp_porteiro` + sem usuário + até 60 s).
+- `portao.antes_de_cada_pedido()` roda antes de **todo** pedido ao banco pela API (`pgrst.db_pre_request` do papel `authenticator`) e recusa com "Token recusado.".
+- O schema `portao` fica fora da API: o navegador não chama nada dele.
+- Tabela vazia = ninguém é afetado.
+- **Travas:** seção 122 do teste de isolamento e `supabase/tests/portao.sh` (PostgREST de verdade). Para desligar numa emergência: `supabase/portao-desligar.sql`.
 
 ### avisosdispensados (05/10/2026)
 O **X** dos avisos do topo do Início, **nível conta, por pessoa**. Fechar é por **fato**: a chave diz o aviso e aquilo a que ele se refere, e o aviso do dia seguinte (ou de outra loja, ou com outro número) tem outra chave e volta.
