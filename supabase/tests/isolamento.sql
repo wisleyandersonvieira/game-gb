@@ -15538,4 +15538,110 @@ END $$;
 SET teste.uid = '';
 RESET ROLE;
 
+-- ===========================================================================
+-- 122. O PORTAO do WhatsApp: token de servidor fabricado com a nossa chave e
+--      recusado (06/10/2026, obrigatorio antes de qualquer fatia)
+-- ===========================================================================
+-- portao.token_permitido decide (o teste confere o RESULTADO); a
+-- portao.antes_de_cada_pedido recusa (o PostgREST a roda antes de cada pedido).
+-- A prova com o PostgREST de verdade esta em supabase/tests/portao.sh.
+DO $$ BEGIN RAISE NOTICE '122. portao: so os formatos A e B com a nossa chave'; END $$;
+CREATE OR REPLACE FUNCTION pg_temp.b64u(p jsonb) RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+  SELECT rtrim(translate(replace(encode(convert_to(p::text, 'UTF8'), 'base64'), E'\n', ''), '+/', '-_'), '=') $f$;
+CREATE OR REPLACE FUNCTION pg_temp.portador(p_kid text) RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+  SELECT 'Bearer ' || pg_temp.b64u(jsonb_build_object('alg', 'ES256', 'typ', 'JWT', 'kid', p_kid)) || '.corpo.assinatura' $f$;
+DO $$
+DECLARE
+  NOSSA constant text := 'kid-teste-portao-122';
+  OUTRA constant text := 'kid-do-supabase-nao-registrada';
+  U constant text := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  agora constant bigint := extract(epoch FROM now())::bigint;
+  v_estado text; v_msg text;
+BEGIN
+  -- Estrutura: fora da API, ninguem le a tabela, so o PostgREST roda a funcao.
+  PERFORM public.exigir(
+    NOT EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('antes_de_cada_pedido', 'token_permitido'))
+    AND has_function_privilege('anon', 'portao.antes_de_cada_pedido()', 'EXECUTE')
+    AND has_function_privilege('authenticated', 'portao.antes_de_cada_pedido()', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'portao.token_permitido(text, jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'portao.token_permitido(text, jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'portao.token_permitido(text, jsonb)', 'EXECUTE')
+    AND NOT has_table_privilege('anon', 'portao.chavesproprias', 'SELECT')
+    AND NOT has_table_privilege('authenticated', 'portao.chavesproprias', 'SELECT')
+    AND NOT has_table_privilege('service_role', 'portao.chavesproprias', 'SELECT')
+    AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'portao.chavesproprias'::regclass),
+    'portao: fora da API; a tabela das chaves ninguem le; so o PostgREST roda a funcao antes de cada pedido');
+
+  BEGIN
+    INSERT INTO portao.chavesproprias (kid, motivo) VALUES (NOSSA, 'teste 122');
+
+    -- Com a NOSSA chave: so A e B.
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'service_role', 'iat', agora, 'exp', agora + 300)),
+      'portao: token de SERVIDOR fabricado com a nossa chave e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'service_role', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 300)),
+      'portao: servidor com a marca whatsapp e recusado');
+    PERFORM public.exigir(portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 300)),
+      'portao: formato A passa (controle)');
+    PERFORM public.exigir(portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'wa_porteiro', 'canal', 'whatsapp_porteiro', 'iat', agora, 'exp', agora + 60)),
+      'portao: formato B passa (controle)');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 3600)),
+      'portao: formato A de 1 hora e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'iat', agora, 'exp', agora + 300)),
+      'portao: formato A sem usuario e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'wa_porteiro', 'canal', 'whatsapp_porteiro', 'sub', U, 'iat', agora, 'exp', agora + 60)),
+      'portao: formato B com usuario e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'wa_porteiro', 'canal', 'whatsapp_porteiro', 'iat', agora, 'exp', agora + 300)),
+      'portao: formato B de 5 minutos e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'sub', U, 'iat', agora, 'exp', agora + 300)),
+      'portao: login sem a marca, com a nossa chave, e recusado');
+    PERFORM public.exigir(NOT portao.token_permitido(pg_temp.portador(NOSSA),
+      jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', 'agora', 'exp', 'depois')),
+      'portao: validade ilegivel e recusada');
+
+    -- Fora da nossa chave: nada muda.
+    PERFORM public.exigir(portao.token_permitido(pg_temp.portador(OUTRA),
+      jsonb_build_object('role', 'service_role', 'iat', agora, 'exp', agora + 300)),
+      'portao: token de servidor de OUTRA chave (a do Supabase) passa sem mudanca');
+    PERFORM public.exigir(portao.token_permitido(NULL, NULL) AND portao.token_permitido('Bearer !!!.x.y', NULL),
+      'portao: sem token (visitante) e cabecalho ilegivel passam (o PostgREST ja trata)');
+
+    -- A funcao que o PostgREST roda: recusa com o codigo exato; o controle passa.
+    PERFORM set_config('request.headers', json_build_object('authorization', pg_temp.portador(NOSSA))::text, true);
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('role', 'service_role', 'iat', agora, 'exp', agora + 300)::text, true);
+    v_estado := 'passou';
+    BEGIN
+      PERFORM portao.antes_de_cada_pedido();
+    EXCEPTION WHEN insufficient_privilege THEN
+      GET STACKED DIAGNOSTICS v_estado = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
+    END;
+    PERFORM public.exigir(v_estado = '42501' AND v_msg = 'Token recusado.',
+      'portao: antes de cada pedido, o servidor fabricado e barrado (' || v_estado || ')');
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('role', 'authenticated', 'canal', 'whatsapp', 'sub', U, 'iat', agora, 'exp', agora + 300)::text, true);
+    v_estado := 'passou';
+    BEGIN
+      PERFORM portao.antes_de_cada_pedido();
+    EXCEPTION WHEN insufficient_privilege THEN
+      GET STACKED DIAGNOSTICS v_estado = RETURNED_SQLSTATE;
+    END;
+    PERFORM public.exigir(v_estado = 'passou', 'portao: antes de cada pedido, o formato A segue (controle)');
+    PERFORM set_config('request.headers', '', true);
+    PERFORM set_config('request.jwt.claims', '', true);
+
+    RAISE EXCEPTION 'desfazer_122';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'desfazer_122' THEN RAISE; END IF;
+  END;
+  PERFORM public.exigir(NOT EXISTS (SELECT 1 FROM portao.chavesproprias),
+    'portao: no banco das migracoes, nenhuma chave registrada (a defesa so age com a chave do teste no painel)');
+END $$;
+
 DO $$ BEGIN RAISE NOTICE '=== TESTE DE ISOLAMENTO: TUDO PASSOU ==='; END $$;

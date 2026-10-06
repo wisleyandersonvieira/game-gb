@@ -20,6 +20,7 @@ As chaves estrangeiras entre tabelas são **compostas com o `contaid`**: as duas
 | `agendamentosanexos` | **loja** | anexoid | agendamentos |
 | `agendamentoshistorico` | **loja** | historicoid | agendamentos |
 | `avisosdispensados` | conta (por pessoa) | dispensaid | auth.users |
+| `portao.chavesproprias` | **plataforma** (schema `portao`) | kid |  |
 | `categoriasproduto` | conta | categoriaid |  |
 | `configuracoesescala` | **loja** | configid |  |
 | `configuracoessetores` | conta | setor |  |
@@ -1295,6 +1296,22 @@ Não é tabela: é como o banco reconhece uma chamada do **servidor** do STGame.
 - `conta_do_bot()` / `funcionario_do_bot()`: leem o contexto, só quando ele é confiável. `minha_conta`, `minha_conta_editavel` e `registrar_ciencia_documento` usam.
 - 105 funções vivas usam alguma das três (tablet, celular, TV, acesso por código/PIN/senha, apagamento de fotos, rotinas).
 - **Trava:** a seção 121 do teste de isolamento reprova se alguém além da chave de servidor puder executar as quatro, se outra função ligar o contexto ou se a lista de canais mudar (o WhatsApp, opção (a) de 05/10/2026, usa o token do próprio usuário e não entra nela).
+
+### portao.chavesproprias (06/10/2026) — PLATAFORMA, schema `portao`
+O **portão do WhatsApp** (proposta, seções 6.4 e 17). As chaves de assinatura do STGame importadas no Supabase, pelo `kid` (o identificador que vai no cabeçalho do token). Não é de conta nenhuma.
+
+| Coluna | Tipo | Obs |
+|---|---|---|
+| kid | text | chave primária; de 8 a 100 letras |
+| motivo | text | obrigatório. As de teste começam com "teste" (o conferidor, linha 790, acusa uma de teste esquecida há mais de um dia) |
+| criadoem | timestamptz | |
+
+- Ninguém lê nem grava pela API (nem a chave de servidor): só pelo SQL Editor.
+- `portao.token_permitido(autorização, dados do token)` decide: token assinado por uma chave desta tabela só vale nos formatos A (`authenticated` + `whatsapp` + usuário + até 5 min) e B (`wa_porteiro` + `whatsapp_porteiro` + sem usuário + até 60 s).
+- `portao.antes_de_cada_pedido()` roda antes de **todo** pedido ao banco pela API (`pgrst.db_pre_request` do papel `authenticator`) e recusa com "Token recusado.".
+- O schema `portao` fica fora da API: o navegador não chama nada dele.
+- Tabela vazia = ninguém é afetado.
+- **Travas:** seção 122 do teste de isolamento e `supabase/tests/portao.sh` (PostgREST de verdade). Para desligar numa emergência: `supabase/portao-desligar.sql`.
 
 ### avisosdispensados (05/10/2026)
 O **X** dos avisos do topo do Início, **nível conta, por pessoa**. Fechar é por **fato**: a chave diz o aviso e aquilo a que ele se refere, e o aviso do dia seguinte (ou de outra loja, ou com outro número) tem outra chave e volta.
